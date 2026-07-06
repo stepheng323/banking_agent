@@ -9,10 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.state_view import Planne
 from banking.presentation.i18n.bridge import render_safe_capability_fallback
 from shared.types.planner import PlannerOutput
 
-# Planner updates are heterogeneous LangGraph state patches containing task maps,
-# waves, Pydantic planner outputs, localized responses, and route metadata.
 PlannerUpdates = dict[str, Any]
-
 
 def unavailable_response(current_locale: str) -> PlannerUpdates:
     return {
@@ -98,17 +95,19 @@ def task_dispatch(
     locale_updates: PlannerUpdates,
     state_view: PlannerStateView,
 ) -> PlannerUpdates:
-    stashed_query_session_update = task_updates["stashed_query_session_update"]
+    pending_query_clarification_update = task_updates.get("pending_query_clarification_update")
     return {
-        "tasks": task_updates["new_tasks"],
-        "waves": task_updates["waves"],
+        "tasks": task_updates.get("new_tasks", {}),
+        "waves": task_updates.get("waves", []),
         "current_wave_index": 0,
         "normalized_instruction": normalized_instruction,
         "planner_output": planner_output,
         "policy_notice": policy_notice,
         "semantic_path_shape": "planner",
-        "stashed_query_session": (
-            stashed_query_session_update if stashed_query_session_update else state_view.stashed_query_session
+        "pending_query_clarification": (
+            pending_query_clarification_update
+            if pending_query_clarification_update
+            else state_view.pending_query_clarification
         ),
         **_planner_route_updates(
             decision=planner_output.primary_intent or "planner_task_plan",
@@ -116,8 +115,6 @@ def task_dispatch(
         ),
         **locale_updates,
     }
-
-
 __all__ = [
     "PlannerUpdates",
     "batch_limit_response",

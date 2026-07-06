@@ -100,7 +100,9 @@ async def test_quoted_replay_hit_skips_main_planner_and_creates_transfer_task() 
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub(
                 {
@@ -154,7 +156,9 @@ async def test_quoted_replay_context_uses_shared_compact_summary() -> None:
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub(
                 {
@@ -199,7 +203,9 @@ async def test_quoted_not_replay_falls_back_to_main_planner() -> None:
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub({"task_type": "transfer", "amount": 5000}),
         }
@@ -236,7 +242,9 @@ async def test_quoted_replay_clarify_returns_final_response_without_support_task
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub({"task_type": "transfer", "amount": 5000}),
         }
@@ -283,7 +291,9 @@ async def test_simple_quoted_replay_again_uses_replay_interpreter_and_skips_main
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub(
                 {
@@ -356,7 +366,9 @@ async def test_simple_quoted_replay_batch_payload_replays_all_tasks_from_interpr
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub(
                 {
@@ -447,7 +459,9 @@ async def test_quoted_replay_normalizes_transfer_account_number_and_source_affin
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub(
                 {
@@ -521,7 +535,9 @@ async def test_quoted_replay_modifier_applies_source_account_override() -> None:
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub(
                 {
@@ -588,7 +604,9 @@ async def test_quoted_replay_modifier_applies_amount_and_narration_overrides() -
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub(
                 {
@@ -649,7 +667,9 @@ async def test_quoted_replay_modifier_unmatched_source_account_clarifies() -> No
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub(
                 {
@@ -704,7 +724,9 @@ async def test_quoted_replay_transfer_missing_bank_asks_for_recipient_bank() -> 
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub(
                 {
@@ -757,7 +779,9 @@ async def test_non_trivial_quoted_replay_modification_still_uses_replay_llm() ->
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub(
                 {
@@ -809,7 +833,9 @@ async def test_quoted_replay_low_confidence_returns_clarify_response() -> None:
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub({"task_type": "transfer", "amount": 5000}),
         }
@@ -879,7 +905,9 @@ async def _run_seed_replay(
     )
     config = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": None,
             "actionable_message_repo": _ActionableRepoStub(quoted_payload),
         }

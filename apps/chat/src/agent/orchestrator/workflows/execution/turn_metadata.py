@@ -56,12 +56,12 @@ class ExecutionTurnMetadata:
         return self.state.authorization_context.model_dump()
 
     @property
-    def stashed_query_session(self) -> dict[str, Any] | None:
-        return self.state.stashed_query_session
+    def pending_query_clarification(self) -> dict[str, Any] | None:
+        return self.state.pending_query_clarification
 
     @property
-    def has_stashed_query_session(self) -> bool:
-        return self.stashed_query_session is not None
+    def has_pending_query_clarification(self) -> bool:
+        return self.pending_query_clarification is not None
 
     @property
     def stashed_sessions(self) -> list[dict[str, Any]]:

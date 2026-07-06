@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
+from apps.chat.src.agent.orchestrator.context.models import ContextFrame
+from apps.chat.src.agent.orchestrator.context.query_surface import get_active_query_surface
 from banking.presentation.i18n.locale import LocaleManager
 from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut
 from shared.types.planner import ResponseShape
@@ -101,7 +103,7 @@ def classify_read_only_response_class(
     message_text: str,
     *,
     loaded_context: dict[str, Any] | None = None,
-    query_session_snapshot: dict[str, Any] | None = None,
+    context_frames: list[ContextFrame] | None = None,
 ) -> ResponseClass | None:
     """Classify read-only turns into fact vs structured-surface response classes."""
     normalized = _normalize_message(message_text)
@@ -123,7 +125,13 @@ def classify_read_only_response_class(
     if any(pattern.search(normalized) for pattern in _SUPPORT_DETAIL_PATTERNS):
         return "SURFACE_DETAIL"
 
-    if isinstance(query_session_snapshot, dict) and query_session_snapshot.get("session_active"):
+    class _StateView:
+        @property
+        def context_frames(self) -> list[ContextFrame]:
+            return context_frames or []
+
+    active_surface = get_active_query_surface(_StateView())
+    if active_surface is not None:
         locale = LocaleManager.normalize((loaded_context or {}).get("language")).value
         query_shortcut = resolve_query_shortcut(message_text, locale)
         if query_shortcut is not None:
@@ -173,13 +181,13 @@ def classify_read_only_response_shape(
     message_text: str,
     *,
     loaded_context: dict[str, Any] | None = None,
-    query_session_snapshot: dict[str, Any] | None = None,
+    context_frames: list[ContextFrame] | None = None,
 ) -> ResponseShape | None:
     return response_class_to_shape(
         classify_read_only_response_class(
             message_text,
             loaded_context=loaded_context,
-            query_session_snapshot=query_session_snapshot,
+            context_frames=context_frames,
         )
     )
 

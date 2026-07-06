@@ -189,11 +189,10 @@ class ExtractionStep(QueryStep):
 
     @staticmethod
     def _is_income_vs_spending_followup(*, message: str, query_contract: QueryExecutionContract | None) -> bool:
-        if query_contract is None or query_contract.intent != QueryIntent.TRANSACTION_LIST:
-            return False
-
-        filters = query_contract.filters
-        if filters is not None and filters.transaction_type is not None:
+        if query_contract is None or query_contract.intent not in {
+            QueryIntent.TRANSACTION_LIST,
+            QueryIntent.ANALYTICS_SUMMARY,
+        }:
             return False
 
         normalized = f" {message.lower()} "
@@ -201,14 +200,25 @@ class ExtractionStep(QueryStep):
         if not has_compare:
             return False
 
-        has_income = any(
-            token in normalized for token in (" income ", " credit ", " credits ", " inflow ", " inflows ")
+        income_tokens = (" income ", " credit ", " credits ", " inflow ", " inflows ", " came in ", " coming in ")
+        has_income = any(token in normalized for token in income_tokens)
+
+        spending_tokens = (
+            " spending ", " spend ", " spent ", " debit ", " debits ",
+            " outflow ", " outflows ", " went out ", " going out "
         )
-        has_spending = any(
-            token in normalized
-            for token in (" spending ", " spend ", " spent ", " debit ", " debits ", " outflow ", " outflows ")
-        )
-        return has_income and has_spending
+        has_spending = any(token in normalized for token in spending_tokens)
+
+        # If it has both, or it's comparing to the opposite of the current active filter
+        active_type = getattr(query_contract.filters, "transaction_type", None) if query_contract.filters else None
+        if has_income and has_spending:
+            return True
+        if active_type == "credit" and has_spending:
+            return True
+        if active_type == "debit" and has_income:
+            return True
+
+        return False
 
     @staticmethod
     def _ambiguous_followup_updates(*, locale: str, session: dict[str, Any]) -> dict[str, Any]:

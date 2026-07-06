@@ -170,7 +170,7 @@ def test_active_query_surface_uses_latest_non_expired_query_frame() -> None:
     assert get_active_query_surface(state, now=now) == active
 
 
-def test_query_context_for_worker_builds_legacy_session_shape_from_frame() -> None:
+def test_query_context_for_worker_builds_surface_context_from_frame() -> None:
     state = OrchestratorState(
         user_id="user-1",
         phone_number="2348000000001",
@@ -179,12 +179,9 @@ def test_query_context_for_worker_builds_legacy_session_shape_from_frame() -> No
 
     worker_context = build_query_context_for_worker(state)
 
-    session = worker_context["active_query_session"]
-    assert session["session_active"] is True
-    assert session["_query_session_source"] == "context_frame"
-    assert session["query_contract"]["intent"] == "beneficiary_summary"
-    assert session["query_result"]["surface_view"]["mode"] == "direct_answer"
-    assert session["query_result"]["items"][0]["description"] == "Acme Corp"
+    assert worker_context["active_query_surface"]["metadata"]["query_contract"]["intent"] == "beneficiary_summary"
+    assert worker_context["active_query_surface"]["metadata"]["surface_mode"] == "direct_answer"
+    assert worker_context["active_query_surface"]["items"][0]["label"] == "Acme Corp"
 
 
 def test_query_context_for_worker_preserves_recent_query_frames_before_latest_surface() -> None:
@@ -198,13 +195,13 @@ def test_query_context_for_worker_preserves_recent_query_frames_before_latest_su
         ],
     )
 
-    session = build_query_context_for_worker(state)["active_query_session"]
+    worker_context = build_query_context_for_worker(state)
 
-    assert session["query_result"]["surface_view"]["mode"] == "direct_answer"
-    assert len(session["query_frames"]) == 2
-    assert session["query_frames"][0]["surface_type"] == "transaction_list"
-    assert session["query_frames"][0]["visible_items"][2]["id"] == "tx-3"
-    assert session["query_frames"][1]["surface_type"] == "direct_answer"
+    assert worker_context["active_query_surface"]["metadata"]["surface_mode"] == "direct_answer"
+    assert len(worker_context["context_frames"]) == 2
+    assert worker_context["context_frames"][0]["metadata"]["surface_mode"] == "transaction_list"
+    assert worker_context["context_frames"][0]["items"][2]["entity_id"] == "tx-3"
+    assert worker_context["context_frames"][1]["metadata"]["surface_mode"] == "direct_answer"
 
 
 def test_direct_query_answer_pushes_latest_query_surface_frame() -> None:
@@ -244,7 +241,7 @@ def test_direct_query_answer_pushes_latest_query_surface_frame() -> None:
     assert active.metadata["query_contract"]["intent"] == "analytics_summary"
     assert active.items[0].label == "You spent ₦1,460,052 this month, across 52 transactions."
     worker_context = build_query_context_for_worker(state)
-    assert worker_context["active_query_session"]["query_contract"]["intent"] == "analytics_summary"
+    assert worker_context["active_query_surface"]["metadata"]["query_contract"]["intent"] == "analytics_summary"
 
 
 def test_direct_analytics_answer_with_evidence_items_pushes_summary_scope_frame() -> None:
@@ -298,9 +295,9 @@ def test_direct_analytics_answer_with_evidence_items_pushes_summary_scope_frame(
     assert active.frame_type == ContextFrameType.GENERIC
     assert active.items[0].selection_payload is not None
     assert active.items[0].selection_payload.selection_kind == "summary_scope"
-    session = build_query_context_for_worker(state)["active_query_session"]
-    assert session["query_result"]["surface_view"]["context"]["focus_type"] == "summary_scope"
-    assert session["query_result"]["items"][0]["id"] == "summary_scope"
+    worker_context = build_query_context_for_worker(state)
+    assert worker_context["active_query_surface"]["metadata"]["surface_context"]["focus_type"] == "summary_scope"
+    assert worker_context["active_query_surface"]["items"][0]["entity_id"] == "summary_scope"
 
 
 @pytest.mark.asyncio

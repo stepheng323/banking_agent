@@ -657,7 +657,13 @@ async def test_recent_domain_focus_is_injected_for_follow_up_binding() -> None:
         ),
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "services": {}, "redis_client": None},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "services": {},
+            "redis_client": None,
+        },
         "recursion_limit": 50,
     }
 
@@ -1197,7 +1203,13 @@ async def test_multilingual_frame_followup_uses_semantic_decision_not_english_ph
         ],
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "services": {}, "redis_client": None},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "services": {},
+            "redis_client": None,
+        },
         "recursion_limit": 50,
     }
 

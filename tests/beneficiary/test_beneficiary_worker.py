@@ -152,7 +152,10 @@ async def test_list_beneficiaries_zero_count_uses_natural_copy(monkeypatch) -> N
     )
 
     assert result.outcome == TransactionOutcome.OK
-    assert result.response == "You haven't saved any beneficiaries yet. They will automatically appear here when you choose to save a contact after a successful transfer."
+    assert (
+        result.response
+        == "You haven't saved any beneficiaries yet. They will automatically appear here when you choose to save a contact after a successful transfer."
+    )
     assert " 0 " not in f" {result.response} "
 
 

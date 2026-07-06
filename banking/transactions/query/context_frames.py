@@ -1,0 +1,211 @@
+"""Context frame translation for query domain."""
+
+from datetime import date
+from typing import Any
+
+from banking.transactions.query.contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
+from banking.transactions.query.grounding.frames import build_query_frame
+from banking.transactions.query.models.domain import (
+    QueryAnswerStrategy,
+    QueryExecutionContract,
+    QueryResult,
+    QueryResultItem,
+)
+
+
+def build_reasoner_context_from_frames(
+    active_frame: dict[str, Any] | None,
+    context_frames: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Project orchestrator context frames into query worker state properties."""
+    if not active_frame:
+        return {}
+
+    metadata = active_frame.get("metadata") or {}
+    contract = _restore_query_contract(metadata.get("query_contract"))
+    if contract is None:
+        return {}
+
+    surface_view = _surface_view_from_frame(active_frame)
+    query_items = [_query_item_from_surface_item(item) for item in surface_view.items]
+    answer_strategy = _answer_strategy_from_surface(surface_view.mode)
+
+    query_result = QueryResult(
+        summary_text=str(metadata.get("summary_text") or surface_view.lead_text or ""),
+        items=query_items,
+        has_more=bool(metadata.get("has_more")),
+        query_contract=contract,
+        surface_view=surface_view,
+        answer_strategy=answer_strategy,
+    )
+
+    query_frames = _query_frames_from_context_frames(context_frames or [active_frame])
+    if not query_frames:
+        query_frames = [
+            build_query_frame(query_contract=contract, result=query_result, turn_index=1).model_dump(mode="json")
+        ]
+
+    return {
+        "session_active": True,
+        "query_contract": contract.model_dump(mode="json"),
+        "query_result": query_result.model_dump(mode="json"),
+        "query_frames": query_frames,
+        "current_page": int(metadata.get("current_page") or 0),
+        "page_size": int(metadata.get("page_size") or 5),
+        "show_expanded": False,
+        "timestamp": active_frame.get("created_at_ts"),
+        "_query_session_source": "context_frame",
+    }
+
+
+def _query_frames_from_context_frames(frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    active_query_frames = [f for f in frames if _is_active_query_frame(f)]
+    query_frames: list[dict[str, Any]] = []
+
+    for turn_index, frame in enumerate(active_query_frames[-3:], 1):
+        metadata = frame.get("metadata") or {}
+        raw_query_frame = metadata.get("query_frame")
+        if isinstance(raw_query_frame, dict):
+            query_frames.append(raw_query_frame)
+            continue
+
+        contract = _restore_query_contract(metadata.get("query_contract"))
+        if contract is None:
+            continue
+
+        surface_view = _surface_view_from_frame(frame)
+        query_result = QueryResult(
+            summary_text=str(metadata.get("summary_text") or surface_view.lead_text or ""),
+            items=[_query_item_from_surface_item(item) for item in surface_view.items],
+            has_more=bool(metadata.get("has_more")),
+            query_contract=contract,
+            surface_view=surface_view,
+            answer_strategy=_answer_strategy_from_surface(surface_view.mode),
+        )
+        query_frames.append(
+            build_query_frame(query_contract=contract, result=query_result, turn_index=turn_index).model_dump(
+                mode="json"
+            )
+        )
+    return query_frames
+
+
+def _is_active_query_frame(frame: dict[str, Any]) -> bool:
+    metadata = frame.get("metadata") or {}
+    return metadata.get("source") == "query" and bool(metadata.get("query_contract"))
+
+
+def _restore_query_contract(raw: Any) -> QueryExecutionContract | None:
+    if isinstance(raw, QueryExecutionContract):
+        return raw
+    if isinstance(raw, dict):
+        try:
+            return QueryExecutionContract.model_validate(raw)
+        except Exception:
+            return None
+    return None
+
+
+def _surface_view_from_frame(frame: dict[str, Any]) -> SurfaceView:
+    metadata = frame.get("metadata") or {}
+    raw_mode = metadata.get("surface_mode")
+    try:
+        mode = SurfaceViewMode(str(raw_mode))
+    except ValueError:
+        mode = SurfaceViewMode.TRANSACTION_LIST
+
+    items: list[SurfaceItemView] = []
+    for idx, entity in enumerate(frame.get("items", []), 1):
+        entity_payload = entity.get("selection_payload")
+        if isinstance(entity_payload, dict):
+            try:
+                payload = SelectionPayload.model_validate(entity_payload)
+            except Exception:
+                payload = _fallback_payload(entity, idx)
+        elif isinstance(entity_payload, SelectionPayload):
+            payload = entity_payload
+        else:
+            payload = _fallback_payload(entity, idx)
+
+        entity_data = entity.get("data") or {}
+        amount = _float_or_none(entity_data.get("amount"))
+        count = _int_or_none(entity_data.get("count"))
+        items.append(
+            SurfaceItemView(
+                id=str(entity.get("entity_id") or payload.entity_id or idx),
+                label=entity.get("label") or payload.label,
+                amount=amount,
+                count=count,
+                payload=payload,
+                metadata=dict(entity_data),
+            )
+        )
+
+    context = metadata.get("surface_context")
+    return SurfaceView(
+        mode=mode,
+        items=items,
+        lead_text=str(metadata.get("lead_text") or "") or None,
+        context=context if isinstance(context, dict) else {},
+    )
+
+
+def _fallback_payload(entity: dict[str, Any], idx: int) -> SelectionPayload:
+    return SelectionPayload(
+        selection_kind="referent",
+        entity_type=entity.get("entity_type", "generic"),
+        entity_id=entity.get("entity_id"),
+        label=entity.get("label") or f"Result {idx}",
+    )
+
+
+def _query_item_from_surface_item(item: SurfaceItemView) -> QueryResultItem:
+    metadata = dict(item.metadata)
+    return QueryResultItem(
+        id=item.id,
+        description=item.label,
+        amount=float(item.amount or 0.0),
+        date=_date_from_metadata(metadata),
+        metadata=metadata,
+    )
+
+
+def _date_from_metadata(metadata: dict[str, Any]) -> date:
+    for key in ("date", "transaction_date", "created_at"):
+        raw = metadata.get(key)
+        if isinstance(raw, date):
+            return raw
+        if isinstance(raw, str):
+            try:
+                return date.fromisoformat(raw[:10])
+            except ValueError:
+                continue
+    return date.today()
+
+
+def _answer_strategy_from_surface(mode: SurfaceViewMode) -> QueryAnswerStrategy:
+    if mode == SurfaceViewMode.DIRECT_ANSWER:
+        return QueryAnswerStrategy.DIRECT_ANSWER
+    if mode == SurfaceViewMode.GROUPED_SUMMARY:
+        return QueryAnswerStrategy.SUMMARY_LIST
+    if mode == SurfaceViewMode.CLARIFICATION:
+        return QueryAnswerStrategy.CLARIFY
+    return QueryAnswerStrategy.TRANSACTION_LIST
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

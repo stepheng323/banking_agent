@@ -55,6 +55,12 @@ def _compact_query_session_patch(patch: dict[str, Any] | None) -> dict[str, Any]
         "page_size",
         "show_expanded",
         "timestamp",
+        "account_id",
+        "account_ids",
+        "cache_fingerprint",
+        "cache_scope_fingerprint",
+        "cache_window_start",
+        "cache_window_end",
     }
     compact: dict[str, Any] = {}
     for key in allowed:
@@ -91,7 +97,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         "language": _state_locale(ctx.state),
         "inbound_message_id": turn.last_message_id,
         "turn_id": turn.last_message_id,
-        "stashed_query_session": turn.stashed_query_session,
+        "pending_query_clarification": turn.pending_query_clarification,
         "progress_tracker": ctx.dependencies.progress_tracker,
         **build_query_context_for_worker(ctx.state),
     }
@@ -105,8 +111,9 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
     )
 
     _apply_result_patch(task, result)
-    if turn.has_stashed_query_session:
-        ctx.accumulator.clear_stashed_query_session()
+    if turn.has_pending_query_clarification:
+        ctx.accumulator.clear_pending_query_clarification()
+
     handoff_payload = None
     followup_referent: FocusedReferent | dict[str, Any] | None = None
     if result.patch and isinstance(result.patch, dict):
@@ -151,7 +158,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
             transfer_payload.setdefault("message", turn.last_message_text_or("Resend the selected transaction"))
             transfer_payload.setdefault("skip_extraction", True)
 
-            tasks = ctx.accumulator.get_tasks(task_map(ctx.state))
+            tasks = dict(ctx.accumulator.get_tasks(task_map(ctx.state)))
             transfer_task_id = _next_query_handoff_transfer_task_id(tasks)
             tasks[transfer_task_id] = TaskSpec(
                 id=transfer_task_id,
@@ -172,7 +179,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
         compact_session = _compact_query_session_patch(result.patch)
         if compact_session is not None:
-            ctx.accumulator.set_stashed_query_session(compact_session)
+            ctx.accumulator.set_pending_query_clarification(compact_session)
         set_task_stage(task, TaskStage.EXTRACTED)
         if result.response:
             ctx.accumulator.add_prompt(result.response, task_id)

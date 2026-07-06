@@ -1,4 +1,4 @@
-"""Query session snapshot helpers for planner context construction."""
+"""Query surface snapshot helpers for planner context construction."""
 from typing import Any, Protocol
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
@@ -37,7 +37,7 @@ class QuerySessionStateView(Protocol):
     def phone_number(self) -> str: ...
 
     @property
-    def stashed_query_session(self) -> dict[str, Any] | None: ...
+    def pending_query_clarification(self) -> dict[str, Any] | None: ...
 
     @property
     def context_frames(self) -> list[ContextFrame]: ...
@@ -48,6 +48,7 @@ async def _load_query_session_snapshot(
     *,
     snapshot_logger: Any | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
+    """Project the canonical query context frame, with compact stashed compatibility fallback."""
     query_session_snapshot: dict[str, Any] | None = None
     query_session_source: str | None = None
 
@@ -58,9 +59,9 @@ async def _load_query_session_snapshot(
             query_session_snapshot["active_query_surface"] = active_query_surface
             query_session_source = "context_frame"
 
-    if query_session_snapshot is None and isinstance(state_view.stashed_query_session, dict):
-        query_session_snapshot = _compact_stashed_compat_snapshot(state_view.stashed_query_session)
-        query_session_source = "stashed_compat"
+    if query_session_snapshot is None and isinstance(state_view.pending_query_clarification, dict):
+        query_session_snapshot = _pending_clarification_snapshot(state_view.pending_query_clarification)
+        query_session_source = "pending_clarification"
         if is_query_session_stale(query_session_snapshot):
             query_session_snapshot["session_active"] = False
 
@@ -79,9 +80,11 @@ async def _load_query_session_snapshot(
     return query_session_snapshot, query_session_source
 
 
-def _compact_stashed_compat_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """Drop legacy successful-result state from checkpoint-stashed query compatibility data."""
-    return {key: value for key, value in snapshot.items() if key in _STASHED_COMPAT_KEYS}
+def _pending_clarification_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Build an active query snapshot from first-class pending clarification state."""
+    compact = {key: value for key, value in snapshot.items() if key in _STASHED_COMPAT_KEYS}
+    compact["session_active"] = True
+    return compact
 
 
 def _query_session_summary_text(query_session_snapshot: dict[str, Any] | None) -> tuple[str | None, bool]:

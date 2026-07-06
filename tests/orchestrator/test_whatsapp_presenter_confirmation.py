@@ -101,12 +101,7 @@ async def test_whatsapp_presenter_confirmation_prefers_body_blocks() -> None:
 
     body = client.flow_calls[0]["flow_config"]["text_body"]
     assert body == (
-        "Total: ₦60,000\n\n"
-        "Funding from:\n"
-        "• Access Bank: ₦30,000\n"
-        "• GTBank: ₦30,000\n\n"
-        "₦30,000 → Mom\n"
-        "Wema • 8067892221"
+        "Total: ₦60,000\n\nFunding from:\n• Access Bank: ₦30,000\n• GTBank: ₦30,000\n\n₦30,000 → Mom\nWema • 8067892221"
     )
     assert "dense fallback" not in body
 

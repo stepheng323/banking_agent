@@ -224,7 +224,9 @@ async def test_plan_tasks_caps_large_context_before_planner_call() -> None:
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {},
             "redis_client": None,
         },
@@ -272,7 +274,9 @@ async def test_plan_tasks_skips_full_context_for_lightweight_turns() -> None:
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {},
             "redis_client": None,
         },
@@ -317,7 +321,9 @@ async def test_plan_tasks_marks_guardrail_transfer_handoff_for_transfer_only_pro
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {},
             "redis_client": None,
         },
@@ -361,7 +367,9 @@ async def test_plan_tasks_marks_narrow_transfer_interrupt_for_transfer_only_prom
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {},
             "redis_client": None,
         },
@@ -419,7 +427,9 @@ async def test_plan_tasks_trims_user_state_for_narrow_transfer_replan() -> None:
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {},
             "redis_client": None,
         },
@@ -467,7 +477,9 @@ async def test_plan_tasks_uses_compact_context_for_mixed_transaction_turns() -> 
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {},
             "redis_client": None,
         },
@@ -531,7 +543,9 @@ async def test_plan_tasks_keeps_context_for_referential_followups() -> None:
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {},
             "redis_client": None,
         },

@@ -1,5 +1,6 @@
 """Saved-beneficiary and recipient-memory helpers for transfer resolution."""
 
+import html
 from typing import Any
 
 from banking.presentation.i18n.renderer import render_message
@@ -219,14 +220,15 @@ def build_beneficiary_clarify_result(
 
         primary_name = candidate.account_name or candidate.alias or "Unknown Name"
 
-        display_name_html = f"<b>{primary_name}</b>"
+        escaped_primary = html.escape(primary_name)
+        display_name_html = f"<b>{escaped_primary}</b>"
         if candidate.alias and candidate.account_name and candidate.alias.lower() != candidate.account_name.lower():
             if primary_name == candidate.account_name:
-                display_name_html += f" (Alias: {candidate.alias})"
+                display_name_html += f" (Alias: {html.escape(candidate.alias)})"
             else:
-                display_name_html += f" ({candidate.account_name})"
+                display_name_html += f" ({html.escape(candidate.account_name)})"
 
-        bank_details = f"{candidate.bank_name} • ****{str(candidate.account_number)[-4:]}"
+        bank_details = f"{html.escape(candidate.bank_name or '')} • ****{str(candidate.account_number)[-4:]}"
 
         body_label = f"{display_name_html} • {bank_details}"
         fallback_label = f"{primary_name} • {candidate.bank_name} • ****{str(candidate.account_number)[-4:]}"

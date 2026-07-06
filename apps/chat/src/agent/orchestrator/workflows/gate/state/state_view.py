@@ -106,12 +106,13 @@ class GateStateView:
         return loaded_context if isinstance(loaded_context, dict) else {}
 
     @property
-    def stashed_query_session(self) -> dict[str, Any] | None:
-        return self.state.stashed_query_session
-
-    @property
     def stashed_sessions(self) -> list[dict[str, Any]]:
         return list(self.state.stashed_sessions)
+
+    @property
+    def pending_query_clarification(self) -> dict[str, Any] | None:
+        pending_query_clarification = self.state.pending_query_clarification
+        return pending_query_clarification if isinstance(pending_query_clarification, dict) else None
 
     @property
     def has_stashed_sessions(self) -> bool:

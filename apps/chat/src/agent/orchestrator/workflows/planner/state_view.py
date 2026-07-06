@@ -209,8 +209,9 @@ class PlannerStateView:
         return self.raw_expected_transaction_executors == ("transfer",)
 
     @property
-    def stashed_query_session(self) -> dict[str, Any] | None:
-        return self.state.stashed_query_session
+    def pending_query_clarification(self) -> dict[str, Any] | None:
+        pending_query_clarification = self.state.pending_query_clarification
+        return pending_query_clarification if isinstance(pending_query_clarification, dict) else None
 
 
 def planner_state_view(state: OrchestratorState) -> PlannerStateView:

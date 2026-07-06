@@ -154,9 +154,9 @@ class InterruptStateView:
         return list(self.state.stashed_sessions)
 
     @property
-    def stashed_query_session(self) -> dict[str, Any] | None:
-        stashed_query_session = self.state.stashed_query_session
-        return stashed_query_session if isinstance(stashed_query_session, dict) else None
+    def pending_query_clarification(self) -> dict[str, Any] | None:
+        pending_query_clarification = self.state.pending_query_clarification
+        return pending_query_clarification if isinstance(pending_query_clarification, dict) else None
 
     @property
     def preplanner_expected_transaction_executors(self) -> list[str]:

@@ -1,7 +1,6 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import is_contextual_casual_followup_turn
-from apps.chat.src.agent.orchestrator.guardrails.cancellation import clear_query_session
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
     _is_query_domain_request,
     _is_structural_query_domain_request,
@@ -28,12 +27,6 @@ from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 logger = get_logger(__name__)
 
 
-def _has_active_query_session(ctx: GateContext) -> bool:
-    return bool(
-        (isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"))
-        or ctx.state_view.has_session_for_domain("query")
-        or ctx.state_view.active_domain == "query"
-    )
 
 
 def _has_query_session_stack(ctx: GateContext) -> bool:
@@ -118,13 +111,17 @@ def _maybe_direct_context_recap(ctx: GateContext) -> dict[str, Any] | None:
     return None
 
 
-def _maybe_query_followup_bypass(ctx: GateContext) -> dict[str, Any] | None:
+async def _maybe_query_followup_bypass(ctx: GateContext) -> dict[str, Any] | None:
     if not ctx.live_pending_interrupt and not ctx.state_view.has_quote:
         bypass_reason, bypass_detail = _query_followup_bypass_reason(
             message_text=ctx.message_text,
             locale=ctx.current_locale,
-            query_session_snapshot=ctx.query_session_snapshot if isinstance(ctx.query_session_snapshot, dict) else None,
+            has_active_query_session=await ctx.has_active_query_session(),
             has_context_frames=ctx.state_view.has_context_frames,
+            is_pending_clarification=bool(
+                isinstance(ctx.query_session_snapshot, dict)
+                and ctx.query_session_snapshot.get("pending_clarification")
+            ),
         )
         if bypass_reason is not None:
             logger.info(
@@ -237,10 +234,8 @@ async def _maybe_source_aware_transfer_route(ctx: GateContext) -> dict[str, Any]
 async def _query_session_exit_updates_if_needed(ctx: GateContext) -> dict[str, Any]:
     if not await ctx.has_active_query_session():
         return {}
-    await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
     return _build_query_session_exit_updates(
         ctx.state,
-        query_session_snapshot=ctx.query_session_snapshot,
     )
 
 
@@ -344,7 +339,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
     await ctx.ensure_turn_summary()
     assert ctx.turn_summary is not None  # noqa: S101 – ensured by ensure_turn_summary
 
-    has_active_query_session = _has_active_query_session(ctx)
+    has_active_query_session = await ctx.has_active_query_session()
     has_query_session_stack = _has_query_session_stack(ctx)
     log_orchestrator_diagnostic(
         logger,
@@ -375,7 +370,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
             query_session_source=ctx.query_session_source,
         )
         return None
-    if updates := _maybe_query_followup_bypass(ctx):
+    if updates := await _maybe_query_followup_bypass(ctx):
         return updates
 
     can_consider_query_domain = _can_consider_query_domain(ctx, has_active_query_session=has_active_query_session)

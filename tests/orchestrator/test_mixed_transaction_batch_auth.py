@@ -852,7 +852,10 @@ async def test_expired_transaction_confirmation_interrupt_resets_session_and_rep
             )
         ]
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -905,7 +908,10 @@ async def test_expired_transaction_confirmation_continuation_gets_standard_respo
             tasks=[],
         )
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -2343,7 +2349,9 @@ async def test_pending_action_edit_ambiguity_blocks_account_switch_router() -> N
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {
                 "transfer": _TransferNeedsConfirmationWorker(),
                 "airtime": _AirtimeNeedsConfirmationWorker(),
@@ -2403,7 +2411,15 @@ async def test_pending_action_edit_ambiguity_blocks_same_flow_switch_router() ->
             reason="old router misclassified edit as same-flow switch",
         ),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "services": {}}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "services": {},
+        },
+        "recursion_limit": 50,
+    }
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -3763,7 +3779,9 @@ async def test_pending_add_task_semantic_route_uses_fresh_instruction_context_on
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {
                 "transfer": _TransferNeedsConfirmationWorker(),
                 "airtime": _AirtimeNeedsConfirmationWorker(),
@@ -4574,7 +4592,9 @@ async def test_cancelled_mixed_flow_then_fresh_self_airtime_reuses_context_phone
 
     plan_config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {
                 "transfer": _TransferNeedsInputWorker(),
                 "airtime": _AirtimeNeedsConfirmationWorker(),
@@ -4620,7 +4640,9 @@ async def test_cancelled_mixed_flow_then_fresh_self_airtime_reuses_context_phone
     )
     execution_config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {"airtime": airtime_worker},
             "redis_client": None,
         },

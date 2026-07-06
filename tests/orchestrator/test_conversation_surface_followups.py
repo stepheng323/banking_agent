@@ -2275,10 +2275,6 @@ async def test_gate_context_frame_replay_applies_structured_modifier_extraction(
         phone_number="2348000000025",
         channel="whatsapp",
         last_message_text="Encore avec dix mille depuis gtb pour loyer",
-        stashed_query_session={
-            "session_active": False,
-            "query_result": {"summary_text": "Recent transaction results are still open."},
-        },
         loaded_context={
             "transaction_accounts": [
                 {

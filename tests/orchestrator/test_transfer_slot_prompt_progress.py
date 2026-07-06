@@ -1269,7 +1269,6 @@ async def test_multi_transfer_fanout_task_ids_keep_all_recipients_in_confirmatio
     assert "Tolu" in confirmation_entry["summary"]
 
 
-
 async def test_batch_confirmation_strips_name_mismatch_warning_line() -> None:
     warning = "You asked to send to Tolu, but the account resolved as TOLU ADEDAYO."
     state = OrchestratorState(

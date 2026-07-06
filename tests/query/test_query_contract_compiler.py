@@ -140,8 +140,6 @@ def test_explicit_beneficiary_summary_extraction_compiles_count_ranking() -> Non
     assert query_ir.time_range.end == today
 
 
-
-
 def test_intent_beneficiary_hint_compiles_to_beneficiary_summary() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
@@ -185,8 +183,6 @@ def test_incoming_beneficiary_hint_compiles_to_amount_ranked_grouped_summary() -
     assert contract.aggregation is not None
     assert contract.aggregation.sort_by == "amount"
     assert contract.result_limit is None
-
-
 
 
 def test_explicit_amount_ranked_beneficiary_summary_compiles_amount_sort() -> None:
@@ -639,10 +635,6 @@ def test_recipient_queries_compile_to_counterparty_filter() -> None:
     assert contract.answer_fact_field == "date"
 
 
-
-
-
-
 def test_request_shape_fact_overrides_grouped_summary_without_keyword_recovery() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 28)
@@ -740,8 +732,6 @@ def test_explicit_top_senders_query_does_not_compile_to_single_result_limit() ->
     assert contract.result_limit is None
 
 
-
-
 def test_counterparty_placeholder_is_ignored_for_sender_fact_queries() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
@@ -821,8 +811,6 @@ def test_typed_fact_query_kind_compiles_to_answer_fact_field(
     assert query_ir.answer_fact_field == expected
 
 
-
-
 def test_existence_request_shape_compiles_to_direct_sum_query() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 28)
@@ -843,8 +831,6 @@ def test_existence_request_shape_compiles_to_direct_sum_query() -> None:
     assert query_ir.filters.counterparty == ["Mum"]
     assert query_ir.filters.transaction_type == "debit"
     assert contract.request_shape == "existence"
-
-
 
 
 def test_spending_by_account_overrides_wrong_extracted_category_grouping() -> None:

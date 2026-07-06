@@ -1,8 +1,38 @@
+import time
+
+from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.read_only_response import (
     classify_read_only_response_class,
     classify_read_only_response_shape,
     is_surface_response_class,
 )
+
+
+def _query_context_frames() -> list[ContextFrame]:
+    return [
+        ContextFrame(
+            frame_id="query-surface",
+            frame_type=ContextFrameType.TRANSACTION_LIST,
+            items=[
+                ContextEntity(
+                    entity_type=EntityType.TRANSACTION,
+                    entity_id="txn-1",
+                    label="Transaction",
+                )
+            ],
+            created_at_ts=int(time.time()),
+            metadata={
+                "source": "query",
+                "query_contract": {
+                    "intent": "transaction_list",
+                    "time_start": "2026-03-01",
+                    "time_end": "2026-03-31",
+                    "timezone": "Africa/Lagos",
+                },
+                "surface_mode": "transaction_list",
+            },
+        )
+    ]
 
 
 def test_response_classifies_fact_status_turn() -> None:
@@ -39,7 +69,7 @@ def test_response_classifies_query_more_as_surface_pagination() -> None:
     response_class = classify_read_only_response_class(
         "More",
         loaded_context={"language": "en"},
-        query_session_snapshot={"session_active": True},
+        context_frames=_query_context_frames(),
     )
     assert response_class == "SURFACE_PAGINATED"
     assert is_surface_response_class(response_class) is True
@@ -49,7 +79,7 @@ def test_response_classifies_query_receipt_as_surface_actionable() -> None:
     response_class = classify_read_only_response_class(
         "receipt",
         loaded_context={"language": "en"},
-        query_session_snapshot={"session_active": True},
+        context_frames=_query_context_frames(),
     )
     assert response_class == "SURFACE_ACTIONABLE"
     assert is_surface_response_class(response_class) is True
@@ -59,7 +89,7 @@ def test_response_does_not_heuristically_classify_show_me_active_query_followup(
     response_class = classify_read_only_response_class(
         "show me",
         loaded_context={"language": "en"},
-        query_session_snapshot={"session_active": True},
+        context_frames=_query_context_frames(),
     )
     assert response_class is None
 

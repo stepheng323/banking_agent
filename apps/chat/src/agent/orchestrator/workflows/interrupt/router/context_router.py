@@ -51,8 +51,8 @@ def _build_interrupt_context_details(
     state_view = interrupt_state_view(state)
     summary, _ = get_or_build_turn_context_summary(
         state,
-        query_session_snapshot=state_view.stashed_query_session,
-        query_session_source="stashed_compat" if state_view.stashed_query_session is not None else None,
+        query_session_snapshot=state_view.pending_query_clarification,
+        query_session_source="pending_clarification" if state_view.pending_query_clarification is not None else None,
         path_label="interrupt_path",
     )
     active_task_state = _build_active_task_router_state(

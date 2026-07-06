@@ -27,25 +27,25 @@ class UnitOfWork:
     """Manages database transactions and repositories (Async)."""
 
     def __init__(self) -> None:
-        self.db: AsyncSession | None = None
-        self.users: UserRepository | None = None
-        self.accounts: AccountRepository | None = None
-        self.beneficiaries: BeneficiaryRepository | None = None
-        self.transactions: TransactionRepository | None = None
-        self.transaction_debit_steps: TransactionDebitStepRepository | None = None
-        self.funded_transfers: FundedTransferRepository | None = None
-        self.funding_steps: FundingStepRepository | None = None
-        self.scheduled_instructions: ScheduledInstructionRepository | None = None
-        self.scheduled_runs: ScheduledRunRepository | None = None
-        self.actionable_messages: ActionableMessageRepository | None = None
-        self.bank_transactions: BankTransactionRepository | None = None
-        self.bank_transaction_coverages: BankTransactionCoverageRepository | None = None
-        self.processed_webhook_events: ProcessedWebhookEventRepository | None = None
-        self.support_tickets: SupportTicketRepository | None = None
-        self.risk_decisions: RiskDecisionRepository | None = None
-        self.ledger_accounts: LedgerAccountRepository | None = None
-        self.ledger_entries: LedgerEntryRepository | None = None
-        self.ledger_reconciliation: LedgerReconciliationRepository | None = None
+        self.db: AsyncSession = None  # type: ignore[assignment]
+        self.users: UserRepository = None  # type: ignore[assignment]
+        self.accounts: AccountRepository = None  # type: ignore[assignment]
+        self.beneficiaries: BeneficiaryRepository = None  # type: ignore[assignment]
+        self.transactions: TransactionRepository = None  # type: ignore[assignment]
+        self.transaction_debit_steps: TransactionDebitStepRepository = None  # type: ignore[assignment]
+        self.funded_transfers: FundedTransferRepository = None  # type: ignore[assignment]
+        self.funding_steps: FundingStepRepository = None  # type: ignore[assignment]
+        self.scheduled_instructions: ScheduledInstructionRepository = None  # type: ignore[assignment]
+        self.scheduled_runs: ScheduledRunRepository = None  # type: ignore[assignment]
+        self.actionable_messages: ActionableMessageRepository = None  # type: ignore[assignment]
+        self.bank_transactions: BankTransactionRepository = None  # type: ignore[assignment]
+        self.bank_transaction_coverages: BankTransactionCoverageRepository = None  # type: ignore[assignment]
+        self.processed_webhook_events: ProcessedWebhookEventRepository = None  # type: ignore[assignment]
+        self.support_tickets: SupportTicketRepository = None  # type: ignore[assignment]
+        self.risk_decisions: RiskDecisionRepository = None  # type: ignore[assignment]
+        self.ledger_accounts: LedgerAccountRepository = None  # type: ignore[assignment]
+        self.ledger_entries: LedgerEntryRepository = None  # type: ignore[assignment]
+        self.ledger_reconciliation: LedgerReconciliationRepository = None  # type: ignore[assignment]
         self._rolled_back = False
 
     async def __aenter__(self):

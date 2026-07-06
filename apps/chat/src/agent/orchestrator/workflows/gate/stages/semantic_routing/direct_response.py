@@ -18,7 +18,6 @@ from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
     build_cancellation_reset_updates,
     cancelled_message,
     clarify_message,
-    clear_query_session,
     has_cancelable_state,
 )
 from apps.chat.src.agent.orchestrator.presentation.conversational_style import (
@@ -160,21 +159,13 @@ async def _handle_semantic_direct_response(
             )
             text = render_message(fallback_key, locale)
 
-    had_pending_query_clarification = bool(
-        isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("pending_clarification")
-    )
     if had_active_query_session:
-        await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
         updates.update(
             _build_query_session_exit_updates(
                 ctx.state,
-                query_session_snapshot=ctx.query_session_snapshot,
             )
         )
-        logger.info(
-            "gate_query_session_exited_on_direct_reply",
-            had_pending_clarification=had_pending_query_clarification,
-        )
+        logger.info("gate_query_session_exited_on_direct_reply")
     logger.info(
         "gate_semantic_router_direct_response",
         decision=canonical_decision,

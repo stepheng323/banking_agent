@@ -118,7 +118,7 @@ def has_cancelable_state(state: OrchestratorState) -> bool:
         return True
     if state.active_domain:
         return True
-    if state.stashed_query_session is not None:
+    if state.pending_query_clarification is not None:
         return True
     if state.stashed_sessions:
         return True
@@ -148,7 +148,7 @@ async def build_cancellation_reset_updates(
         "task_results": {},
         "session_stack": [],
         "active_domain": None,
-        "stashed_query_session": None,
+        "pending_query_clarification": None,
         "stashed_sessions": [],
         "planner_output": None,
         "normalized_instruction": None,

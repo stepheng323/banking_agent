@@ -221,8 +221,7 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] 
         return None
 
     await ctx.ensure_turn_summary()
-    if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("pending_clarification"):
-        return None
+
 
     support_context = await _support_context_summary(ctx)
     has_grounded_context = bool(

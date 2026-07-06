@@ -49,7 +49,53 @@ from banking.transactions.query.models.extraction import (
 )
 
 
-async def test_load_query_session_snapshot_uses_compact_stash_when_no_context_frame() -> None:
+def _pending_query_clarification_snapshot(*, timestamp: float | None = None) -> dict[str, object]:
+    return {
+        "session_active": True,
+        "timestamp": timestamp if timestamp is not None else time.time(),
+        "pending_clarification": {
+            "original_query": "How much did I spend last?",
+            "resolver_message": "Which period did you mean?",
+        },
+        "query_contract": {
+            "intent": "analytics_summary",
+            "time_start": "2026-03-01",
+            "time_end": "2026-03-31",
+            "timezone": "Africa/Lagos",
+        },
+    }
+
+
+def _query_surface_frame(*, summary_text: str = "Netflix was ₦5,000.") -> ContextFrame:
+    contract = QueryExecutionContract.from_query_ir(
+        QueryIR(
+            intent=QueryIntent.TRANSACTION_SEARCH,
+            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 28)),
+            result_limit=1,
+        )
+    )
+    return ContextFrame(
+        frame_id="query_surface_1",
+        frame_type=ContextFrameType.TRANSACTION_DETAIL,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="txn-1",
+                label="Netflix",
+            )
+        ],
+        created_at_ts=int(time.time()),
+        metadata={
+            "source": "query",
+            "surface_mode": "direct_answer",
+            "summary_text": summary_text,
+            "query_contract": contract.model_dump(mode="json"),
+            "surface_context": {"mode": "direct_answer", "type": "single_transaction"},
+        },
+    )
+
+
+async def test_load_query_session_snapshot_uses_pending_clarification_when_no_context_frame() -> None:
     class _Redis:
         async def get(self, key: str) -> str:
             raise AssertionError(f"Redis should not be queried for planner session state: {key}")
@@ -58,12 +104,12 @@ async def test_load_query_session_snapshot_uses_compact_stash_when_no_context_fr
         user_id="u_ctx_stashed",
         phone_number="2348000000301",
         channel="whatsapp",
-        stashed_query_session={"session_active": True, "query_result": {"summary_text": "stashed"}},
+        pending_query_clarification=_pending_query_clarification_snapshot(),
     )
 
     snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
 
-    assert source == "stashed_compat"
+    assert source == "pending_clarification"
     assert snapshot is not None
     assert snapshot["session_active"] is True
     assert "query_result" not in snapshot
@@ -78,7 +124,6 @@ async def test_load_query_session_snapshot_ignores_redis_when_no_orchestrator_co
         user_id="u_ctx_no_redis",
         phone_number="2348000000301",
         channel="whatsapp",
-        stashed_query_session=None,
     )
 
     snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
@@ -87,34 +132,7 @@ async def test_load_query_session_snapshot_ignores_redis_when_no_orchestrator_co
     assert snapshot is None
 
 
-async def test_load_query_session_snapshot_prefers_context_frame_over_stashed() -> None:
-    contract = QueryExecutionContract.from_query_ir(
-        QueryIR(
-            intent=QueryIntent.TRANSACTION_SEARCH,
-            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 28)),
-            result_limit=1,
-        )
-    )
-    frame = ContextFrame(
-        frame_id="query_surface_1",
-        frame_type=ContextFrameType.TRANSACTION_DETAIL,
-        items=[
-            ContextEntity(
-                entity_type=EntityType.TRANSACTION,
-                entity_id="txn-1",
-                label="Netflix",
-            )
-        ],
-        created_at_ts=int(time.time()),
-        metadata={
-            "source": "query",
-            "surface_mode": "direct_answer",
-            "summary_text": "Netflix was ₦5,000.",
-            "query_contract": contract.model_dump(mode="json"),
-            "surface_context": {"mode": "direct_answer", "type": "single_transaction"},
-        },
-    )
-
+async def test_load_query_session_snapshot_prefers_context_frame_over_pending_clarification() -> None:
     class _Redis:
         async def get(self, key: str) -> str:
             raise AssertionError(f"Redis should not be queried for planner session state: {key}")
@@ -123,8 +141,8 @@ async def test_load_query_session_snapshot_prefers_context_frame_over_stashed() 
         user_id="u_ctx_frame",
         phone_number="2348000000301",
         channel="whatsapp",
-        context_frames=[frame],
-        stashed_query_session={"session_active": True, "query_result": {"summary_text": "stashed"}},
+        context_frames=[_query_surface_frame()],
+        pending_query_clarification=_pending_query_clarification_snapshot(),
     )
 
     snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
@@ -134,7 +152,7 @@ async def test_load_query_session_snapshot_prefers_context_frame_over_stashed() 
     assert snapshot["query_result"]["summary_text"] == "Netflix was ₦5,000."
 
 
-async def test_load_query_session_snapshot_no_longer_prefers_redis_then_stashed() -> None:
+async def test_load_query_session_snapshot_no_longer_prefers_redis() -> None:
     class _Redis:
         async def get(self, key: str) -> str:
             assert key == "query:session:2348000000301"
@@ -144,15 +162,12 @@ async def test_load_query_session_snapshot_no_longer_prefers_redis_then_stashed(
         user_id="u_ctx_redis",
         phone_number="2348000000301",
         channel="whatsapp",
-        stashed_query_session={"session_active": True, "query_result": {"summary_text": "stashed"}},
     )
 
     snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
 
-    assert source == "stashed_compat"
-    assert snapshot is not None
-    assert snapshot["session_active"] is True
-    assert "query_result" not in snapshot
+    assert source is None
+    assert snapshot is None
 
 
 def test_compact_payload_for_prompt_serializes_decimal_amounts() -> None:
@@ -180,7 +195,6 @@ async def test_load_query_session_snapshot_ignores_stale_redis_session() -> None
         user_id="u_ctx_redis_stale",
         phone_number="2348000000306",
         channel="whatsapp",
-        stashed_query_session=None,
     )
 
     snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
@@ -190,21 +204,17 @@ async def test_load_query_session_snapshot_ignores_stale_redis_session() -> None
 
 
 @pytest.mark.asyncio
-async def test_load_query_session_snapshot_marks_stale_stashed_session_inactive() -> None:
+async def test_load_query_session_snapshot_marks_stale_pending_clarification_inactive() -> None:
     state = OrchestratorState(
         user_id="u_ctx_stashed_stale",
         phone_number="2348000000307",
         channel="whatsapp",
-        stashed_query_session={
-            "session_active": True,
-            "timestamp": 0.0,
-            "query_result": {"summary_text": "You spent ₦4,000 yesterday."},
-        },
+        pending_query_clarification=_pending_query_clarification_snapshot(timestamp=time.time() - 301),
     )
 
     snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
 
-    assert source == "stashed_compat"
+    assert source == "pending_clarification"
     assert snapshot is not None
     assert snapshot["session_active"] is False
     assert "query_result" not in snapshot
@@ -226,25 +236,17 @@ async def test_load_query_session_snapshot_logs_session_shape(monkeypatch: pytes
         user_id="u_ctx_log_shape",
         phone_number="2348000000313",
         channel="whatsapp",
-        stashed_query_session={
-            "session_active": True,
-            "query_contract": {"intent": "analytics_summary"},
-            "query_result": {
-                "summary_text": "You spent ₦5,000 today.",
-                "surface_view": {"mode": "grouped_summary", "items": [], "context": {"type": "spending_total"}},
-            },
-            "query_frames": [{"frame_id": "qf_1"}],
-        },
+        pending_query_clarification=_pending_query_clarification_snapshot(),
     )
 
     snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
 
-    assert source == "stashed_compat"
+    assert source == "pending_clarification"
     assert snapshot is not None
     assert (
-        "planner_query_session_snapshot",
-        {
-            "query_session_source": "stashed_compat",
+            "planner_query_session_snapshot",
+            {
+            "query_session_source": "pending_clarification",
             "session_active": True,
             "has_query_contract": True,
             "has_query_result": False,
@@ -272,30 +274,22 @@ async def test_load_query_session_snapshot_logs_typed_surface_shape_without_lega
         user_id="u_ctx_log_typed_surface",
         phone_number="2348000000314",
         channel="whatsapp",
-        stashed_query_session={
-            "session_active": True,
-            "query_contract": {"intent": "analytics_summary"},
-            "query_result": {
-                "summary_text": "You spent ₦5,000 today.",
-                "surface_view": {"mode": "grouped_summary", "items": [], "context": {}},
-            },
-            "query_frames": [{"frame_id": "qf_1"}],
-        },
+        context_frames=[_query_surface_frame(summary_text="Typed surface")],
     )
 
     snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
 
-    assert source == "stashed_compat"
+    assert source == "context_frame"
     assert snapshot is not None
     assert (
-        "planner_query_session_snapshot",
-        {
-            "query_session_source": "stashed_compat",
+            "planner_query_session_snapshot",
+            {
+            "query_session_source": "context_frame",
             "session_active": True,
             "has_query_contract": True,
-            "has_query_result": False,
-            "has_surface": False,
-            "has_query_frames": False,
+            "has_query_result": True,
+            "has_surface": True,
+            "has_query_frames": True,
         },
     ) in events
 

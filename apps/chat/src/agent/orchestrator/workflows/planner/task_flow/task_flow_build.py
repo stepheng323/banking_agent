@@ -11,9 +11,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_limi
 from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_postprocessing import (
     _postprocess_planner_tasks_with_quality,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_query_session import (
-    _stash_query_session_for_transaction_switch,
-)
 from shared.types.planner import PlannerOutput
 
 
@@ -40,7 +37,7 @@ async def _build_planner_task_updates(
             "planner_output": planner_output,
             "new_tasks": {},
             "waves": [],
-            "stashed_query_session_update": None,
+            "pending_query_clarification_update": None,
             "capability_block_response": capability_policy_notice,
             "capability_policy_notice": None,
             "planner_quality_report": planner_quality_report,
@@ -54,11 +51,6 @@ async def _build_planner_task_updates(
         batch_limit_updates["planner_quality_report"] = planner_quality_report
         return batch_limit_updates
 
-    stashed_query_session_update = _stash_query_session_for_transaction_switch(
-        query_session_source=query_session_source,
-        query_session_snapshot=query_session_snapshot,
-        planned_tasks=planner_output.tasks,
-    )
     new_tasks, waves = build_task_specs_and_waves_from_plan_items(
         planner_output.tasks,
         text,
@@ -67,11 +59,12 @@ async def _build_planner_task_updates(
         strip_transfer_recipient_suffix=True,
         format_narration_requires_recipient_field=False,
     )
+    del query_session_source, query_session_snapshot
     return {
         "planner_output": planner_output,
         "new_tasks": new_tasks,
         "waves": waves,
-        "stashed_query_session_update": stashed_query_session_update,
+        "pending_query_clarification_update": None,
         "capability_policy_notice": capability_policy_notice,
         "planner_quality_report": planner_quality_report,
     }

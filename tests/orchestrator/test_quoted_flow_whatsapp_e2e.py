@@ -222,7 +222,9 @@ async def test_quoted_replay_single_executes_as_direct_transfer_task() -> None:
         state,
         {
             "configurable": {
-                "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+                "task_planner": planner,
+                "semantic_router_llm": planner,
+                "capability_classifier_llm": planner,
                 "redis_client": None,
                 "actionable_message_repo": _InMemoryActionableRepo(store),
             }
@@ -307,7 +309,9 @@ async def test_quoted_replay_multi_executes_as_direct_domain_tasks() -> None:
         state,
         {
             "configurable": {
-                "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+                "task_planner": planner,
+                "semantic_router_llm": planner,
+                "capability_classifier_llm": planner,
                 "redis_client": None,
                 "actionable_message_repo": _InMemoryActionableRepo(store),
             }

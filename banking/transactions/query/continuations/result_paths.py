@@ -59,6 +59,28 @@ async def resolve_result_continuation_updates(
         **step._semantic_trace_updates(decision),
     }
 
+    if step._is_income_vs_spending_followup(message=state.get("message", ""), query_contract=session_query_contract):
+        new_filters = None
+        if session_query_contract and session_query_contract.filters:
+            new_filters = session_query_contract.filters.model_copy()
+            new_filters.transaction_type = None
+
+        updates["query_contract"] = rebuild_query_contract(
+            session_query_contract,
+            filters=new_filters,
+            merge_filters=False,
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            aggregation=Aggregation(type="breakdown", group_by="transaction_type"),
+            result_limit=None,
+            result_reference=None,
+            answer_fact_field=None,
+            continuation_type="aggregate",
+            continuation_delta_type=continuation_delta_type,
+        )
+        updates["current_page"] = 0
+        updates["show_expanded"] = False
+        return updates
+
     if cont_type == "show_more":
         if session_query_contract is None:
             return step._ambiguous_followup_updates(locale=locale, session=session)

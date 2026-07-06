@@ -74,12 +74,6 @@ def test_received_query_keeps_credit_filter() -> None:
     assert contract.filters.transaction_type == "credit"
 
 
-
-
-
-
-
-
 def test_non_aggregate_spend_phrase_stays_transaction_list() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 6)

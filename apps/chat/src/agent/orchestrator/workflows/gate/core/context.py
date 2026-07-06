@@ -45,6 +45,7 @@ class GateContext:
     ambiguous_banking_domain: str | None = None
     query_session_snapshot: dict[str, Any] | None = None
     query_session_source: str | None = None
+
     turn_summary: TurnContextSummary | None = None
     summary_updates: dict[str, Any] | None = None
     routing_hints: list[dict[str, str]] = field(default_factory=list)
@@ -85,7 +86,6 @@ class GateContext:
         return bool(
             (isinstance(self.query_session_snapshot, dict) and self.query_session_snapshot.get("session_active"))
             or self.state_view.has_session_for_domain("query")
-            or self.state_view.active_domain == "query"
         )
 
     async def defer_active_query_session_to_semantic_router(self, *, source: str) -> bool:
@@ -95,14 +95,14 @@ class GateContext:
         return True
 
     async def ensure_query_session(self) -> None:
-        """Lazily load the query session snapshot from Redis/state."""
+        """Lazily project the active query surface or compact stashed compatibility state."""
         if self._query_loaded:
             return
         self._query_loaded = True
         self.query_session_snapshot, self.query_session_source = await _load_query_session_snapshot(self.state_view)
 
     async def ensure_turn_summary(self) -> None:
-        """Lazily compute the turn context summary (requires query session)."""
+        """Lazily compute the turn context summary."""
         await self.ensure_query_session()
         if self._summary_loaded:
             return

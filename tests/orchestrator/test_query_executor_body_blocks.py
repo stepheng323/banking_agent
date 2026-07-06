@@ -80,8 +80,6 @@ def _query_context_frame() -> ContextFrame:
     )
 
 
-
-
 async def test_query_executor_attaches_mobile_body_blocks_to_say_outbox() -> None:
     task = TaskSpec(
         id="query_1",
@@ -168,10 +166,11 @@ async def test_query_executor_passes_active_query_surface_context_to_worker() ->
     await QueryTaskExecutor().execute(task, "query_1", ctx)
 
     assert len(worker.calls) == 1
-    active_session = worker.calls[0]["context"]["active_query_session"]
-    assert active_session["session_active"] is True
-    assert active_session["query_contract"]["intent"] == "transaction_list"
-    assert active_session["query_result"]["surface_view"]["mode"] == "direct_answer"
+    worker_context = worker.calls[0]["context"]
+    assert "active_query_session" not in worker_context
+    active_surface = worker_context["active_query_surface"]
+    assert active_surface["metadata"]["query_contract"]["intent"] == "transaction_list"
+    assert active_surface["metadata"]["surface_mode"] == "direct_answer"
 
 
 async def test_query_executor_does_not_attach_body_blocks_for_empty_direct_answer() -> None:

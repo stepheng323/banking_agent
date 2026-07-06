@@ -840,7 +840,7 @@ def test_execution_turn_metadata_reads_use_typed_helpers() -> None:
         "phone_number",
         "pin_verified",
         "quoted_message_id",
-        "stashed_query_session",
+        "pending_query_clarification",
         "stashed_sessions",
     }
     for path in sorted(EXECUTION_ROOT.rglob("*.py")):
@@ -1077,7 +1077,7 @@ def test_remaining_interrupt_modules_use_typed_state_view() -> None:
         "preplanner_expected_transaction_executors",
         "referent_memory",
         "session_stack",
-        "stashed_query_session",
+        "pending_query_clarification",
         "tasks",
     }
     for path in INTERRUPT_FINAL_STATE_VIEW_MODULES:
@@ -1159,7 +1159,7 @@ def test_gate_foundational_modules_use_typed_state_view() -> None:
         "preplanner_expected_transaction_executors",
         "session_stack",
         "stashed_sessions",
-        "stashed_query_session",
+        "pending_query_clarification",
         "task_results",
         "tasks",
         "user_id",
@@ -1349,7 +1349,7 @@ def test_planner_entry_modules_use_typed_state_view() -> None:
         "pending_interrupt",
         "phone_number",
         "session_stack",
-        "stashed_query_session",
+        "pending_query_clarification",
         "waves",
     }
     for path in PLANNER_STATE_VIEW_MODULES:
@@ -1387,7 +1387,7 @@ def test_planner_context_flow_modules_use_typed_state_view() -> None:
         "routing_owner",
         "routing_target_domain",
         "session_stack",
-        "stashed_query_session",
+        "pending_query_clarification",
         "tasks",
         "waves",
     }

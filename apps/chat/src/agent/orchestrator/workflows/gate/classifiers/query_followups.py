@@ -1,4 +1,3 @@
-from typing import Any
 
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _classify_obvious_transfer_request,
@@ -12,10 +11,11 @@ def _query_followup_bypass_reason(
     *,
     message_text: str,
     locale: str,
-    query_session_snapshot: dict[str, Any] | None,
+    has_active_query_session: bool,
     has_context_frames: bool = False,
+    is_pending_clarification: bool = False,
 ) -> tuple[str | None, str | None]:
-    if not isinstance(query_session_snapshot, dict) or not query_session_snapshot.get("session_active"):
+    if not has_active_query_session:
         return None, None
 
     transfer_request_reason = _classify_obvious_transfer_request(message_text)
@@ -26,9 +26,9 @@ def _query_followup_bypass_reason(
     if shortcut is not None:
         return "query_shortcut", shortcut.action
 
-    if query_session_snapshot.get("pending_clarification"):
+    if is_pending_clarification:
         return "pending_clarification", miss_reason or "query_session_active"
 
-    if query_session_snapshot.get("query_contract") or has_context_frames:
+    if has_active_query_session or has_context_frames:
         return "active_query_session", miss_reason or "query_session_active"
     return None, miss_reason

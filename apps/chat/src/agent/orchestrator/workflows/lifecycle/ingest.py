@@ -72,7 +72,6 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
                 "session_stack": [],
                 "active_domain": None,
                 "stashed_sessions": [],
-                "stashed_query_session": None,
             }
         )
 

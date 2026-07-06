@@ -123,8 +123,6 @@ async def test_parser_does_not_parse_support_problem_statement_as_query() -> Non
     assert result.resolver_message == render_message("query.clarify.unsure_rephrase", "en")
 
 
-
-
 @pytest.mark.asyncio
 async def test_all_time_query_auto_clamps_without_blocking_message() -> None:
     extraction = QueryExtractionResult(
@@ -226,10 +224,6 @@ async def test_multilingual_recipient_summary_recovery_stays_grouped_and_clears_
     assert result.query_contract["filters"]["transaction_type"] == "debit"
 
 
-
-
-
-
 @pytest.mark.asyncio
 async def test_time_vague_matching_transaction_shape_clarifies_without_llm_latest_item_shape() -> None:
     extraction = QueryExtractionResult(
@@ -276,10 +270,6 @@ async def test_latest_transaction_query_drops_spurious_narration_negotiation_wit
     assert result.query_contract is not None
     assert result.query_contract["result_limit"] == 1
     assert result.query_contract["result_reference"] == "latest"
-
-
-
-
 
 
 @pytest.mark.asyncio

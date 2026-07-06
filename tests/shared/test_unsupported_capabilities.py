@@ -281,7 +281,7 @@ def test_build_policy_notice_uses_planner_output_unsupported_capability() -> Non
                 parameters={"amount": 2000, "recipient_name": "Mum"},
                 risk="MONEY_MOVE",
             )
-        ]
+        ],
     )
     notice = _build_policy_notice("send 2k to Mum and lend me 50k", planner_output, locale="en")
     assert notice is not None
@@ -291,11 +291,7 @@ def test_build_policy_notice_uses_planner_output_unsupported_capability() -> Non
 
 @pytest.mark.asyncio
 async def test_build_non_task_response_handles_unsupported_capability() -> None:
-    planner_output = PlannerOutput(
-        primary_intent="conversational",
-        unsupported_capability="investments",
-        tasks=[]
-    )
+    planner_output = PlannerOutput(primary_intent="conversational", unsupported_capability="investments", tasks=[])
     state = OrchestratorState(user_id="u_1", phone_number="2348000000000")
     state_view = planner_state_view(state)
 
@@ -339,14 +335,9 @@ async def test_handle_semantic_route_intercepts_unsupported_capability() -> None
         phrase_heavy_fastpath_allowed=True,
     )
 
-    decision = SemanticRouteDecision(
-        decision="direct_reply",
-        conf=0.95,
-        unsupported_cap="lending"
-    )
+    decision = SemanticRouteDecision(decision="direct_reply", conf=0.95, unsupported_cap="lending")
 
     result = await _handle_semantic_route(ctx, decision)
     assert result is not None
     assert result["capability_boundary"].key == "lending"
     assert "loans or lending" in result["final_response"]
-

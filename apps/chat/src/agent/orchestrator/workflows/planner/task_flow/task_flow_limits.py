@@ -36,7 +36,6 @@ def _transaction_batch_limit_updates(
         "planner_output": planner_output,
         "new_tasks": {},
         "waves": [],
-        "stashed_query_session_update": None,
         "batch_limit_response": _transaction_batch_limit_message(transaction_count=transaction_task_count),
         "capability_policy_notice": capability_policy_notice,
     }

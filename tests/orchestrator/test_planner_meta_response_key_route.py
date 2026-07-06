@@ -95,7 +95,9 @@ async def test_planner_identity_response_key_renders_deterministically() -> None
     responder = _FakeConversationResponder("This should not be used.")
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {},
             "redis_client": None,
             "conversation_responder": responder,
@@ -132,7 +134,9 @@ async def test_planner_social_meta_response_key_uses_conversation_responder() ->
     responder = _FakeConversationResponder("I'm here, ready for transfers or balance checks.")
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "services": {},
             "redis_client": None,
             "conversation_responder": responder,
@@ -168,7 +172,15 @@ async def test_planner_social_meta_response_key_falls_back_without_responder() -
         channel="whatsapp",
         last_message_text="are you there",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "services": {}, "redis_client": None}}
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "services": {},
+            "redis_client": None,
+        }
+    }
 
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))

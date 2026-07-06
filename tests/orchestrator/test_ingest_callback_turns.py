@@ -80,7 +80,6 @@ async def test_day_rollover_clears_stale_session_state(monkeypatch: pytest.Monke
         session_stack=[{"domain": "query", "state": "RUNNING", "interrupt_policy": "ALLOW"}],
         active_domain="query",
         stashed_sessions=[{"intent": "transfer", "tasks": {}}],
-        stashed_query_session={"session_active": True},
     )
 
     updates = await ingest_message(state)
@@ -95,7 +94,6 @@ async def test_day_rollover_clears_stale_session_state(monkeypatch: pytest.Monke
     assert updates["session_stack"] == []
     assert updates["active_domain"] is None
     assert updates["stashed_sessions"] == []
-    assert updates["stashed_query_session"] is None
 
 
 @pytest.mark.asyncio

@@ -15,6 +15,7 @@ from banking.transactions.query.worker import QueryWorker
 
 WorkerContext = namedtuple("WorkerContext", ["redis", "tracer", "queue", "user_id"])
 
+
 @pytest.mark.asyncio
 async def test_analytics_drill_down_executes():
     llm = MagicMock()
@@ -44,6 +45,7 @@ async def test_analytics_drill_down_executes():
 
     # Build active session
     from banking.transactions.query.contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
+
     surface = SurfaceView(
         mode=SurfaceViewMode.DIRECT_ANSWER,
         items=[
@@ -57,15 +59,15 @@ async def test_analytics_drill_down_executes():
                     entity_type="transaction",
                     entity_id="group_1",
                     label="Acme Corp",
-                )
+                ),
             )
-        ]
+        ],
     )
     contract = QueryExecutionContract.from_query_ir(
         QueryIR(
             intent=QueryIntent.ANALYTICS_SUMMARY,
             time_range=TimeRange(start=date.today(), end=date.today()),
-            aggregation=Aggregation(type="sum", group_by="merchant", sort_by="amount")
+            aggregation=Aggregation(type="sum", group_by="merchant", sort_by="amount"),
         )
     )
 
@@ -79,9 +81,17 @@ async def test_analytics_drill_down_executes():
             "query_contract": contract.model_dump(mode="json"),
             "query_result": {
                 "surface_view": surface.model_dump(mode="json"),
-                "items": [{"id": "group_1", "description": "Acme Corp", "amount": 950000, "date": "2026-06-28", "metadata": {"key": "Acme Corp"}}]
-            }
-        }
+                "items": [
+                    {
+                        "id": "group_1",
+                        "description": "Acme Corp",
+                        "amount": 950000,
+                        "date": "2026-06-28",
+                        "metadata": {"key": "Acme Corp"},
+                    }
+                ],
+            },
+        },
     }
 
     ctx = WorkerContext(redis=MagicMock(), tracer=MagicMock(), queue=MagicMock(), user_id="test_user")
@@ -91,4 +101,3 @@ async def test_analytics_drill_down_executes():
     print("OUTCOME:", res.outcome)
     if "query_contract" in state:
         print("NEW INTENT:", state["query_contract"].intent)
-

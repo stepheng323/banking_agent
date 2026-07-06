@@ -286,12 +286,7 @@ def _context_frame_followup_eligible(ctx: GateContext) -> bool:
     )
 
 
-def _has_active_query_session(ctx: GateContext) -> bool:
-    return bool(
-        (isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"))
-        or ctx.state_view.has_session_for_domain("query")
-        or ctx.state_view.active_domain == "query"
-    )
+
 
 
 def _is_contextual_casual_continuation(ctx: GateContext) -> bool:
@@ -408,7 +403,7 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
         logger.info("gate_context_frame_followup_skipped_for_unsupported_capability")
         return None
 
-    await ctx.ensure_query_session()
+
     frame = ContextFrameManager().latest_active_frame(ctx.state)
     if _looks_like_read_only_refresh_request(ctx.message_text):
         if frame is not None and frame.frame_type == ContextFrameType.DATA_PLAN_LIST:
@@ -422,7 +417,7 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
                 return data_plan_followup
 
         bypass_read_only = False
-        if _has_active_query_session(ctx):
+        if await ctx.has_active_query_session():
             logger.info("gate_read_only_refresh_bypassed_for_active_query")
             bypass_read_only = True
 
@@ -431,7 +426,7 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
             if read_only_refresh is not None:
                 return read_only_refresh
 
-    if _has_active_query_session(ctx):
+    if await ctx.has_active_query_session():
         logger.info("gate_context_frame_followup_skipped_for_active_query_session")
         return None
 

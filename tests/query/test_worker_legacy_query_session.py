@@ -163,16 +163,97 @@ def _active_session_from_result(result: TransactionResult) -> dict[str, Any]:
     return session
 
 
+def _active_surface_context_from_result(result: TransactionResult) -> dict[str, Any]:
+    assert result.patch is not None
+    query_result = result.patch["query_result"]
+    assert isinstance(query_result, QueryResult)
+    query_contract = result.patch["query_contract"]
+    assert isinstance(query_contract, QueryExecutionContract)
+    surface_view = query_result.surface_view
+    items: list[dict[str, Any]] = []
+    if surface_view is not None and surface_view.items:
+        for item in surface_view.items:
+            items.append(
+                {
+                    "entity_id": item.id,
+                    "entity_type": "query_result",
+                    "label": item.label,
+                    "data": item.metadata,
+                    "selection_payload": item.payload.model_dump(mode="json") if item.payload else None,
+                }
+            )
+    else:
+        for item in query_result.items or []:
+            items.append(
+                {
+                    "entity_id": item.id,
+                    "entity_type": "transaction",
+                    "label": item.description,
+                    "data": item.model_dump(mode="json"),
+                    "selection_payload": None,
+                }
+            )
+    frame = {
+        "frame_id": "query_surface_test",
+        "frame_type": "generic",
+        "created_at_ts": 1_783_325_953,
+        "ttl_seconds": 900,
+        "items": items,
+        "metadata": {
+            "source": "query",
+            "query_contract": query_contract.model_dump(mode="json"),
+            "summary_text": query_result.summary_text,
+            "surface_mode": surface_view.mode.value if surface_view is not None else "transaction_list",
+            "surface_context": surface_view.context if surface_view is not None else {},
+        },
+    }
+    return {"active_query_surface": frame, "context_frames": [frame]}
+
+
+def _active_surface_context_from_session(session: dict[str, Any]) -> dict[str, Any]:
+    raw_contract = session["query_contract"]
+    query_contract = (
+        raw_contract if isinstance(raw_contract, QueryExecutionContract) else QueryExecutionContract.model_validate(raw_contract)
+    )
+    raw_result = session.get("query_result")
+    summary_text = raw_result.get("summary_text") if isinstance(raw_result, dict) else ""
+    surface_view = raw_result.get("surface_view") if isinstance(raw_result, dict) else {}
+    surface_mode = surface_view.get("mode") if isinstance(surface_view, dict) else "direct_answer"
+    frame = {
+        "frame_id": "query_surface_test",
+        "frame_type": "generic",
+        "created_at_ts": 1_783_325_953,
+        "ttl_seconds": 900,
+        "items": [
+            {
+                "entity_id": "summary_scope",
+                "entity_type": "query_result",
+                "label": summary_text or "Query result",
+                "data": {},
+                "selection_payload": None,
+            }
+        ],
+        "metadata": {
+            "source": "query",
+            "query_contract": query_contract.model_dump(mode="json"),
+            "summary_text": summary_text,
+            "surface_mode": surface_mode or "direct_answer",
+            "surface_context": surface_view.get("context") if isinstance(surface_view, dict) else {},
+        },
+    }
+    return {"active_query_surface": frame, "context_frames": [frame]}
+
+
 def _contract(query: QueryIR) -> QueryExecutionContract:
     assert query.time_range is not None
     return QueryExecutionContract.from_query_ir(query)
 
 
 @pytest.mark.asyncio
-async def test_worker_restores_from_stashed_query_session_and_marks_patch() -> None:
+async def test_worker_restores_from_active_query_surface_and_marks_patch() -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
-    stashed_query_session = {
+    active_query_session = {
         "session_active": True,
         "query_contract": _contract(
             _query_ir(
@@ -185,7 +266,6 @@ async def test_worker_restores_from_stashed_query_session_and_marks_patch() -> N
 
     async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
         del worker_context
-        assert state["query_session"] == stashed_query_session
         return TransactionResult(outcome=TransactionOutcome.OK, patch={"session_active": True})
 
     worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
@@ -198,20 +278,21 @@ async def test_worker_restores_from_stashed_query_session_and_marks_patch() -> N
             "accounts": [],
             "language": "en",
             "today": date(2026, 3, 4),
-            "stashed_query_session": stashed_query_session,
+            **_active_surface_context_from_session(active_query_session),
         },
     )
 
     assert result.outcome == TransactionOutcome.OK
-    assert result.patch["restored_from_stashed_query_session"] is True
     assert session_manager.saved_state is None
 
 
 @pytest.mark.asyncio
-async def test_worker_does_not_restore_stale_stashed_query_session() -> None:
+async def test_worker_ignores_legacy_stashed_query_session_input() -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
-    stashed_query_session = {
+    # Deliberately pass the removed key to prove legacy successful-session state
+    # cannot become canonical query context again.
+    legacy_stashed_query_session = {
         "session_active": True,
         "timestamp": 0.0,
         "query_contract": _contract(
@@ -238,13 +319,12 @@ async def test_worker_does_not_restore_stale_stashed_query_session() -> None:
             "accounts": [],
             "language": "en",
             "today": date(2026, 3, 4),
-            "stashed_query_session": stashed_query_session,
+            "stashed_query_session": legacy_stashed_query_session,
         },
     )
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch is not None
-    assert result.patch.get("restored_from_stashed_query_session") is None
 
 
 @pytest.mark.asyncio
@@ -372,7 +452,7 @@ async def test_worker_sets_followup_progress_stage_before_pipeline_run() -> None
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     tracker = _ProgressTracker()
-    stashed_query_session = {
+    active_query_session = {
         "session_active": True,
         "query_contract": _contract(
             _query_ir(
@@ -412,7 +492,7 @@ async def test_worker_sets_followup_progress_stage_before_pipeline_run() -> None
             "accounts": [],
             "language": "en",
             "today": date(2026, 3, 19),
-            "stashed_query_session": stashed_query_session,
+            **_active_surface_context_from_session(active_query_session),
             "progress_tracker": tracker,
         },
     )
@@ -475,7 +555,6 @@ async def test_worker_logs_query_turn_summary(monkeypatch: pytest.MonkeyPatch) -
             "session_active": True,
             "has_pending_clarification": False,
             "session_source": "none",
-            "restored_from_stashed_query_session": False,
         },
     ) in events
 
@@ -526,7 +605,8 @@ async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
             "accounts": [],
             "language": "en",
             "today": date(2026, 3, 13),
-            "stashed_query_session": {
+            **_active_surface_context_from_session(
+                {
                 "session_active": True,
                 "query_contract": _contract(
                     _query_ir(
@@ -546,7 +626,8 @@ async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
                     ],
                     "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
                 },
-            },
+                }
+            ),
         },
     )
 
@@ -609,7 +690,8 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
             "accounts": [],
             "language": "en",
             "today": date(2026, 3, 13),
-            "stashed_query_session": {
+            **_active_surface_context_from_session(
+                {
                 "session_active": True,
                 "query_contract": _contract(
                     _query_ir(
@@ -621,7 +703,8 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
                     "summary_text": "You spent ₦10,000 yesterday.",
                     "surface_view": {"mode": "grouped_summary", "context": {"type": "spending_total"}},
                 },
-            },
+                }
+            ),
         },
     )
 
@@ -698,13 +781,12 @@ async def test_worker_logs_query_turn_summary_from_surface_view(
             "session_active": True,
             "has_pending_clarification": False,
             "session_source": "none",
-            "restored_from_stashed_query_session": False,
         },
     ) in events
 
 
 @pytest.mark.asyncio
-async def test_worker_logs_restored_stashed_query_session_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_worker_logs_active_surface_session_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     events: list[tuple[str, dict[str, Any]]] = []
@@ -720,7 +802,7 @@ async def test_worker_logs_restored_stashed_query_session_shape(monkeypatch: pyt
 
     worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
 
-    stashed_query_session = {
+    active_query_session = {
         "session_active": True,
         "query_contract": _contract(
             _query_ir(
@@ -744,20 +826,20 @@ async def test_worker_logs_restored_stashed_query_session_shape(monkeypatch: pyt
             "accounts": [],
             "language": "en",
             "today": date(2026, 3, 19),
-            "stashed_query_session": stashed_query_session,
+            **_active_surface_context_from_session(active_query_session),
         },
     )
 
     assert result.outcome == TransactionOutcome.OK
     assert (
-        "query_session_restored_from_stash",
+        "query_session_loaded",
         {
-            "session_source": "stashed_compat",
+            "session_source": "orchestrator_context",
             "session_active": True,
             "has_query_contract": True,
             "has_query_result": True,
             "has_surface": True,
-            "has_query_frames": False,
+            "has_query_frames": True,
             "has_pending_clarification": False,
         },
     ) in events
@@ -814,7 +896,7 @@ async def test_worker_does_not_load_redis_query_session(
 async def test_worker_recovers_ambiguous_last_week_followup_from_stashed_session() -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
-    stashed_query_session = {
+    active_query_session = {
         "session_active": True,
         "query_contract": _contract(
             _query_ir(
@@ -868,7 +950,7 @@ async def test_worker_recovers_ambiguous_last_week_followup_from_stashed_session
             "accounts": [{"account_id": "acc_1"}],
             "language": "en",
             "today": date(2026, 3, 19),
-            "stashed_query_session": stashed_query_session,
+            **_active_surface_context_from_session(active_query_session),
         },
     )
 
@@ -880,7 +962,7 @@ async def test_worker_recovers_ambiguous_last_week_followup_from_stashed_session
 async def test_worker_reuses_active_query_scope_for_how_much_total_followup() -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
-    stashed_query_session = {
+    active_query_session = {
         "session_active": True,
         "query_contract": _contract(
             _query_ir(
@@ -935,7 +1017,7 @@ async def test_worker_reuses_active_query_scope_for_how_much_total_followup() ->
             "accounts": [{"account_id": "acc_1"}],
             "language": "en",
             "today": date(2026, 3, 19),
-            "stashed_query_session": stashed_query_session,
+            **_active_surface_context_from_session(active_query_session),
         },
     )
 
@@ -953,7 +1035,7 @@ async def test_worker_reuses_active_query_scope_for_how_much_total_followup() ->
 
 
 @pytest.mark.asyncio
-async def test_worker_reuses_context_cached_transactions_for_time_delta_followup() -> None:
+async def test_worker_reuses_context_scope_for_time_delta_followup() -> None:
     redis = _RedisStoreStub()
     session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
     provider = _RecordingProvider(
@@ -1041,21 +1123,21 @@ async def test_worker_reuses_context_cached_transactions_for_time_delta_followup
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 4),
-            "active_query_session": _active_session_from_result(first_result),
+            **_active_surface_context_from_result(first_result),
         },
     )
 
     assert second_result.outcome == TransactionOutcome.OK
-    assert provider.calls == 1
+    assert provider.calls == 2
     assert second_result.patch is not None
     query_result = second_result.patch["query_result"]
     assert isinstance(query_result, QueryResult)
-    assert query_result.cache_reused is True
+    assert query_result.cache_reused is False
     assert [item.description for item in query_result.items or []] == ["Refund"]
 
 
 @pytest.mark.asyncio
-async def test_worker_reuses_context_cached_transactions_for_filter_delta_followup() -> None:
+async def test_worker_reuses_context_scope_for_filter_delta_followup() -> None:
     redis = _RedisStoreStub()
     session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
     provider = _RecordingProvider(
@@ -1135,16 +1217,16 @@ async def test_worker_reuses_context_cached_transactions_for_filter_delta_follow
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 4),
-            "active_query_session": _active_session_from_result(first_result),
+            **_active_surface_context_from_result(first_result),
         },
     )
 
     assert second_result.outcome == TransactionOutcome.OK
-    assert provider.calls == 1
+    assert provider.calls == 2
     assert second_result.patch is not None
     query_result = second_result.patch["query_result"]
     assert isinstance(query_result, QueryResult)
-    assert query_result.cache_reused is True
+    assert query_result.cache_reused is False
     assert [item.description for item in query_result.items or []] == ["Salary payment"]
 
 
@@ -1224,7 +1306,7 @@ async def test_worker_restores_context_analytics_followup_for_time_delta(
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 19),
-            "active_query_session": _active_session_from_result(first_result),
+            **_active_surface_context_from_result(first_result),
         },
     )
 
@@ -1317,7 +1399,7 @@ async def test_worker_count_time_delta_followup_renders_yesterday(
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 19),
-            "active_query_session": _active_session_from_result(first_result),
+            **_active_surface_context_from_result(first_result),
         },
     )
 
@@ -1349,7 +1431,7 @@ async def test_worker_count_time_delta_followup_renders_yesterday(
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 19),
-            "active_query_session": _active_session_from_result(second_result),
+            **_active_surface_context_from_result(second_result),
         },
     )
 
@@ -1485,7 +1567,7 @@ async def test_worker_restores_context_time_comparison_followup_for_time_delta()
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 19),
-            "active_query_session": _active_session_from_result(first_result),
+            **_active_surface_context_from_result(first_result),
         },
     )
 

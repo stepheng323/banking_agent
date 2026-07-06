@@ -218,7 +218,6 @@ async def test_gate_engine_short_circuits_on_first_match() -> None:
     assert result.trace[-1].routing_decision == "matched"
 
 
-
 async def test_gate_engine_skips_ineligible_handler_without_calling_it() -> None:
     calls: list[str] = []
 

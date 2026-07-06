@@ -2,9 +2,6 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
-    clear_query_session,
-)
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _obvious_mixed_transaction_executors,
 )
@@ -122,11 +119,9 @@ async def _handle_semantic_domain_dispatch(
                 **updates,
             }
         if await ctx.has_active_query_session():
-            await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
             updates.update(
                 _build_query_session_exit_updates(
                     ctx.state,
-                    query_session_snapshot=ctx.query_session_snapshot,
                 )
             )
         task_id, spec = _build_direct_domain_task(
@@ -198,11 +193,9 @@ async def _handle_semantic_domain_dispatch(
         }
 
     if domain != "query" and await ctx.has_active_query_session():
-        await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
         updates.update(
             _build_query_session_exit_updates(
                 ctx.state,
-                query_session_snapshot=ctx.query_session_snapshot,
             )
         )
 

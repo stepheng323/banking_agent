@@ -8,9 +8,6 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import (
     get_unsupported_capability,
 )
-from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
-    clear_query_session,
-)
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
@@ -145,11 +142,9 @@ async def _handle_semantic_route(ctx: GateContext, route: Any) -> dict[str, Any]
     if updates:
         logger.info("gate_semantic_router_expected_executors", executors=expected_executors)
         if await ctx.has_active_query_session():
-            await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
             updates.update(
                 _build_query_session_exit_updates(
                     ctx.state,
-                    query_session_snapshot=ctx.query_session_snapshot,
                 )
             )
         return semantic_executor_handoff_updates(

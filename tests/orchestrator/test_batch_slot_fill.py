@@ -330,7 +330,14 @@ async def test_batch_slot_semantic_fallback_applies_validated_amount_update() ->
 
     updates = await handle_pending_interrupt(
         state,
-        {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50},
+        {
+            "configurable": {
+                "task_planner": planner,
+                "semantic_router_llm": planner,
+                "capability_classifier_llm": planner,
+            },
+            "recursion_limit": 50,
+        },
     )
 
     assert planner.batch_slot_calls == 1
@@ -360,7 +367,14 @@ async def test_batch_slot_semantic_patch_rejects_cross_clause_bank_text() -> Non
 
     updates = await handle_pending_interrupt(
         state,
-        {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50},
+        {
+            "configurable": {
+                "task_planner": planner,
+                "semantic_router_llm": planner,
+                "capability_classifier_llm": planner,
+            },
+            "recursion_limit": 50,
+        },
     )
 
     assert planner.batch_slot_calls == 1
@@ -384,7 +398,14 @@ async def test_batch_slot_semantic_clarification_keeps_interrupt_open() -> None:
 
     updates = await handle_pending_interrupt(
         state,
-        {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50},
+        {
+            "configurable": {
+                "task_planner": planner,
+                "semantic_router_llm": planner,
+                "capability_classifier_llm": planner,
+            },
+            "recursion_limit": 50,
+        },
     )
 
     assert planner.batch_slot_calls == 1
@@ -421,13 +442,18 @@ async def test_recipient_review_uses_semantic_confirmation_fallback_for_natural_
                 "recipient_review_confirmed": False,
             }
         )
-    planner = _BatchSlotPlanner(
-        confirmation_decision=ConfirmationDecision("approve", "llm", 0.94, "natural approval")
-    )
+    planner = _BatchSlotPlanner(confirmation_decision=ConfirmationDecision("approve", "llm", 0.94, "natural approval"))
 
     updates = await handle_pending_interrupt(
         state,
-        {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50},
+        {
+            "configurable": {
+                "task_planner": planner,
+                "semantic_router_llm": planner,
+                "capability_classifier_llm": planner,
+            },
+            "recursion_limit": 50,
+        },
     )
 
     assert planner.confirmation_calls == 1
@@ -466,7 +492,14 @@ async def test_recipient_review_exact_yes_does_not_call_semantic_confirmation() 
 
     updates = await handle_pending_interrupt(
         state,
-        {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50},
+        {
+            "configurable": {
+                "task_planner": planner,
+                "semantic_router_llm": planner,
+                "capability_classifier_llm": planner,
+            },
+            "recursion_limit": 50,
+        },
     )
 
     assert planner.confirmation_calls == 0

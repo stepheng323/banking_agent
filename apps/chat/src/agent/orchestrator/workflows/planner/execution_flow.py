@@ -1,8 +1,7 @@
 """Planner execution flow helpers."""
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import redis.asyncio as redis
 
@@ -12,7 +11,10 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_rea
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_models import PlannerPromptSignals
-from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerQualityReport
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import (
+    PlannerPlanResult,
+    PlannerQualityReport,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.execution_cleanup import (
     _clear_stale_beneficiary_suggestion,
 )
@@ -37,8 +39,6 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_LegacyPlanTasks = Callable[..., Awaitable[PlannerOutput]]
-
 
 @dataclass(slots=True)
 class PlannerExecutionResult:
@@ -46,6 +46,43 @@ class PlannerExecutionResult:
     planner_quality_report: PlannerQualityReport
     current_locale: str
     context_read_updates: dict[str, Any]
+
+
+async def _plan_tasks_with_optional_quality(
+    task_planner: TaskPlanner,
+    phone_number: str,
+    text: str,
+    *,
+    planner_context: str,
+    prompt_signals: PlannerPromptSignals,
+) -> PlannerPlanResult:
+    planner_with_quality = getattr(task_planner, "plan_tasks_with_quality", None)
+    if callable(planner_with_quality):
+        return await planner_with_quality(
+            phone_number,
+            text,
+            context=planner_context,
+            prompt_signals=prompt_signals,
+            path_label="planner_path",
+        )
+
+    legacy_plan_tasks = getattr(task_planner, "plan_tasks", None)
+    if not callable(legacy_plan_tasks):
+        msg = "Task planner does not expose plan_tasks_with_quality or legacy plan_tasks"
+        raise AttributeError(msg)
+
+    planner_output = await legacy_plan_tasks(
+        phone_number,
+        text,
+        context=planner_context,
+        prompt_signals=prompt_signals,
+        path_label="planner_path",
+    )
+    return PlannerPlanResult(
+        raw_output=planner_output,
+        planner_output=planner_output,
+        quality_report=PlannerQualityReport(),
+    )
 
 
 def _summarize_planner_output(planner_output: PlannerOutput) -> dict[str, Any]:
@@ -93,30 +130,15 @@ async def _execute_planner_with_context(
     redis_client: redis.Redis | None,
     state_view: PlannerStateView,
 ) -> PlannerExecutionResult:
-    if hasattr(task_planner, "plan_tasks_with_quality"):
-        plan_result = await task_planner.plan_tasks_with_quality(
-            state_view.phone_number,
-            text,
-            context=planner_context,
-            prompt_signals=prompt_signals,
-            path_label="planner_path",
-        )
-        planner_output = plan_result.planner_output
-        planner_quality_report = plan_result.quality_report
-    else:
-        logger.warning("legacy_planner_quality_path_used", planner_type=type(task_planner).__name__)
-        legacy_plan_tasks = cast(_LegacyPlanTasks | None, getattr(task_planner, "plan_tasks", None))
-        if legacy_plan_tasks is None:
-            msg = f"{type(task_planner).__name__} must implement plan_tasks_with_quality"
-            raise TypeError(msg)
-        planner_output = await legacy_plan_tasks(
-            state_view.phone_number,
-            text,
-            context=planner_context,
-            prompt_signals=prompt_signals,
-            path_label="planner_path",
-        )
-        planner_quality_report = PlannerQualityReport().with_reason("compat.legacy_plan_tasks")
+    plan_result = await _plan_tasks_with_optional_quality(
+        task_planner,
+        state_view.phone_number,
+        text,
+        planner_context=planner_context,
+        prompt_signals=prompt_signals,
+    )
+    planner_output = plan_result.planner_output
+    planner_quality_report = plan_result.quality_report
     planner_output = _filter_spurious_affirmation_tasks(
         planner_output,
         active_intent=active_intent,

@@ -3167,10 +3167,13 @@ async def test_compare_to_income_after_spending_total_compiles_cashflow_summary(
     )
 
     query_contract = updates["query_contract"]
-    assert query_contract.intent == QueryIntent.CASH_FLOW_SUMMARY
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
     assert query_contract.time_start == date(2026, 6, 1)
     assert query_contract.time_end == today
     assert query_contract.filters is None or query_contract.filters.transaction_type is None
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "breakdown"
+    assert query_contract.aggregation.group_by == "transaction_type"
     assert updates["current_page"] == 0
     assert updates["show_expanded"] is False
 

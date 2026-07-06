@@ -47,6 +47,8 @@ async def handle_analytics(
         return QueryResult(summary_text=render_message("query.analytics.no_aggregation", language))
 
     agg_type = contract.aggregation.type
+    if contract.aggregation.group_by:
+        agg_type = "breakdown"
 
     totals = calculate_financial_totals(transactions, account_id)
     transactions = totals.settled_transactions

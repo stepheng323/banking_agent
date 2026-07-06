@@ -64,11 +64,11 @@ class ExecutionAccumulator:
     def set_stashed_sessions(self, sessions: list[dict[str, Any]]) -> None:
         self._result_patch.set_stashed_sessions(sessions)
 
-    def clear_stashed_query_session(self) -> None:
-        self._result_patch.clear_stashed_query_session()
+    def clear_pending_query_clarification(self) -> None:
+        self._result_patch.clear_pending_query_clarification()
 
-    def set_stashed_query_session(self, session: dict[str, Any] | None) -> None:
-        self._result_patch.set_stashed_query_session(session)
+    def set_pending_query_clarification(self, clarification: dict[str, Any] | None) -> None:
+        self._result_patch.set_pending_query_clarification(clarification)
 
     def set_last_interrupt(self, interrupt: Any) -> None:
         self._result_patch.set_last_interrupt(interrupt)

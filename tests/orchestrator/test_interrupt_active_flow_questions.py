@@ -716,4 +716,3 @@ async def test_active_flow_question_unsupported_capability_refusal() -> None:
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert "help with investments or crypto" in response
     assert "Reply with the amount" in response
-

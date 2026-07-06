@@ -114,19 +114,21 @@ def _mark_loop_failure(loop_name: str, *, domain: str, exc: Exception) -> None:
     )
 
 
-async def _run_direct_transfer_reconciliation_loop(stop_event: asyncio.Event) -> None:
-    loop_health = _loop_health.get("direct_transfer_reconciliation")
-    interval_seconds = int(settings.direct_transfer_reconciliation_interval_seconds or 0)
+async def _run_generic_reconciliation_loop(
+    stop_event: asyncio.Event,
+    loop_name: str,
+    domain: str,
+    interval_seconds: int,
+    consumer: _ReconciliationConsumer,
+) -> None:
     if interval_seconds <= 0:
-        loop_health.mark_disabled()
-        logger.info("direct_transfer_reconciliation_loop_disabled")
+        _mark_loop_disabled(loop_name)
+        logger.info(f"{loop_name}_loop_disabled")
         return
 
-    consumers = setup_transaction_worker_consumers()
-    consumer = consumers.direct_transfer_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
-    loop_health.mark_started()
-    logger.debug("direct_transfer_reconciliation_loop_started", interval_seconds=interval_seconds)
+    _mark_loop_started(loop_name)
+    logger.debug(f"{loop_name}_loop_started", interval_seconds=interval_seconds)
 
     while not stop_event.is_set():
         try:
@@ -137,23 +139,41 @@ async def _run_direct_transfer_reconciliation_loop(stop_event: asyncio.Event) ->
 
         lock = RedisDistributedLock(
             RedisClient.get_client(),
-            key=f"{settings.project_name}:direct_transfer_reconciliation:{settings.runtime.infrastructure_environment}",
+            key=f"{settings.project_name}:{loop_name}:{settings.runtime.infrastructure_environment}",
             ttl_seconds=lock_ttl_seconds,
         )
         try:
             await lock.acquire(wait_seconds=0.1)
-            await consumer.process_job({})
-            _mark_loop_success("direct_transfer_reconciliation", domain="direct_transfer")
         except RedisLockTimeoutError:
-            _mark_loop_lock_skipped("direct_transfer_reconciliation", domain="direct_transfer")
+            _mark_loop_lock_skipped(loop_name, domain=domain)
+            continue
         except Exception as exc:
-            _mark_loop_failure("direct_transfer_reconciliation", domain="direct_transfer", exc=exc)
-            logger.error("direct_transfer_reconciliation_tick_failed", error=str(exc), exc_info=True)
+            _mark_loop_failure(loop_name, domain=domain, exc=exc)
+            logger.error(f"{loop_name}_lock_failed", error=str(exc), exc_info=True)
+            continue
+
+        try:
+            await consumer.process_job({})
+            _mark_loop_success(loop_name, domain=domain)
+        except Exception as exc:
+            _mark_loop_failure(loop_name, domain=domain, exc=exc)
+            logger.error(f"{loop_name}_tick_failed", error=str(exc), exc_info=True)
         finally:
             try:
                 await lock.release()
             except Exception as exc:
-                logger.warning("direct_transfer_reconciliation_lock_release_failed", error=str(exc))
+                logger.warning(f"{loop_name}_lock_release_failed", error=str(exc))
+
+
+async def _run_direct_transfer_reconciliation_loop(stop_event: asyncio.Event) -> None:
+    consumers = setup_transaction_worker_consumers()
+    await _run_generic_reconciliation_loop(
+        stop_event,
+        loop_name="direct_transfer_reconciliation",
+        domain="direct_transfer",
+        interval_seconds=int(settings.direct_transfer_reconciliation_interval_seconds or 0),
+        consumer=consumers.direct_transfer_reconciliation,
+    )
 
 
 def _enabled_stream_names() -> list[str]:
@@ -249,276 +269,69 @@ async def _run_transaction_stream_worker(stop_event: asyncio.Event) -> None:
 
 
 async def _run_transaction_debit_reconciliation_loop(stop_event: asyncio.Event) -> None:
-    loop_name = "transaction_debit_reconciliation"
-    interval_seconds = int(settings.transaction_debit_reconciliation_interval_seconds or 0)
-    if interval_seconds <= 0:
-        _mark_loop_disabled(loop_name)
-        logger.debug("transaction_debit_reconciliation_loop_disabled")
-        return
-
     consumers = setup_transaction_worker_consumers()
-    consumer = consumers.transaction_debit_reconciliation
-    lock_ttl_seconds = max(interval_seconds * 2, 60)
-    _mark_loop_started(loop_name)
-    logger.debug("transaction_debit_reconciliation_loop_started", interval_seconds=interval_seconds)
-
-    while not stop_event.is_set():
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-            break
-        except TimeoutError:
-            pass
-
-        lock = RedisDistributedLock(
-            RedisClient.get_client(),
-            key=f"{settings.project_name}:transaction_debit_reconciliation:{settings.runtime.infrastructure_environment}",
-            ttl_seconds=lock_ttl_seconds,
-        )
-        try:
-            await lock.acquire(wait_seconds=0.1)
-            await consumer.process_job({})
-            _mark_loop_success(loop_name, domain="bill")
-        except RedisLockTimeoutError:
-            _mark_loop_lock_skipped(loop_name, domain="bill")
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="bill", exc=exc)
-            logger.error("transaction_debit_reconciliation_tick_failed", error=str(exc), exc_info=True)
-        finally:
-            try:
-                await lock.release()
-            except Exception as exc:
-                logger.warning("transaction_debit_reconciliation_lock_release_failed", error=str(exc))
+    await _run_generic_reconciliation_loop(
+        stop_event,
+        loop_name="transaction_debit_reconciliation",
+        domain="bill",
+        interval_seconds=int(settings.transaction_debit_reconciliation_interval_seconds or 0),
+        consumer=consumers.transaction_debit_reconciliation,
+    )
 
 
 async def _run_bill_reconciliation_loop(stop_event: asyncio.Event) -> None:
-    loop_name = "bill_reconciliation"
-    interval_seconds = int(settings.bill_reconciliation_interval_seconds or 0)
-    if interval_seconds <= 0:
-        _mark_loop_disabled(loop_name)
-        logger.debug("bill_reconciliation_loop_disabled")
-        return
-
     consumers = setup_transaction_worker_consumers()
-    consumer = consumers.bill_reconciliation
-    lock_ttl_seconds = max(interval_seconds * 2, 60)
-    _mark_loop_started(loop_name)
-    logger.debug("bill_reconciliation_loop_started", interval_seconds=interval_seconds)
-
-    while not stop_event.is_set():
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-            break
-        except TimeoutError:
-            pass
-
-        lock = RedisDistributedLock(
-            RedisClient.get_client(),
-            key=f"{settings.project_name}:bill_reconciliation:{settings.runtime.infrastructure_environment}",
-            ttl_seconds=lock_ttl_seconds,
-        )
-        try:
-            await lock.acquire(wait_seconds=0.1)
-            await consumer.process_job({})
-            _mark_loop_success(loop_name, domain="bill")
-        except RedisLockTimeoutError:
-            _mark_loop_lock_skipped(loop_name, domain="bill")
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="bill", exc=exc)
-            logger.error("bill_reconciliation_tick_failed", error=str(exc), exc_info=True)
-        finally:
-            try:
-                await lock.release()
-            except Exception as exc:
-                logger.warning("bill_reconciliation_lock_release_failed", error=str(exc))
+    await _run_generic_reconciliation_loop(
+        stop_event,
+        loop_name="bill_reconciliation",
+        domain="bill",
+        interval_seconds=int(settings.bill_reconciliation_interval_seconds or 0),
+        consumer=consumers.bill_reconciliation,
+    )
 
 
 async def _run_transaction_debit_refund_reconciliation_loop(stop_event: asyncio.Event) -> None:
-    loop_name = "transaction_debit_refund_reconciliation"
-    interval_seconds = int(settings.refund_reconciliation_interval_seconds or 0)
-    if interval_seconds <= 0:
-        _mark_loop_disabled(loop_name)
-        logger.debug("transaction_debit_refund_reconciliation_loop_disabled")
-        return
-
     consumers = setup_transaction_worker_consumers()
-    consumer = consumers.transaction_debit_refund_reconciliation
-    lock_ttl_seconds = max(interval_seconds * 2, 60)
-    _mark_loop_started(loop_name)
-    logger.debug("transaction_debit_refund_reconciliation_loop_started", interval_seconds=interval_seconds)
-
-    while not stop_event.is_set():
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-            break
-        except TimeoutError:
-            pass
-
-        lock = RedisDistributedLock(
-            RedisClient.get_client(),
-            key=f"{settings.project_name}:transaction_debit_refund_reconciliation:{settings.runtime.infrastructure_environment}",
-            ttl_seconds=lock_ttl_seconds,
-        )
-        try:
-            await lock.acquire(wait_seconds=0.1)
-            await consumer.process_job({})
-            _mark_loop_success(loop_name, domain="refund")
-        except RedisLockTimeoutError:
-            _mark_loop_lock_skipped(loop_name, domain="refund")
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="refund", exc=exc)
-            logger.error("transaction_debit_refund_reconciliation_tick_failed", error=str(exc), exc_info=True)
-        finally:
-            try:
-                await lock.release()
-            except Exception as exc:
-                logger.warning("transaction_debit_refund_reconciliation_lock_release_failed", error=str(exc))
+    await _run_generic_reconciliation_loop(
+        stop_event,
+        loop_name="transaction_debit_refund_reconciliation",
+        domain="refund",
+        interval_seconds=int(settings.refund_reconciliation_interval_seconds or 0),
+        consumer=consumers.transaction_debit_refund_reconciliation,
+    )
 
 
 async def _run_payout_reconciliation_loop(stop_event: asyncio.Event) -> None:
-    loop_name = "payout_reconciliation"
-    interval_seconds = int(settings.payout_reconciliation_interval_seconds or 0)
-    if interval_seconds <= 0:
-        _mark_loop_disabled(loop_name)
-        logger.debug("payout_reconciliation_loop_disabled")
-        return
-
     consumers = setup_transaction_worker_consumers()
-    payout_reconciliation_consumer = consumers.payout_reconciliation
-    lock_ttl_seconds = max(interval_seconds * 2, 60)
-    _mark_loop_started(loop_name)
-    logger.debug("payout_reconciliation_loop_started", interval_seconds=interval_seconds)
-
-    while not stop_event.is_set():
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-            break
-        except TimeoutError:
-            pass
-
-        lock = RedisDistributedLock(
-            RedisClient.get_client(),
-            key=f"{settings.project_name}:payout_reconciliation:{settings.runtime.infrastructure_environment}",
-            ttl_seconds=lock_ttl_seconds,
-        )
-        try:
-            await lock.acquire(wait_seconds=0.1)
-        except RedisLockTimeoutError:
-            _mark_loop_lock_skipped(loop_name, domain="payout")
-            continue
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="payout", exc=exc)
-            logger.error("payout_reconciliation_lock_failed", error=str(exc), exc_info=True)
-            continue
-
-        try:
-            await payout_reconciliation_consumer.process_job({})
-            _mark_loop_success(loop_name, domain="payout")
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="payout", exc=exc)
-            logger.error("payout_reconciliation_tick_failed", error=str(exc), exc_info=True)
-        finally:
-            try:
-                await lock.release()
-            except Exception as exc:
-                logger.warning("payout_reconciliation_lock_release_failed", error=str(exc))
+    await _run_generic_reconciliation_loop(
+        stop_event,
+        loop_name="payout_reconciliation",
+        domain="payout",
+        interval_seconds=int(settings.payout_reconciliation_interval_seconds or 0),
+        consumer=consumers.payout_reconciliation,
+    )
 
 
 async def _run_funding_reconciliation_loop(stop_event: asyncio.Event) -> None:
-    loop_name = "funding_reconciliation"
-    interval_seconds = int(settings.funding_reconciliation_interval_seconds or 0)
-    if interval_seconds <= 0:
-        _mark_loop_disabled(loop_name)
-        logger.debug("funding_reconciliation_loop_disabled")
-        return
-
     consumers = setup_transaction_worker_consumers()
-    funding_reconciliation_consumer = consumers.funding_reconciliation
-    lock_ttl_seconds = max(interval_seconds * 2, 60)
-    _mark_loop_started(loop_name)
-    logger.debug("funding_reconciliation_loop_started", interval_seconds=interval_seconds)
-
-    while not stop_event.is_set():
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-            break
-        except TimeoutError:
-            pass
-
-        lock = RedisDistributedLock(
-            RedisClient.get_client(),
-            key=f"{settings.project_name}:funding_reconciliation:{settings.runtime.infrastructure_environment}",
-            ttl_seconds=lock_ttl_seconds,
-        )
-        try:
-            await lock.acquire(wait_seconds=0.1)
-        except RedisLockTimeoutError:
-            _mark_loop_lock_skipped(loop_name, domain="funding")
-            continue
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="funding", exc=exc)
-            logger.error("funding_reconciliation_lock_failed", error=str(exc), exc_info=True)
-            continue
-
-        try:
-            await funding_reconciliation_consumer.process_job({})
-            _mark_loop_success(loop_name, domain="funding")
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="funding", exc=exc)
-            logger.error("funding_reconciliation_tick_failed", error=str(exc), exc_info=True)
-        finally:
-            try:
-                await lock.release()
-            except Exception as exc:
-                logger.warning("funding_reconciliation_lock_release_failed", error=str(exc))
+    await _run_generic_reconciliation_loop(
+        stop_event,
+        loop_name="funding_reconciliation",
+        domain="funding",
+        interval_seconds=int(settings.funding_reconciliation_interval_seconds or 0),
+        consumer=consumers.funding_reconciliation,
+    )
 
 
 async def _run_refund_reconciliation_loop(stop_event: asyncio.Event) -> None:
-    loop_name = "refund_reconciliation"
-    interval_seconds = int(settings.refund_reconciliation_interval_seconds or 0)
-    if interval_seconds <= 0:
-        _mark_loop_disabled(loop_name)
-        logger.debug("refund_reconciliation_loop_disabled")
-        return
-
     consumers = setup_transaction_worker_consumers()
-    refund_reconciliation_consumer = consumers.refund_reconciliation
-    lock_ttl_seconds = max(interval_seconds * 2, 60)
-    _mark_loop_started(loop_name)
-    logger.debug("refund_reconciliation_loop_started", interval_seconds=interval_seconds)
-
-    while not stop_event.is_set():
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-            break
-        except TimeoutError:
-            pass
-
-        lock = RedisDistributedLock(
-            RedisClient.get_client(),
-            key=f"{settings.project_name}:refund_reconciliation:{settings.runtime.infrastructure_environment}",
-            ttl_seconds=lock_ttl_seconds,
-        )
-        try:
-            await lock.acquire(wait_seconds=0.1)
-        except RedisLockTimeoutError:
-            _mark_loop_lock_skipped(loop_name, domain="refund")
-            continue
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="refund", exc=exc)
-            logger.error("refund_reconciliation_lock_failed", error=str(exc), exc_info=True)
-            continue
-
-        try:
-            await refund_reconciliation_consumer.process_job({})
-            _mark_loop_success(loop_name, domain="refund")
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="refund", exc=exc)
-            logger.error("refund_reconciliation_tick_failed", error=str(exc), exc_info=True)
-        finally:
-            try:
-                await lock.release()
-            except Exception as exc:
-                logger.warning("refund_reconciliation_lock_release_failed", error=str(exc))
+    await _run_generic_reconciliation_loop(
+        stop_event,
+        loop_name="refund_reconciliation",
+        domain="refund",
+        interval_seconds=int(settings.refund_reconciliation_interval_seconds or 0),
+        consumer=consumers.refund_reconciliation,
+    )
 
 
 def _mark_loop_dependency_skipped(loop_name: str, *, domain: str, dependency: str) -> None:

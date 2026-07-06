@@ -72,7 +72,6 @@ async def _stage_cancel(ctx: GateContext) -> dict[str, Any] | None:
         return None
 
     await ctx.ensure_query_session()
-
     if (
         isinstance(ctx.query_session_snapshot, dict)
         and ctx.query_session_snapshot.get("session_active")
@@ -83,9 +82,10 @@ async def _stage_cancel(ctx: GateContext) -> dict[str, Any] | None:
             **ctx.gate_updates,
             "direct_path_triggered": True,
             "final_response": render_message("query.session.goodbye", ctx.current_locale),
-            "stashed_query_session": None,
+            "pending_query_clarification": None,
             **_route_observability_updates(owner="guardrail", decision="cancel"),
         }
+
     if has_cancelable_state(ctx.state):
         cleanup_updates = await build_cancellation_reset_updates(ctx.state, ctx.redis_client)
         return {

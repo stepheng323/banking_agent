@@ -70,16 +70,13 @@ def summarize_query_surface_for_planner(frame: ContextFrame) -> str:
 
 
 def build_query_context_for_worker(state: QueryContextFrameState) -> dict[str, Any]:
-    """Build worker input context from the active orchestrator-owned query surface."""
+    """Build query worker compatibility context from the active query surface."""
     frame = get_active_query_surface(state)
     if frame is None:
         return {}
-    snapshot = build_query_session_snapshot_from_surface(frame, context_frames=getattr(state, "context_frames", []))
-    if snapshot is None:
-        return {}
     return {
         "active_query_surface": frame.model_dump(mode="json"),
-        "active_query_session": snapshot,
+        "context_frames": [item.model_dump(mode="json") for item in getattr(state, "context_frames", [])],
     }
 
 

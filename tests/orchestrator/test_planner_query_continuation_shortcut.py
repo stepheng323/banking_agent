@@ -132,7 +132,9 @@ async def test_planner_no_longer_shortcuts_obvious_query_continuation() -> None:
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": _RedisWithQuerySession(),
             "services": {},
         },
@@ -164,7 +166,9 @@ async def test_planner_does_not_shortcut_semantic_query_followup() -> None:
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "redis_client": _RedisWithQuerySession(),
             "services": {},
         },

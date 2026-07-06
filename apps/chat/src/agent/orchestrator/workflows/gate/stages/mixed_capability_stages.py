@@ -1,6 +1,5 @@
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.guardrails.cancellation import clear_query_session
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.mixed_capabilities import (
     MixedCapabilityMatch,
@@ -12,7 +11,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.mixed_capabilit
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
-from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit import _build_query_session_exit_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.state.state_view import GateStateView
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
     _build_direct_domain_task,
@@ -114,23 +112,7 @@ def _mixed_policy_block_updates(
 
 
 async def _mixed_supported_task_extra_updates(ctx: GateContext, supported: SupportedClause) -> dict[str, Any]:
-    task_updates: dict[str, Any] = {}
-    if supported.domain != "transfer":
-        return task_updates
-    await ctx.ensure_query_session()
-    if (
-        ctx.redis_client
-        and isinstance(ctx.query_session_snapshot, dict)
-        and ctx.query_session_snapshot.get("session_active")
-    ):
-        await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
-        task_updates.update(
-            _build_query_session_exit_updates(
-                ctx.state,
-                query_session_snapshot=ctx.query_session_snapshot,
-            )
-        )
-    return task_updates
+    return {}
 
 
 async def _mixed_supported_direct_updates(

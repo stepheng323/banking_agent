@@ -76,19 +76,19 @@ def test_non_task_policy_and_batch_outcomes_include_standard_metadata() -> None:
     assert limited["routing_decision"] == "transaction_batch_limit"
 
 
-def test_task_dispatch_outcome_sets_wave_state_and_preserves_stashed_query_session() -> None:
+def test_task_dispatch_outcome_sets_wave_state_and_preserves_pending_query_clarification() -> None:
     task = TaskSpec(
         id="task_transfer",
         type="transfer",
         stage=TaskStage.DRAFT,
         payload={"amount": "1000"},
     )
-    state = _state().model_copy(update={"stashed_query_session": {"id": "existing"}})
+    state = _state().model_copy(update={"pending_query_clarification": {"id": "existing"}})
     updates = task_dispatch(
         task_updates={
             "new_tasks": {"task_transfer": task},
             "waves": [["task_transfer"]],
-            "stashed_query_session_update": None,
+            "pending_query_clarification_update": None,
         },
         planner_output=_planner_output("transfer"),
         normalized_instruction="send 1000",
@@ -100,6 +100,6 @@ def test_task_dispatch_outcome_sets_wave_state_and_preserves_stashed_query_sessi
     assert updates["tasks"] == {"task_transfer": task}
     assert updates["waves"] == [["task_transfer"]]
     assert updates["current_wave_index"] == 0
-    assert updates["stashed_query_session"] == {"id": "existing"}
+    assert updates["pending_query_clarification"] == {"id": "existing"}
     assert updates["routing_decision"] == "transfer"
     assert updates["routing_target_domain"] == "transfer"

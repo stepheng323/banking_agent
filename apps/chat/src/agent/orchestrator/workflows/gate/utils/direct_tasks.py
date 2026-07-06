@@ -65,7 +65,7 @@ def _direct_task_response_shape(
     return classify_read_only_response_shape(
         message_text,
         loaded_context=state_view.loaded_context_or_empty,
-        query_session_snapshot=state_view.stashed_query_session,
+        context_frames=state_view.context_frames,
     )
 
 

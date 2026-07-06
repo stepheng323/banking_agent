@@ -44,10 +44,7 @@ def test_format_balance_response_multi_account_mobile_blocks() -> None:
     )
 
     assert rendered == (
-        "Balances\n\n"
-        "Zenith Bank (···9384): ₦30,000.00\n\n"
-        "Access Bank (···5678): ₦15,000.00\n\n"
-        "Total: ₦45,000.00"
+        "Balances\n\nZenith Bank (···9384): ₦30,000.00\n\nAccess Bank (···5678): ₦15,000.00\n\nTotal: ₦45,000.00"
     )
 
 

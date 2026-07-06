@@ -23,7 +23,6 @@ from apps.chat.src.agent.orchestrator.guardrails.banking_ambiguity import (
     classify_banking_coded_ambiguity,
     render_banking_coded_ambiguity_prompt,
 )
-from apps.chat.src.agent.orchestrator.guardrails.cancellation import clear_query_session
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic import (
     classify_deterministic_meta_response,
@@ -35,7 +34,9 @@ from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
 from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import _locale_update
-from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit import _build_query_session_exit_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit import (
+    _build_query_session_exit_updates,
+)
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
@@ -86,19 +87,7 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
     response_locale = deterministic_meta.response_locale
     locale = response_locale or ctx.current_locale
     locale_updates = _locale_update(ctx.state_view, locale) if response_locale else {}
-    await ctx.ensure_query_session()
-    exit_updates = _build_query_session_exit_updates(
-        ctx.state,
-        query_session_snapshot=ctx.query_session_snapshot,
-    )
-    if (
-        ctx.redis_client
-        and isinstance(ctx.query_session_snapshot, dict)
-        and ctx.query_session_snapshot.get("session_active")
-    ):
-        await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
-    if exit_updates:
-        logger.info("gate_query_session_exited_on_direct_reply", had_pending_clarification=False)
+
     capability_boundary_updates: dict[str, Any] = {}
     render_params = deterministic_meta.params
     if response_key == "capability.unsupported_unavailable":
@@ -141,11 +130,17 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
         ) or render_message(response_key, locale, render_params)
     else:
         final_response = render_message(response_key, locale, render_params)
+
+    exit_updates = {}
+    if await ctx.has_active_query_session():
+        exit_updates = _build_query_session_exit_updates(ctx.state)
+        logger.info("gate_query_session_exited_on_direct_reply")
+
     return {
         **ctx.gate_updates,
-        **exit_updates,
         **locale_updates,
         **capability_boundary_updates,
+        **exit_updates,
         "direct_path_triggered": True,
         "final_response": final_response,
         "conversation_topic": conversation_topic_for_response(

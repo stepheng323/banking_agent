@@ -68,7 +68,6 @@ async def test_planner_cancel_clears_query_and_task_state() -> None:
             ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW"),
         ],
         active_domain="query",
-        stashed_query_session={"session_active": True},
     )
     config: RunnableConfig = {
         "configurable": {
@@ -88,7 +87,6 @@ async def test_planner_cancel_clears_query_and_task_state() -> None:
     assert updates["pending_interrupt"] is None
     assert updates["session_stack"] == []
     assert updates["active_domain"] is None
-    assert updates["stashed_query_session"] is None
     assert updates["stashed_sessions"] == []
     assert updates["planner_output"] is None
     assert updates["normalized_instruction"] is None
@@ -113,7 +111,6 @@ async def test_planner_cancel_without_active_flow_returns_clarify() -> None:
         pending_interrupt=None,
         session_stack=[],
         active_domain=None,
-        stashed_query_session=None,
     )
     config: RunnableConfig = {
         "configurable": {
