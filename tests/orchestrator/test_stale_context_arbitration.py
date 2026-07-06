@@ -1,11 +1,11 @@
 import time
-import pytest
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.stale_context_arbitration import (
-    is_strict_context_selector,
-    StaleContextSnapshot,
-)
+
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame, ContextFrameType
-from banking.support.models import PendingReferenceState, ReceiptBatchThreadState, SupportContext
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.stale_context_arbitration import (
+    StaleContextSnapshot,
+    is_strict_context_selector,
+)
+from banking.support.models import PendingReferenceState, SupportContext
 
 
 def test_is_strict_context_selector_fresh_frame() -> None:

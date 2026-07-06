@@ -1,5 +1,5 @@
 from time import time
-from typing import Any
+from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
@@ -32,17 +32,18 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.unsupported_capabilit
     semantic_boundary_turn,
     semantic_unsupported_capability,
 )
-from banking.presentation.i18n.renderer import render_message, message_key_exists
+from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import message_key_exists, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-def _resolve_unsupported_key(base_key: str, capability_key: str, locale: str) -> str:
+def _resolve_unsupported_key(base_key: str, capability_key: str, locale: str) -> MessageKey:
     specific_key = f"{base_key}_{capability_key}"
     if message_key_exists(specific_key, locale):
-        return specific_key
-    return base_key
+        return cast(MessageKey, specific_key)
+    return cast(MessageKey, base_key)
 
 
 async def _query_can_own_capability_turn(ctx: GateContext) -> bool:

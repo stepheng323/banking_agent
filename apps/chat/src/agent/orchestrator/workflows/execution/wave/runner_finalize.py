@@ -48,16 +48,16 @@ async def _synthesize_texts(texts: list[str], runtime: ExecutionWaveRuntime) -> 
 
     structured_llm = llm.with_structured_output(OutboxSynthesisDecision)
 
+    system_template = (
+        "You are a helpful, professional banking assistant. Combine the following distinct "
+        "updates or questions into a single, cohesive, natural conversational response. "
+        "Ensure smooth transitions between topics. Do not add any new information, pleasantries, "
+        "or greetings. Keep the exact tone of the original messages.\n\n"
+        "IMPORTANT: The final blended message must be written in the following locale/language: {locale}."
+    )
     prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                "You are a helpful, professional banking assistant. Combine the following distinct "
-                "updates or questions into a single, cohesive, natural conversational response. "
-                "Ensure smooth transitions between topics. Do not add any new information, pleasantries, "
-                "or greetings. Keep the exact tone of the original messages.\n\n"
-                "IMPORTANT: The final blended message must be written in the following locale/language: {locale}.",
-            ),
+            ("system", system_template),
             ("user", "Messages to blend:\n{messages}"),
         ]
     )
@@ -74,7 +74,7 @@ async def _synthesize_texts(texts: list[str], runtime: ExecutionWaveRuntime) -> 
     messages_str = "\n---\n".join(f"Message {i + 1}:\n{t}" for i, t in enumerate(texts))
 
     start = time.perf_counter()
-    system_chars = len(prompt.messages[0].prompt.template)
+    system_chars = len(system_template)
     user_chars = len(messages_str)
     output_chars = 0
     try:

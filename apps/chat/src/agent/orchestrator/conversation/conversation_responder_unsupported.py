@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
     unsupported_capability_params,
@@ -11,7 +11,8 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import (
     localized_supported_alternatives,
 )
-from banking.presentation.i18n.renderer import render_message, message_key_exists
+from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import message_key_exists, render_message
 
 UNSUPPORTED_CAPABILITY_FOLLOWUP_INTENT = "unsupported_capability_followup"
 UNSUPPORTED_CAPABILITY_PROMISE_RE = re.compile(
@@ -39,14 +40,14 @@ def unsupported_capability_fallback_reply(user_ctx: dict[str, Any] | None, local
     cap_key = ""
     if isinstance(unsupported, dict):
         cap_key = str(unsupported.get("key") or unsupported.get("capability_key") or "")
-    
+
     base_key = "capability.unsupported_unavailable_followup"
     message_key = f"{base_key}_{cap_key}" if cap_key else base_key
     if not message_key_exists(message_key, locale):
         message_key = base_key
 
     return render_message(
-        message_key,
+        cast(MessageKey, message_key),
         locale,
         unsupported_capability_params(unsupported, locale=locale),
     )
