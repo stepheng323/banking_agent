@@ -1357,7 +1357,7 @@ async def test_quality_audit_unsupported_followup_does_not_reuse_stale_transacti
             turns=(
                 ConversationTurn(
                     user="Can you borrow me money?",
-                    expect_response_contains=("can't help with loans",),
+                    expect_response_contains=("cannot assist with loans",),
                     expect_response_not_contains=("Tolu",),
                     expect_path_shape="meta_direct",
                     expect_routing_owner="guardrail",
@@ -1367,7 +1367,7 @@ async def test_quality_audit_unsupported_followup_does_not_reuse_stale_transacti
                 ),
                 ConversationTurn(
                     user="I will pay back",
-                    expect_response_contains=("can't help with loans",),
+                    expect_response_contains=("cannot help with loans",),
                     expect_response_not_contains=("Tolu", "transfer to"),
                     expect_path_shape="capability_boundary_followup",
                     expect_routing_owner="guardrail",

@@ -127,6 +127,28 @@ async def detect_stale_context(ctx: GateContext) -> StaleContextSnapshot:
 
 def is_strict_context_selector(message: str, snapshot: StaleContextSnapshot) -> bool:
     """Return true when deterministic stale-context routing is safe."""
+    import time
+    current_time = time.time()
+
+    # Prevent terse menu/selector collisions if the context is older than 180 seconds
+    if snapshot.latest_context_frame:
+        frame_age = current_time - snapshot.latest_context_frame.created_at_ts
+        if frame_age > 180:
+            return False
+
+    if snapshot.support_context:
+        pending = snapshot.support_context.pending_reference
+        if pending and pending.expires_at_ts:
+            age = current_time - (pending.expires_at_ts - 900)
+            if age > 180:
+                return False
+
+        receipt = snapshot.support_context.receipt_thread_state
+        if receipt and receipt.expires_at_ts:
+            age = current_time - (receipt.expires_at_ts - 900)
+            if age > 180:
+                return False
+
     normalized = _normalized_selector_text(message)
     if not normalized or not snapshot.is_active:
         return False

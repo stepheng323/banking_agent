@@ -10,6 +10,7 @@ from banking.faq.state import FAQState
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
+from shared.observability.llm_call_metrics import record_llm_call
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -46,6 +47,11 @@ def create_synthesize_node(llm: Runnable):
         )
 
         # Call LLM
+        import time
+        start = time.perf_counter()
+        system_chars = len(SYNTHESIS_SYSTEM_PROMPT)
+        user_chars = len(user_prompt)
+        output_chars = 0
         try:
             messages = [
                 {"role": "system", "content": SYNTHESIS_SYSTEM_PROMPT},
@@ -65,8 +71,22 @@ def create_synthesize_node(llm: Runnable):
                 or None,
             )
             answer = response.content if hasattr(response, "content") else str(response)
+            output_chars = len(answer)
+
+            duration_ms = (time.perf_counter() - start) * 1000
+            model = getattr(llm, "model_name", None) or getattr(llm, "model", None) or "unknown"
 
             logger.info(f"Synthesized answer ({len(answer)} chars)")
+            record_llm_call(
+                event_name="faq_synthesis_llm_call",
+                duration_ms=duration_ms,
+                model=model,
+                response_type="FAQSynthesisResponse",
+                system_chars=system_chars,
+                user_chars=user_chars,
+                latency_span="faq_synthesis_llm",
+                output_json_chars=output_chars,
+            )
 
             return {
                 **state,

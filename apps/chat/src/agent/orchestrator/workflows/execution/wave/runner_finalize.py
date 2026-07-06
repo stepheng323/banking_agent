@@ -27,6 +27,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import
 )
 from apps.chat.src.agent.orchestrator.workflows.runtime_config import OrchestrationConfig
 from shared.observability.llm import build_llm_runnable_config
+from shared.observability.llm_call_metrics import record_llm_call
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -73,19 +74,34 @@ async def _synthesize_texts(texts: list[str], runtime: ExecutionWaveRuntime) -> 
     messages_str = "\n---\n".join(f"Message {i + 1}:\n{t}" for i, t in enumerate(texts))
 
     start = time.perf_counter()
+    system_chars = len(prompt.messages[0].prompt.template)
+    user_chars = len(messages_str)
+    output_chars = 0
     try:
         result = await chain.ainvoke({"messages": messages_str, "locale": runtime.locale}, config=config)
         blended = result.blended_text
+        output_chars = len(blended)
     except Exception as e:
         logger.error("outbox_synthesis_failed", error=str(e))
         blended = "\n\n".join(texts)
 
     duration_ms = (time.perf_counter() - start) * 1000
+    model = getattr(llm, "model_name", None) or getattr(llm, "model", None) or "unknown"
 
     logger.info(
         "outbox_synthesis_llm_call",
         duration_ms=round(duration_ms, 2),
         input_messages=len(texts),
+    )
+    record_llm_call(
+        event_name="outbox_synthesis_llm_call",
+        duration_ms=duration_ms,
+        model=model,
+        response_type="OutboxSynthesisDecision",
+        system_chars=system_chars,
+        user_chars=user_chars,
+        latency_span="outbox_synthesis_llm",
+        output_json_chars=output_chars,
     )
     return blended
 
