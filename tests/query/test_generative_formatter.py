@@ -99,3 +99,28 @@ async def test_generative_formatter_rejects_rewrite_that_changes_reference_or_ma
 
     assert result.outcome == TransactionOutcome.OK
     assert result.response == "The reference is txn_002, and it was from GTBank · ···0001."
+
+
+@pytest.mark.asyncio
+async def test_generative_formatter_rejects_rewrite_that_drops_structured_rows() -> None:
+    system_response = (
+        "Here is your Money came in by account this month:\n\n"
+        "₦1,200,000 — GTBank (54%, 2 txns)\n"
+        "₦1,000,000 — First Bank (46%, 2 txns)\n\n"
+        "Total: ₦2,200,000"
+    )
+    step = _step_with_response("₦2,200,000 came into your accounts this month, across 4 transactions.")
+    result = await step.run(
+        {
+            "flow_state": "complete",
+            "message": "Break down by account",
+            "language": "en",
+            "query_result": QueryResult(
+                summary_text=system_response,
+                items=[],
+            ),
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.response == system_response

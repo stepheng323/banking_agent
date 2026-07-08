@@ -97,7 +97,11 @@ def _source_option_id(option: Any) -> str:
 
 
 def _source_option_bank(option: Any) -> str:
-    return str(getattr(option, "bank_name", "") or "Bank").strip()
+    bank = str(getattr(option, "bank_name", "") or getattr(option, "bank", "") or "Bank").strip()
+    last4 = str(getattr(option, "last4", "") or getattr(option, "account_number_last4", "")).strip()
+    if last4 and len(last4) == 4 and last4 != "0000":
+        return f"{bank} (···{last4})"
+    return bank
 
 
 def _source_option_available(option: Any) -> MoneyAmount:
@@ -184,29 +188,28 @@ def format_batch_source_choice_request(
     del locale
     by_id = _source_options_by_id(source_options)
     candidates = [by_id[source_id] for source_id in candidate_source_ids if source_id in by_id]
-    candidate_names = [_source_option_label(option) for option in candidates]
+    candidate_bank_names = [f"**{_source_option_bank(option)}**" for option in candidates]
 
-    lines = ["Funding review", "", f"Total needed: {format_naira(total_demanded)}."]
+    if len(candidate_bank_names) == 2:
+        options_text = f"{candidate_bank_names[0]} or {candidate_bank_names[1]}"
+    elif len(candidate_bank_names) > 2:
+        options_text = ", ".join(candidate_bank_names[:-1]) + f", or {candidate_bank_names[-1]}"
+    else:
+        options_text = "another linked account with enough balance"
+
+    lines = []
+
     anchor = _anchor_line(source_options, anchor_source_ids)
     if anchor:
-        lines.append(anchor)
-    lines.extend(
-        [
-            f"To cover the remaining {format_naira(remaining_amount)}, choose one more source:",
-        ]
-    )
-    lines.extend(
-        _source_option_lines(
-            source_options,
-            numbered=False,
-            include_header=False,
-            option_ids=candidate_source_ids,
-        )
-    )
-    if not candidate_names:
-        lines.append("• Another linked account with enough balance")
+        # e.g. "Your selected Access Bank has ₦30,000.00." -> "but your selected Access Bank has ₦30,000.00"
+        lines.append(f"This batch needs {format_naira(total_demanded)}, but {anchor.lower().replace('.', '')}.")
+    else:
+        lines.append(f"This batch needs {format_naira(total_demanded)}.")
+
     lines.append("")
-    lines.append("Reply with the bank you want to use.")
+    lines.append(f"You can pool from one additional account to cover the remaining {format_naira(remaining_amount)}.")
+    lines.append(f"Which would you like to use: {options_text}?")
+
     return "\n".join(lines).strip()
 
 
@@ -221,7 +224,7 @@ def _only_added_source_can_cover_line(
     added_ids = [source_id for source_id in suggested_source_ids or [] if source_id not in anchor_ids]
     if len(added_ids) != 1:
         return None
-    added_id = str(added_ids[0])
+    added_id = added_ids[0]
     remaining_amount = sum(
         (
             coerce_amount(getattr(step, "amount", 0))
@@ -258,44 +261,81 @@ def format_batch_funding_approval_request(
 ) -> str:
     """Format an opt-in prompt for an otherwise feasible implicit pooled plan."""
     del locale
-    source_totals: OrderedDict[tuple[str, str], MoneyAmount] = OrderedDict()
+    source_totals: OrderedDict[str, MoneyAmount] = OrderedDict()
     for plan in plans_by_task.values():
         for step in getattr(plan, "steps", []) or []:
             bank = str(getattr(step, "bank_name", "") or "Bank").strip()
-            account_number = str(getattr(step, "account_number", "") or "").strip()
             amount = coerce_amount(getattr(step, "amount", 0))
             if amount <= 0:
                 continue
-            key = (bank, account_number)
-            source_totals[key] = source_totals.get(key, coerce_amount(0)) + amount
+            source_totals[bank] = source_totals.get(bank, coerce_amount(0)) + amount
 
     anchor_ids = set(anchor_source_ids or [])
-    added_source_names = _source_names_for_ids(
-        source_options,
-        [source_id for source_id in suggested_source_ids or [] if source_id not in anchor_ids],
-    )
+    added_ids = [source_id for source_id in suggested_source_ids or [] if source_id not in anchor_ids]
+    added_source_names = _source_names_for_ids(source_options, added_ids)
 
-    lines = ["Funding breakdown:", ""]
-    only_cover_line = None
-    if added_source_names:
-        only_cover_line = _only_added_source_can_cover_line(
-            plans_by_task=plans_by_task,
-            source_options=source_options,
-            anchor_source_ids=anchor_source_ids,
-            suggested_source_ids=suggested_source_ids,
-        )
-    if only_cover_line:
-        lines.append(only_cover_line)
-        lines.append("")
-    for (bank, account_number), amount in source_totals.items():
-        lines.append(f"• {bank} (···{_last4(account_number)}): {format_naira(amount)}")
-    lines.extend(
-        [
-            "",
-            f"Total debit: {format_naira(total_demanded)}.",
-            "Reply confirm to authorize these transfers, or tell me what to change.",
-        ]
-    )
+    if len(source_totals) > 1 and anchor_source_ids and added_source_names:
+        by_id = _source_options_by_id(source_options)
+        anchor_options = [by_id[sid] for sid in anchor_source_ids if sid in by_id]
+        if anchor_options:
+            anchor_bank = _source_option_bank(anchor_options[0])
+            anchor_available = format_naira(_source_option_available(anchor_options[0]))
+            added_id = added_ids[0]
+            added_amount = sum(
+                (
+                    coerce_amount(getattr(step, "amount", 0))
+                    for plan in plans_by_task.values()
+                    for step in getattr(plan, "steps", []) or []
+                    if str(getattr(step, "account_id", "")) == added_id
+                ),
+                coerce_amount(0),
+            )
+
+            lines = [
+                f"This batch needs {format_naira(total_demanded)}, but your {anchor_bank} only has {anchor_available}.",
+                ""
+            ]
+
+            eligible_candidates = [
+                option for option in source_options or []
+                if _source_option_id(option) not in anchor_ids and _source_option_available(option) > 0
+            ]
+
+            if not eligible_candidates:
+                lines.append(
+                    "Because we can only pool from one additional account, and none of your other "
+                    f"accounts have the remaining {format_naira(added_amount)} available, "
+                    "this transfer cannot be completed right now."
+                )
+                lines.append("")
+                lines.append("You can reduce the transfer amount, or top up one of your accounts first.")
+            else:
+                lines.append(
+                    f"You can pool from an additional account to cover the remaining {format_naira(added_amount)}. "
+                    "Which would you like to use?"
+                )
+                for index, option in enumerate(eligible_candidates, start=1):
+                    bank_name = _source_option_bank(option)
+                    available = _source_option_available(option)
+                    lines.append(f"{index}. {bank_name} ({format_naira(available)} available)")
+                lines.append("")
+                lines.append("Reply with the number or bank name.")
+
+            return "\n".join(lines).strip()
+
+    # Fallback/explicit pooling scenario
+    parts = [f"{format_naira(amount)} from {bank}" for bank, amount in source_totals.items()]
+    if len(parts) == 2:
+        split_text = f"{parts[0]} and {parts[1]}"
+    elif len(parts) > 2:
+        split_text = ", ".join(parts[:-1]) + f", and {parts[-1]}"
+    else:
+        split_text = parts[0]
+
+    lines = [
+        f"To authorize pulling {split_text} to cover the {format_naira(total_demanded)} total, reply **confirm**,"
+        f" or tell me if you prefer a different split."
+    ]
     return "\n".join(lines).strip()
 
 
@@ -304,6 +344,7 @@ def format_batch_source_cap_shortfall(
     total_demanded: MoneyAmount,
     capped_available: MoneyAmount,
     max_source_accounts: int,
+    is_fixable_by_changing_sources: bool = False,
     source_options: list[Any] | None = None,
     anchor_source_ids: list[str] | None = None,
     pool_source_ids: list[str] | None = None,
@@ -312,23 +353,35 @@ def format_batch_source_cap_shortfall(
     """Format a shortfall caused by the policy cap on pooled source accounts."""
     del locale
     deficit = max(coerce_amount(0), coerce_amount(total_demanded) - coerce_amount(capped_available))
-    account_word = "account" if max_source_accounts == 1 else "accounts"
-    lines = ["Funding review", "", f"This batch needs {format_naira(total_demanded)}."]
-    anchor = _anchor_line(source_options, anchor_source_ids)
-    if anchor:
-        lines.append(anchor)
-    lines.append(f"I can pool from at most {max_source_accounts} {account_word}.")
-    lines.append("")
 
-    lines.append(
-        f"With that limit, the most I can cover is {format_naira(capped_available)}, "
-        f"so you're short {format_naira(deficit)}."
-    )
-    lines.extend(_source_option_lines(source_options))
-    lines.extend(
-        [
-            "",
-            "You can reduce an amount, remove one transfer, choose two source accounts, or cancel.",
-        ]
-    )
+    lines = [f"This batch needs {format_naira(total_demanded)}.", ""]
+
+    pool_banks = []
+    if pool_source_ids and source_options:
+        by_id = _source_options_by_id(source_options)
+        pool_banks = [f"**{_source_option_bank(by_id[sid])}**" for sid in pool_source_ids if sid in by_id]
+
+    pool_text = " + ".join(pool_banks) if pool_banks else "your highest balances"
+
+    if is_fixable_by_changing_sources:
+        anchor = _anchor_line(source_options, anchor_source_ids)
+        if anchor:
+            lines.append(f"{anchor}")
+        lines.append(
+            f"Since we can only pool up to {max_source_accounts} accounts, "
+            f"keeping this selection leaves you short {format_naira(deficit)}."
+        )
+        lines.append("")
+        lines.append(
+            "You can reduce an amount, or choose two entirely different source accounts "
+            "with higher balances."
+        )
+    else:
+        lines.append(
+            f"Because transfers are limited to a maximum of {max_source_accounts} pooled accounts, "
+            f"even combining {pool_text} only reaches {format_naira(capped_available)}."
+        )
+        lines.append("")
+        lines.append(f"You are short {format_naira(deficit)}. Please reduce a transfer amount or cancel the batch.")
+
     return "\n".join(lines).strip()

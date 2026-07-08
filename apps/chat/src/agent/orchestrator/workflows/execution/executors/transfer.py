@@ -627,6 +627,7 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         "confirmation_task_count": confirmation_task_count,
         "authorization_context": turn.authorization_context_payload,
         "progress_tracker": ctx.dependencies.progress_tracker,
+        "stashed_sessions": turn.stashed_sessions,
     }
     _stamp_async_group_metadata(task, ctx)
     if task.payload.get("source_affinity_mode") is None:
@@ -767,6 +768,7 @@ async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         "previous_response": None,
         "confirmation_task_count": None,
         "progress_tracker": ctx.dependencies.progress_tracker,
+        "stashed_sessions": turn.stashed_sessions,
     }
     user_msg = _maybe_user_message(task, ctx.state)
     logger.info("schedule_worker_start", payload=task.payload, task_id=task_id)

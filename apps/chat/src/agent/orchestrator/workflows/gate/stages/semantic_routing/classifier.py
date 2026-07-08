@@ -7,9 +7,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.router_context import
     _build_semantic_router_context,
     _should_invoke_semantic_router,
 )
-from apps.chat.src.agent.orchestrator.workflows.interrupt.questions.active_flow_questions import (
-    classify_deterministic_active_flow_question,
-)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     _could_be_schedule_interrupt_read_request,
 )
@@ -52,12 +49,7 @@ def _skip_semantic_router_for_interrupt(ctx: GateContext) -> bool:
     interrupt = ctx.state_view.pending_interrupt
     if interrupt is None:
         return False
-    question_route = classify_deterministic_active_flow_question(
-        text=ctx.message_text,
-        interrupt=interrupt,
-        current_task_types=ctx.state_view.pending_interrupt_task_types,
-    )
-    return question_route is not None and question_route.question_type not in {None, "unknown"}
+    return False
 
 
 def _semantic_router_can_run(ctx: GateContext, *, skip_for_interrupt: bool) -> bool:

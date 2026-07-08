@@ -53,6 +53,7 @@ async def _execute_faq_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCont
     context_data = {
         "phone_number": turn.phone_number,
         "language": _state_locale(ctx.state),
+        "stashed_sessions": turn.stashed_sessions,
     }
 
     result = cast(
@@ -120,6 +121,7 @@ async def _execute_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
         "user_id": context.user_id,
         "email": context.email,
         "language": _state_locale(ctx.state),
+        "stashed_sessions": turn.stashed_sessions,
     }
 
     support_payload = dict(task.payload)

@@ -105,6 +105,7 @@ Active list/summary context:
 - "so what the total?" after grouped recipient summary → grouped_total_followup, refine_existing
 - "how much total"/"sum it up" → aggregate, refine_existing
 - "total for mum" → aggregate, refine_existing (narrow recipient filter, keep time scope)
+- "break down by account", "breakdown by category" after a total/summary → aggregate, refine_existing, and MUST include `extraction` with `aggregation.type=breakdown` and `aggregation.group_by` populated. Leave `time_range` unspecified unless the user explicitly mentions a new time period.
 - "how all this take be 50k" / "how is that 50k" after aggregate evidence → explain_aggregate_scope, none
 - "what about credit/debit" → filter_delta, refine_existing
 - "income vs spending" → aggregate, refine_existing (breakdown by transaction_type)
@@ -126,7 +127,7 @@ QUERY SHAPE RULES
 - "How much did I spend last" (no recipient) → likely time clarification.
 - "How much did I spend today/this week" → fresh_query with explicit period, not continuation.
 
-EXTRACTION RULES (for fresh_query, reinterpret_query, new_query)
+EXTRACTION RULES (for fresh_query, reinterpret_query, new_query, and aggregate continuations)
 Populate: intent, filters, time_range, comparison, aggregation, request_shape, fact_query_kind, result_limit, result_reference, answer_fact_field.
 - request_shape:
   fact | existence | detail | list | grouped_summary | analytics | comparison | affordability

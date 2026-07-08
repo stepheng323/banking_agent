@@ -1,5 +1,6 @@
 """Funding planning logic."""
 
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -119,30 +120,54 @@ def _implicit_pooled_plan_needs_approval(payload: TransferPayload, plan: Any) ->
     )
 
 
-def _single_transfer_funding_approval_prompt(payload: TransferPayload, plan: Any) -> str:
+def _single_transfer_funding_approval_prompt(payload: TransferPayload, plan: Any, locale: str = "en") -> str:
     amount = payload.amount or plan.transfer_amount
-    lines = ["Funding review", "", f"This transfer needs {format_naira(amount)}."]
-    primary_bank = plan.primary_bank_name or (plan.steps[0].bank_name if plan.steps else None)
-    primary_balance = plan.primary_available_balance
-    if primary_bank and primary_balance is not None:
-        label = "selected" if payload.source_affinity_mode == "explicit" else "default"
-        lines.append(f"Your {label} {primary_bank} has {format_naira(primary_balance)}.")
+    primary_bank = plan.primary_bank_name or (plan.steps[0].bank_name if plan.steps else "Account")
+    primary_balance = plan.primary_available_balance or Decimal("0.00")
+    label = "selected" if payload.source_affinity_mode == "explicit" else "default"
 
-    extra_banks = [step.bank_name for step in plan.steps[1:] if step.bank_name]
-    lines.append("")
-    if extra_banks:
-        lines.append(f"I can suggest this breakdown and add {' and '.join(extra_banks)} to complete it:")
+    lines = [
+        render_message("funding.single.shortfall_header", locale),
+        "",
+        render_message(
+            "funding.single.shortfall_primary",
+            locale,
+            {
+                "amount": format_naira(amount),
+                "label": label,
+                "primary_bank": primary_bank,
+                "primary_balance": format_naira(primary_balance),
+            },
+        ),
+        ""
+    ]
+
+    shortfall = amount - primary_balance
+    candidate_sources = getattr(plan, "candidate_sources", [])
+
+    if not candidate_sources:
+        lines.append(
+            render_message(
+                "funding.single.shortfall_no_options",
+                locale,
+                {"shortfall": format_naira(shortfall)},
+            )
+        )
     else:
-        lines.append("I can suggest this breakdown:")
-    lines.append("")
-    for step in plan.steps:
-        lines.append(f"* {step.bank_name} (···{_last4(step.account_number)}): {format_naira(step.amount)}")
-    lines.extend(
-        [
-            "",
-            "Reply yes to use this breakdown, or tell me a different source or amount.",
-        ]
-    )
+        lines.append(
+            render_message(
+                "funding.single.shortfall_pool_options",
+                locale,
+                {"shortfall": format_naira(shortfall)},
+            )
+        )
+        for index, candidate in enumerate(candidate_sources, start=1):
+            bank_name = candidate.get("bank_name", "Account")
+            available = candidate.get("available", Decimal("0.00"))
+            lines.append(f"{index}. {bank_name} ({format_naira(available)} available)")
+        lines.append("")
+        lines.append(render_message("funding.single.shortfall_reply_hint", locale))
+
     return "\n".join(lines).strip()
 
 
@@ -213,13 +238,12 @@ async def plan_transaction_funding(
 
     plan_dict = _funding_plan_dict(plan, signature)
 
-    if _implicit_pooled_plan_needs_approval(payload, plan):
+    if not plan.is_single_source:
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
-            required_fields=["suggested_funding_plan", "amount", "source_accounts", "explicit_split"],
-            prompt=_single_transfer_funding_approval_prompt(payload, plan),
-            details=funding_adjustment_details("suggested_pooling"),
-            patch={"suggested_funding_plan": plan_dict, "funding_plan": None},
+            required_fields=["source_accounts", "explicit_split"],
+            prompt=_single_transfer_funding_approval_prompt(payload, plan, locale),
+            details={"funding_plan": plan, "insufficient_reason": "pool_approval_required"},
         )
 
     return TransactionResult(outcome=TransactionOutcome.OK, patch={"funding_plan": plan_dict})

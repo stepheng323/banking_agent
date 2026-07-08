@@ -77,6 +77,7 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
         "profile": context.profile,
         "accounts": context.accounts,
         "language": _state_locale(ctx.state),
+        "stashed_sessions": turn.stashed_sessions,
     }
 
     result = cast(
@@ -165,6 +166,7 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
             "phone_number": turn.phone_number,
             "resolver_provider": provider,
             "language": _state_locale(ctx.state),
+            "stashed_sessions": turn.stashed_sessions,
         }
 
         result = cast(TransactionResult, await worker.run(payload=task.payload, context=context_data))

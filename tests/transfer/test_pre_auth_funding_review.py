@@ -133,15 +133,10 @@ async def test_auto_pooled_single_transfer_requires_funding_suggestion_acceptanc
     )
 
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
-    assert result.details["review_state"] == "funding_adjustment"
-    assert result.details["funding_plan_status"] == "suggested_pooling"
-    assert result.patch["funding_plan"] is None
-    suggested_plan = result.patch["suggested_funding_plan"]
-    assert suggested_plan["is_sufficient"] is True
-    assert suggested_plan["is_single_source"] is False
-    assert "Your default Access Bank has ₦30,000" in (result.prompt or "")
-    assert "I can suggest this breakdown and add GTBank to complete it" in (result.prompt or "")
-    assert "Reply yes to use this breakdown" in (result.prompt or "")
+    assert result.details["insufficient_reason"] == "pool_approval_required"
+    assert "funding_plan" in result.details
+    assert "This transfer needs ₦60,000," in (result.prompt or "")
+    assert "Which would you like to use?" in (result.prompt or "")
 
 
 @pytest.mark.asyncio

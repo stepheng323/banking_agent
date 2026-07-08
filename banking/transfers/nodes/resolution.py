@@ -38,8 +38,6 @@ def _clear_resolution_for_mode_switch(payload: TransferPayload) -> TransferPaylo
             "recipient_resolution_provider": None,
             "recipient_resolution_mode": None,
             "recipient_resolved_name": None,
-            "beneficiary_id": None,
-            "resolved_from_saved_beneficiary": False,
             "name_mismatch": False,
             "name_match_score": None,
             "name_mismatch_warning": None,

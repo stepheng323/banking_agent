@@ -681,12 +681,13 @@ async def test_multi_source_funding_confirmation_does_not_duplicate_plain_summar
     result = build_confirmation(payload, ctx)
 
     assert result.confirmation_summary is not None
-    assert "Your Access Bank has *₦30,000*" in result.confirmation_summary
-    assert "Suggested breakdown:" in result.confirmation_summary
+    assert result.confirmation_summary is not None
+    assert "Funding Breakdown:" in result.confirmation_summary
+    assert "• Access Bank: ₦30,000" in result.confirmation_summary
+    assert "• First Bank: ₦5,000" in result.confirmation_summary
     assert "The recipient will be credited once all funding debits succeed." in result.confirmation_summary
-    assert "Recipient will be credited once after all funding debits succeed." not in result.confirmation_summary
     assert result.confirmation_summary.count("₦35,000 → Tolu Adebayo") == 1
-    assert "Access Bank • 2010000001" not in result.confirmation_summary
+    assert "Access Bank • 2010000001" in result.confirmation_summary
 
 
 async def test_multi_source_funding_confirmation_uses_locale_credit_note() -> None:

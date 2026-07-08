@@ -9,7 +9,6 @@ from banking.persistence.unit_of_work import UnitOfWork
 from banking.policy.guardrails.loader import get_cached_guardrails
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.formatters.recipient_display import format_recipient_display_label
-from banking.presentation.formatters.transfer_funding_plan import format_funding_plan_summary
 from banking.presentation.formatters.transfer_summary import format_transfer_summary
 from banking.presentation.i18n.personality import (
     PersonalityContext,
@@ -630,35 +629,24 @@ def build_confirmation(
         steps = funding_plan.get("steps", [])
         if isinstance(steps, list) and steps:
             credit_note = render_message("transfer.format.funding_plan.credit_after_debits", ctx.language)
-            primary_bank = (
-                funding_plan.get("primary_bank_name")
-                or steps[0].get("bank_name")
-                or render_message("transfer.format.funding_plan.bank_fallback", ctx.language)
-            )
-            balance_val = funding_plan.get("primary_available_balance")
-            primary_balance = to_naira(
-                balance_val if balance_val is not None else steps[0].get("amount")
-            ) or require_naira(0)
-            funding_summary = format_funding_plan_summary(
-                steps=steps,
-                amount=to_naira(payload.amount or funding_plan.get("transfer_amount")) or require_naira(0),
-                primary_bank=str(primary_bank),
-                balance_available=primary_balance,
-                recipient_name=payload.recipient_resolved_name or payload.recipient_name or "",
-                recipient_bank=payload.recipient_bank_name or "",
-                recipient_account=payload.recipient_account or "",
-                locale=ctx.language,
-            )
+            funding_lines = ["", "Funding Breakdown:"]
+            for step in steps:
+                bank = step.get("bank_name", "Bank")
+                amt_val = to_naira(step.get("amount")) or require_naira(0)
+                funding_lines.append(f"• {bank}: {format_naira(amt_val)}")
+            breakdown_text = "\n".join(funding_lines)
+
             if warning_lines:
                 summary = "\n\n".join(
                     [
                         *warning_lines,
-                        funding_summary,
+                        base_summary,
+                        breakdown_text,
                         credit_note,
                     ]
                 )
             else:
-                summary = f"{funding_summary}\n\n{credit_note}"
+                summary = f"{base_summary}\n{breakdown_text}\n\n{credit_note}"
 
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_CONFIRMATION,

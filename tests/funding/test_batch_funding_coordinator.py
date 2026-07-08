@@ -1,20 +1,54 @@
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 
 from banking.transfers.funding.batch_models import SourceAffinity, TransferDemand
 from banking.transfers.funding.coordinator import BatchFundingCoordinator
-from shared.clients.abstractions.direct_debit import BalanceResult
+from shared.clients.abstractions.direct_debit import BalanceResult, DebitResult, DebitStatus, DirectDebitProvider
 
 
-class _MockDirectDebitProvider:
+class _MockDirectDebitProvider(DirectDebitProvider):
     def __init__(self, balances: dict[str, float]) -> None:
         self.balances = balances
 
     async def get_balance(self, account_id: str, real_time: bool = True) -> BalanceResult:
         del real_time
-        amount = float(self.balances.get(account_id, 0.0))
+        amount = Decimal(str(self.balances.get(account_id, 0.0)))
         return BalanceResult(success=True, available_balance=amount, ledger_balance=amount, currency="NGN")
+
+    @property
+    def provider_name(self) -> str:
+        return "mock"
+
+    async def verify_mandate(self, mandate_id: str) -> dict:
+        return {"status": "active"}
+
+    async def execute_debit(self, mandate_id: str, amount: Decimal, reference: str) -> dict:
+        return {"status": "successful"}
+
+    async def initiate_debit(
+        self,
+        mandate_id: str,
+        amount: Decimal,
+        reference: str,
+        narration: str = "Transfer",
+        beneficiary_account: str | None = None,
+        beneficiary_bank_code: str | None = None,
+    ) -> DebitResult:
+        return DebitResult(success=True, status=DebitStatus.SUCCESSFUL)
+
+    async def get_debit_status(self, reference: str) -> DebitResult:
+        return DebitResult(success=True, status=DebitStatus.SUCCESSFUL)
+
+    async def reverse_debit(self, debit_reference: str, reason: str = "Refund") -> DebitResult:
+        return DebitResult(success=True, status=DebitStatus.SUCCESSFUL)
+
+    async def get_refund_status(self, debit_reference: str, refund_id: str | None = None) -> DebitResult:
+        return DebitResult(success=True, status=DebitStatus.SUCCESSFUL)
+
+    async def cancel_mandate(self, mandate_id: str) -> bool:
+        return True
 
 
 def _account(bank_name: str, account_ref: str, *, is_default: bool = False) -> dict:
@@ -42,11 +76,11 @@ def _demand(
 ) -> TransferDemand:
     return TransferDemand(
         task_id=task_id,
-        amount=amount,
+        amount=Decimal(str(amount)),
         source_affinity=SourceAffinity(mode=mode),  # type: ignore[arg-type]
         preferred_account_id=preferred_account_id,
         explicit_sources=explicit_sources or [],
-        explicit_split=explicit_split,
+        explicit_split={k: Decimal(str(v)) for k, v in explicit_split.items()} if explicit_split else None,
         use_dual_accounts=use_dual_accounts,
         source_pooling_locked=source_pooling_locked,
     )
@@ -190,9 +224,9 @@ async def test_batch_selected_source_shortfall_prompts_for_one_more_source(sampl
     assert result.shortfalls is None
     assert set(result.suggested_plans_by_task) == {"t1", "t2"}
     assert result.suggested_source_ids == [refs["access"]["id"], refs["first"]["id"]]
-    assert "Funding breakdown" in (result.suggestion or "")
-    assert "Access Bank" in (result.suggestion or "")
-    assert "First Bank" in (result.suggestion or "")
+    assert "only has ₦50,000" in (result.suggestion or "")
+    assert "You can pool from an additional account to cover the remaining ₦10,000" in (result.suggestion or "")
+    assert "First Bank (₦50,000 available)" in (result.suggestion or "")
 
 
 @pytest.mark.asyncio
@@ -258,16 +292,12 @@ async def test_batch_auto_funding_blocks_when_three_sources_would_be_needed(samp
     assert not result.is_feasible
     assert not result.requires_user_approval
     assert result.shortfalls is not None
-    assert "at most 2 accounts" in (result.suggestion or "")
-    assert "Your default Access Bank has ₦30,000" in (result.suggestion or "")
-    assert "Access Bank + First Bank:" not in (result.suggestion or "")
-    assert "With that limit, the most I can cover is ₦60,000" in (result.suggestion or "")
-    assert "Available sources:" in (result.suggestion or "")
-    assert "Access Bank (···0000) (default): ₦30,000" in (result.suggestion or "")
-    assert "First Bank (···0000): ₦30,000" in (result.suggestion or "")
-    assert "GTBank (···0000): ₦30,000" in (result.suggestion or "")
-    assert "₦60,000" in (result.suggestion or "")
-    assert "₦10,000" in (result.suggestion or "")
+    assert "maximum of 2 pooled accounts" in (result.suggestion or "")
+    assert "Because transfers are limited to a maximum of 2 pooled accounts" in (result.suggestion or "")
+    assert "even combining" in (result.suggestion or "")
+    assert "**Access Bank**" in (result.suggestion or "")
+    assert "**First Bank**" in (result.suggestion or "")
+    assert "only reaches ₦60,000" in (result.suggestion or "")
     assert result.anchor_source_ids == [refs["access"]["id"]]
     assert float(result.capped_available) == pytest.approx(60000.0)
 
@@ -289,12 +319,9 @@ async def test_batch_auto_pooled_funding_requires_user_approval(sample_accounts)
     assert result.shortfalls is None
     assert set(result.suggested_plans_by_task) == {"t1", "t2"}
     assert result.plans_by_task == {}
-    assert "Funding breakdown" in (result.suggestion or "")
-    assert "Access Bank" in (result.suggestion or "")
-    assert "First Bank" in (result.suggestion or "")
-    assert "Available sources:" not in (result.suggestion or "")
-    assert "Total debit: ₦50,000" in (result.suggestion or "")
-    assert "Reply confirm to authorize these transfers" in (result.suggestion or "")
+    assert "This batch needs ₦50,000, but your Access Bank only has ₦30,000" in (result.suggestion or "")
+    assert "You can pool from an additional account to cover the remaining ₦20,000" in (result.suggestion or "")
+    assert "First Bank (₦50,000 available)" in (result.suggestion or "")
     assert result.anchor_source_ids == [refs["access"]["id"]]
     assert result.suggested_source_ids == [refs["access"]["id"], refs["first"]["id"]]
 
@@ -345,8 +372,9 @@ async def test_batch_auto_pooled_funding_suggestion_uses_last4_when_full_account
 
     assert not result.is_feasible
     assert result.requires_user_approval
-    assert "Access Bank (···0003): ₦30,000" in (result.suggestion or "")
-    assert "GTBank (···0002): ₦30,000" in (result.suggestion or "")
+    assert "This batch needs ₦60,000, but your Access Bank (···0003) only has ₦30,000" in (result.suggestion or "")
+    assert "You can pool from an additional account to cover the remaining ₦30,000" in (result.suggestion or "")
+    assert "GTBank (···0002) (₦30,000 available)" in (result.suggestion or "")
     assert "????" not in (result.suggestion or "")
 
 
@@ -454,12 +482,9 @@ async def test_batch_auto_pooled_funding_asks_when_multiple_accounts_can_cover_r
     assert result.suggested_plans_by_task == {}
     assert result.source_choice is not None
     assert set(result.source_choice.candidate_source_ids) == {refs["first"]["id"], refs["gtb"]["id"]}
-    assert "Total needed: ₦60,000" in (result.suggestion or "")
-    assert "To cover the remaining ₦30,000, choose one more source" in (result.suggestion or "")
-    assert "• First Bank" in (result.suggestion or "")
-    assert "• GTBank" in (result.suggestion or "")
-    assert "Reply with the bank you want to use." in (result.suggestion or "")
-    assert "Which account should I use?" not in (result.suggestion or "")
+    assert "but your default access bank has ₦30,000" in (result.suggestion or "").lower()
+    assert "You can pool from one additional account to cover the remaining ₦30,000." in (result.suggestion or "")
+    assert "Which would you like to use: **First Bank** or **GTBank**?" in (result.suggestion or "")
 
 
 @pytest.mark.asyncio
@@ -492,10 +517,9 @@ async def test_batch_selected_first_bank_reduction_asks_for_one_more_source(samp
     assert result.source_choice is not None
     assert result.anchor_source_ids == [refs["first"]["id"]]
     assert set(result.source_choice.candidate_source_ids) == {refs["access"]["id"], refs["gtb"]["id"]}
-    assert "Total needed: ₦60,000" in (result.suggestion or "")
-    assert "Your selected First Bank has ₦30,000" in (result.suggestion or "")
-    assert "To cover the remaining ₦30,000, choose one more source" in (result.suggestion or "")
-    assert "only ₦90,000" not in (result.suggestion or "")
+    assert "but your selected first bank has ₦30,000" in (result.suggestion or "").lower()
+    assert "You can pool from one additional account to cover the remaining ₦30,000." in (result.suggestion or "")
+    assert "Which would you like to use: **Access Bank** or **GTBank**?" in (result.suggestion or "")
 
 
 @pytest.mark.asyncio
@@ -547,6 +571,6 @@ async def test_batch_auto_pooled_funding_says_when_only_one_account_can_cover_re
     assert result.requires_user_approval
     assert not result.requires_source_choice
     assert result.suggested_source_ids == [refs["access"]["id"], refs["gtb"]["id"]]
-    assert "Only GTBank can cover the remaining ₦30,000" in (result.suggestion or "")
-    assert "Funding breakdown" in (result.suggestion or "")
-    assert "GTBank" in (result.suggestion or "")
+    assert "This batch needs ₦60,000, but your Access Bank only has ₦30,000" in (result.suggestion or "")
+    assert "You can pool from an additional account to cover the remaining ₦30,000" in (result.suggestion or "")
+    assert "GTBank (₦30,000 available)" in (result.suggestion or "")

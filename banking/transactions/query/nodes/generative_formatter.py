@@ -14,7 +14,7 @@ from langchain_core.runnables import Runnable
 
 from banking.presentation.i18n.locale import LocaleManager
 from banking.runtime.results import TransactionOutcome, TransactionResult
-from banking.transactions.query.models.domain import QueryResult
+from banking.transactions.query.models.domain import QueryAnswerStrategy, QueryResult
 from banking.transactions.query.pipeline import QueryStep
 from banking.transactions.query.presentation.formatter import QueryFormatter
 from shared.utils.logging import get_logger
@@ -31,6 +31,7 @@ _MONTH_DATE_RE = re.compile(
 _ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _REFERENCE_RE = re.compile(r"\b(?:txn|ref)[_-]?[A-Za-z0-9_-]+\b", re.I)
 _MASKED_ACCOUNT_RE = re.compile(r"(?:\*|·|•){2,}\d{3,4}\b")
+_STRUCTURED_ROW_MARKERS = ("₦", "—", "·")
 
 PROMPT_TEMPLATE = """You are a helpful financial assistant for a banking application.
 
@@ -113,6 +114,39 @@ def _preserves_fact_tokens(*, source: str, candidate: str) -> bool:
     return source_tokens.issubset(candidate_tokens)
 
 
+def _normalize_structured_row(value: str) -> str:
+    row = value.strip()
+    row = re.sub(r"^[*_`~\s]*[•*-]\s*", "", row)
+    row = row.strip("*_`~ ")
+    row = re.sub(r"\s+", " ", row)
+    return row.lower()
+
+
+def _is_structured_row(value: str) -> bool:
+    stripped = value.strip()
+    if not stripped:
+        return False
+    if stripped.lower().startswith(("more for next page", "total:", "*total:")):
+        return False
+    if stripped.startswith(("•", "- ")) and any(marker in stripped for marker in _STRUCTURED_ROW_MARKERS):
+        return True
+    return "₦" in stripped and any(marker in stripped for marker in ("—", "·", "%"))
+
+
+def _extract_structured_rows(text: str) -> list[str]:
+    rows = [_normalize_structured_row(line) for line in text.splitlines() if _is_structured_row(line)]
+    return [row for row in rows if row]
+
+
+def _preserves_structured_rows(*, source: str, candidate: str, is_summary_list: bool = False) -> bool:
+    source_rows = _extract_structured_rows(source)
+    min_rows = 1 if is_summary_list else 2
+    if len(source_rows) < min_rows:
+        return True
+    normalized_candidate = _normalize_structured_row(candidate)
+    return all(row in normalized_candidate for row in source_rows)
+
+
 class GenerativeFormattingStep(QueryStep):
     """Rewrites the deterministic query response to be more conversational."""
 
@@ -188,6 +222,24 @@ class GenerativeFormattingStep(QueryStep):
                     user_query=user_query,
                     source_tokens=sorted(_extract_fact_tokens(system_response)),
                     candidate_tokens=sorted(_extract_fact_tokens(llm_response)),
+                )
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    response=system_response,
+                    patch={},
+                )
+
+            is_summary_list = query_result.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST
+            if not _preserves_structured_rows(
+                source=system_response,
+                candidate=llm_response,
+                is_summary_list=is_summary_list,
+            ):
+                logger.warning(
+                    "generative_formatting_rejected_structure_drift",
+                    user_query=user_query,
+                    source_rows=_extract_structured_rows(system_response),
+                    candidate_rows=_extract_structured_rows(llm_response),
                 )
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,

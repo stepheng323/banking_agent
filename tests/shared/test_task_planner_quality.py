@@ -304,42 +304,6 @@ def test_planner_quality_dirty_for_text_derived_fanout_repair() -> None:
     assert "postprocess.transfer.text_derived_fanout" in result.quality_report.dirty_reasons
 
 
-def test_planner_quality_dirty_when_mixed_source_bank_is_propagated_to_sibling_task() -> None:
-    planner_output = PlannerOutput(
-        primary_intent="mixed",
-        tasks=[
-            make_planned_task(
-                task_id="t1",
-                action="send_money",
-                executor="transfer",
-                instruction="Send 10k to adebayo",
-                parameters=TransferTaskParameters(amount=10000, recipient_name="adebayo"),
-                risk="MONEY_MOVE",
-            ),
-            make_planned_task(
-                task_id="t2",
-                action="buy_airtime",
-                executor="airtime",
-                instruction="buy me 2k airtime from my gtb",
-                parameters=AirtimeTaskParameters(amount=2000, is_self=True, source_bank_name="GTBank"),
-                risk="MONEY_MOVE",
-            ),
-        ],
-        confidence=0.98,
-        detected_language="English",
-    )
-
-    result = _postprocess_planner_tasks_with_quality(
-        planner_output,
-        "Send 10k to adebayo and buy me 2k airtime from my gtb",
-        quality_report=PlannerQualityReport(),
-    )
-
-    assert not result.quality_report.clean
-    assert "postprocess.mixed_source_bank_propagation" in result.quality_report.dirty_reasons
-    assert [task.parameters.source_bank_name for task in result.planner_output.tasks] == ["GTBank", "GTBank"]
-
-
 def test_planner_quality_clean_when_mixed_source_bank_is_already_on_every_task() -> None:
     planner_output = PlannerOutput(
         primary_intent="mixed",

@@ -1209,12 +1209,19 @@
       "unable_to_create": "Unable to create funding plan."
     },
     "batch": {
-      "shortfall_header": "⚠️ Insufficient funds for this batch",
+      "shortfall_header": "Insufficient funds for this batch",
       "shortfall_body": "This batch needs {demanded}, but only {available} is currently available.",
       "task_covered": "✓ {task_id}: {amount} available from {bank}.",
-      "task_short": "❌ {task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
-      "alternate_suggestion": "💡 {bank} has {available}. Should I use it instead?",
+      "task_short": "{task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
+      "alternate_suggestion": "{bank} has {available}. Should I use it instead?",
       "total_infeasible": "Reply with updated source accounts/split, or reduce the transfer amounts."
+    },
+    "single": {
+      "shortfall_header": "Funding review",
+      "shortfall_primary": "This transfer needs {amount}, but your {label} {primary_bank} only has {primary_balance}.",
+      "shortfall_pool_options": "You can pool from an additional account to cover the remaining {shortfall}. Which would you like to use?",
+      "shortfall_no_options": "Because we can only pool from one additional account, and none of your other accounts have the remaining {shortfall} available, this transfer cannot be completed right now.\n\nYou can reduce the transfer amount, or top up one of your accounts first.",
+      "shortfall_reply_hint": "Reply with the number or bank name."
     },
     "format": {
       "insufficient": {

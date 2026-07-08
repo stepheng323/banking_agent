@@ -65,7 +65,11 @@ def _should_replace_aggregate_time_range(
 ) -> bool:
     if extraction is None or extracted_contract is None:
         return False
-    return extraction.time_range.reference_type in {TimeReference.EXPLICIT, TimeReference.ALL_TIME}
+    if extraction.time_range.reference_type == TimeReference.ALL_TIME:
+        return True
+    if extraction.time_range.reference_type == TimeReference.EXPLICIT:
+        return bool(extraction.time_range.period or extraction.time_range.days_back)
+    return False
 
 
 def _should_replace_aggregate_session_from_fresh_parse(
@@ -350,6 +354,27 @@ async def compile_aggregate_continuation_updates(
             return step._append_query_session_transition(updates, "replace_session_new_query")
 
         aggregation = extracted_contract.aggregation.model_copy(deep=True)
+    elif (
+        deterministic_result is not None
+        and deterministic_result.outcome == ResolverOutcome.OK
+        and deterministic_contract is not None
+        and deterministic_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+        and deterministic_contract.aggregation is not None
+    ):
+        deterministic_aggregation = deterministic_contract.aggregation
+        extracted_contract = deterministic_contract
+        updated_filters = extracted_contract.filters
+        updated_filters = _preserve_active_direction_unless_filter_delta(
+            decision=decision,
+            session_query_contract=session_query_contract,
+            updated_filters=updated_filters,
+        )
+        aggregation = deterministic_aggregation.model_copy(deep=True)
+        logger.info(
+            "query_aggregate_deterministic_contract_applied",
+            aggregation_type=aggregation.type,
+            group_by=aggregation.group_by,
+        )
     elif step._is_income_vs_spending_followup(message=state.get("message", ""), query_contract=session_query_contract):
         aggregation = Aggregation(type="breakdown", group_by="transaction_type")
         logger.info(

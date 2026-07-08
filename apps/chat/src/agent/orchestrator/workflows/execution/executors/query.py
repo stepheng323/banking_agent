@@ -99,6 +99,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         "turn_id": turn.last_message_id,
         "pending_query_clarification": turn.pending_query_clarification,
         "progress_tracker": ctx.dependencies.progress_tracker,
+        "stashed_sessions": turn.stashed_sessions,
         **build_query_context_for_worker(ctx.state),
     }
 

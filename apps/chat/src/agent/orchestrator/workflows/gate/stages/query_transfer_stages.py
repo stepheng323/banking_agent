@@ -11,7 +11,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.query_followups
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _classify_obvious_transfer_request,
     _obvious_mixed_transaction_executors,
-    parse_source_aware_transfer_direct,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, hint_only, task_dispatch
@@ -185,50 +184,6 @@ def _attach_query_domain_hint_if_needed(ctx: GateContext, *, can_consider_query_
     return False
 
 
-def _source_account_candidates(ctx: GateContext) -> list[dict[str, Any]]:
-    loaded_context = ctx.state_view.loaded_context_or_empty
-    accounts: list[dict[str, Any]] = []
-    for key in ("transaction_accounts", "accounts", "all_accounts"):
-        raw_accounts = loaded_context.get(key)
-        if not isinstance(raw_accounts, list):
-            continue
-        accounts.extend(account for account in raw_accounts if isinstance(account, dict))
-    return accounts
-
-
-async def _maybe_source_aware_transfer_route(ctx: GateContext) -> dict[str, Any] | None:
-    parsed = parse_source_aware_transfer_direct(
-        ctx.message_text,
-        accounts=_source_account_candidates(ctx),
-    )
-    if parsed is None:
-        return None
-
-    transfer_updates = await _query_session_exit_updates_if_needed(ctx)
-    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="transfer", mode="new")
-    spec.payload.update(parsed.to_payload())
-    logger.info(
-        "gate_deterministic_source_aware_transfer",
-        task_id=task_id,
-        source_bank_name=parsed.source_bank_name,
-        has_narration=bool(parsed.narration),
-        skipped_semantic_router=True,
-        skipped_planner=True,
-    )
-    return task_dispatch(
-        ctx,
-        tasks={task_id: spec},
-        waves=[[task_id]],
-        owner="guardrail",
-        decision="source_aware_transfer_command",
-        semantic_path_shape="deterministic_transfer_domain",
-        extra_updates={**(ctx.summary_updates or {}), **transfer_updates},
-        target_domain="transfer",
-        mode="new",
-        route_source="transfer_domain_guard",
-        heuristic_type="slot_parser",
-        heuristic_name="source_aware_transfer_command",
-    )
 
 
 async def _query_session_exit_updates_if_needed(ctx: GateContext) -> dict[str, Any]:
@@ -275,11 +230,6 @@ async def _maybe_transfer_route(ctx: GateContext) -> dict[str, Any] | None:
                 heuristic_name=transfer_request_reason,
             )
         if transfer_request_reason in {"batch_transfer_command", "account_aware_transfer_command"}:
-            if transfer_request_reason == "account_aware_transfer_command":
-                source_aware_updates = await _maybe_source_aware_transfer_route(ctx)
-                if source_aware_updates is not None:
-                    return source_aware_updates
-
             transfer_updates = {
                 "preplanner_expected_transaction_executors": ["transfer"],
             }

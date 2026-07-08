@@ -11,8 +11,6 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_continue i
 from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_reprompt import _reprompt_or_reset_updates
 from apps.chat.src.agent.orchestrator.workflows.interrupt.questions.active_flow_questions import (
     active_flow_question_updates,
-    classify_deterministic_active_flow_question,
-    should_apply_deterministic_active_flow_question,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_core import (
     _route_interrupt,
@@ -74,24 +72,6 @@ async def _handle_auth_interrupt(
         fields_by_task=interrupt.fields_by_task,
         prompt=interrupt.prompt,
     )
-    question_route = classify_deterministic_active_flow_question(
-        text=text,
-        interrupt=interrupt,
-        current_task_types=current_task_types,
-    )
-    if question_route is not None and should_apply_deterministic_active_flow_question(
-        route=route,
-        question_route=question_route,
-    ):
-        logger.info(
-            "interrupt_auth_active_flow_question_override",
-            original_decision=route.decision,
-            original_confidence=route.confidence,
-            question_type=question_route.question_type,
-            target_field=question_route.target_field,
-            unsafe_reason=question_route.unsafe_reason,
-        )
-        route = question_route
 
     if route.decision == "active_flow_question":
         return active_flow_question_updates(

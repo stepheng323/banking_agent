@@ -114,8 +114,6 @@ class BeneficiaryMatcher:
         query_tokens = normalized_query.split()
 
         # First, collect exact matches (case-insensitive).
-        # For short single-token queries (e.g. "tolu"), one exact alias can still be ambiguous
-        # if multiple beneficiaries contain the same token.
         exact_matches = self.exact_matches(name, beneficiaries)
 
         if len(exact_matches) > 1:
@@ -130,9 +128,8 @@ class BeneficiaryMatcher:
                         continue
                     alias = _normalize_text(str(b.alias or ""))
                     account_name = _normalize_text(str(b.account_name or ""))
-                    if normalized_query and (
-                        (alias and normalized_query in alias) or (account_name and normalized_query in account_name)
-                    ):
+                    b_tokens = set(alias.split() + account_name.split())
+                    if normalized_query in b_tokens:
                         related_matches.append(b)
                 if len(related_matches) > 1:
                     return "clarify", None, related_matches[: self.max_candidates]
@@ -141,7 +138,11 @@ class BeneficiaryMatcher:
         startswith_matches = []
         for b in beneficiaries:
             b_name = _normalize_text(str(b.account_name or ""))
-            if b_name and len(normalized_query) > 2 and b_name.startswith(normalized_query):
+            alias = _normalize_text(str(b.alias or ""))
+            if len(normalized_query) > 2 and (
+                (b_name and b_name.startswith(normalized_query)) or
+                (alias and alias.startswith(normalized_query))
+            ):
                 startswith_matches.append(b)
 
         if len(startswith_matches) == 1:
@@ -149,29 +150,41 @@ class BeneficiaryMatcher:
         elif len(startswith_matches) > 1:
             return "clarify", None, startswith_matches[: self.max_candidates]
 
-        contains_matches = []
+        token_matches = []
         if len(normalized_query) >= 3:
             for b in beneficiaries:
                 alias = _normalize_text(str(b.alias or ""))
                 account_name = _normalize_text(str(b.account_name or ""))
-                if normalized_query and (
-                    (alias and normalized_query in alias) or (account_name and normalized_query in account_name)
-                ):
-                    contains_matches.append(b)
+                b_tokens = set(alias.split() + account_name.split())
 
-        if len(contains_matches) == 1:
-            return "single", contains_matches[0], []
-        elif len(contains_matches) > 1:
-            return "clarify", None, contains_matches[: self.max_candidates]
+                matched = False
+                for q_token in query_tokens:
+                    if q_token in b_tokens:
+                        matched = True
+                        break
+                    # only prefix match if token is long enough
+                    if len(q_token) >= 3 and any(t.startswith(q_token) for t in b_tokens):
+                        matched = True
+                        break
+                if matched:
+                    token_matches.append(b)
 
-        # If no exact match, fall back to fuzzy matching
+        if len(token_matches) == 1:
+            return "single", token_matches[0], []
+        elif len(token_matches) > 1:
+            return "clarify", None, token_matches[: self.max_candidates]
+
+        # If no exact/token match, fall back to fuzzy matching but with strict length checks
+        # to avoid "ayo" matching "adebayo" (ratio 0.6). We raise the min threshold dynamically.
+        min_thresh = self.threshold_min if len(normalized_query) > 4 else 0.75
+
         ratios = [
             (index, self._beneficiary_best_ratio(normalized_query, beneficiary))
             for index, beneficiary in enumerate(beneficiaries)
         ]
         ratios.sort(key=lambda x: x[1], reverse=True)
 
-        top = [(beneficiaries[i], score) for i, score in ratios[: self.max_candidates] if score >= self.threshold_min]
+        top = [(beneficiaries[i], score) for i, score in ratios[: self.max_candidates] if score >= min_thresh]
 
         if not top:
             return "ask_details", None, []

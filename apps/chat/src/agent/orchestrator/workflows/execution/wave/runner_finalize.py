@@ -1,5 +1,5 @@
 import time
-from typing import Any, cast
+from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
@@ -152,35 +152,50 @@ async def _coalesce_outbox(outbox: list[dict[str, Any]], runtime: ExecutionWaveR
 
     for entry in outbox:
         if entry.get("type") == "say":
+            if current_say is not None and ("body_blocks" in entry or "body_blocks" in current_say):
+                if texts_to_blend:
+                    if len(texts_to_blend) > 1:
+                        blended_text = await _synthesize_texts(texts_to_blend, runtime)
+                        current_say["text"] = blended_text
+                    else:
+                        current_say["text"] = texts_to_blend[0]
+                coalesced.append(current_say)
+                current_say = None
+                texts_to_blend = []
+
             if current_say is None:
                 current_say = dict(entry)
                 if "body_blocks" in current_say:
                     current_say["body_blocks"] = list(current_say["body_blocks"])
                 if entry.get("text"):
                     texts_to_blend.append(entry["text"])
-                coalesced.append(current_say)
             else:
                 if entry.get("text"):
                     texts_to_blend.append(entry["text"])
 
-                if "body_blocks" in entry:
-                    if "body_blocks" not in current_say:
-                        current_say["body_blocks"] = list(entry["body_blocks"])
-                    else:
-                        current_say["body_blocks"].extend(entry["body_blocks"])
-
                 if "actionable_payload" in entry and "actionable_payload" not in current_say:
                     current_say["actionable_payload"] = entry["actionable_payload"]
         else:
-            current_say = None
+            if current_say is not None:
+                if texts_to_blend:
+                    if len(texts_to_blend) > 1:
+                        blended_text = await _synthesize_texts(texts_to_blend, runtime)
+                        current_say["text"] = blended_text
+                    else:
+                        current_say["text"] = texts_to_blend[0]
+                coalesced.append(current_say)
+                current_say = None
+                texts_to_blend = []
             coalesced.append(entry)
 
-    if current_say is not None and texts_to_blend:
-        if len(texts_to_blend) > 1:
-            blended_text = await _synthesize_texts(texts_to_blend, runtime)
-            current_say["text"] = blended_text
-        else:
-            current_say["text"] = texts_to_blend[0]
+    if current_say is not None:
+        if texts_to_blend:
+            if len(texts_to_blend) > 1:
+                blended_text = await _synthesize_texts(texts_to_blend, runtime)
+                current_say["text"] = blended_text
+            else:
+                current_say["text"] = texts_to_blend[0]
+        coalesced.append(current_say)
 
     return coalesced
 
@@ -235,7 +250,7 @@ async def finalize_execution_wave_updates(
         current_wave=runtime.current_wave,
         accumulator=runtime.accumulator,
     )
-    updates = cast(dict[str, Any], runtime.accumulator.to_updates())
+    updates = runtime.accumulator.to_updates()
     if "outbox" in updates and isinstance(updates["outbox"], list):
         updates["outbox"] = await _coalesce_outbox(updates["outbox"], runtime)
     return updates

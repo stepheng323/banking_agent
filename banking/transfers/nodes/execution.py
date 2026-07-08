@@ -1,7 +1,9 @@
 """Execution Node for Transfer Pipeline."""
 
+from decimal import Decimal
 from typing import Any
 
+from banking.presentation.formatters.transfer_notifications import format_transfer_queued_message
 from banking.presentation.i18n.renderer import render_message, render_text
 from banking.risk.service import RiskDecisionService
 from banking.runtime.results import TransactionOutcome, TransactionResult
@@ -59,7 +61,7 @@ class ExecutionStep(TransferStep):
                 payout_provider = settings.payout_provider_name.strip().lower()
                 if (
                     data.recipient_resolution_mode != POOLED_MODE
-                    or str(data.recipient_bank_code_provider or "").strip().lower() != payout_provider
+                    or data.recipient_bank_code_provider or "".strip().lower() != payout_provider
                 ):
                     logger.error(
                         "transfer_execution_rejected_recipient_resolution_mode_mismatch",
@@ -264,6 +266,11 @@ class ExecutionStep(TransferStep):
                 outcome=TransactionOutcome.OK,
                 receipt=receipt_data,
                 patch={"transaction_id": transaction_id} if transaction_id else {},
+                response=format_transfer_queued_message(
+                    amount=data.amount or Decimal(0),
+                    recipient_name=data.recipient_resolved_name or data.recipient_name or "",
+                    locale=locale,
+                ),
             )
 
         except Exception as e:

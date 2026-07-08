@@ -134,6 +134,7 @@ def _source_options(
             bank_name=account.bank_name,
             account_number=account.account_number,
             available=max(ZERO_MONEY, require_naira(ledger.get(str(account.id), ZERO_MONEY))),
+            last4=account.last4,
             is_default=account.is_default,
             is_selected=str(account.id) in selected_set,
         )

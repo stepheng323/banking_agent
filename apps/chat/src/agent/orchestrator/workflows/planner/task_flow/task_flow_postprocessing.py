@@ -8,9 +8,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_flow import (
     _strip_transactional_depends_on_edges,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_mixed_source import (
-    propagate_mixed_transaction_source_bank,
-)
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_transfer_fanout_expand import (
     _expand_underproduced_transfer_tasks,
 )
@@ -111,16 +108,6 @@ def _postprocess_planner_tasks_with_quality(
             repaired_balance_clause_indexes=repair_meta["repaired_balance_clause_indexes"],
             repaired_transfer_clause_indexes=repair_meta["repaired_transfer_clause_indexes"],
             changed_transfer_task_ids=repair_meta["changed_transfer_task_ids"],
-        )
-
-    sourced_tasks, source_meta = propagate_mixed_transaction_source_bank(planner_output.tasks, text)
-    if source_meta:
-        planner_output = planner_output.model_copy(update={"tasks": sourced_tasks})
-        quality_report = quality_report.with_reason("postprocess.mixed_source_bank_propagation")
-        logger.info(
-            "planner_mixed_source_bank_propagated",
-            source_bank_name=source_meta["source_bank_name"],
-            changed_task_ids=source_meta["changed_task_ids"],
         )
 
     return PlannerPostprocessResult(planner_output=planner_output, quality_report=quality_report)

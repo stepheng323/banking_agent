@@ -7,6 +7,7 @@ from typing import Any
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
+    QueryAnswerStrategy,
     QueryExecutionContract,
     QueryResult,
     QueryResultItem,
@@ -480,6 +481,7 @@ async def _aggregate_breakdown(
     return QueryResult(
         summary_text=summary_msg,
         items=items,
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
     )
 
 

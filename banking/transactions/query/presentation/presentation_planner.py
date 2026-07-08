@@ -137,7 +137,11 @@ def build_presentation_plan(
         has_more=has_more,
     )
     if plan is not None and getattr(result, "conversational_prefix", None):
-        plan.lead_text = f"{result.conversational_prefix} {plan.lead_text}"
+        plan.lead_text = (
+            f"{result.conversational_prefix} {plan.lead_text}"
+            if plan.lead_text
+            else result.conversational_prefix
+        )
     return plan
 
 

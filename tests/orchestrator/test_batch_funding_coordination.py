@@ -742,9 +742,10 @@ async def test_batch_auto_pooled_funding_prompts_for_approval_before_worker() ->
     assert updates["tasks"]["t_ay"].payload["funding_plan"] is None
     assert isinstance(updates["tasks"]["t_ay"].payload["suggested_funding_plan"], dict)
     prompt = updates["outbox"][-1]["text"]
-    assert "Funding breakdown" in prompt
-    assert "Reply confirm to authorize these transfers" in prompt
-    assert "Total debit: ₦50,000" in prompt
+    assert "This batch needs ₦50,000, but your Access Bank only has ₦30,000" in prompt
+    assert "You can pool from an additional account to cover the remaining ₦20,000" in prompt
+    assert "First Bank (₦50,000 available)" in prompt
+    assert "Reply with the number or bank name" in prompt
     assert "????" not in prompt
     assert "Available sources:" not in prompt
     assert "Confirm Transfers" not in prompt
@@ -1088,8 +1089,7 @@ async def test_batch_funding_recoordinates_after_input_resume_before_confirmatio
     assert updates["tasks"]["t_mom"].stage == TaskStage.AWAITING_FUNDING_ADJUSTMENT
     assert updates["tasks"]["t_ay"].stage == TaskStage.AWAITING_FUNDING_ADJUSTMENT
     prompt = updates["outbox"][-1]["text"]
-    assert "at most 2 accounts" in prompt
-    assert "Your default Access Bank has ₦30,000" in prompt
+    assert "maximum of 2 pooled accounts" in prompt
     assert "₦60,000" in prompt
     assert "₦10,000" in prompt
     assert "????" not in prompt
@@ -1159,8 +1159,7 @@ async def test_batch_funding_continues_same_batch_sibling_after_recipient_input_
     assert updates["tasks"]["t_mom"].stage == TaskStage.AWAITING_FUNDING_ADJUSTMENT
     assert updates["tasks"]["t_ay"].stage == TaskStage.AWAITING_FUNDING_ADJUSTMENT
     prompt = updates["outbox"][-1]["text"]
-    assert "at most 2 accounts" in prompt
-    assert "Your default Access Bank has ₦30,000" in prompt
+    assert "maximum of 2 pooled accounts" in prompt
     assert "₦60,000" in prompt
     assert "????" not in prompt
     assert "Confirm Transfers" not in prompt

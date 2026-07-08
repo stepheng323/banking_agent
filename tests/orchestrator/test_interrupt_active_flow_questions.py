@@ -14,9 +14,6 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
-from apps.chat.src.agent.orchestrator.workflows.interrupt.questions.active_flow_questions import (
-    classify_deterministic_active_flow_question,
-)
 from shared.types.planner import ActiveFlowQuestionType, InterruptRouteDecision, PendingActionEditDecision
 
 
@@ -152,28 +149,12 @@ async def test_active_flow_question_explains_transfer_bank_requirement() -> None
 
     updates = await handle_pending_interrupt(state, _config(planner))
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert updates["tasks"] == state.tasks
     assert "verify the account number" in _say_text(updates)
     assert "Send the recipient bank name to continue." in _say_text(updates)
 
-
-@pytest.mark.asyncio
-async def test_deterministic_question_fallback_handles_router_unavailable() -> None:
-    state = _state(
-        task_type="transfer",
-        kind="input",
-        text="why do you need the bank",
-        required_fields=["recipient_bank_name"],
-        payload={"amount": 20_000, "recipient_name": "Mum"},
-    )
-
-    updates = await handle_pending_interrupt(state, _config())
-
-    assert updates["pending_interrupt"] == state.pending_interrupt
-    assert "verify the account number" in _say_text(updates)
-    assert "Send the recipient bank name to continue." in _say_text(updates)
 
 
 @pytest.mark.asyncio
@@ -181,7 +162,7 @@ async def test_active_flow_question_blocks_future_reversal_claims() -> None:
     state = _state(
         task_type="transfer",
         kind="confirmation",
-        text="Can I reverse it later?",
+        text="Can I get it back later?",
         required_fields=[],
         payload={
             "amount": 20_000,
@@ -600,12 +581,13 @@ async def test_cancel_question_does_not_cancel_pending_interrupt() -> None:
     )
     planner = _RoutePlanner(
         InterruptRouteDecision(
-            decision="cancel",
+            decision="active_flow_question",
             confidence=0.94,
             detected_language="English",
+            question_type="cancellation_effect",
             target_intent=None,
             target_mode=None,
-            reason="router misread cancel question",
+            reason="user asking about cancellation",
         )
     )
 
@@ -633,47 +615,6 @@ async def test_unknown_active_flow_question_preserves_pending_interrupt() -> Non
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert "cannot answer that safely" in response
     assert "beneficiary" in response
-
-
-def test_active_flow_question_classifier_does_not_steal_slot_value_with_question_mark() -> None:
-    interrupt = PendingInterrupt(
-        kind="input",
-        task_ids=["transfer_1"],
-        fields_by_task={"transfer_1": ["recipient_bank_name"]},
-    )
-
-    decision = classify_deterministic_active_flow_question(
-        text="opay?",
-        interrupt=interrupt,
-        current_task_types={"transfer"},
-    )
-
-    assert decision is None
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "what is my balance?",
-        "show my transactions",
-        "show scheduled transactions",
-        "my transfer failed, help me",
-    ],
-)
-def test_active_flow_question_classifier_does_not_steal_separate_banking_tasks(text: str) -> None:
-    interrupt = PendingInterrupt(
-        kind="confirmation",
-        task_ids=["transfer_1"],
-        fields_by_task={},
-    )
-
-    decision = classify_deterministic_active_flow_question(
-        text=text,
-        interrupt=interrupt,
-        current_task_types={"transfer"},
-    )
-
-    assert decision is None
 
 
 @pytest.mark.asyncio

@@ -189,16 +189,26 @@ class FundingPlanner:
         sequence = 2
 
         others = [candidate for candidate in eligible if candidate.id != preferred_account_id]
-        for candidate in others[: max(0, MAX_POOLED_SOURCE_ACCOUNTS - len(steps))]:
-            if remaining <= 0:
-                break
-            available = await self._fetch_balance(candidate)
-            balance_checks += 1
-            contribution = min(available, remaining)
-            if contribution > 0:
-                steps.append(account_matching.create_step(candidate, contribution, sequence))
-                remaining -= contribution
-                sequence += 1
+        candidate_sources: list[dict[str, Any]] = []
+
+        # Populate candidate sources if there's a shortfall
+        if remaining > 0:
+            for candidate in others:
+                available = await self._fetch_balance(candidate)
+                balance_checks += 1
+                candidate_sources.append({
+                    "id": str(candidate.id),
+                    "bank_name": candidate.bank_name,
+                    "account_number": getattr(candidate, "account_number", ""),
+                    "available": available,
+                })
+                # We still build the auto-pooled steps if needed by backend limits
+                if remaining > 0 and len(steps) < MAX_POOLED_SOURCE_ACCOUNTS:
+                    contribution = min(available, remaining)
+                    if contribution > 0:
+                        steps.append(account_matching.create_step(candidate, contribution, sequence))
+                        remaining -= contribution
+                        sequence += 1
 
         total_funded = transfer_amount - max(Decimal("0.00"), remaining)
         plan = funding_models.FundingPlan(
@@ -209,9 +219,9 @@ class FundingPlanner:
             shortfall=max(Decimal("0.00"), remaining),
             balance_checks=balance_checks,
             trigger_mode="auto",
-            primary_account_id=account.id,
             primary_bank_name=account.bank_name,
             primary_available_balance=primary_balance,
+            candidate_sources=candidate_sources,
         )
         if not plan.is_sufficient:
             plan.error = render_message(
@@ -252,20 +262,24 @@ class FundingPlanner:
                 remaining -= contribution
                 sequence += 1
 
-        if remaining > 0 and len(steps) < MAX_POOLED_SOURCE_ACCOUNTS:
-            for account in other_accounts[: MAX_POOLED_SOURCE_ACCOUNTS - len(steps)]:
-                if remaining <= 0:
-                    break
-
+        candidate_sources: list[dict[str, Any]] = []
+        if remaining > 0:
+            for account in other_accounts:
                 balance = await self._fetch_balance(account)
                 balance_checks += 1
                 balances_by_account[str(account.id)] = balance
-
-                contribution = min(balance, remaining)
-                if contribution >= funding_models.MIN_FUNDING_AMOUNT or contribution >= remaining:
-                    steps.append(account_matching.create_step(account, contribution, sequence))
-                    remaining -= contribution
-                    sequence += 1
+                candidate_sources.append({
+                    "id": str(account.id),
+                    "bank_name": account.bank_name,
+                    "account_number": getattr(account, "account_number", ""),
+                    "available": balance,
+                })
+                if remaining > 0 and len(steps) < MAX_POOLED_SOURCE_ACCOUNTS:
+                    contribution = min(balance, remaining)
+                    if contribution >= funding_models.MIN_FUNDING_AMOUNT or contribution >= remaining:
+                        steps.append(account_matching.create_step(account, contribution, sequence))
+                        remaining -= contribution
+                        sequence += 1
 
         total_funded = transfer_amount - max(Decimal("0.00"), remaining)
         is_sufficient = remaining <= 0
@@ -281,6 +295,7 @@ class FundingPlanner:
             primary_account_id=steps[0].account_id if steps else None,
             primary_bank_name=steps[0].bank_name if steps else None,
             primary_available_balance=balances_by_account.get(str(steps[0].account_id)) if steps else None,
+            candidate_sources=candidate_sources,
         )
 
         if not is_sufficient:

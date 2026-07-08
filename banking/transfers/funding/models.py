@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from shared.money import MoneyAmount
@@ -41,6 +41,7 @@ class FundingPlan:
     primary_account_id: UUID | None = None
     primary_bank_name: str | None = None
     primary_available_balance: MoneyAmount | None = None
+    candidate_sources: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def num_sources(self) -> int:

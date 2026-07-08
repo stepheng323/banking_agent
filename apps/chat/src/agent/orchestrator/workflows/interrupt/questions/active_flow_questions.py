@@ -13,7 +13,6 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_regist
 )
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import _is_query_domain_request
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.return_to_flow import append_return_to_flow_tail
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
@@ -27,7 +26,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_te
 )
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.renderer import render_message
-from shared.types.planner import ActiveFlowQuestionType, InterruptRouteDecision
+from shared.types.planner import InterruptRouteDecision
 from shared.utils.network_utils import format_network_display_name
 
 QUESTION_OVERRIDE_CONFIDENCE_THRESHOLD = 0.55
@@ -97,96 +96,6 @@ _FRESH_TASK_PATTERNS = (
 )
 
 
-def classify_deterministic_active_flow_question(
-    *,
-    text: str,
-    interrupt: PendingInterrupt,
-    current_task_types: set[str],
-) -> InterruptRouteDecision | None:
-    """Classify obvious active-flow questions when the router is absent or unsure."""
-
-    normalized = _normalize(text)
-    if not normalized or not _looks_like_question(normalized):
-        return None
-    if _is_query_domain_request(text):
-        return None
-    if _matches_any(normalized, _SEPARATE_BANKING_TASK_PATTERNS):
-        return None
-    if _matches_any(normalized, _FRESH_TASK_PATTERNS):
-        return None
-
-    question_type: ActiveFlowQuestionType
-    target_field = _infer_target_field(normalized, interrupt)
-    unsafe_reason: str | None = None
-
-    if _contains_any(normalized, ("reverse", "reversal", "refund", "undo", "recall")):
-        question_type = "unsupported_or_unsafe"
-        unsafe_reason = "future_reversal"
-    elif _contains_any(normalized, ("should i", "should we", "advise", "advice")):
-        question_type = "unsupported_or_unsafe"
-        unsafe_reason = "financial_advice"
-    elif _contains_any(normalized, ("legit", "trust", "scam", "safe to send", "real person")):
-        question_type = "unsupported_or_unsafe"
-        unsafe_reason = "recipient_trust"
-    elif _contains_any(
-        normalized,
-        (
-            "guarantee",
-            "instant",
-            "arrive",
-            "how long",
-            "when will",
-            "when would",
-            "what time",
-            "which time",
-            "status",
-            "pending",
-            "when is",
-        ),
-    ):
-        question_type = "timing_or_status"
-    elif _contains_any(normalized, ("fee", "fees", "charge", "charges", "cost")):
-        question_type = "fees_or_charges"
-    elif _contains_any(normalized, ("why pin", "why do you need pin", "why authorization", "is pin safe")):
-        question_type = "auth_pin_reason"
-        target_field = target_field or "pin"
-    elif _contains_any(normalized, ("why", "why do you need", "why is", "why are you asking")):
-        question_type = "why_required"
-    elif _contains_any(normalized, ("what do you need", "what is needed", "which details", "requirements")):
-        question_type = "requirements"
-    elif _contains_any(normalized, ("where are we", "what are we doing", "recap", "where did we stop")):
-        question_type = "recap"
-    elif _contains_any(normalized, ("cancel", "if i cancel", "what if i say no", "say no")):
-        question_type = "cancellation_effect"
-    elif _contains_any(normalized, ("what happens if i confirm", "what if i say yes", "if i confirm", "if i approve")):
-        question_type = "confirmation_effect"
-    elif _contains_any(normalized, ("source account", "which account", "from where", "pay from", "debit")):
-        question_type = "source_account"
-        target_field = target_field or "source_account_id"
-    elif _contains_any(normalized, ("can i change", "can i edit", "can i update", "what can i change")):
-        question_type = "editable_fields"
-    elif _contains_any(
-        normalized,
-        ("who", "how much", "which", "what plan", "what network", "what phone", "amount", "balance"),
-    ):
-        question_type = "current_value"
-    else:
-        question_type = "unknown"
-
-    return InterruptRouteDecision(
-        decision="active_flow_question",
-        confidence=0.78,
-        detected_language=None,
-        target_intent=None,
-        target_mode=None,
-        status_query_type=None,
-        question_type=question_type,
-        target_field=target_field,
-        unsafe_reason=unsafe_reason,
-        reason="deterministic_active_flow_question",
-    )
-
-
 def active_flow_question_updates(
     *,
     state: OrchestratorState,
@@ -221,29 +130,7 @@ def active_flow_question_updates(
     }
 
 
-def should_apply_deterministic_active_flow_question(
-    *,
-    route: InterruptRouteDecision,
-    question_route: InterruptRouteDecision | None,
-) -> bool:
-    """Decide whether a deterministic question read should replace router output."""
 
-    if question_route is None:
-        return False
-    if route.decision in {"active_flow_question", "status_query"}:
-        return False
-    question_type = question_route.question_type or "unknown"
-    if route.decision == "switch_intent" and route.confidence >= QUESTION_OVERRIDE_CONFIDENCE_THRESHOLD:
-        return False
-    if route.decision == "continue_flow" and question_type == "unknown":
-        return route.confidence < QUESTION_OVERRIDE_CONFIDENCE_THRESHOLD
-    if route.decision in {"cancel", "approve_flow", "reject_flow"}:
-        return question_type != "unknown"
-    if route.decision == "unclear":
-        return True
-    if route.confidence < QUESTION_OVERRIDE_CONFIDENCE_THRESHOLD:
-        return True
-    return question_type != "unknown"
 
 
 def _build_active_flow_question_response(
@@ -818,6 +705,4 @@ def _last4(value: Any) -> str | None:
 __all__ = [
     "QUESTION_OVERRIDE_CONFIDENCE_THRESHOLD",
     "active_flow_question_updates",
-    "classify_deterministic_active_flow_question",
-    "should_apply_deterministic_active_flow_question",
 ]

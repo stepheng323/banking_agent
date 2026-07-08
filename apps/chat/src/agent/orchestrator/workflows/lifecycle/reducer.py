@@ -169,7 +169,10 @@ def _reduce_resume_prompt(
     resume_prompt = build_resume_prompt(last_session, locale=runtime.locale)
 
     if acc.outbox and acc.outbox[-1].get("type") == "say":
-        acc.outbox[-1]["text"] += f"\n\n{resume_prompt}"
+        if "body_blocks" in acc.outbox[-1] or "actionable_payload" in acc.outbox[-1]:
+            acc.append_outbox({"type": "say", "text": resume_prompt})
+        else:
+            acc.outbox[-1]["text"] += f"\n\n{resume_prompt}"
     else:
         acc.append_outbox({"type": "say", "text": resume_prompt})
 

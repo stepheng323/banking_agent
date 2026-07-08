@@ -3102,6 +3102,75 @@ async def test_account_breakdown_followup_after_credit_total_preserves_credit_sc
 
 
 @pytest.mark.asyncio
+async def test_account_breakdown_followup_uses_deterministic_contract_when_reasoner_has_no_extraction() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 7, 7)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 7, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="credit"),
+        aggregation=Aggregation(type="sum"),
+    )
+    session_contract = _contract(session_query)
+    deterministic_extraction = QueryExtractionResult(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        raw_query="Break down by account",
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        filters=QueryFilters(transaction_type="debit"),
+        aggregation=QueryAggregation(type="breakdown", group_by="account"),
+        request_shape=QueryRequestShape.ANALYTICS,
+    )
+    deterministic_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=today - timedelta(days=29), end=today, granularity="day"),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="breakdown", group_by="account"),
+    )
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            confidence=0.94,
+            reason="semantic_grouping_refinement",
+        )
+
+    def _fake_parse_deterministic(
+        message: str,
+        *,
+        today: date,
+        language: str,
+    ) -> QueryParseResult:
+        del today, language
+        assert message == "Break down by account"
+        return _ok_result(deterministic_extraction, deterministic_query)
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse_deterministic = _fake_parse_deterministic  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Break down by account", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 0,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.time_start == date(2026, 7, 1)
+    assert query_contract.time_end == today
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "credit"
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "breakdown"
+    assert query_contract.aggregation.group_by == "account"
+
+
+@pytest.mark.asyncio
 async def test_compare_to_income_after_spending_total_compiles_cashflow_summary() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 6, 29)

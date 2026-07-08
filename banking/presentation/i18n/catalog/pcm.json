@@ -1431,6 +1431,14 @@
       "task_short": "❌ {task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
       "alternate_suggestion": "💡 {bank} has {available}. Make I use am instead?",
       "total_infeasible": "Reply updated source accounts/split, or reduce the transfer amounts."
+      },
+      "single": {
+        "shortfall_header": "[PCM] Funding review",
+        "shortfall_primary": "[PCM] This transfer needs {amount}, but your {label} {primary_bank} only has {primary_balance}.",
+        "shortfall_pool_options": "[PCM] You can pool from an additional account to cover the remaining {shortfall}. Which would you like to use?",
+        "shortfall_no_options": "[PCM] Because we can only pool from one additional account, and none of your other accounts have the remaining {shortfall} available, this transfer cannot be completed right now.\n\nYou can reduce the transfer amount, or top up one of your accounts first.",
+        "shortfall_reply_hint": "[PCM] Reply with the number or bank name."
+
     },
     "format": {
       "insufficient": {

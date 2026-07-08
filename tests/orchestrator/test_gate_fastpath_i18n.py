@@ -6344,90 +6344,6 @@ async def test_gate_source_first_transfer_turn_falls_through_to_planner() -> Non
     assert updates["routing_heuristic_name"] == "account_aware_transfer_command"
 
 
-async def test_gate_source_first_transfer_with_known_source_routes_directly() -> None:
-    planner = _RouteTurnPlanner(
-        SemanticRouteDecision(
-            decision="domain_transfer",
-            mode="new",
-            target_intent="transfer",
-            confidence=0.93,
-            detected_language="English",
-            response_key=None,
-            response=None,
-            expected_transaction_executors=["transfer"],
-            reason="unused because source-aware transfer is fully parsed",
-        )
-    )
-    state = OrchestratorState(
-        user_id="u_gate_router_transfer_source_first_direct",
-        phone_number="23489999999212",
-        channel="whatsapp",
-        last_message_text="Use GTBank to send 5k to Tolu Access for lunch",
-        loaded_context={
-            "language": "pcm",
-            "accounts": [
-                {"id": "acc-gtb", "bank_name": "GTBank", "account_number": "6000000002", "mandate_status": "ready"},
-                {
-                    "id": "acc-access",
-                    "bank_name": "Access Bank",
-                    "account_number": "6000000003",
-                    "mandate_status": "ready",
-                },
-            ],
-        },
-    )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
-
-    updates = await session_gate_direct_path(state, config)
-
-    assert planner.route_calls == 0
-    assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "source_aware_transfer_command"
-    assert updates["route_source"] == "transfer_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "source_aware_transfer_command"
-    task = updates["tasks"]["direct_transfer"]
-    assert task.type == "transfer"
-    assert task.payload["action"] == "send_money"
-    assert task.payload["amount"] == 5000
-    assert task.payload["recipient_name"] == "Tolu Access"
-    assert task.payload["source_bank_name"] == "GTBank"
-    assert task.payload["narration"] == "Lunch"
-    assert task.payload["skip_extraction"] is True
-    assert "recipient_bank_name" not in task.payload
-
-
-async def test_gate_source_first_transfer_rejects_ambiguous_source_accounts() -> None:
-    planner = _RouteTurnPlanner(
-        SemanticRouteDecision(
-            decision="domain_transfer",
-            mode="new",
-            target_intent="transfer",
-            confidence=0.93,
-            detected_language="English",
-            response_key=None,
-            response=None,
-            expected_transaction_executors=["transfer"],
-            reason="source account is ambiguous",
-        )
-    )
-    state = OrchestratorState(
-        user_id="u_gate_router_transfer_source_first_ambiguous",
-        phone_number="23489999999213",
-        channel="whatsapp",
-        last_message_text="Use GTBank to send 5k to Tolu Access for lunch",
-        loaded_context={
-            "language": "pcm",
-            "accounts": [
-                {"id": "acc-gtb-1", "bank_name": "GTBank", "account_number": "6000000002", "mandate_status": "ready"},
-                {"id": "acc-gtb-2", "bank_name": "GTBank", "account_number": "6000000004", "mandate_status": "ready"},
-            ],
-        },
-    )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await session_gate_direct_path(state, config)
@@ -8334,47 +8250,6 @@ async def test_gate_skips_semantic_router_for_numeric_input_source_selection_int
                 type="transfer",
                 stage=TaskStage.AWAITING_CONFIRMATION,
                 payload={"amount": 30000, "recipient_name": "Mum"},
-            )
-        },
-    )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
-
-    updates = await session_gate_direct_path(state, config)
-
-    assert planner.route_calls == 0
-    assert updates.get("direct_path_triggered") is None
-    assert updates["routing_decision"] == "planner_handoff"
-
-
-async def test_gate_skips_semantic_router_for_input_active_flow_question() -> None:
-    planner = _RouteTurnPlanner(
-        SemanticRouteDecision(
-            decision="direct_reply",
-            confidence=0.9,
-            detected_language="English",
-            response="semantic router should not run",
-            expected_transaction_executors=[],
-            reason="active-flow question should be answered by interrupt pre-router",
-        )
-    )
-    state = OrchestratorState(
-        user_id="u_gate_interrupt_input_question_1",
-        phone_number="23480000000063",
-        channel="whatsapp",
-        last_message_text="What are transfer fees?",
-        loaded_context={"language": "en"},
-        pending_interrupt=PendingInterrupt(
-            kind="input",
-            task_ids=["support_1"],
-            fields_by_task={"support_1": ["clarification"]},
-            prompt="Which transaction are you asking about?",
-        ),
-        tasks={
-            "support_1": TaskSpec(
-                id="support_1",
-                type="support",
-                stage=TaskStage.DRAFT,
-                payload={"action": "report_issue", "clarification": None},
             )
         },
     )
