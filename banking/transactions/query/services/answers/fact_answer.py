@@ -85,7 +85,10 @@ def _counterparty_label(item: QueryResultItem, *, query_contract: QueryExecution
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
     for candidate in (
         metadata.get("recipient_name"),
+        metadata.get("merchant_name"),
         metadata.get("counterparty"),
+        metadata.get("recipient_phone"),
+        metadata.get("phone_number"),
         _first_filter_value(query_contract.filters.counterparty if query_contract and query_contract.filters else None),
     ):
         if isinstance(candidate, str):
@@ -512,7 +515,7 @@ def _reference_label(item: QueryResultItem) -> str | None:
         value = str(metadata.get(key) or "").strip()
         if value:
             return value
-    item_id = str(item.id or "").strip()
+    item_id = (item.id or "").strip()
     return item_id or None
 
 

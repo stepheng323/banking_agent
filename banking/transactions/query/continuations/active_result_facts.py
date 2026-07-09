@@ -36,6 +36,7 @@ def _query_result_item_from_transaction(
         amount=abs(float(transaction.get("amount") or 0.0)),
         date=parse_date(str(transaction.get("date") or "")),
         metadata={
+            **transaction,
             "type": transaction.get("type"),
             "bank_name": transaction.get("bank_name", ""),
             "transaction_type": transaction.get("transaction_type"),
@@ -98,7 +99,7 @@ def maybe_build_fact_answer_from_decision(
 
     selected_index_raw = session.get("selected_item_index")
     selected_index = (
-        int(selected_index_raw) if isinstance(selected_index_raw, int) and selected_index_raw >= 0 else None
+        selected_index_raw if isinstance(selected_index_raw, int) and selected_index_raw >= 0 else None
     )
     raw_drill_index = getattr(decision, "drill_down_index", None)
     drill_index = raw_drill_index if isinstance(raw_drill_index, int) and raw_drill_index >= 0 else selected_index
@@ -179,7 +180,7 @@ def _requires_scoped_fact_query(query_contract: QueryExecutionContract) -> bool:
     if query_contract.intent == query_contract.intent.BENEFICIARY_SUMMARY:
         return True
     aggregation = query_contract.aggregation
-    return bool(aggregation is not None and aggregation.group_by is not None)
+    return aggregation is not None and aggregation.group_by is not None
 
 
 __all__ = ["maybe_build_fact_answer_from_decision"]

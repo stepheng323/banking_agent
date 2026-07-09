@@ -61,6 +61,7 @@ async def handle_transaction_detail(
             amount=amount_val,
             date=parse_date(t.get("date", "")),
             metadata={
+                **t,
                 "bank_name": t.get("bank_name", ""),
                 "type": t.get("type", ""),
                 "counterparty": t.get("counterparty"),
@@ -102,6 +103,7 @@ async def handle_transaction_detail(
             amount=abs(t.get("amount", 0)),
             date=parse_date(t.get("date", "")),
             metadata={
+                **t,
                 "bank_name": t.get("bank_name", ""),
                 "type": t.get("type", ""),
                 "counterparty": t.get("counterparty"),

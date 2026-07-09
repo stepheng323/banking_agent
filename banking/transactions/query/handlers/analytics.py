@@ -100,6 +100,7 @@ async def handle_analytics(
                 amount=abs(t.get("amount", 0)),
                 date=parse_date(t.get("date", "")),
                 metadata={
+                    **t,
                     "bank_name": t.get("bank_name", ""),
                     "type": t.get("type", ""),
                     "counterparty": t.get("counterparty"),
@@ -137,6 +138,7 @@ async def handle_analytics(
                     amount=abs(t.get("amount", 0)),
                     date=parse_date(t.get("date", "")),
                     metadata={
+                        **t,
                         "bank_name": t.get("bank_name", ""),
                         "type": t.get("type", ""),
                         "counterparty": t.get("counterparty"),
@@ -205,6 +207,7 @@ async def handle_analytics(
                 amount=abs(t.get("amount", 0)),
                 date=parse_date(t.get("date", "")),
                 metadata={
+                    **t,
                     "bank_name": t.get("bank_name", ""),
                     "type": t.get("type", ""),
                     "counterparty": t.get("counterparty")

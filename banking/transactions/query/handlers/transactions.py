@@ -169,6 +169,7 @@ async def handle_transaction_list(
             amount=abs(t.get("amount", 0)),  # Provider already returns Naira
             date=parse_date(t.get("date", "")),
             metadata={
+                **t,
                 "type": t.get("type"),
                 "bank_name": t.get("bank_name", ""),
                 "transaction_type": t.get("transaction_type"),
