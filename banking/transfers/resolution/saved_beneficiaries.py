@@ -227,10 +227,10 @@ def build_beneficiary_clarify_result(
             else:
                 display_name_md += f" ({candidate.account_name})"
 
-        bank_details = f"{candidate.bank_name or ''} • ****{str(candidate.account_number)[-4:]}"
+        bank_details = f"{candidate.bank_name or ''} · ···{str(candidate.account_number)[-4:]}"
 
-        body_label = f"{display_name_md} • {bank_details}"
-        fallback_label = f"{primary_name} • {candidate.bank_name} • ****{str(candidate.account_number)[-4:]}"
+        body_label = f"{display_name_md} — {bank_details}"
+        fallback_label = f"{primary_name} · {candidate.bank_name} · ···{str(candidate.account_number)[-4:]}"
 
         candidate_list.append(
             {
@@ -260,8 +260,8 @@ def build_beneficiary_clarify_result(
             "description": bank_details
         })
 
-    numbered_lines = [f"{candidate['index']}. {candidate['body_label']}" for candidate in candidate_list]
-    candidates_list = "\n\n".join(numbered_lines)
+    numbered_lines = [f"{candidate['index']}️⃣ {candidate['body_label']}" for candidate in candidate_list]
+    candidates_list = "\n".join(numbered_lines)
     prompt = render_message(
         "response.templates.clarify_beneficiary",
         locale,
@@ -279,7 +279,7 @@ def build_beneficiary_clarify_result(
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_INPUT,
         required_fields=["beneficiary_id"],
-        prompt=f"{prompt}\n{reply_hint}",
+        prompt=f"{prompt}\n\n_{reply_hint}_",
         patch={"beneficiary_candidates": candidate_list},
         details={
             "ambiguity": "MULTIPLE_BENEFICIARIES",
