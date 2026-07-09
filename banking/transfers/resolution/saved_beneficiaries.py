@@ -260,7 +260,7 @@ def build_beneficiary_clarify_result(
             "description": bank_details
         })
 
-    numbered_lines = [f"{candidate['index']}️⃣ {candidate['body_label']}" for candidate in candidate_list]
+    numbered_lines = [f"{candidate['index']}. {candidate['body_label']}" for candidate in candidate_list]
     candidates_list = "\n".join(numbered_lines)
     prompt = render_message(
         "response.templates.clarify_beneficiary",
