@@ -51,6 +51,15 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
         "planner_dirty_reasons": [],
     }
 
+    recent_query_context = getattr(state, "recent_query_context", None)
+    if isinstance(recent_query_context, dict):
+        remaining = int(recent_query_context.get("remaining_turns", 0) or 0) - 1
+        if remaining < 0:
+            updates["recent_query_context"] = None
+            logger.info("recent_query_context_expired")
+        else:
+            updates["recent_query_context"] = {**recent_query_context, "remaining_turns": remaining}
+
     if state_view.last_activity_date and state_view.last_activity_date != today:
         logger.info(
             "ingest_day_rollover_reset",

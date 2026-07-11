@@ -1,4 +1,9 @@
-from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import _is_query_domain_request
+import pytest
+
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
+    _is_query_domain_request,
+    _is_structural_query_domain_request,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     classify_obvious_transfer_request,
 )
@@ -17,3 +22,18 @@ def test_transcript_query_shapes_are_direct_query_requests() -> None:
     assert _is_query_domain_request("How much came in this month")
     assert _is_query_domain_request("Who sent me the most money this month")
     assert _is_query_domain_request("Where did my money go this month")
+
+
+@pytest.mark.parametrize(
+    "message_text",
+    (
+        "please jọwọ show my transactions",
+        "please jọwọ show me my transactions",
+        "abeg jọwọ show my transactions",
+        "jowo show my transactions",
+        "biko show my transactions",
+    ),
+)
+def test_polite_multilingual_prefixes_preserve_direct_query_routing(message_text: str) -> None:
+    assert _is_query_domain_request(message_text)
+    assert _is_structural_query_domain_request(message_text)

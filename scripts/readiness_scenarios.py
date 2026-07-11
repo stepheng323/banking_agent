@@ -9,6 +9,8 @@ from scripts.readiness_models import (
     ReadinessScenarioName,
     ReadinessTurn,
 )
+from scripts.readiness_mutations import expand_scenarios
+from scripts.readiness_robustness_scenarios import robustness_base_scenarios
 from shared.config.settings import settings
 
 _PLANNER_SINGLE_CALL_EVENT_COUNTS: tuple[tuple[str, int], ...] = (
@@ -252,7 +254,7 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
                     modes=("dry-run",),
                 ),
                 ReadinessTurn(
-                    "What bank was that?",
+                    "What bank is that?",
                     ReadinessExpectation(expect_any=("bank", "zenith", "first", "gtbank", "access")),
                     modes=("dry-run",),
                 ),
@@ -453,6 +455,8 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
 
 def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, ...]:
     scenarios = readiness_scenarios()
+    if name == "robustness":
+        return expand_scenarios(robustness_base_scenarios())
     if name == "all":
         return tuple(
             scenarios[key]
@@ -481,7 +485,7 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                 turns=(
                     *query.turns,
                     ReadinessTurn(
-                        "Is this all?",
+                        "Is that all?",
                         ReadinessExpectation(expect_any=("coverage", "local", "synced", "confirm", "complete")),
                         modes=("dry-run",),
                     ),

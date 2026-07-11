@@ -102,6 +102,12 @@ DETERMINISTIC_JAILBREAK_EXACT = {
     "system prompt override",
     "override orchestrator",
 }
+DETERMINISTIC_SECURITY_BYPASS_RE = re.compile(
+    r"\b(?:ignore|skip|bypass|without)\b.{0,64}\b"
+    r"(?:confirmation|confirm|pin|authorization|authorisation)\b"
+    r"|\b(?:pretend|fake)\b.{0,64}\b(?:confirmed?|confirmation|pin|authorization|authorisation)\b",
+    re.IGNORECASE,
+)
 DETERMINISTIC_BRAND_ORIGIN_EXACT = {
     "who created you",
     "who built you",
@@ -277,6 +283,8 @@ def classify_deterministic_meta_response(message_text: str) -> DeterministicMeta
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if normalized in DETERMINISTIC_JAILBREAK_EXACT:
         return _meta_response("meta.melkor_easter_egg")
+    if DETERMINISTIC_SECURITY_BYPASS_RE.search(normalized):
+        return _meta_response("conversational.security_confirmation_required")
     if normalized in DETERMINISTIC_LOCALE_META_EXACT:
         response_key, response_locale = DETERMINISTIC_LOCALE_META_EXACT[normalized]
         return _meta_response(response_key, response_locale)
@@ -307,10 +315,7 @@ def classify_deterministic_meta_response(message_text: str) -> DeterministicMeta
     if unsupported_capability is not None:
         base_key = "capability.unsupported_unavailable"
         specific_key = f"{base_key}_{unsupported_capability.key}"
-        unsupported_response_key: MessageKey = cast(
-            MessageKey,
-            specific_key if message_key_exists(specific_key, "en") else base_key,
-        )
+        unsupported_response_key: MessageKey = (specific_key if message_key_exists(specific_key, "en") else base_key)
         return _meta_response(
             unsupported_response_key,
             params=unsupported_capability_params(unsupported_capability),

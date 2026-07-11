@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from scripts.readiness_models import ReadinessTurn
+from scripts.readiness_models import ReadinessMode, ReadinessTurn
 from scripts.readiness_rendering import duplicate_visible_blocks
 
 
@@ -18,10 +18,26 @@ def assert_readiness_turn(
     async_jobs: tuple[dict[str, Any], ...] = (),
     llm_calls: tuple[dict[str, Any], ...] = (),
     enforce_route_expectations: bool = True,
+    mode: ReadinessMode | None = None,
 ) -> tuple[bool, tuple[str, ...]]:
     expectation = turn.expectation
     lowered = response.lower()
     errors: list[str] = []
+    if (
+        expectation.expect_response_required
+        and (mode is None or mode in expectation.response_required_modes)
+        and not response.strip()
+        and not task_types
+    ):
+        errors.append("expected a visible recovery response")
+    if mode is None or mode in expectation.response_content_modes:
+        if expectation.expect_response_any and not any(
+            expected.casefold() in lowered for expected in expectation.expect_response_any
+        ):
+            errors.append(f"expected response to include one of: {', '.join(expectation.expect_response_any)}")
+        for forbidden in expectation.expect_response_none:
+            if forbidden.casefold() in lowered:
+                errors.append(f"response must not include: {forbidden}")
     if expectation.expect_any and not any(expected.lower() in lowered for expected in expectation.expect_any):
         errors.append(f"expected any of: {', '.join(expectation.expect_any)}")
     for expected in expectation.expect_all:
@@ -49,11 +65,36 @@ def assert_readiness_turn(
     if expectation.expect_task_types is not None and task_types != expectation.expect_task_types:
         errors.append(f"expected task types {expectation.expect_task_types}; got {task_types}")
 
+    if expectation.expect_allowed_task_types is not None:
+        unexpected = tuple(
+            task_type for task_type in task_types if task_type not in expectation.expect_allowed_task_types
+        )
+        if unexpected:
+            errors.append(f"task types outside allowed set {expectation.expect_allowed_task_types}: {unexpected}")
+
+    forbidden_tasks = tuple(
+        task_type for task_type in task_types if task_type in expectation.expect_forbidden_task_types
+    )
+    if forbidden_tasks:
+        errors.append(f"forbidden task types created: {forbidden_tasks}")
+
     if (
         expectation.expect_async_job_count_delta is not None
         and len(async_jobs) != expectation.expect_async_job_count_delta
     ):
         errors.append(f"expected {expectation.expect_async_job_count_delta} async jobs; got {len(async_jobs)}")
+
+    if expectation.expect_async_job_count_max is not None and len(async_jobs) > expectation.expect_async_job_count_max:
+        errors.append(f"expected at most {expectation.expect_async_job_count_max} async jobs; got {len(async_jobs)}")
+
+    if expectation.expect_no_money_movement:
+        money_topics = tuple(
+            str(job.get("topic") or "")
+            for job in async_jobs
+            if any(marker in str(job.get("topic") or "").casefold() for marker in ("transfer", "airtime", "data"))
+        )
+        if money_topics:
+            errors.append(f"unsafe money movement jobs captured: {money_topics}")
 
     if expectation.expect_async_job_topics is not None:
         topics = tuple(str(job.get("topic") or "") for job in async_jobs)
@@ -84,6 +125,19 @@ def assert_readiness_turn(
             actual_count = event_counts[event_name]
             if actual_count != expected_count:
                 errors.append(f"expected {expected_count} {event_name} calls; got {actual_count}")
+
+    metadata_expectations = {
+        "active_domain": expectation.expect_active_domain,
+        "session_state": expectation.expect_session_state,
+        "clarification_type": expectation.expect_clarification_type,
+        "query_session_source": expectation.expect_context_source,
+    }
+    for key, expected in metadata_expectations.items():
+        if expected is not None and route_metadata.get(key) != expected:
+            errors.append(f"expected {key}={expected!r}; got {route_metadata.get(key)!r}")
+    for key, expected in expectation.expect_state_fields:
+        if route_metadata.get(key) != expected:
+            errors.append(f"expected state field {key}={expected!r}; got {route_metadata.get(key)!r}")
 
     return not errors, tuple(errors)
 

@@ -72,13 +72,14 @@
     "appreciation": "No wahala. Wetin we go handle next?",
     "checkin": "I dey here. Wetin you wan make I help you do?",
     "identity": "I be {app_name}, banking assistant wey dey help you move and check your money: transfer, airtime/data, balance, and transaction gist.",
-    "identity_correction": "No be {addressed_name} 😄 I be {app_name}. I fit help with transfer, airtime/data, balance, and transaction gist. Wetin you wan do?",
+    "identity_correction": "No be {addressed_name} I be {app_name}. I fit help with transfer, airtime/data, balance, and transaction gist. Wetin you wan do?",
     "brand_origin": "The name {app_name_short} come from {app_brand_inspiration}. We choose am because {app_brand_symbolism}: the idea behind {app_name} na to help your money move smoothly, clearly, and under your control.",
     "capability_question": "I fit handle transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope": "Back to banking: wetin you wan do?",
     "out_of_scope_followup": "I still dey here for banking when you ready.",
     "out_of_scope_firm": "Make we switch back to banking. Wetin we go handle?",
     "clarify": "I fit help with banking tasks. Try: show scheduled transactions, transfer money, buy airtime/data, check balance, or view transactions.",
+    "security_confirmation_required": "I no fit skip confirmation or PIN authorization. Abeg review and confirm the transaction when you ready.",
     "contextual_worker_followup": {
       "generic": "I don get am.",
       "settled": "No wahala, that one don settle.",
@@ -172,7 +173,7 @@
     },
     "wrong_debit": {
       "success_debit_correct": "• This transfer successful. The debit correct.",
-      "failed_but_debited": "⚠ Your account was debited ₦{amount}, but the transfer did not complete.\nThis dey reversed automatically.\nCurrent status: Reversal in progress",
+      "failed_but_debited": "Your account was debited ₦{amount}, but the transfer did not complete.\nThis dey reversed automatically.\nCurrent status: Reversal in progress",
       "failed_not_debited": "× The transfer fail, but no money was debited from your account.",
       "pending_processing": "○ This transfer still dey processing.\nIf it fails, any debit will be reversed automatically.",
       "investigating": "We dey investigate this debit issue."
@@ -183,7 +184,7 @@
       "no_refund_needed": "No money comot, so refund no dey needed.",
       "completed": "• The ₦{amount} refund don complete.",
       "processing": "○ The ₦{amount} reversal dey processed.\nRefunds typically return to your account within 24-48 hours.",
-      "needs_escalation": "⚠ They debited you ₦{amount} and reversal dey needed.\nI dey escalate am to our support team.",
+      "needs_escalation": "They debited you ₦{amount} and reversal dey needed.\nI dey escalate am to our support team.",
       "unknown": "No fit determine refund status."
     },
     "retry": {
@@ -240,18 +241,18 @@
       "status_closed": "This case don closed.",
       "status_unknown": "Status no clear yet",
       "created_recently": "recently",
-      "summary": "summary: **Ticket:** {ticket_code}\n**Status:** {status_text}\n**Created:** {created}\n\n",
+      "summary": "summary: **Ticket:** {ticket_code}\n**Status:** {status_text}\n**Created:** {created}",
       "open_hint": "Our team normally responds within 24 hours.",
       "in_progress_hint": "You go receive update once we get more information.",
       "resolved_on": "Resolved for {resolved}.",
       "no_updates": "I no have any pending updates for you.\n\nIs there something specific I can help with?"
     },
     "fraud": {
-      "alert": "⚠ We dey take this serious.\nSupport agent go contact you shortly to investigate.\nNo share any PIN or password."
+      "alert": "We dey take this serious.\nSupport agent go contact you shortly to investigate.\nNo share any PIN or password."
     },
     "escalation": {
-      "logged": "I don log this for review.\n\n",
-      "ticket": "**Ticket code:** {ticket_code}\n\n",
+      "logged": "I don log this for review.",
+      "ticket": "**Ticket code:** {ticket_code}",
       "fraud_priority": "Our security team go prioritize this. You go hear back within 1 hour.",
       "with_transaction_ref": "Our team go investigate and get back to you within 24 hours.",
       "ask_transaction_ref": "If you get transaction reference, reply with am make things faster.",
@@ -260,7 +261,7 @@
       "summary_user_requested": "User request human support",
       "summary_default": "Support escalation reason: {reason_or_intent}",
       "summary_system": "System escalation reason: {reason}",
-      "summary_context_suffix": " - {message}"
+      "summary_context_suffix": "- {message}"
     }
   },
   "faq": {
@@ -274,7 +275,32 @@
       "transaction": "transaction"
     },
     "drill_down": {
-      "no_items": "No item dey to drill down into."
+      "details_intro": "See the transaction details:",
+      "no_items": "I no get that transaction again. Tell me make I run the search again.",
+      "invalid_selection": "I no fit match that choice. Choose one of the {count} transactions wey I show."
+    },
+    "pagination": {
+      "already_first_page": "You already dey the first page.",
+      "end_of_results": "Na the full list for this search be this."
+    },
+    "coverage_copy": {
+      "result_more": "No. I don show {count} transactions wey match, and more still dey.",
+      "result_complete": "Na all the matched results be this: {count} transactions. E no confirm bank-data coverage by itself.",
+      "result_empty": "I no find transaction wey match. E no confirm bank-data coverage by itself.",
+      "no_metadata": "I fit show local transactions, but I no get linked-account details to confirm coverage.",
+      "account_not_found": "I no see {account} for your linked accounts.",
+      "multiple_accounts": "Plenty linked accounts match {account}: {options}. Which one you mean?",
+      "single_pending": "{account} never sync finish because authorization na {status}. Complete am before you treat results as complete.",
+      "single_covered": "{account} get confirmed transaction coverage{period}.{sync}",
+      "single_gap": "{account} get coverage gap{period}. I fit show local transactions, but I no fit call the list complete.",
+      "single_unknown": "I fit show local transactions for {account}, but I no fit confirm full coverage now.",
+      "all_covered": "I don confirm transaction coverage{period} for your linked accounts.",
+      "partial": "I fit show local transactions{period}, but I no fit confirm everything for every linked account.",
+      "status_covered": "{account}: coverage don confirm. Last sync na {sync}.",
+      "status_pending": "○ {account}: authorization na {status}, so sync never complete.",
+      "status_gap": "○ {account}: coverage no complete for this period.",
+      "status_unknown": "? {account}: I no fit confirm coverage now.",
+      "best_local": "Treat this as the best local view, no be guaranteed complete statement."
     },
     "receipt": {
       "only_transfer": "Receipts dey available only for bank transfers. This one na {transaction_type}.",
@@ -376,7 +402,7 @@
       "aggregate": {
         "scope": "That total na only for {scope_label}{period_suffix}.{total_suffix}",
         "scope_hint": "E add up {count} {transaction_label} for that scope.",
-        "total_suffix": " Total na {total}"
+        "total_suffix": "Total na {total}"
       },
       "no_result": {
         "debit_named": "I no find payment to {counterparty} {time_suffix}.",
@@ -393,7 +419,7 @@
       "completed": "Query don complete.",
       "dismissive_goodbye": "Okay, I go step back now.",
       "goodbye": "Bye bye!",
-      "you_are_welcome": "You are welcome! 😊"
+      "you_are_welcome": "You are welcome!"
     },
     "continuity": {
       "prompt_items_header": "Available items. For drill_down, use item number as drill_down_index:",
@@ -404,10 +430,17 @@
       "default": "Abeg make am clear small?",
       "time_vague": "Wetin time period did you mean by '{context}'? You can say something like '{suggestion}'.",
       "unsure_rephrase": "I no sure wetin you mean. Abeg talk am another way.",
+      "multiple_matches": "I find plenty transactions wey match. Which one you mean?\n\n{options}",
+      "cancelled": "Okay, I don cancel that selection.",
+      "exhausted": "I still no fit match that choice. Describe the transaction again.",
+      "recent_read_only": "I fit use that closed result only for read-only question. Ask me start new transfer or support request instead.",
+      "missing_scope": "Which earlier result or transaction you mean?",
+      "memory_unavailable": "I no get enough detail from that earlier result again. Ask me run the search again.",
+      "grounded_query_failed": "I understand the earlier result, but I need clearer account, transaction, or time scope.",
       "which_one": "I no sure which one you mean{context_suffix}.",
       "are_you_referring": "Na this one you mean:",
       "reply_number_or_rephrase": "Reply with the number or talk am another way.",
-      "context_suffix": " ({context})",
+      "context_suffix": "({context})",
       "option_line": "{index}️⃣ {amount} — {description}"
     },
     "notice": {
@@ -436,8 +469,8 @@
       "no_transactions_with_type_yesterday": "You no get {transaction_type} transactions yesterday.",
       "no_transactions_with_type_period": "You no get {transaction_type} transactions for that period.",
       "no_results_with_type": "No {transaction_type} transactions show{time_suffix}.",
-      "no_results_time_suffix_today": " today",
-      "no_results_time_suffix_period": " for this period",
+      "no_results_time_suffix_today": "today",
+      "no_results_time_suffix_period": "for this period",
       "heading_transactions_default": "*Transactions*",
       "heading_transactions_type": "*{transaction_type} Transactions*",
       "heading_transactions_category": "*{category} Transactions*",
@@ -461,8 +494,8 @@
       "field_category": "*Category:* {category}",
       "field_status": "*State:* {status}",
       "field_ref": "*Ref:* {reference}",
-      "status_success": "✓ Successful transaction",
-      "status_pending_generic": "⏳ {status}",
+      "status_success": "Successful transaction",
+      "status_pending_generic": "{status}",
       "transfer_reply_hint": "_Reply: 'receipt' for proof | 'issue' to report a problem_",
       "transactions_heading": "*Transactions*",
       "pagination_showing": "Showing {showing}/{total}",
@@ -487,8 +520,8 @@
       "type_outgoing_debit": "Outgoing debit",
       "accounts_item": "{amount} — {bank_name}",
       "direct_answer_grouped_lead": "Na {name}.",
-      "breakdown_heading": "See your 📊 {summary}:",
-      "ranked_heading": "See your 🏆 {summary}:",
+      "breakdown_heading": "See your {summary}:",
+      "ranked_heading": "See your {summary}:",
       "show_more_hint": "_Talk 'show more' to continue._",
       "ranked_item": "{rank}. *{amount}* — {name} {date}{bank_suffix}",
       "transaction_item_with_bank": "{amount} • {label} — {narration} _({bank_name})_",
@@ -510,11 +543,11 @@
       "no_spending": "You no spend anything{target_description}{timeframe}.",
       "no_sent": "You no send anything{target_description}{timeframe}.",
       "no_income": "You no receive any inflow{target_description}{timeframe}.",
-      "target_merchant": " at {merchant}",
-      "target_account": " with {account}",
-      "target_counterparty": " with {counterparty}",
-      "target_counterparty_debit": " to {counterparty}",
-      "target_counterparty_credit": " from {counterparty}",
+      "target_merchant": "at {merchant}",
+      "target_account": "with {account}",
+      "target_counterparty": "with {counterparty}",
+      "target_counterparty_debit": "to {counterparty}",
+      "target_counterparty_credit": "from {counterparty}",
       "summary_spent": "You spend *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
       "summary_sent": "You send *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
       "summary_received": "You receive *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
@@ -535,14 +568,14 @@
       "aggregation_completed": "Aggregation complete.",
       "breakdown_by": "Breakdown by {group_by}",
       "group_by_transaction_type": "transaction kind",
-      "timeframe_last_30_days": " for the last 30 days",
+      "timeframe_last_30_days": "for the last 30 days",
       "timeframe_month": "(translated) {month}",
       "timeframe_this_month": "(translated) this month",
-      "timeframe_default": " in the last 30 days",
-      "timeframe_today": " today",
-      "timeframe_yesterday": " yesterday",
-      "timeframe_on_date": " on {date}",
-      "timeframe_range": " from {start} to {end}"
+      "timeframe_default": "in the last 30 days",
+      "timeframe_today": "today",
+      "timeframe_yesterday": "yesterday",
+      "timeframe_on_date": "on {date}",
+      "timeframe_range": "from {start} to {end}"
     },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",
@@ -589,10 +622,10 @@
     "no_linked_accounts": "You no get linked account.",
     "account_not_found": "I no fit find an account matching '{identifier}'.",
     "account_not_found_with_count": "I no fit find an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
-    "default_updated": "✓ *Default account updated!*\n\n{bank_name} ({masked}) is now your default.",
+    "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now your default.",
     "unlink": {
-      "success": "success: ✓ *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
-      "only_account": "⚠️ You can't unlink your only account. Link another one first."
+      "success": "success: *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
+      "only_account": "️ You can't unlink your only account. Link another one first."
     },
     "mandate_reinitiated_success": "I don resend the setup instructions go your phone. Abeg follow am to complete your linking!",
     "list": {
@@ -602,7 +635,7 @@
       "count_one": "You get 1 linked account.",
       "count_many": "You get {count} linked accounts.",
       "preview_header": "Example dem:",
-      "default_badge": " (default)",
+      "default_badge": "(default)",
       "commands_hint": "_'set 2 as default' | 'unlink GTB'_"
     },
     "balance": {
@@ -710,9 +743,9 @@
     "execution": {
       "source_account_info": "From account: {bank} (···{last4})",
       "source_account_info_with_balance": "From account: {bank} (···{last4}) • Balance: ₦{balance}",
-      "recipient_resolved_with_bank": "✓ {label} resolved: {resolved} ({bank} • {account})",
-      "recipient_resolved": "✓ {label} resolved: {resolved}",
-      "recipient_resolved_generic": "✓ {label} resolved",
+      "recipient_resolved_with_bank": "{label} resolved: {resolved} ({bank} • {account})",
+      "recipient_resolved": "{label} resolved: {resolved}",
+      "recipient_resolved_generic": "{label} resolved",
       "input_attempts_exhausted": "I no fit understand the details wey I need, so I clear that transaction. Make we start fresh. Wetin you want do?",
       "input_greeting": "How far. I still need your answer to continue. Abeg answer the last question, or say cancel.",
       "input_greeting_data_plan": "How far. We still dey choose data plan. Reply with option number, or say cancel.",
@@ -862,7 +895,7 @@
       "missing_account_or_bank": "I need the account number and bank to add a beneficiary.",
       "account_verification_failed": "No fit verify account {account_number}. Abeg check the details.",
       "account_lookup_failed": "Account lookup fail/invalid for {account_number} at {bank_name}.",
-      "success": "success: ✓ Verified & Added **{display_name}** ({account_name}) to your beneficiaries."
+      "success": "success: Verified & Added **{display_name}** ({account_name}) to your beneficiaries."
     },
     "delete": {
       "missing_target": "Abeg specify which beneficiary to remove.",
@@ -879,20 +912,20 @@
       "no_recent": "I no remember any beneficiary suggestion recently. Transaction need to dey recent before I fit save am.",
       "user_not_found": "I no find user.",
       "default_alias": "My Beneficiary",
-      "saved": "✓ I don save **{alias}** to your beneficiaries.",
+      "saved": "I don save **{alias}** to your beneficiaries.",
       "save_failed": "Sorry, I no fit save that beneficiary now."
     },
     "format": {
-      "suggestion": "💡 You want to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm."
+      "suggestion": "You want to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm."
     }
   },
   "transfer": {
     "confirmation": {
       "name_mismatch_warning": "You talk say make I send to {requested_name}, but account resolve as {resolved_name}.",
-      "high_risk_unsaved_warning": "⚠️ This transfer high risk: {amount} go unsaved recipient. Abeg check details well before you confirm.",
+      "high_risk_unsaved_warning": "️ This transfer high risk: {amount} go unsaved recipient. Abeg check details well before you confirm.",
       "high_risk_unsaved_warning_variants": {
-        "standard": "⚠️ This transfer high risk: {amount} go unsaved recipient. Abeg check details well before you confirm.",
-        "careful": "⚠️ Abeg check this high-risk transfer well: {amount} dey go person wey you never save."
+        "standard": "️ This transfer high risk: {amount} go unsaved recipient. Abeg check details well before you confirm.",
+        "careful": "️ Abeg check this high-risk transfer well: {amount} dey go person wey you never save."
       },
       "change": {
         "join_two": "{first} and {second}",
@@ -958,15 +991,15 @@
         "narration": "Reason: {narration}",
         "funding_header": "*Funding from:*",
         "bank_fallback": "Account",
-        "funding_item": "  • {bank} (···{last4}): {amount}",
+        "funding_item": "• {bank} (···{last4}): {amount}",
         "fee": "fee: *Fee:* {fee}",
         "total": "total: *Total:* {total}",
         "authorize": "authorize: Tap *Authorize* to enter your PIN."
       },
       "multi_source_receipt": {
-        "success_header": "✓ *Transfer Successful!*",
+        "success_header": "*Transfer Successful!*",
         "title": "*{amount}* → {recipient_name}",
-        "location_line": "📍 {recipient_bank} (`{recipient_account}`)",
+        "location_line": "{recipient_bank} (`{recipient_account}`)",
         "funded_header": "*Funded from:*",
         "from_line": "*From:* {bank} (···{last4})",
         "ref": "*Ref:* `{reference}`",
@@ -986,19 +1019,19 @@
         "credit_after_debits": "Recipient go receive the money once all funding debits succeed."
       },
       "notifications": {
-        "success": "✓ Transfer successful! {amount} don sent to {recipient_name}.",
+        "success": "Transfer successful! {amount} don sent to {recipient_name}.",
         "success_variants": {
-          "standard": "✓ Transfer successful! {amount} don sent to {recipient_name}.",
+          "standard": "Transfer successful! {amount} don sent to {recipient_name}.",
           "warm": "Done. {amount} don go {recipient_name}.",
           "celebratory": "All set. {amount} don reach {recipient_name}."
         },
-        "pending": "⏳ Your {amount} transfer to {recipient_name} dey process.\n\nYou go get confirmation soon. If e no enter within 5 minutes, contact support.",
+        "pending": "Your {amount} transfer to {recipient_name} dey process.\n\nYou go get confirmation soon. If e no enter within 5 minutes, contact support.",
         "pending_variants": {
-          "standard": "⏳ Your {amount} transfer to {recipient_name} dey process.\n\nYou go get confirmation soon. If e no enter within 5 minutes, contact support.",
+          "standard": "Your {amount} transfer to {recipient_name} dey process.\n\nYou go get confirmation soon. If e no enter within 5 minutes, contact support.",
           "warm": "Got it. Your {amount} transfer to {recipient_name} dey process.\n\nYou go get confirmation soon.",
           "reassuring": "Your {amount} transfer to {recipient_name} dey process. Bank confirmation fit take small time."
         },
-        "queued": "✓ Your transfer of {amount} to {recipient_name} don authorized and dey processed."
+        "queued": "Your transfer of {amount} to {recipient_name} don authorized and dey processed."
       }
     },
     "execution": {
@@ -1083,9 +1116,9 @@
     },
     "executor": {
       "reference_fallback": "N/A",
-      "success_message": "✓ Airtime don enter\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+      "success_message": "Airtime don enter\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
       "success_message_variants": {
-        "standard": "✓ Airtime don enter\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+        "standard": "Airtime don enter\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
         "warm": "Done. ₦{amount} airtime don reach {recipient_target} ({network}).\nRef: {reference}",
         "celebratory": "All set. ₦{amount} airtime don reach {recipient_target} ({network}).\nRef: {reference}"
       },
@@ -1182,9 +1215,9 @@
       }
     },
     "completion": {
-      "success_message": "✓ Data purchase don complete\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
+      "success_message": "Data purchase don complete\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
       "success_message_variants": {
-        "standard": "✓ Data purchase don complete\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
+        "standard": "Data purchase don complete\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
         "warm": "Done. {plan_name} data don dey active for {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}",
         "celebratory": "All set. {plan_name} data don dey active for {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}"
       },
@@ -1280,7 +1313,7 @@
       "stale": "This schedule dey process already or e no active again. Try again.",
       "success": "Schedule don update: {changes}. Next run: {next_run}.",
       "change": {
-        "separator": "; ",
+        "separator": ";",
         "amount_from_to": "amount change from {old} to {new}",
         "amount_to": "amount change to {new}",
         "time_from_to": "time change from {old} to {new} WAT",
@@ -1385,7 +1418,7 @@
       "airtime_line": "*Airtime:* {amount} for {phone} ({network})",
       "data_plan_fallback": "data",
       "data_line": "*Data:* {plan} - {amount} for {phone}",
-      "failure_reason": "  Reason: {reason}",
+      "failure_reason": "Reason: {reason}",
       "other_completed_line": "*{task_type}:* Completed",
       "total_spent": "*Total Spent:* {amount}",
       "success_footer": "_All transactions complete successfully_",
@@ -1425,20 +1458,19 @@
       "unable_to_create": "No fit create funding plan."
     },
     "batch": {
-      "shortfall_header": "⚠️ Money no reach for this batch",
+      "shortfall_header": "️ Money no reach for this batch",
       "shortfall_body": "This batch need {demanded}, but only {available} is currently available.",
-      "task_covered": "✓ {task_id}: {amount} available from {bank}.",
-      "task_short": "❌ {task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
-      "alternate_suggestion": "💡 {bank} has {available}. Make I use am instead?",
+      "task_covered": "{task_id}: {amount} available from {bank}.",
+      "task_short": "{task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
+      "alternate_suggestion": "{bank} has {available}. Make I use am instead?",
       "total_infeasible": "Reply updated source accounts/split, or reduce the transfer amounts."
-      },
-      "single": {
-        "shortfall_header": "[PCM] Funding review",
-        "shortfall_primary": "[PCM] This transfer needs {amount}, but your {label} {primary_bank} only has {primary_balance}.",
-        "shortfall_pool_options": "[PCM] You can pool from an additional account to cover the remaining {shortfall}. Which would you like to use?",
-        "shortfall_no_options": "[PCM] Because we can only pool from one additional account, and none of your other accounts have the remaining {shortfall} available, this transfer cannot be completed right now.\n\nYou can reduce the transfer amount, or top up one of your accounts first.",
-        "shortfall_reply_hint": "[PCM] Reply with the number or bank name."
-
+    },
+    "single": {
+      "shortfall_header": "[PCM] Funding review",
+      "shortfall_primary": "[PCM] This transfer needs {amount}, but your {label} {primary_bank} only has {primary_balance}.",
+      "shortfall_pool_options": "[PCM] You can pool from an additional account to cover the remaining {shortfall}. Which would you like to use?",
+      "shortfall_no_options": "[PCM] Because we can only pool from one additional account, and none of your other accounts have the remaining {shortfall} available, this transfer cannot be completed right now.\n\nYou can reduce the transfer amount, or top up one of your accounts first.",
+      "shortfall_reply_hint": "[PCM] Reply with the number or bank name."
     },
     "format": {
       "insufficient": {
@@ -1461,12 +1493,12 @@
   },
   "mandate": {
     "expired_reinitiate": "Your account authorization don expire. Abeg start am again to continue.",
-    "pending_with_destinations": "Your account authorization is pending.\n\nTransfer ₦50 to any of these accounts:\n{destinations}\n\n⏱️ {minutes_left} minutes remaining",
+    "pending_with_destinations": "Your account authorization is pending.\n\nTransfer ₦50 to any of these accounts:\n{destinations}\n\n {minutes_left} minutes remaining",
     "pending_complete_transfer": "Your account authorization is pending. Abeg complete the ₦50 transfer to activate your account.",
     "bank_fallback": "your bank",
-    "approved_awaiting_nibss": "✓ Your ₦50 authorization transfer was received!\n\nYour {bank_name} account {account_suffix} is being verified by NIBSS. This usually takes a few minutes but can take up to 24 hours.\n\nWe'll notify you as soon as it's ready! 🔔",
+    "approved_awaiting_nibss": "Your ₦50 authorization transfer was received!\n\nYour {bank_name} account {account_suffix} is being verified by NIBSS. This usually takes a few minutes but can take up to 24 hours.\n\nWe'll notify you as soon as it's ready!",
     "status_paused": "⏸️ Your account has been temporarily paused.\nPlease contact support to reinstate it.",
-    "status_rejected": "❌ Your account authorization was rejected.\nPlease contact support to resolve this.",
+    "status_rejected": "Your account authorization was rejected.\nPlease contact support to resolve this.",
     "status_cancelled": "Your account authorization was cancelled.\nYou want to reinitiate? Say *'reinitiate'* to start again.",
     "status_not_ready": "Your account never ready for payments yet."
   },
@@ -1607,9 +1639,9 @@
       "confirm_transfer": "Just to confirm: {formatted_amount} to {recipient_name} for {bank_name}?",
       "confirm_airtime": "Make I confirm: {formatted_amount} airtime to {phone_masked} ({network})?",
       "confirm_data": "Make I confirm: {data_plan} data for {phone_masked} ({network})?",
-      "transfer_success": "✓ Done! {formatted_amount} don go {recipient_name}.",
-      "airtime_success": "✓ Done! {formatted_amount} airtime don reach {phone_masked}.",
-      "data_success": "✓ Done! {data_plan} data don active for {phone_masked}.",
+      "transfer_success": "Done! {formatted_amount} don go {recipient_name}.",
+      "airtime_success": "Done! {formatted_amount} airtime don reach {phone_masked}.",
+      "data_success": "Done! {data_plan} data don active for {phone_masked}.",
       "insufficient_balance": "Your balance no reach. Available: {formatted_amount}.",
       "account_not_found": "I no find that account. Abeg check the account number and try again.",
       "account_validation_failed": "I no fit verify that account right now. Abeg try again.",
@@ -1624,11 +1656,11 @@
       "invalid_phone_number": "Invalid phone number. Abeg enter a valid Nigerian number (e.g., 08012345678).",
       "invalid_network": "Invalid network. Abeg choose from: MTN, Airtel, Glo, or 9mobile.",
       "cancelled": "Transaction don cancel.",
-      "mandate_required": "⚠️ {error_message}",
+      "mandate_required": "️ {error_message}",
       "account_selection_required": "Which account make I use?",
       "greeting": "Hi{user_greeting}! Wetin you want make I help with today?",
       "help": "I can help you with:\n• Sending money\n• Buying airtime\n• Buying data\n• Checking your balance\n\nWetin would you like to do?",
-      "beneficiary_saved": "✓ Saved {recipient_name} as a beneficiary.",
+      "beneficiary_saved": "Saved {recipient_name} as a beneficiary.",
       "recipient_changed": "Got am, updating the recipient to {recipient_name}.",
       "amount_changed": "Got am, updating the amount to {formatted_amount}.",
       "acknowledge_change": "Alright, changing {changes_text}.",

@@ -50,9 +50,9 @@ def resolve_beneficiary_from_reference(
 
 
 def build_single_beneficiary_patch(single: Beneficiary, recipient_name: str | None) -> dict[str, Any]:
-    requested_alias = str(recipient_name or "").strip()
-    beneficiary_alias = str(single.alias or "").strip()
-    account_name = str(single.account_name or "").strip()
+    requested_alias = recipient_name or "".strip()
+    beneficiary_alias = single.alias or "".strip()
+    account_name = single.account_name or "".strip()
     resolved_name = account_name or beneficiary_alias or requested_alias or None
     alias_name = requested_alias or beneficiary_alias or account_name or None
     bank_code = optional_text(single.bank_code)
@@ -76,7 +76,7 @@ def build_single_beneficiary_patch(single: Beneficiary, recipient_name: str | No
 
 
 def build_single_beneficiary_patch_from_record(record: dict[str, Any], recipient_name: str | None) -> dict[str, Any]:
-    requested_alias = str(recipient_name or "").strip()
+    requested_alias = recipient_name or "".strip()
     beneficiary_alias = str(record.get("alias") or "").strip()
     account_name = str(record.get("account_name") or "").strip()
     resolved_name = account_name or beneficiary_alias or requested_alias or None

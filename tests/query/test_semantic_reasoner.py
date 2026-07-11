@@ -234,7 +234,7 @@ async def test_reasoner_uses_deterministic_first_item_detail_without_llm() -> No
 
 
 @pytest.mark.asyncio
-async def test_reasoner_uses_llm_for_visible_bank_fact() -> None:
+async def test_reasoner_uses_semantic_contract_for_visible_bank_fact() -> None:
     llm = _TrackingLLM(
         QuerySemanticDecision(
             decision="continuation",

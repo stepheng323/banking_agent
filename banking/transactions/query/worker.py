@@ -327,6 +327,9 @@ class QueryWorker:
 
     @staticmethod
     async def _set_execution_progress_stage(state: dict[str, Any], worker_context: SimpleNamespace) -> None:
+        if state.get("drill_down_action") == "view_details":
+            return
+
         query_contract = state.get("query_contract")
         if isinstance(query_contract, dict):
             query_contract = QueryExecutionContract.model_validate(query_contract)
@@ -376,9 +379,21 @@ class QueryWorker:
                     pending_query_clarification,
                 ),
                 "query_contract": pending_query_clarification.get("query_contract"),
+                "query_result": pending_query_clarification.get("query_result"),
+                "query_frames": pending_query_clarification.get("query_frames"),
+                "current_page": pending_query_clarification.get("current_page", 0),
+                "page_size": pending_query_clarification.get("page_size", 5),
                 "timestamp": pending_query_clarification.get("timestamp"),
             }
             session_source = "pending_clarification"
+        elif isinstance(context.get("recent_query_context"), dict):
+            recent = cast(dict[str, Any], context["recent_query_context"])
+            raw_session = recent.get("session")
+            query_session = dict(raw_session) if isinstance(raw_session, dict) else {}
+            if query_session:
+                query_session["session_active"] = True
+                query_session["recent_read_only"] = True
+            session_source = "recent_closed_context"
         else:
             query_session = {}
             session_source = "none"
@@ -440,6 +455,8 @@ class QueryWorker:
             "current_page": query_session.get("current_page", 0),
             "page_size": 5,
             "today": today,
+            "stashed_sessions": context.get("stashed_sessions"),
+            "recent_read_only": bool(query_session.get("recent_read_only")),
         }
 
         for key, value in session_defaults.items():

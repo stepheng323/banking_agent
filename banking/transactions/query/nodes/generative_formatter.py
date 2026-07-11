@@ -192,13 +192,15 @@ class GenerativeFormattingStep(QueryStep):
         show_expanded = state.get("show_expanded", False)
 
         # Generate the deterministic fallback response as the baseline
-        system_response = QueryFormatter.format(
-            query_result,
-            current_page=current_page,
-            show_expanded=show_expanded,
-            has_more=query_result.has_more,
-            locale=locale,
-        )
+        system_response = state.get("response")
+        if not system_response:
+            system_response = QueryFormatter.format(
+                query_result,
+                current_page=current_page,
+                show_expanded=show_expanded,
+                has_more=query_result.has_more,
+                locale=locale,
+            )
 
         try:
             llm_response = await self.chain.ainvoke(

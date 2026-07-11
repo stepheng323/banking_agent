@@ -6,6 +6,7 @@ import pytest
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.actions import handle_drill_down
+from banking.transactions.query.continuations.result_paths import _resolve_coverage_intent
 from banking.transactions.query.contracts import (
     SelectionPayload,
     SurfaceItemView,
@@ -1718,6 +1719,129 @@ async def test_coverage_follow_up_over_transaction_list_returns_completeness_ans
     assert "more results available" in updates["response"]
 
 
+def test_coverage_discriminator_uses_typed_semantics_with_structural_legacy_default() -> None:
+    list_contract = _contract(_query_ir(intent=QueryIntent.TRANSACTION_LIST))
+    assert (
+        _resolve_coverage_intent(
+            QuerySemanticDecision(decision="continuation", coverage_intent="data_coverage"),
+            list_contract,
+        )
+        == "data_coverage"
+    )
+    assert (
+        _resolve_coverage_intent(
+            QuerySemanticDecision(decision="continuation", coverage_intent="ambiguous"),
+            list_contract,
+        )
+        == "ambiguous"
+    )
+    assert (
+        _resolve_coverage_intent(QuerySemanticDecision(decision="continuation"), list_contract)
+        == "result_completeness"
+    )
+
+
+@pytest.mark.asyncio
+async def test_focused_detail_followups_answer_fact_then_original_list_completeness() -> None:
+    """Regression: details must not swallow the list's fact or completeness context."""
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 29)
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(start=date(2026, 3, 1), end=today),
+        )
+    )
+    selected_item = QueryResultItem(
+        id="txn_salary",
+        description="Salary from Acme Corp",
+        amount=950000,
+        date=date(2026, 3, 8),
+        metadata={"bank_name": "GTBank", "transaction_type": "credit", "status": "posted"},
+    )
+    detail_result = QueryResult(
+        summary_text="I found 43 transactions this month.",
+        items=[selected_item],
+        has_more=True,
+        query_contract=session_contract,
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.DIRECT_ANSWER,
+            items=[
+                SurfaceItemView(
+                    id=selected_item.id,
+                    label=selected_item.description,
+                    amount=selected_item.amount,
+                    payload=SelectionPayload(
+                        selection_kind="transaction",
+                        entity_type="transaction",
+                        entity_id=selected_item.id,
+                        label=selected_item.description,
+                    ),
+                    metadata=selected_item.metadata or {},
+                )
+            ],
+            context={
+                "type": "single_transaction",
+                "selected_item_id": selected_item.id,
+                "parent_visible_count": 5,
+            },
+        ),
+    )
+    session = {
+        "session_active": True,
+        "query_contract": session_contract.model_dump(),
+        "query_result": detail_result.model_dump(mode="json"),
+        "selected_item_id": selected_item.id,
+        "current_page": 0,
+        "page_size": 5,
+    }
+    semantic_decisions = iter(
+        (
+            QuerySemanticDecision(
+                decision="continuation",
+                continuation_type="drill_down",
+                followup_intent="none",
+                drill_down_action="answer_fact",
+                drill_down_index=0,
+                fact_field="bank",
+                requested_field="bank",
+                confidence=0.98,
+                reason="semantic focused fact request",
+            ),
+            QuerySemanticDecision(
+                decision="continuation",
+                continuation_type="coverage",
+                followup_intent="none",
+                confidence=0.98,
+                reason="semantic result completeness request",
+            ),
+        )
+    )
+
+    async def _semantic_reason(_: object) -> QuerySemanticDecision:
+        return next(semantic_decisions)
+
+    step.reasoner.reason = _semantic_reason  # type: ignore[method-assign]
+
+    fact_updates = await step._handle_continuation(
+        {"message": "What bank was that?", "today": today, "language": "en"}, session
+    )
+
+    assert fact_updates["drill_down_action"] == "answer_fact"
+    fact_result = await handle_drill_down({"language": "en", "query_result": detail_result, **fact_updates})
+    assert fact_result.outcome == TransactionOutcome.OK
+    assert "GTBank" in (fact_result.response or "")
+    assert "Amount:" not in (fact_result.response or "")
+
+    completeness_updates = await step._handle_continuation(
+        {"message": "Is that everything?", "today": today, "language": "en"}, session
+    )
+
+    assert completeness_updates["flow_state"] == "complete"
+    assert "not the complete list" in completeness_updates["response"]
+    assert "5 matching transactions" in completeness_updates["response"]
+
+
 @pytest.mark.asyncio
 async def test_explain_aggregate_scope_follow_up_uses_scoped_reply_without_drill_down() -> None:
     step = ExtractionStep(_DummyLLM())
@@ -1987,13 +2111,79 @@ async def test_show_me_follow_up_increments_pagination_on_summary_intent() -> No
         {
             "session_active": True,
             "query_contract": session_contract.model_dump(),
-            "query_result": {"items": []},
+            "query_result": {"items": [], "has_more": True},
             "current_page": 0,
         },
     )
 
     assert updates["current_page"] == 1
     assert updates["continuation_type"] == "show_more"
+
+
+@pytest.mark.asyncio
+async def test_show_more_on_final_page_keeps_page_and_explains_boundary() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 6)
+    session_contract = _contract(
+        _query_ir(intent=QueryIntent.TRANSACTION_LIST, time_range=TimeRange(start=today, end=today))
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="show_more",
+            followup_intent="continue_pagination",
+            confidence=0.99,
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    updates = await step._handle_continuation(
+        {"message": "more", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": [], "has_more": False},
+            "current_page": 2,
+        },
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.OK
+    assert updates["current_page"] == 2
+    assert updates["response"] == "That's the full list for this search."
+
+
+@pytest.mark.asyncio
+async def test_previous_on_first_page_keeps_page_and_explains_boundary() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 6)
+    session_contract = _contract(
+        _query_ir(intent=QueryIntent.TRANSACTION_LIST, time_range=TimeRange(start=today, end=today))
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="show_more",
+            followup_intent="previous_pagination",
+            confidence=0.99,
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    updates = await step._handle_continuation(
+        {"message": "previous", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": [], "has_more": True},
+            "current_page": 0,
+        },
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.OK
+    assert updates["current_page"] == 0
+    assert updates["response"] == "You're already on the first page."
 
 
 @pytest.mark.asyncio

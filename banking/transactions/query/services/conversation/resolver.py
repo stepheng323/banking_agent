@@ -5,8 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from banking.runtime.results import TransactionOutcome
+from banking.transactions.query.continuations.clarification_state import (
+    build_selection_clarification_updates,
+    clarification_candidate,
+)
 from banking.transactions.query.contracts import SelectionPayload, SurfaceView
 from banking.transactions.query.models.domain import QueryFrame, QueryResult
+from banking.transactions.query.models.extraction import ClarificationOperation
 from banking.transactions.query.services.conversation.targets import (
     decision_has_target_reference,
     resolve_query_target,
@@ -24,6 +29,9 @@ def build_query_conversation_updates(
     decision: Any,
     text: str,
     query_frames: list[QueryFrame] | None = None,
+    locale: str = "en",
+    session: dict[str, Any] | None = None,
+    turn_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Build grounded active-query updates for visible item follow-ups."""
     if getattr(decision, "decision", None) != "continuation":
@@ -61,7 +69,6 @@ def build_query_conversation_updates(
             "flow_state": "complete",
         }
     if len(matches) > 1:
-        labels = "\n".join(f"{idx}. {match.item.label}" for idx, match in enumerate(matches[:5], 1))
         logger.info(
             "query_conversation_grounding",
             outcome="ambiguous",
@@ -71,13 +78,23 @@ def build_query_conversation_updates(
             has_current_surface=surface_view is not None,
             frame_count=len(query_frames or []),
         )
-        return {
-            "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
-            "response": f"I found multiple matching transactions. Which one did you mean?\n\n{labels}",
-            "session_active": True,
-            "flow_state": "parsing",
-            "pending_clarification": None,
-        }
+        candidates = [
+            clarification_candidate(payload=match.item.payload, label=match.item.label, frame_id=match.frame_id)
+            for match in matches[:5]
+        ]
+        return build_selection_clarification_updates(
+            candidates=candidates,
+            operation=ClarificationOperation(
+                continuation_type="drill_down",
+                drill_down_action=getattr(decision, "drill_down_action", None) or "view_details",
+                fact_field=resolve_requested_fact_field(decision),
+                grounded_operation=getattr(decision, "grounded_operation", None),
+            ),
+            query_contract=query_result.query_contract if query_result is not None else None,
+            locale=locale,
+            session=session or {},
+            turn_id=turn_id,
+        )
     if not matches:
         logger.info(
             "query_conversation_grounding",

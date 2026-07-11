@@ -11,7 +11,6 @@ from banking.transactions.query.models.domain import (
     QueryResult,
     QueryResultItem,
 )
-from banking.transactions.query.presentation.formatter import QueryFormatter
 from banking.transactions.query.presentation.surface_builder import build_query_transfer_handoff_payload
 from banking.transactions.query.services.answers.fact_answer import build_direct_fact_answer
 from shared.queue.factory import QueuePublisherFactory
@@ -302,9 +301,13 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         )
 
     detail_result = QueryResult(
-        summary_text="",
+        # A detail view is a focused lens over the active list, not a new list.
+        # Keep the list summary and pagination state so a later "is that
+        # everything?" still answers about the list the user originally saw.
+        summary_text=query_result.summary_text,
         items=[item],
         context_key=query_result.context_key,
+        has_more=query_result.has_more,
         query_contract=query_contract,
         surface_view=SurfaceView(
             mode=SurfaceViewMode.DIRECT_ANSWER,
@@ -326,10 +329,35 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
             context={
                 "type": "single_transaction",
                 "selected_item_id": item.id,
+                "parent_visible_count": min(len(query_result.items or []), 5),
             },
         ),
     )
-    formatted = QueryFormatter.format(detail_result, show_expanded=True, locale=locale)
+    try:
+        intro = render_message("query.drill_down.details_intro", locale)
+    except Exception:
+        intro = "Here are the details for that transaction:"
+
+    date_str = item.date.strftime("%B %d, %Y") if item.date else "N/A"
+    amount_str = f"₦{abs(float(item.amount or 0.0)):,.2f}"
+
+    bank_name = item.metadata.get("bank_name") or item.metadata.get("recipient_bank_name") or "N/A"
+    counterparty = item.metadata.get("counterparty") or item.metadata.get("recipient_name") or "N/A"
+    status = str(item.metadata.get("status") or "successful").capitalize()
+    reference = item.metadata.get("reference") or item.metadata.get("transaction_id") or "N/A"
+
+    lines = [
+        intro,
+        "",
+        f"**{item.description}**",
+        f"**Amount:** {amount_str}",
+        f"**Date:** {date_str}",
+        f"**Counterparty:** {counterparty}",
+        f"**Bank:** {bank_name}",
+        f"**Status:** {status}",
+        f"**Reference:** {reference}",
+    ]
+    formatted = "\n".join(lines)
 
     return TransactionResult(
         outcome=TransactionOutcome.OK,

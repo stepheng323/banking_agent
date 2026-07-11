@@ -26,7 +26,7 @@ def resolve_grounded_followup(
     if answer_mode == "ask_clarify":
         return {
             "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
-            "response": render_message("query.clarify.unsure_rephrase", language),
+            "response": render_message("query.clarify.missing_scope", language),
             "flow_state": "parsing",
             "session_active": True,
             "pending_clarification": None,
@@ -44,7 +44,7 @@ def resolve_grounded_followup(
         if response is None:
             return {
                 "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
-                "response": render_message("query.clarify.unsure_rephrase", language),
+                "response": render_message("query.clarify.memory_unavailable", language),
                 "flow_state": "parsing",
                 "session_active": True,
                 "pending_clarification": None,
@@ -70,7 +70,7 @@ def resolve_grounded_followup(
         if query_contract is None:
             return {
                 "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
-                "response": render_message("query.clarify.unsure_rephrase", language),
+                "response": render_message("query.clarify.grounded_query_failed", language),
                 "flow_state": "parsing",
                 "session_active": True,
                 "pending_clarification": None,

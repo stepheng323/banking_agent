@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from datetime import date
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import banking.transactions.query.continuations.compiler_paths as compiler_paths
+from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.continuations.aggregate_continuations import (
     compile_aggregate_continuation_updates,
@@ -31,6 +33,9 @@ from banking.transactions.query.presentation.selection_resolver import find_sele
 from banking.transactions.query.presentation.surface_builder import apply_selection_payload_to_query
 from banking.transactions.query.services.answers.coverage import build_query_coverage_answer
 from banking.transactions.query.services.conversation.targets import resolve_requested_fact_field
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 async def resolve_result_continuation_updates(
@@ -92,8 +97,21 @@ async def resolve_result_continuation_updates(
                 return step._ambiguous_followup_updates(locale=locale, session=session)
             current_page = int(session.get("current_page", 0) or 0)
             if followup_intent == "previous_pagination":
+                if current_page <= 0:
+                    return _pagination_boundary_updates(
+                        locale=locale,
+                        session=session,
+                        message_key="query.pagination.already_first_page",
+                    )
                 updates["current_page"] = max(current_page - 1, 0)
             else:
+                has_more = _result_has_more(restored_query_result=restored_query_result, session=session)
+                if has_more is False:
+                    return _pagination_boundary_updates(
+                        locale=locale,
+                        session=session,
+                        message_key="query.pagination.end_of_results",
+                    )
                 updates["current_page"] = current_page + 1
         elif followup_intent == "refine_existing":
             updates["query_contract"] = rebuild_query_contract(
@@ -287,23 +305,28 @@ async def resolve_result_continuation_updates(
                 "response": step._compose_conversational_reply(decision, language=locale),
                 "session_active": False,
                 "flow_state": "complete",
+                "suppress_body_blocks": True,
                 **step._semantic_trace_updates(decision),
             },
             "exit_query_session_conversational",
         )
 
     elif cont_type == "coverage":
+        coverage_intent = _resolve_coverage_intent(decision, session_query_contract)
+        logger.info("query_coverage_intent_resolved", coverage_intent=coverage_intent)
         list_coverage_response = _build_result_list_coverage_response(
             restored_query_result=restored_query_result,
             session_query_contract=session_query_contract,
             session=session,
+            locale=locale,
         )
-        if list_coverage_response is not None:
+        if coverage_intent == "result_completeness" and list_coverage_response is not None:
             return {
                 "transaction_outcome": TransactionOutcome.OK,
                 "response": list_coverage_response,
                 "session_active": True,
                 "flow_state": "complete",
+                "suppress_body_blocks": True,
                 "resolver_message": None,
                 "show_expanded": bool(session.get("show_expanded", False)),
                 "current_page": session.get("current_page", 0),
@@ -318,12 +341,16 @@ async def resolve_result_continuation_updates(
             query_contract=session_query_contract,
             session=session,
             target_text=getattr(decision, "target_text", None),
+            locale=locale,
         )
+        if coverage_intent == "ambiguous" and list_coverage_response is not None:
+            response = f"{list_coverage_response}\n\n{response}"
         return {
             "transaction_outcome": TransactionOutcome.OK,
             "response": response,
             "session_active": True,
             "flow_state": "complete",
+            "suppress_body_blocks": True,
             "resolver_message": None,
             "show_expanded": bool(session.get("show_expanded", False)),
             "current_page": session.get("current_page", 0),
@@ -345,6 +372,7 @@ async def resolve_result_continuation_updates(
             "response": response,
             "session_active": True,
             "flow_state": "complete",
+            "suppress_body_blocks": True,
             "resolver_message": None,
             "show_expanded": bool(session.get("show_expanded", False)),
             "current_page": session.get("current_page", 0),
@@ -394,7 +422,7 @@ async def resolve_result_continuation_updates(
             session_query_contract is not None
             and selection_payload is not None
             and (
-                selection_payload.selection_kind == "group_bucket"
+                selection_payload.selection_kind in {"group_bucket", "summary_scope"}
                 or bool(selection_payload.filters_patch)
                 or selection_payload.time_patch is not None
             )
@@ -422,6 +450,8 @@ async def resolve_result_continuation_updates(
                 updates["fact_field"] = "recipient" if answer_fact_field == "counterparty" else answer_fact_field
             if drill_down_action == "answer_fact":
                 updates["_query_session_transition"] = "answer_fact_active_result"
+        else:
+            return _unresolved_selection_updates(locale=locale, session=session, visible_count=len(items))
 
     elif cont_type == "recipient_drill_down":
         recipient_name = decision.recipient_name
@@ -440,7 +470,7 @@ async def resolve_result_continuation_updates(
             }:
                 recipient_answer_fact_field = cast(QueryFactField, decision.fact_field)
             selection_payload = find_selection_payload(surface_view, label=recipient_name)
-            if selection_payload is not None and session_query_contract is not None:
+            if selection_payload is not None:
                 updates["query_contract"] = apply_selection_payload_to_query(
                     session_query_contract,
                     selection_payload,
@@ -464,6 +494,8 @@ async def resolve_result_continuation_updates(
                 )
             updates["current_page"] = 0
             updates["show_expanded"] = False
+        else:
+            return _unresolved_selection_updates(locale=locale, session=session, visible_count=len(items))
 
     elif cont_type == "unclear":
         supported_query_updates = await maybe_recover_supported_followup_query(
@@ -528,29 +560,105 @@ async def resolve_result_continuation_updates(
     return updates
 
 
+CoverageIntent = Literal["result_completeness", "data_coverage", "ambiguous"]
+
+
+def _resolve_coverage_intent(decision: Any, query_contract: Any | None) -> CoverageIntent:
+    semantic_intent = getattr(decision, "coverage_intent", None)
+    if semantic_intent in {"result_completeness", "data_coverage", "ambiguous"}:
+        return cast(CoverageIntent, semantic_intent)
+    # Backward-compatible structural default for older reasoner payloads. An
+    # active transaction list owns questions about whether matching rows remain;
+    # non-list results cannot safely infer synchronization coverage.
+    if query_contract is not None and query_contract.intent == QueryIntent.TRANSACTION_LIST:
+        return "result_completeness"
+    return "ambiguous"
+
+
+def _pagination_boundary_updates(
+    *, locale: str, session: dict[str, Any], message_key: MessageKey
+) -> dict[str, Any]:
+    return {
+        "transaction_outcome": TransactionOutcome.OK,
+        "response": render_message(message_key, locale),
+        "session_active": True,
+        "flow_state": "complete",
+        "resolver_message": None,
+        "show_expanded": bool(session.get("show_expanded", False)),
+        "current_page": int(session.get("current_page", 0) or 0),
+    }
+
+
+def _result_has_more(*, restored_query_result: QueryResult | None, session: dict[str, Any]) -> bool | None:
+    if restored_query_result is not None:
+        return restored_query_result.has_more
+    raw_result = session.get("query_result")
+    if isinstance(raw_result, dict) and isinstance(raw_result.get("has_more"), bool):
+        return raw_result["has_more"]
+    return None
+
+
+def _unresolved_selection_updates(
+    *, locale: str, session: dict[str, Any], visible_count: int
+) -> dict[str, Any]:
+    message_key: MessageKey = (
+        "query.drill_down.no_items" if visible_count <= 0 else "query.drill_down.invalid_selection"
+    )
+    return {
+        "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+        "response": render_message(message_key, locale, {"count": visible_count}),
+        "session_active": True,
+        "flow_state": "parsing",
+        "pending_clarification": None,
+        "resolver_message": None,
+        "selected_item_index": None,
+        "selected_item_id": None,
+        "selected_payload": None,
+        "selected_query_item": None,
+        "selected_frame_id": None,
+        "drill_down_action": None,
+        "fact_field": None,
+        "show_expanded": bool(session.get("show_expanded", False)),
+        "current_page": int(session.get("current_page", 0) or 0),
+    }
+
+
 def _build_result_list_coverage_response(
     *,
     restored_query_result: QueryResult | None,
     session_query_contract: Any | None,
     session: dict[str, Any],
+    locale: str,
 ) -> str | None:
     if restored_query_result is None:
         return None
     query_contract = restored_query_result.query_contract or session_query_contract
     if query_contract is None or query_contract.intent != QueryIntent.TRANSACTION_LIST:
         return None
-    visible_count = len(restored_query_result.items or [])
+    surface_context = (
+        restored_query_result.surface_view.context
+        if restored_query_result.surface_view is not None
+        and isinstance(restored_query_result.surface_view.context, dict)
+        else {}
+    )
+    parent_visible_count = surface_context.get("parent_visible_count")
+    visible_count = (
+        parent_visible_count
+        if isinstance(parent_visible_count, int) and parent_visible_count > 0
+        else len(restored_query_result.items or [])
+    )
     current_page = int(session.get("current_page", 0) or 0)
     page_size = int(session.get("page_size", 5) or 5)
     shown_count = max(visible_count, (current_page * page_size) + visible_count)
     if restored_query_result.has_more:
-        return (
-            f"No, this is not the complete list. I have shown {shown_count} matching transactions so far, "
-            "and there are more results available."
+        return render_message(
+            "query.coverage_copy.result_more",
+            locale,
+            {"count": shown_count},
         )
     if visible_count:
-        return f"Yes, that is the complete visible list for this search: {shown_count} matching transactions."
-    return "Yes, that is the complete result for this search. I did not find matching transactions."
+        return render_message("query.coverage_copy.result_complete", locale, {"count": shown_count})
+    return render_message("query.coverage_copy.result_empty", locale)
 
 
 def _normalize_focused_aggregate_selection_payload(

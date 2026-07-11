@@ -98,6 +98,15 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
         "wrong_name_used->set planner_output.response to politely correct the name "
         "before addressing the rest of the message"
     ),
+    "R31_INTENT_VIABILITY": (
+        "abstract_capability_lists_without_concrete_params->conversational.checkin; "
+        "shorthand_with_concrete_parameters(e.g., '5k, tolu')->valid_actionable_task"
+    ),
+    "R32_SHORTHAND_RECOGNITION": (
+        "comma-separated or fragmented inputs (e.g. '5k, tolu' or '1000, 08012345678') are valid commands; "
+        "amount+phone_number->buy_airtime; amount+name(+bank)->send_money; "
+        "do not reject missing prepositions like 'to' or 'for'"
+    ),
 }
 
 PLANNER_RULE_ATOM_ORDER = [
@@ -126,6 +135,8 @@ PLANNER_RULE_ATOM_ORDER = [
     "R27_RECIPIENT_SPLIT",
     "R28_RESPONSE_SHAPE",
     "R29_IDENTITY_CORRECTION",
+    "R31_INTENT_VIABILITY",
+    "R32_SHORTHAND_RECOGNITION",
 ]
 
 PLANNER_RULE_SEMANTIC_GUARD_IDS = {

@@ -411,3 +411,24 @@ async def test_query_drill_down_does_not_fallback_to_item_zero_for_bad_selection
 
     assert result.outcome == TransactionOutcome.FAILED
     assert "no" in (result.response or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_query_drill_down_retains_parent_list_pagination_for_completeness_followup() -> None:
+    query_result = _query_result().model_copy(update={"has_more": True, "query_contract": _contract()})
+
+    result = await handle_drill_down(
+        {
+            "language": "en",
+            "query_result": query_result,
+            "selected_item_index": 1,
+            "drill_down_action": "view_details",
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    detail_result = result.patch["query_result"]
+    assert detail_result.has_more is True
+    assert detail_result.summary_text == "recent transactions"
+    assert detail_result.surface_view is not None
+    assert detail_result.surface_view.context["parent_visible_count"] == 2

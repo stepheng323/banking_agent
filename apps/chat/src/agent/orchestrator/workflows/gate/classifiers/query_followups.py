@@ -1,4 +1,3 @@
-
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _classify_obvious_transfer_request,
     _is_obvious_airtime_request,
@@ -15,7 +14,7 @@ def _query_followup_bypass_reason(
     has_context_frames: bool = False,
     is_pending_clarification: bool = False,
 ) -> tuple[str | None, str | None]:
-    if not has_active_query_session:
+    if not has_active_query_session and not has_context_frames:
         return None, None
 
     transfer_request_reason = _classify_obvious_transfer_request(message_text)
@@ -29,6 +28,26 @@ def _query_followup_bypass_reason(
     if is_pending_clarification:
         return "pending_clarification", miss_reason or "query_session_active"
 
-    if has_active_query_session or has_context_frames:
+    if has_active_query_session:
         return "active_query_session", miss_reason or "query_session_active"
+    normalized = " ".join(message_text.casefold().split())
+    if has_context_frames and any(
+        marker in normalized
+        for marker in (
+            "that",
+            "those",
+            "the first",
+            "the second",
+            "the third",
+            "one",
+            "previous",
+            "earlier",
+            "actually",
+            "show them",
+            "details",
+            "reference",
+            "receipt",
+        )
+    ):
+        return "recent_query_context", miss_reason or "read_only_referential_followup"
     return None, miss_reason

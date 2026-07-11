@@ -46,6 +46,17 @@ def build_pending_clarification(
     message: str | None,
     resolver_message: str | None,
 ) -> PendingClarificationState:
+    ambiguity_codes = {ambiguity.code for ambiguity in extraction.ambiguities}
+    clarification_type: Literal[
+        "time", "selection", "recipient", "account", "direction", "category", "status", "amount", "scope"
+    ] | None = None
+    target_field = None
+    if AmbiguityCode.RECIPIENT_VAGUE in ambiguity_codes:
+        clarification_type, target_field = "recipient", "recipient"
+    elif AmbiguityCode.TIME_VAGUE in ambiguity_codes:
+        clarification_type, target_field = "time", "time_range"
+    elif AmbiguityCode.AMOUNT_VAGUE in ambiguity_codes:
+        clarification_type, target_field = "amount", "amount_range"
     return PendingClarificationState(
         original_query=message or extraction.raw_query or "",
         current_intent=extraction.intent,
@@ -53,6 +64,8 @@ def build_pending_clarification(
         ambiguities=list(extraction.ambiguities),
         resolver_message=resolver_message,
         language=language,
+        clarification_type=clarification_type,
+        target_field=target_field,
     )
 
 

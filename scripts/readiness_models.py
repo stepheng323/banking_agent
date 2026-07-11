@@ -6,6 +6,19 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 ReadinessMode = Literal["deterministic", "dry-run"]
+ReadinessCriticality = Literal["safety", "correctness", "quality"]
+ReadinessOutcome = Literal[
+    "correct",
+    "clarified",
+    "recovered",
+    "misrouted",
+    "wrong_referent",
+    "context_lost",
+    "unnecessary_clarification",
+    "clarification_loop",
+    "unsafe_execution",
+    "unsupported_gracefully",
+]
 ReadinessScenarioName = Literal[
     "all",
     "core",
@@ -26,6 +39,7 @@ ReadinessScenarioName = Literal[
     "system_intelligence",
     "extended_casual",
     "complex_interruptions",
+    "robustness",
 ]
 
 
@@ -44,6 +58,21 @@ class ReadinessExpectation:
     expect_llm_call_count: int | None = None
     expect_llm_event_counts: tuple[tuple[str, int], ...] = ()
     allow_duplicate_blocks: bool = False
+    expect_allowed_task_types: tuple[str, ...] | None = None
+    expect_forbidden_task_types: tuple[str, ...] = ()
+    expect_active_domain: str | None = None
+    expect_session_state: str | None = None
+    expect_clarification_type: str | None = None
+    expect_context_source: str | None = None
+    expect_async_job_count_max: int | None = None
+    expect_no_money_movement: bool = False
+    expect_state_fields: tuple[tuple[str, Any], ...] = ()
+    expect_response_required: bool = False
+    response_required_modes: tuple[ReadinessMode, ...] = ("dry-run",)
+    expect_response_any: tuple[str, ...] = ()
+    expect_response_none: tuple[str, ...] = ()
+    response_content_modes: tuple[ReadinessMode, ...] = ("dry-run",)
+    expected_outcome: ReadinessOutcome = "correct"
 
 
 @dataclass(frozen=True)
@@ -53,6 +82,7 @@ class ReadinessTurn:
     pin_after: bool = False
     pin_flow_type: str = "transaction"
     modes: tuple[ReadinessMode, ...] = ("deterministic", "dry-run")
+    mutation_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +90,9 @@ class ReadinessScenario:
     id: str
     turns: tuple[ReadinessTurn, ...]
     description: str = ""
+    category: str = "uncategorized"
+    tags: tuple[str, ...] = ()
+    criticality: ReadinessCriticality = "correctness"
 
 
 @dataclass(frozen=True)
@@ -86,6 +119,10 @@ class ReadinessTurnResult:
     llm_calls: tuple[dict[str, Any], ...] = ()
     planner_clean: bool | None = None
     planner_dirty_reasons: tuple[str, ...] = ()
+    category: str = "uncategorized"
+    criticality: ReadinessCriticality = "correctness"
+    outcome: ReadinessOutcome = "correct"
+    mutation_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -103,6 +140,10 @@ class ReadinessTurnResult:
             "llm_total_ms": round(_llm_call_total_ms(self.llm_calls), 2),
             "planner_clean": self.planner_clean,
             "planner_dirty_reasons": list(self.planner_dirty_reasons),
+            "category": self.category,
+            "criticality": self.criticality,
+            "outcome": self.outcome,
+            "mutation_id": self.mutation_id,
         }
 
 
@@ -153,6 +194,25 @@ class ReadinessRunResult:
             "clean_count": clean_count,
             "dirty_count": dirty_count,
             "clean_rate": round(clean_count / total, 4) if total else None,
+        }
+
+    @property
+    def robustness_summary(self) -> dict[str, Any]:
+        total = len(self.turns)
+        by_outcome: dict[str, int] = {}
+        by_category: dict[str, dict[str, int]] = {}
+        for turn in self.turns:
+            by_outcome[turn.outcome] = by_outcome.get(turn.outcome, 0) + 1
+            category = by_category.setdefault(turn.category, {"total": 0, "passed": 0})
+            category["total"] += 1
+            category["passed"] += int(turn.passed)
+        return {
+            "turn_count": total,
+            "passed": sum(1 for turn in self.turns if turn.passed),
+            "pass_rate": round(sum(1 for turn in self.turns if turn.passed) / total, 4) if total else None,
+            "by_outcome": by_outcome,
+            "by_category": by_category,
+            "unsafe_execution_count": by_outcome.get("unsafe_execution", 0),
         }
 
     @property
@@ -279,6 +339,44 @@ class ReadinessRunResult:
         }
 
     @property
+    def llm_health_summary(self) -> dict[str, Any]:
+        """Report model-call reliability without changing conversational pass/fail.
+
+        A response-schema validation error can still leave a safe fallback response.
+        Keeping it separate prevents a safe transcript from concealing an unhealthy
+        model integration, while avoiding an arbitrary reclassification of the turn.
+        """
+
+        calls = [call for turn in self.turns for call in turn.llm_calls]
+        errors = [call for call in calls if isinstance(call.get("error_type"), str) and call["error_type"]]
+        error_types: dict[str, int] = {}
+        http_statuses: dict[str, int] = {}
+        for call in calls:
+            error_type = call.get("error_type")
+            if isinstance(error_type, str) and error_type:
+                error_types[error_type] = error_types.get(error_type, 0) + 1
+            status = call.get("client_http_status_code")
+            if isinstance(status, int):
+                status_key = str(status)
+                http_statuses[status_key] = http_statuses.get(status_key, 0) + 1
+        provider_error_calls = sum(
+            1
+            for call in errors
+            if isinstance(call.get("client_http_status_code"), int) and call["client_http_status_code"] >= 400
+        )
+        validation_error_calls = error_types.get("ValidationError", 0)
+        return {
+            "call_count": len(calls),
+            "error_call_count": len(errors),
+            "error_rate": round(len(errors) / len(calls), 4) if calls else None,
+            "provider_error_call_count": provider_error_calls,
+            "validation_error_call_count": validation_error_calls,
+            "error_types": error_types,
+            "http_statuses": http_statuses,
+            "degraded": bool(provider_error_calls or validation_error_calls),
+        }
+
+    @property
     def slowest_llm_calls(self) -> list[dict[str, Any]]:
         flattened: list[dict[str, Any]] = []
         for turn in self.turns:
@@ -306,7 +404,9 @@ class ReadinessRunResult:
             "latency_summary": self.latency_summary,
             "planner_quality_summary": self.planner_quality_summary,
             "planner_clean_rate": self.planner_quality_summary["clean_rate"],
+            "robustness_summary": self.robustness_summary,
             "llm_call_summary": self.llm_call_summary,
+            "llm_health_summary": self.llm_health_summary,
             "slowest_llm_calls": self.slowest_llm_calls,
             "slowest_turns": [
                 {

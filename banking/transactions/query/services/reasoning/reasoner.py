@@ -460,6 +460,7 @@ class QuerySemanticReasoner:
         items_section, prompt_item_count = self._serialize_items(context.items)
         query_frames_section, prompt_frame_count = self._serialize_query_frames(context.query_frames)
         prompt_surface_type = self._surface_type_name(surface_view=context.surface_view)
+        stashed_sessions_section = self._serialize(context.stashed_sessions)
         dynamic_context = QUERY_SEMANTIC_REASONER_CONTEXT.format(
             today=context.today.isoformat(),
             language=context.language,
@@ -470,6 +471,7 @@ class QuerySemanticReasoner:
             surface_type=prompt_surface_type,
             surface_context=self._serialize_surface_snapshot(surface_view=context.surface_view),
             items_section=items_section,
+            stashed_sessions_section=stashed_sessions_section,
             query_frames_section=query_frames_section,
         )
         messages = [

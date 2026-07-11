@@ -70,6 +70,9 @@ class ExecutionAccumulator:
     def set_pending_query_clarification(self, clarification: dict[str, Any] | None) -> None:
         self._result_patch.set_pending_query_clarification(clarification)
 
+    def set_recent_query_context(self, context: dict[str, Any] | None) -> None:
+        self._result_patch.set_recent_query_context(context)
+
     def set_last_interrupt(self, interrupt: Any) -> None:
         self._result_patch.set_last_interrupt(interrupt)
 

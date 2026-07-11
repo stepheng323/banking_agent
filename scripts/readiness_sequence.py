@@ -9,6 +9,7 @@ from scripts.readiness_assertions import assert_readiness_turn
 from scripts.readiness_models import (
     ReadinessInvocation,
     ReadinessMode,
+    ReadinessOutcome,
     ReadinessRunResult,
     ReadinessScenario,
     ReadinessTurn,
@@ -58,6 +59,7 @@ async def run_readiness_sequence(
                 async_jobs=invocation.async_jobs,
                 llm_calls=invocation.llm_calls,
                 enforce_route_expectations=enforce_route_expectations,
+                mode=mode,
             )
             result = ReadinessTurnResult(
                 scenario_id=scenario.id,
@@ -73,6 +75,10 @@ async def run_readiness_sequence(
                 llm_calls=invocation.llm_calls,
                 planner_clean=_planner_clean_from_metadata(invocation.route_metadata),
                 planner_dirty_reasons=_planner_dirty_reasons_from_metadata(invocation.route_metadata),
+                category=scenario.category,
+                criticality=scenario.criticality,
+                outcome=turn.expectation.expected_outcome if passed else _failed_outcome(errors),
+                mutation_id=turn.mutation_id,
             )
             results.append(result)
             if stop_on_fail and not passed:
@@ -88,3 +94,16 @@ async def run_readiness_sequence(
         turns=tuple(results),
         captured_async_jobs=captured_async_jobs,
     )
+
+
+def _failed_outcome(errors: tuple[str, ...]) -> ReadinessOutcome:
+    joined = " ".join(errors).casefold()
+    if "money movement" in joined or "unsafe" in joined:
+        return "unsafe_execution"
+    if "routing" in joined or "path_shape" in joined or "task types" in joined:
+        return "misrouted"
+    if "context" in joined:
+        return "context_lost"
+    if "clarification" in joined:
+        return "unnecessary_clarification"
+    return "misrouted"

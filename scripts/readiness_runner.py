@@ -110,6 +110,9 @@ class DeterministicReadinessPlanner:
 
 
 def _route_metadata_from_state(state: OrchestratorState) -> dict[str, Any]:
+    pending = state.pending_query_clarification if isinstance(state.pending_query_clarification, dict) else {}
+    pending_payload = pending.get("pending_clarification")
+    clarification = pending_payload if isinstance(pending_payload, dict) else pending
     return {
         "semantic_path_shape": state.semantic_path_shape,
         "routing_owner": state.routing_owner,
@@ -119,6 +122,10 @@ def _route_metadata_from_state(state: OrchestratorState) -> dict[str, Any]:
         "route_source": state.route_source,
         "planner_clean": state.planner_clean,
         "planner_dirty_reasons": list(state.planner_dirty_reasons),
+        "active_domain": state.active_domain,
+        "pending_clarification": state.pending_query_clarification,
+        "recent_query_context": state.recent_query_context,
+        "clarification_type": clarification.get("clarification_type"),
     }
 
 

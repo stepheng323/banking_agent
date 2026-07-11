@@ -77,6 +77,21 @@ def _append_focus_detail_frame(
         return frames
 
     now = int(time.time())
+    metadata = dict(source_frame.metadata) if isinstance(source_frame.metadata, dict) else {}
+    # The detail is still a lens over the query that produced the list. Preserve
+    # the contract and pagination facts so the next referential turn remains a
+    # query continuation instead of falling through to generic routing.
+    metadata.pop("query_frame", None)
+    metadata.update(
+        {
+            "surface_mode": "direct_answer",
+            "surface_context": {
+                "type": "single_transaction",
+                "selected_item_id": entity.entity_id,
+                "parent_visible_count": min(len(source_frame.items), 5),
+            },
+        }
+    )
     detail_frame = ContextFrame(
         frame_id=f"{source_frame.frame_id}:focus:{entity.entity_id or now}",
         frame_type=detail_type,
@@ -85,6 +100,7 @@ def _append_focus_detail_frame(
         source_message_id=source_frame.source_message_id,
         created_at_ts=now,
         ttl_seconds=source_frame.ttl_seconds,
+        metadata=metadata,
     )
     return [*frames, detail_frame][-ContextFrameManager().max_frames :]
 

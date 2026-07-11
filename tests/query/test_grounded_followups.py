@@ -394,4 +394,4 @@ async def test_grounded_compare_with_incompatible_frames_requests_clarification(
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
-    assert updates["response"] == render_message("query.clarify.unsure_rephrase", "en")
+    assert updates["response"] == render_message("query.clarify.grounded_query_failed", "en")

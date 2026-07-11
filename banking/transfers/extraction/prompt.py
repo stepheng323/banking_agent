@@ -69,6 +69,9 @@ When user corrects mid-flow ("I meant 50k"):
 - Do this semantically across supported languages/mixed input, not by English keyword matching.
 
 ## CONTEXT-AWARE SLOT FILL
+- If the user uses informal shorthand or fragments (e.g., "5k, tolu" or "5k, 0760505261, access bank"), map the pieces logically even if prepositions (to, for, from) are missing.
+  - An amount followed by a person's name maps to `amount` and `recipient_name`.
+  - An amount followed by digits and a bank name maps to `amount`, `recipient_account`, and `bank_name`.
 - Context may include `RequiredFields` and `LastMsg`.
 - Media inputs may include `User caption/instruction:` followed by `Extracted from image: ...`.
   Treat the caption as the user's transfer instruction and the image text as extracted recipient/bank details.
@@ -100,6 +103,8 @@ When user corrects mid-flow ("I meant 50k"):
 | "GTB → Access 5k" | amount=5000, source_bank_name="GTBank", bank_name="Access Bank" |
 | "Send 25k to 0760505261 Access Bank" | amount=25000, recipient_account="0760505261", bank_name="Access Bank" |
 | "Send 25k to 0760505261 Access Bank for rent" | amount=25000, recipient_account="0760505261", bank_name="Access Bank", narration="rent" |
+| "5k, tolu" | amount=5000, recipient_name="tolu" |
+| "5k, 0760505261, access bank" | amount=5000, recipient_account="0760505261", bank_name="Access Bank" |
 | "816 251 1023 opay" (when awaiting account+bank) | recipient_account="8162511023", bank_name="Opay" |
 | "9162512056, opay" (when awaiting account+bank) | recipient_account="9162512056", bank_name="Opay" |
 | "9162512056 - opay" (when awaiting account+bank) | recipient_account="9162512056", bank_name="Opay" |

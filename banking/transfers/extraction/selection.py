@@ -78,7 +78,7 @@ def render_beneficiary_retry_prompt(
         f"{idx}. {str(candidate.get('body_label') or candidate.get('label') or f'Option {idx}')}"
         for idx, candidate in enumerate(candidates, start=1)
     ]
-    candidates_list = "\n\n".join(numbered_lines)
+    candidates_list = "\n".join(numbered_lines)
     prompt = render_message(
         "response.templates.clarify_beneficiary",
         locale,
@@ -112,8 +112,8 @@ def resolve_beneficiary_selection_from_input(
                     "beneficiary_id": str(candidate.id),
                     "option_id": f"bene:{candidate.id}",
                     "label": (
-                        f"{candidate.account_name or candidate.alias} • {candidate.bank_name} • "
-                        f"****{str(candidate.account_number)[-4:]}"
+                        f"{candidate.account_name or candidate.alias} · {candidate.bank_name} · "
+                        f"···{str(candidate.account_number)[-4:]}"
                     ),
                 }
                 for idx, candidate in enumerate(matched_candidates, start=1)

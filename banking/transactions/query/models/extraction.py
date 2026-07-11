@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from banking.transactions.query.contracts import SelectionPayload
 from banking.transactions.query.models.domain import QueryFactField, QueryIntent
 
 # Schema version for future-proofing
@@ -130,6 +131,15 @@ class ClarificationPatch(BaseModel):
 
     target_session_id: str | None = Field(default=None)
     fields: dict[str, Any] = Field(default_factory=dict)
+    time_range: QueryTimeRange | None = None
+    recipient: str | None = None
+    account_filter: str | None = None
+    transaction_type: Literal["credit", "debit"] | None = None
+    category: str | None = None
+    status: Literal["failed", "pending", "successful", "reversed"] | None = None
+    min_amount: float | None = None
+    max_amount: float | None = None
+    selected_payload: SelectionPayload | None = None
     confidence: float = Field(default=1.0)
 
 
@@ -247,7 +257,33 @@ class PendingClarificationState(BaseModel):
     kind: Literal["pending_clarification"] = "pending_clarification"
     original_query: str
     current_intent: QueryIntent
-    original_extraction: QueryExtractionResult
+    original_extraction: QueryExtractionResult | None = None
     ambiguities: list[Ambiguity] = Field(default_factory=list)
     resolver_message: str | None = None
     language: str = "en"
+    clarification_type: Literal[
+        "time", "selection", "recipient", "account", "direction", "category", "status", "amount", "scope"
+    ] | None = None
+    target_field: str | None = None
+    candidate_payloads: list["ClarificationCandidate"] = Field(default_factory=list, max_length=5)
+    original_operation: "ClarificationOperation | None" = None
+    query_contract: dict[str, Any] | None = None
+    attempt_count: int = Field(default=0, ge=0, le=2)
+    created_turn_id: str | None = None
+
+
+class ClarificationCandidate(BaseModel):
+    """Bounded selectable candidate retained across clarification turns."""
+
+    label: str
+    payload: SelectionPayload
+    frame_id: str | None = None
+
+
+class ClarificationOperation(BaseModel):
+    """Read-only query operation to restore after clarification."""
+
+    continuation_type: str | None = None
+    drill_down_action: str | None = None
+    fact_field: str | None = None
+    grounded_operation: str | None = None

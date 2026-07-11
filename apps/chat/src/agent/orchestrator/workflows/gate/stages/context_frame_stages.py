@@ -69,13 +69,6 @@ _READ_ONLY_REFRESH_CUE_RE = re.compile(
 _MONEY_MOVE_REFRESH_BLOCK_RE = re.compile(
     r"(?iu)\b(?:send|transfer|pay|buy|airtime|data|bundle|recharge|top\s*up|do|redo|resend)\b"
 )
-_CONTEXT_FRAME_COMPLETENESS_CUE_RE = re.compile(
-    r"(?iu)(?:"
-    r"\b(?:is\s+that\s+all|that\s+all|all\s+of\s+them|all\s+you\s+found|"
-    r"you\s+only\s+show(?:ed)?|only\s+show(?:ed)?|only\s+\d+)\b|"
-    r"\b(?:na\s+all|na\s+only|only\s+this)\b"
-    r")"
-)
 
 
 def _is_fresh_transaction_command(ctx: GateContext) -> bool:
@@ -312,22 +305,6 @@ def _display_shortcut_followup(ctx: GateContext) -> ContextFrameFollowupResponse
     )
 
 
-def _completeness_shortcut_followup(ctx: GateContext) -> ContextFrameFollowupResponse | None:
-    if not _CONTEXT_FRAME_COMPLETENESS_CUE_RE.search(ctx.message_text or ""):
-        return None
-    return build_context_frame_followup_response(
-        ctx.state,
-        ctx.message_text,
-        decision=ContextFrameFollowupDecision(
-            decision="completeness_check",
-            confidence=0.94,
-            detected_language=ctx.current_locale,
-            reason="short visible-context completeness request",
-        ),
-        locale=ctx.current_locale,
-    )
-
-
 async def _interpret_context_frame_followup(ctx: GateContext) -> ContextFrameFollowupDecision | None:
     if ctx.task_planner is None:
         return None
@@ -466,15 +443,6 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
             item_count=len(frame.items),
         )
         return None
-
-    completeness_followup = _completeness_shortcut_followup(ctx)
-    if completeness_followup:
-        logger.info(
-            "gate_context_frame_completeness_shortcut_hit",
-            frame_type=frame.frame_type.value,
-            item_count=len(frame.items),
-        )
-        return _context_frame_followup_updates(ctx, completeness_followup)
 
     display_followup = _display_shortcut_followup(ctx)
     if display_followup:

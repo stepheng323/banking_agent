@@ -103,6 +103,13 @@ Rules:
     in ANY request (including greetings, casual chat, or task requests), set:
     - decision=planner_mixed
     - This allows the Planner to handle the identity correction.
+2g) If the user inputs a list of abstract banking capabilities (e.g., "transfers, airtime, data, balances")
+    without any concrete parameters (such as an amount, account number, phone number, or name), AND lacks
+    a clear instruction verb, treat it as a conversational echo or capability check. Set:
+    - decision=direct_reply
+    - res_key=conversational.checkin
+    Conversely, shorthand inputs that DO contain concrete parameters (e.g., "5k to tolu", "5k, 0123456789")
+    are valid actionable intents and must NOT be treated as casual.
 3) Use decision=cancel only for explicit cancellation. Set res_key=planner.cancelled when helpful.
 4) Route read-only money-understanding asks to domain_query.
    This includes fresh asks and grounded follow-ups about transactions, debits, credits, inflow/income,

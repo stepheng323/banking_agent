@@ -6,11 +6,13 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from scripts.readiness_models import ReadinessExpectation, ReadinessScenario, ReadinessTurn
 from shared.types.planner import SemanticRouteDecision
 from tests.orchestrator.conversation_harness import (
     ConversationScenario,
     ConversationTurn,
     run_conversation_scenario,
+    run_readiness_scenario_fast,
 )
 
 
@@ -27,6 +29,34 @@ class _CountingPlanner:
             response_key="conversational.clarify",
             reason="conversation harness fallback route",
         )
+
+
+@pytest.mark.asyncio
+async def test_fast_harness_accepts_canonical_readiness_scenario() -> None:
+    planner = _CountingPlanner()
+    scenario = ReadinessScenario(
+        id="canonical-fast-eval",
+        category="incomplete_input",
+        turns=(
+            ReadinessTurn(
+                "send me",
+                ReadinessExpectation(
+                    expect_any=("send money", "recipient"),
+                    expect_forbidden_task_types=("transfer", "airtime", "data"),
+                    expect_no_money_movement=True,
+                ),
+            ),
+        ),
+    )
+
+    result = await run_readiness_scenario_fast(
+        scenario,
+        initial_state=_state(user_id="u_eval_canonical_fast"),
+        planner=planner,
+    )
+
+    assert result.final_state.routing_decision == "banking_coded_ambiguity_transfer"
+    assert result.final_state.tasks == {}
 
 
 def _state(*, user_id: str, text: str = "") -> OrchestratorState:

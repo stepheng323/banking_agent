@@ -7,6 +7,7 @@ from datetime import date, datetime
 from typing import Any
 
 from banking.accounts.mandate_state import READY, effective_mandate_status
+from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import QueryExecutionContract
 from banking.transactions.query.services.fetching.fetch import _is_missing_mirror_table_error
 from shared.config.settings import settings
@@ -188,36 +189,48 @@ async def _coverage_for_account(
     )
 
 
-def _status_line(snapshot: AccountCoverageSnapshot) -> str:
+def _status_line(snapshot: AccountCoverageSnapshot, *, locale: str) -> str:
     if snapshot.covered is True:
-        sync_text = f" Last sync: {snapshot.last_synced_at}." if snapshot.last_synced_at else ""
-        return f"✓ {snapshot.label}: coverage confirmed.{sync_text}"
+        return render_message(
+            "query.coverage_copy.status_covered",
+            locale,
+            {"account": snapshot.label, "sync": snapshot.last_synced_at or "—"},
+        )
     if snapshot.reason == "authorization_pending":
-        return f"○ {snapshot.label}: authorization is {snapshot.mandate_status}, so transaction sync is not complete."
+        return render_message(
+            "query.coverage_copy.status_pending",
+            locale,
+            {"account": snapshot.label, "status": snapshot.mandate_status},
+        )
     if snapshot.covered is False:
-        return f"○ {snapshot.label}: coverage is incomplete for this period."
-    return f"? {snapshot.label}: coverage could not be confirmed right now."
+        return render_message("query.coverage_copy.status_gap", locale, {"account": snapshot.label})
+    return render_message("query.coverage_copy.status_unknown", locale, {"account": snapshot.label})
 
 
-def _single_account_answer(snapshot: AccountCoverageSnapshot, *, start_date: date | None, end_date: date | None) -> str:
+def _single_account_answer(
+    snapshot: AccountCoverageSnapshot,
+    *,
+    start_date: date | None,
+    end_date: date | None,
+    locale: str,
+) -> str:
     period = f" for {_format_date(start_date)}–{_format_date(end_date)}" if start_date and end_date else ""
     if snapshot.reason == "authorization_pending":
-        return (
-            f"{snapshot.label} is not fully synced because account authorization is {snapshot.mandate_status}.\n\n"
-            "Complete the account authorization first, then I can include its transactions in query results."
+        return render_message(
+            "query.coverage_copy.single_pending",
+            locale,
+            {"account": snapshot.label, "status": snapshot.mandate_status},
         )
     if snapshot.covered is True:
         sync_text = f"\nLast sync: {snapshot.last_synced_at}" if snapshot.last_synced_at else ""
-        return f"{snapshot.label} has confirmed transaction coverage{period}.{sync_text}"
-    if snapshot.covered is False:
-        return (
-            f"{snapshot.label} has a transaction coverage gap{period}.\n\n"
-            "I can show the transactions I have locally, but I cannot claim the list is complete for that account."
+        return render_message(
+            "query.coverage_copy.single_covered",
+            locale,
+            {"account": snapshot.label, "period": period, "sync": sync_text},
         )
-    return (
-        f"I can show the transactions I have locally for {snapshot.label}, "
-        "but I cannot confirm full coverage right now."
-    )
+    if snapshot.covered is False:
+        return render_message("query.coverage_copy.single_gap", locale, {"account": snapshot.label, "period": period})
+    return render_message("query.coverage_copy.single_unknown", locale, {"account": snapshot.label})
 
 
 async def build_query_coverage_answer(
@@ -226,18 +239,23 @@ async def build_query_coverage_answer(
     query_contract: QueryExecutionContract | None,
     session: dict[str, Any],
     target_text: str | None,
+    locale: str = "en",
 ) -> str:
     """Build a conservative, read-only coverage answer from account/session state."""
     accounts = [account for account in accounts_info if _account_id(account)]
     if not accounts:
-        return "I can show local transaction results, but I do not have linked-account metadata to confirm coverage."
+        return render_message("query.coverage_copy.no_metadata", locale)
 
     selected_accounts = _matching_accounts(accounts, target_text)
     if target_text and not selected_accounts:
-        return f"I don't see {target_text.strip()} among your linked accounts."
+        return render_message("query.coverage_copy.account_not_found", locale, {"account": target_text.strip()})
     if target_text and len(selected_accounts) > 1:
         labels = ", ".join(_bank_name(account) for account in selected_accounts[:3])
-        return f"I found multiple linked accounts matching {target_text.strip()}: {labels}. Which one do you mean?"
+        return render_message(
+            "query.coverage_copy.multiple_accounts",
+            locale,
+            {"account": target_text.strip(), "options": labels},
+        )
 
     start_date, end_date = _resolve_window(query_contract=query_contract, session=session)
     snapshots = [
@@ -245,7 +263,7 @@ async def build_query_coverage_answer(
     ]
 
     if target_text and len(snapshots) == 1:
-        return _single_account_answer(snapshots[0], start_date=start_date, end_date=end_date)
+        return _single_account_answer(snapshots[0], start_date=start_date, end_date=end_date, locale=locale)
 
     period = f" for {_format_date(start_date)}–{_format_date(end_date)}" if start_date and end_date else ""
     confirmed_count = sum(1 for snapshot in snapshots if snapshot.covered is True)
@@ -253,20 +271,17 @@ async def build_query_coverage_answer(
     incomplete_count = len(snapshots) - confirmed_count - unknown_count
 
     if confirmed_count == len(snapshots):
-        header = f"Yes. I have confirmed transaction coverage{period} for your linked accounts."
+        header = render_message("query.coverage_copy.all_covered", locale, {"period": period})
     else:
-        header = (
-            f"I can show the transactions I have locally{period}, "
-            "but I cannot confirm the full set for every linked account."
-        )
+        header = render_message("query.coverage_copy.partial", locale, {"period": period})
 
     lines = [header, ""]
-    lines.extend(_status_line(snapshot) for snapshot in snapshots)
+    lines.extend(_status_line(snapshot, locale=locale) for snapshot in snapshots)
     if incomplete_count or unknown_count:
         lines.extend(
             [
                 "",
-                "So treat the current result as the best local view, not a guaranteed complete statement.",
+                render_message("query.coverage_copy.best_local", locale),
             ]
         )
     return "\n".join(lines)

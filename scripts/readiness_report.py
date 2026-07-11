@@ -70,6 +70,17 @@ def format_readiness_report(result: ReadinessRunResult) -> str:
     latency = result.latency_summary
     planner_quality = result.planner_quality_summary
     llm_summary = result.llm_call_summary
+    llm_health = result.llm_health_summary
+    robustness = result.robustness_summary
+    lines.append(
+        " ".join(
+            (
+                f"robustness_pass_rate={robustness['pass_rate']}",
+                f"unsafe_execution_count={robustness['unsafe_execution_count']}",
+                f"outcomes={robustness['by_outcome']}",
+            )
+        )
+    )
     lines.append(
         " ".join(
             (
@@ -99,6 +110,18 @@ def format_readiness_report(result: ReadinessRunResult) -> str:
                     f"llm_calls={llm_summary['call_count']}",
                     f"llm_total_ms={llm_summary['total_duration_ms']}",
                     f"llm_max_ms={llm_summary['max_duration_ms']}",
+                )
+            )
+        )
+        lines.append(
+            " ".join(
+                (
+                    f"llm_health_degraded={llm_health['degraded']}",
+                    f"llm_error_calls={llm_health['error_call_count']}",
+                    f"llm_provider_error_calls={llm_health['provider_error_call_count']}",
+                    f"llm_validation_error_calls={llm_health['validation_error_call_count']}",
+                    f"llm_error_types={llm_health['error_types']}",
+                    f"llm_http_statuses={llm_health['http_statuses']}",
                 )
             )
         )

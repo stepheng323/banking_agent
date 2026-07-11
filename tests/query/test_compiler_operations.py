@@ -115,3 +115,33 @@ def test_income_vs_spending_grouping_normalizes_to_cash_flow() -> None:
     result = normalize_query_extraction(extraction)
 
     assert result.intent == QueryIntent.CASH_FLOW_SUMMARY
+
+
+def test_show_spending_repairs_hallucinated_smallest_aggregation_to_a_debit_list() -> None:
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        aggregation=QueryAggregation(type="smallest", limit=1),
+        raw_query="never mind, show my spending this month",
+    )
+
+    result = normalize_query_extraction(extraction)
+
+    assert result.intent == QueryIntent.TRANSACTION_LIST
+    assert result.request_shape is not None
+    assert result.request_shape.value == "list"
+    assert result.aggregation is None
+    assert result.filters.transaction_type == "debit"
+
+
+def test_show_smallest_expense_preserves_explicit_extrema() -> None:
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        aggregation=QueryAggregation(type="smallest", limit=1),
+        raw_query="show my smallest expense this month",
+    )
+
+    result = normalize_query_extraction(extraction)
+
+    assert result.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert result.aggregation is not None
+    assert result.aggregation.type == "smallest"

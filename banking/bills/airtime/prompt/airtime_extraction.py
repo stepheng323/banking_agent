@@ -42,6 +42,8 @@ When user corrects mid-flow ("I meant 5k"):
 | "buy 5 airtime" | ambiguities=[AMOUNT_UNCLEAR: [5,5000]] |
 | "buy 2k airtime tomorrow" | amount=2000, requested_features=["SCHEDULED"] |
 | "I meant 5k" | amount=5000, correction.field="amount", correction.new_value=5000 |
+| "5k, 08012345678" | amount=5000, recipient_phone="08012345678" |
+| "1000, 08012345678, MTN" | amount=1000, recipient_phone="08012345678", network="MTN" |
 | "recharge mum's line 1k" | amount=1000, recipient_name="mum" |
 | "ra owo airtime 2k" (Yoruba) | amount=2000 |
 | "2" | source_account_index=2 |

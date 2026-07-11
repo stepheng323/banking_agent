@@ -120,3 +120,4 @@ class OrchestratorState(BaseModel):
     # Stashed Sessions (Upstream)
     stashed_sessions: list[dict[str, Any]] = Field(default_factory=list)
     pending_query_clarification: dict[str, Any] | None = None
+    recent_query_context: dict[str, Any] | None = None

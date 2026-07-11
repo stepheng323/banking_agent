@@ -18,6 +18,8 @@ logger = get_logger(__name__)
 _STASHED_COMPAT_KEYS = {
     "session_active",
     "query_contract",
+    "query_result",
+    "query_frames",
     "pending_clarification",
     "current_page",
     "page_size",
@@ -64,6 +66,16 @@ async def _load_query_session_snapshot(
         query_session_source = "pending_clarification"
         if is_query_session_stale(query_session_snapshot):
             query_session_snapshot["session_active"] = False
+
+    if query_session_snapshot is None:
+        recent = getattr(state_view, "recent_query_context", None)
+        if isinstance(recent, dict) and int(recent.get("remaining_turns", -1) or 0) >= 0:
+            candidate = recent.get("session")
+            if isinstance(candidate, dict):
+                query_session_snapshot = dict(candidate)
+                query_session_snapshot["session_active"] = False
+                query_session_snapshot["_query_session_source"] = "recent_closed_context"
+                query_session_source = "recent_closed_context"
 
     snapshot = query_session_snapshot if isinstance(query_session_snapshot, dict) else {}
     active_logger = snapshot_logger or logger

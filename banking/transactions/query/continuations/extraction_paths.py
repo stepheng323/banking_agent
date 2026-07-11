@@ -7,6 +7,7 @@ from typing import Any
 
 import banking.transactions.query.continuations.compiler_paths as compiler_paths
 from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.continuations.active_result_facts import (
     maybe_build_fact_answer_from_decision,
@@ -88,6 +89,7 @@ def _repeat_existing_query_updates(
         continuation_type=decision.continuation_type,
         followup_intent=decision.followup_intent,
     )
+
     return {
         "query_contract": session_query_contract,
         "resolver_message": None,
@@ -158,6 +160,18 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         )
     )
     cont_type = decision.continuation_type or "unclear"
+
+    if state.get("recent_read_only") and getattr(decision, "drill_down_action", None) in {
+        "re_transfer",
+        "report_issue",
+    }:
+        logger.info("recent_query_context_recovery_rejected", reason="non_read_only_action")
+        return {
+            "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+            "response": render_message("query.clarify.recent_read_only", locale),
+            "session_active": False,
+            "flow_state": "complete",
+        }
 
     logger.info(
         "query_continuation_type",
@@ -340,6 +354,9 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         query_frames=query_frames,
         decision=decision,
         text=message,
+        locale=locale,
+        session=session,
+        turn_id=state.get("turn_id"),
     )
     if conversation_updates is not None:
         logger.info(

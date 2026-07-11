@@ -149,6 +149,7 @@ async def build_cancellation_reset_updates(
         "session_stack": [],
         "active_domain": None,
         "pending_query_clarification": None,
+        "recent_query_context": None,
         "stashed_sessions": [],
         "planner_output": None,
         "normalized_instruction": None,

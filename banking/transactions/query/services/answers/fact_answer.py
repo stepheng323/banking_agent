@@ -90,11 +90,28 @@ def _counterparty_label(item: QueryResultItem, *, query_contract: QueryExecution
         metadata.get("recipient_phone"),
         metadata.get("phone_number"),
         _first_filter_value(query_contract.filters.counterparty if query_contract and query_contract.filters else None),
+        item.description,
     ):
         if isinstance(candidate, str):
             cleaned = candidate.strip()
             if cleaned:
-                return cleaned
+                lowered = cleaned.lower()
+                for prefix in ("sent to ", "transfer to ", "payment to ", "to "):
+                    if lowered.startswith(prefix):
+                        cleaned = cleaned[len(prefix):].strip()
+                        lowered = cleaned.lower()
+                for prefix in ("received from ", "transfer from ", "payment from ", "from "):
+                    if lowered.startswith(prefix):
+                        cleaned = cleaned[len(prefix):].strip()
+                        lowered = cleaned.lower()
+
+                if cleaned.startswith("TRF/") or cleaned.startswith("TRF "):
+                    parts = cleaned.split("/")
+                    if len(parts) > 1:
+                        cleaned = parts[1].strip()
+
+                if cleaned:
+                    return cleaned
     return None
 
 

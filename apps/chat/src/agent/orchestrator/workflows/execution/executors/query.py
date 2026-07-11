@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.context.query_surface import build_query_context_for_worker
+from apps.chat.src.agent.orchestrator.context.models import ContextFrame
+from apps.chat.src.agent.orchestrator.context.query_surface import (
+    build_query_context_for_worker,
+    build_query_session_snapshot_from_surface,
+)
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import (
@@ -12,6 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import 
     push_query_surface_frame,
     query_pagination_actionable_payload,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import context_surface
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.query_handoff import _next_query_handoff_transfer_task_id
@@ -50,6 +55,8 @@ def _compact_query_session_patch(patch: dict[str, Any] | None) -> dict[str, Any]
     allowed = {
         "session_active",
         "query_contract",
+        "query_result",
+        "query_frames",
         "pending_clarification",
         "current_page",
         "page_size",
@@ -100,6 +107,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         "pending_query_clarification": turn.pending_query_clarification,
         "progress_tracker": ctx.dependencies.progress_tracker,
         "stashed_sessions": turn.stashed_sessions,
+        "recent_query_context": ctx.state.recent_query_context,
         **build_query_context_for_worker(ctx.state),
     }
 
@@ -151,6 +159,8 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
 
         if result.patch and isinstance(result.patch, dict):
             push_query_surface_frame(ctx, result.patch.get("query_result"))
+            if result.patch.get("query_result") is not None:
+                ctx.accumulator.set_recent_query_context(None)
 
         if handoff_payload:
             transfer_payload = dict(handoff_payload)
@@ -201,6 +211,25 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         if (handoff_payload and result.outcome == TransactionOutcome.OK) or (
             isinstance(result.patch, dict) and result.patch.get("session_active") is False
         ):
+            if isinstance(result.patch, dict) and result.patch.get("session_active") is False:
+                raw_surface = context_data.get("active_query_surface")
+                try:
+                    frame = ContextFrame.model_validate(raw_surface) if isinstance(raw_surface, dict) else None
+                except Exception:
+                    frame = None
+                snapshot = (
+                    build_query_session_snapshot_from_surface(
+                        frame,
+                        context_frames=list(context_surface(ctx.state).frames),
+                    )
+                    if frame is not None
+                    else None
+                )
+                if snapshot is not None:
+                    snapshot["session_active"] = False
+                    ctx.accumulator.set_recent_query_context(
+                        {"session": snapshot, "closure_turn_id": turn.last_message_id, "remaining_turns": 2}
+                    )
             pop_active_session(ctx, domain="query")
         else:
             upsert_active_session(
@@ -213,7 +242,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
 
 
 def _query_response_body_blocks(ctx: ExecutionTurnContext, result: TransactionResult) -> MessageDocument | None:
-    if not isinstance(result.patch, dict):
+    if not isinstance(result.patch, dict) or result.patch.get("suppress_body_blocks"):
         return None
 
     query_result = result.patch.get("query_result")

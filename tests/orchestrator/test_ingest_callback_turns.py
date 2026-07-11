@@ -208,3 +208,25 @@ async def test_same_day_clears_unblocked_non_terminal_state() -> None:
     assert updates["current_wave_index"] == 0
     assert updates["planner_output"] is None
     assert updates["normalized_instruction"] is None
+
+
+@pytest.mark.asyncio
+async def test_recent_query_context_remains_available_for_next_two_turns() -> None:
+    state = OrchestratorState(
+        user_id="u_recent_query",
+        phone_number="2348000000099",
+        channel="telegram",
+        last_message_text="actually show the second one",
+        recent_query_context={"session": {"query_frames": []}, "remaining_turns": 2},
+    )
+
+    first = await ingest_message(state)
+    assert first["recent_query_context"]["remaining_turns"] == 1
+    state = state.model_copy(update=first)
+
+    second = await ingest_message(state)
+    assert second["recent_query_context"]["remaining_turns"] == 0
+    state = state.model_copy(update=second)
+
+    third = await ingest_message(state)
+    assert third["recent_query_context"] is None

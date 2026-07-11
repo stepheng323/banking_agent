@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,7 @@ from banking.transactions.query.models.domain import (
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
+    ClarificationPatch,
     PendingClarificationState,
     QueryExtractionResult,
     ReasonerQueryExtraction,
@@ -78,6 +79,7 @@ FactFieldType = Literal[
 QueryTargetFieldType = FactFieldType
 QueryRankType = Literal["largest", "smallest", "newest", "oldest"]
 PageDirectionType = Literal["next", "previous"]
+CoverageIntentType = Literal["result_completeness", "data_coverage", "ambiguous"]
 
 SemanticContextModeType = Literal["none", "pending_clarification", "active_result"]
 
@@ -93,6 +95,7 @@ class QuerySemanticDecision(BaseModel):
 
     extraction: QueryExtractionResult | None = Field(default=None)
     time_period: str | None = Field(default=None)
+    clarification_patch: ClarificationPatch | None = Field(default=None)
 
     continuation_type: ContinuationType | None = Field(default=None)
     followup_intent: FollowupIntentType | None = Field(default=None)
@@ -110,6 +113,7 @@ class QuerySemanticDecision(BaseModel):
     requested_field: QueryTargetFieldType | None = Field(default=None)
     rank: QueryRankType | None = Field(default=None)
     page_direction: PageDirectionType | None = Field(default=None)
+    coverage_intent: CoverageIntentType | None = Field(default=None)
     drill_down_index: int | None = Field(default=None)
     drill_down_action: DrillDownActionType | None = Field(default=None)
     recipient_name: str | None = Field(default=None)
@@ -150,6 +154,7 @@ class ActiveContinuationDecision(BaseModel):
     requested_field: QueryTargetFieldType | None = Field(default=None)
     rank: QueryRankType | None = Field(default=None)
     page_direction: PageDirectionType | None = Field(default=None)
+    coverage_intent: CoverageIntentType | None = Field(default=None)
     drill_down_index: int | None = Field(default=None)
     drill_down_action: DrillDownActionType | None = Field(default=None)
     recipient_name: str | None = Field(default=None)
@@ -183,6 +188,7 @@ class ActiveContinuationDecision(BaseModel):
             requested_field=self.requested_field,
             rank=self.rank,
             page_direction=self.page_direction,
+            coverage_intent=self.coverage_intent,
             drill_down_index=self.drill_down_index,
             drill_down_action=self.drill_down_action,
             recipient_name=self.recipient_name,
@@ -202,6 +208,7 @@ class PendingClarificationDecision(BaseModel):
     reason: str | None = Field(default=None)
     extraction: ReasonerQueryExtraction | None = Field(default=None)
     time_period: str | None = Field(default=None)
+    clarification_patch: ClarificationPatch | None = Field(default=None)
     answer_mode: AnswerModeType | None = Field(default=None)
     referenced_frame_ids: list[str] | None = Field(default=None)
     grounded_operation: GroundedOperationType | None = Field(default=None)
@@ -218,6 +225,7 @@ class PendingClarificationDecision(BaseModel):
             reason=self.reason,
             extraction=extraction,
             time_period=self.time_period,
+            clarification_patch=self.clarification_patch,
             answer_mode=self.answer_mode,
             referenced_frame_ids=self.referenced_frame_ids,
             grounded_operation=self.grounded_operation,
@@ -240,6 +248,7 @@ class SemanticReasonerContext:
     items: list[QueryResultItem] | None = None
     surface_view: SurfaceView | None = None
     query_frames: list[QueryFrame] | None = None
+    stashed_sessions: list[dict[str, Any]] | None = None
     turn_id: str | None = None
     inbound_message_id: str | None = None
 

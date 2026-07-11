@@ -56,6 +56,8 @@ class QueryPipeline:
             last_result = result
             if result.patch:
                 state.update(result.patch)
+            if result.response is not None:
+                state["response"] = result.response
 
         if last_result:
             return self._finalize(last_result, state)

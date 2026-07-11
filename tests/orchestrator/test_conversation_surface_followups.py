@@ -13,6 +13,9 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.context_frame_stages
 from apps.chat.src.agent.orchestrator.workflows.gate.state.state_view import gate_state_view
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_focus import (
+    context_frames_after_surface_answer,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import (
     ContextFrameFollowupDecision,
@@ -317,7 +320,7 @@ async def test_transaction_surface_selection_promotes_detail_frame_for_pronoun_f
         user_id="u_surface_tx_chained_field",
         phone_number="2348000000030",
         channel="telegram",
-        last_message_text="what bank was that?",
+        last_message_text="what bank is that?",
         context_frames=first_updates["context_frames"],
     )
 
@@ -326,8 +329,53 @@ async def test_transaction_surface_selection_promotes_detail_frame_for_pronoun_f
     assert second_planner.plan_calls == 0
     assert second_updates.get("semantic_path_shape") == "context_frame_followup"
     assert "Bank: Access Bank" in second_updates["final_response"]
+    assert "Amount:" not in second_updates["final_response"]
     assert "Credit from Ada" not in second_updates["final_response"]
     assert "Which" not in second_updates["final_response"]
+
+
+def test_transaction_detail_promotion_preserves_query_contract_and_list_context() -> None:
+    source_frame = _transaction_list_frame().model_copy(
+        update={
+            "metadata": {
+                "source": "query",
+                "surface_mode": "transaction_list",
+                "summary_text": "I found 43 transactions this month.",
+                "has_more": True,
+                "query_contract": {
+                    "intent": "transaction_list",
+                    "time_start": "2026-05-01",
+                    "time_end": "2026-05-31",
+                    "timezone": "Africa/Lagos",
+                },
+                "query_frame": {"frame_id": "old-list-frame"},
+            }
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_surface_tx_metadata",
+        phone_number="2348000000039",
+        context_frames=[source_frame],
+    )
+
+    frames = context_frames_after_surface_answer(
+        state,
+        source_frame,
+        ContextFrameFollowupDecision(
+            decision="select_item",
+            confidence=1.0,
+            selection_index=2,
+        ),
+    )
+
+    detail_frame = frames[-1]
+    assert detail_frame.frame_type == ContextFrameType.TRANSACTION_DETAIL
+    assert detail_frame.metadata["source"] == "query"
+    assert detail_frame.metadata["query_contract"]["intent"] == "transaction_list"
+    assert detail_frame.metadata["surface_mode"] == "direct_answer"
+    assert detail_frame.metadata["surface_context"]["selected_item_id"] == "tx-2"
+    assert detail_frame.metadata["surface_context"]["parent_visible_count"] == 2
+    assert "query_frame" not in detail_frame.metadata
 
 
 @pytest.mark.asyncio

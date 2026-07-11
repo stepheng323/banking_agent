@@ -43,7 +43,7 @@ GENERIC_ACCOUNT_BALANCE_REQUEST_PATTERNS = (
     r"^how\s+much\s+is\s+in\s+my\s+account$",
 )
 _QUERY_DOMAIN_PATTERNS = (
-    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:recent\s+|latest\s+)?(?:transactions?|transaction\s+history|history|statement)",
+    r"^(?:(?:show|list|view|get)\s+(?:me\s+)?)?(?:my\s+)?(?:recent\s+|latest\s+)?(?:transactions?|transaction\s+history|history|statement)",
     r"^(?:show|list|view|get)\s+(?:my\s+)?(?:failed|pending|successful|reversed)\s+(?:transactions?|transfers?|payments?)\b",
     r"^(?:show|list|view|get)\s+(?:my\s+)?"
     r"(?:gtb|gtbank|access|zenith|wema|uba|opay|kuda|moniepoint|palmpay|first bank|fcmb|stanbic|"
@@ -61,7 +61,7 @@ _QUERY_DOMAIN_PATTERNS = (
     r"^(?:can|could)\s+i\s+(?:afford|send|transfer|pay|spend|cover)\s+(?!.*\bto\b).+",
 )
 _STRUCTURAL_QUERY_DIRECT_PATTERNS = (
-    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:recent\s+|latest\s+)?(?:transactions?|transaction\s+history|history|statement)\b",
+    r"^(?:(?:show|list|view|get)\s+(?:me\s+)?)?(?:my\s+)?(?:recent\s+|latest\s+)?(?:transactions?|transaction\s+history|history|statement)\b",
     r"^(?:show|list|view|get)\s+(?:my\s+)?(?:failed|pending|successful|reversed)\s+(?:transactions?|transfers?|payments?)\b",
     r"^(?:show|list|view|get)\s+(?:my\s+)?"
     r"(?:gtb|gtbank|access|zenith|wema|uba|opay|kuda|moniepoint|palmpay|first bank|fcmb|stanbic|"
@@ -72,6 +72,15 @@ _STRUCTURAL_QUERY_DIRECT_PATTERNS = (
     r"^who\s+sent\s+me\s+(?:the\s+most\s+)?(?:money\s+)?",
     r"^where\s+did\s+my\s+money\s+go\b",
 )
+_QUERY_POLITE_PREFIX_RE = re.compile(
+    r"^(?:(?:please|pls|abeg|kindly|oya|jowo|jọwọ|biko)\s+)+",
+    re.IGNORECASE,
+)
+
+
+def _query_domain_candidate(message_text: str) -> str:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    return _QUERY_POLITE_PREFIX_RE.sub("", normalized)
 
 
 def _is_account_balance_request(message_text: str) -> bool:
@@ -93,17 +102,17 @@ def _is_generic_account_balance_request(message_text: str) -> bool:
 
 
 def _is_query_domain_request(message_text: str) -> bool:
-    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
-    if not normalized:
+    candidate = _query_domain_candidate(message_text)
+    if not candidate:
         return False
-    return any(re.search(pattern, normalized) for pattern in _QUERY_DOMAIN_PATTERNS)
+    return any(re.search(pattern, candidate) for pattern in _QUERY_DOMAIN_PATTERNS)
 
 
 def _is_structural_query_domain_request(message_text: str) -> bool:
-    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
-    if not normalized:
+    candidate = _query_domain_candidate(message_text)
+    if not candidate:
         return False
-    return any(re.search(pattern, normalized) for pattern in _STRUCTURAL_QUERY_DIRECT_PATTERNS)
+    return any(re.search(pattern, candidate) for pattern in _STRUCTURAL_QUERY_DIRECT_PATTERNS)
 
 
 def _is_account_domain_request(message_text: str) -> bool:

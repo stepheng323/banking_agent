@@ -19,6 +19,7 @@ from banking.transactions.query.models.extraction import (
 def normalize_query_extraction(extraction: QueryExtractionResult) -> QueryExtractionResult:
     extraction = _normalize_cash_flow_extraction(extraction)
     extraction = _normalize_affordability_extraction(extraction)
+    extraction = _normalize_spending_list_extraction(extraction)
 
     # 1. Transaction detail ambiguity handling
     if extraction.intent == QueryIntent.TRANSACTION_DETAIL:
@@ -73,6 +74,20 @@ _AFFORDABILITY_PROBE_RE = re.compile(
 _SINGLE_DIRECTION_INFLOW_TOTAL_RE = re.compile(
     r"\b(?:how much|what amount|total)\b.{0,40}\b"
     r"(?:came in|come in|entered|was received|did i receive|have i received|received|credited)\b",
+    re.IGNORECASE,
+)
+
+_SPENDING_LIST_RE = re.compile(
+    r"\b(?:show|list|view)\b.{0,48}\b(?:spend(?:ing)?|debits?|expenses?)\b",
+    re.IGNORECASE,
+)
+_SPENDING_AGGREGATE_CUE_RE = re.compile(
+    r"\b(?:how\s+much|total|sum|average|break\s*down|breakdown|by\s+"
+    r"(?:category|merchant|account|bank)|where\s+(?:did|has)\s+my\s+money\s+(?:go|gone))\b",
+    re.IGNORECASE,
+)
+_SPENDING_EXTREMA_CUE_RE = re.compile(
+    r"\b(?:largest|highest|biggest|max(?:imum)?|smallest|lowest|least|minimum|min)\b",
     re.IGNORECASE,
 )
 def _looks_like_single_direction_inflow_total(raw_query: str) -> bool:
@@ -152,6 +167,31 @@ def _normalize_affordability_extraction(extraction: QueryExtractionResult) -> Qu
     filters = extraction.filters or QueryFilters()
     filters.min_amount = amount
     filters.max_amount = amount
+    extraction.filters = filters
+    return extraction
+
+
+def _normalize_spending_list_extraction(extraction: QueryExtractionResult) -> QueryExtractionResult:
+    """Repair list-shaped spending asks when an LLM invents an aggregate operation.
+
+    "Show my spending" asks for the underlying debit items. It is not a request
+    for the smallest expense, total, or a category breakdown unless the user says
+    so explicitly. This keeps a malformed structured extraction from narrowing a
+    read-only query to one arbitrary item.
+    """
+
+    raw_query = " ".join((extraction.raw_query or "").split())
+    if not raw_query or not _SPENDING_LIST_RE.search(raw_query):
+        return extraction
+    if _SPENDING_AGGREGATE_CUE_RE.search(raw_query) or _SPENDING_EXTREMA_CUE_RE.search(raw_query):
+        return extraction
+
+    extraction.intent = QueryIntent.TRANSACTION_LIST
+    extraction.request_shape = QueryRequestShape.LIST
+    extraction.aggregation = None
+    filters = extraction.filters or QueryFilters()
+    if filters.transaction_type not in {"credit", "debit"}:
+        filters.transaction_type = "debit"
     extraction.filters = filters
     return extraction
 
