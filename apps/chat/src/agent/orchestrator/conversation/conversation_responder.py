@@ -10,14 +10,15 @@ from zoneinfo import ZoneInfo
 from langchain_openai import ChatOpenAI
 
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_contextual as contextual_responder
-import apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents as responder_intents
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_prompts as responder_prompts
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_text as responder_text
-import apps.chat.src.agent.orchestrator.conversation.conversation_responder_unsupported as unsupported_responder
 from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import (
     build_conversation_grounding,
     conversation_display_name,
 )
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_validation import validate_and_fallback
+from banking.policy.service import resolve_available_conversational_suggestions
 from banking.presentation.i18n.locale import LocaleManager
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.observability.llm_call_metrics import estimated_tokens_from_chars, record_llm_call
@@ -44,7 +45,7 @@ class ConversationResponder:
         self,
         text: str,
         user_ctx: dict[str, Any],
-        intent: str | None = None,
+        mode: ConversationResponseMode,
     ) -> str:
         """Generate a short safe reply with a deterministic redirect when needed."""
         profile = user_ctx.get("profile") or {}
@@ -58,33 +59,35 @@ class ConversationResponder:
         locale = LocaleManager.normalize(user_ctx.get("language")).value
         language = responder_text.locale_to_language_label(locale)
         history = user_ctx.get("history") or []
-        is_contextual_worker_followup = intent == contextual_responder.CONTEXTUAL_WORKER_FOLLOWUP_INTENT
-        is_contextual_meta_followup = intent == contextual_responder.CONTEXTUAL_META_FOLLOWUP_INTENT
-        is_unsupported_capability_followup = intent == unsupported_responder.UNSUPPORTED_CAPABILITY_FOLLOWUP_INTENT
-        is_social_meta = intent == responder_intents.SOCIAL_META_INTENT
         now = datetime.now(ZoneInfo("Africa/Lagos"))
         casual_streak = responder_text.count_trailing_casual_replies(history, locale=locale)
-        redirect_text = responder_text.redirect_text(locale, casual_streak=casual_streak)
         prefers_banking_humor = bool(responder_text.JOKE_PATTERN_RE.search(text))
-        if (
-            not is_contextual_worker_followup
-            and not is_contextual_meta_followup
-            and not is_unsupported_capability_followup
-            and not is_social_meta
-            and casual_streak >= responder_text.MAX_CASUAL_REPLY_STREAK
-        ):
-            return redirect_text
+
+        if mode == ConversationResponseMode.CASUAL and casual_streak >= responder_text.MAX_CASUAL_REPLY_STREAK:
+            logger.info(
+                "conversation_responder_casual_limit",
+                mode=mode.value,
+                locale=locale,
+                casual_streak=casual_streak,
+            )
+            return responder_text.redirect_text(locale, casual_streak=casual_streak)
+
+        # Determine allowed suggestions from live capability policy
+        allowed_suggestions = resolve_available_conversational_suggestions(locale=locale)
 
         is_joke_turn = responder_text.is_joke_turn(text, history)
         is_banking_reaction = (
-            not is_contextual_worker_followup
-            and not is_contextual_meta_followup
-            and not is_unsupported_capability_followup
-            and not is_social_meta
+            mode not in (
+                ConversationResponseMode.CONTEXTUAL_WORKER,
+                ConversationResponseMode.CONTEXTUAL_META,
+                ConversationResponseMode.UNSUPPORTED_BOUNDARY,
+                ConversationResponseMode.SOCIAL_META
+            )
             and casual_streak == 0
             and responder_text.is_banking_result_reaction(text, history)
         )
-        if is_contextual_worker_followup:
+
+        if mode == ConversationResponseMode.CONTEXTUAL_WORKER:
             grounded_reply = contextual_responder.contextual_worker_grounded_reply(text, user_ctx, locale)
             if grounded_reply:
                 return grounded_reply
@@ -102,10 +105,8 @@ class ConversationResponder:
             prefers_banking_humor=prefers_banking_humor,
             is_joke_turn=is_joke_turn,
             is_banking_reaction=is_banking_reaction,
-            is_social_meta=is_social_meta,
-            is_contextual_worker_followup=is_contextual_worker_followup,
-            is_contextual_meta_followup=is_contextual_meta_followup,
-            is_unsupported_capability_followup=is_unsupported_capability_followup,
+            mode=mode,
+            allowed_suggestions=allowed_suggestions,
         )
 
         messages = responder_prompts.build_conversation_responder_messages(prompt_input)
@@ -116,11 +117,9 @@ class ConversationResponder:
                 locale=locale,
                 task_domain="conversation",
                 extra_metadata={
-                    "intent": intent,
+                    "mode": mode.value,
                     "casual_streak": casual_streak,
-                    "social_meta": is_social_meta,
-                    "contextual_worker_followup": is_contextual_worker_followup,
-                    "unsupported_capability_followup": is_unsupported_capability_followup,
+                    "allowed_suggestion_count": len(allowed_suggestions),
                 },
             )
             or None
@@ -150,17 +149,30 @@ class ConversationResponder:
                 output_token_estimate=0,
                 extra_fields={
                     **http_metrics,
-                    "intent": intent,
+                    "mode": mode.value,
                     "locale": locale,
                     "casual_streak": casual_streak,
-                    "social_meta": is_social_meta,
-                    "contextual_worker_followup": is_contextual_worker_followup,
-                    "contextual_meta_followup": is_contextual_meta_followup,
-                    "unsupported_capability_followup": is_unsupported_capability_followup,
+                    "allowed_suggestion_count": len(allowed_suggestions),
                 },
                 error_type=type(exc).__name__,
             )
-            raise
+            logger.warning(
+                "conversation_responder_generation_fallback",
+                mode=mode.value,
+                locale=locale,
+                error_type=type(exc).__name__,
+                allowed_suggestion_count=len(allowed_suggestions),
+            )
+            return validate_and_fallback(
+                raw_content=None,
+                mode=mode,
+                text=text,
+                user_ctx=user_ctx,
+                locale=locale,
+                allowed_suggestions=allowed_suggestions,
+                is_banking_reaction=is_banking_reaction,
+                is_joke_turn=is_joke_turn,
+            )
         http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
 
         raw_content: str | None
@@ -180,7 +192,7 @@ class ConversationResponder:
             user_chars=user_chars,
             output_json_chars=output_chars,
             output_token_estimate=estimated_tokens_from_chars(output_chars),
-            intent=intent,
+            intent=mode.value,
             locale=locale,
             **provider_fields,
         )
@@ -196,60 +208,23 @@ class ConversationResponder:
             output_token_estimate=estimated_tokens_from_chars(output_chars),
             extra_fields={
                 **provider_fields,
-                "intent": intent,
+                "mode": mode.value,
                 "locale": locale,
                 "casual_streak": casual_streak,
-                "social_meta": is_social_meta,
-                "contextual_worker_followup": is_contextual_worker_followup,
-                "contextual_meta_followup": is_contextual_meta_followup,
-                "unsupported_capability_followup": is_unsupported_capability_followup,
+                "allowed_suggestion_count": len(allowed_suggestions),
             },
         )
 
-        preface = responder_text.sanitize_preface(
-            raw_content,
+        return validate_and_fallback(
+            raw_content=raw_content,
+            mode=mode,
+            text=text,
+            user_ctx=user_ctx,
             locale=locale,
-            allow_positive_banking_anchor=is_social_meta,
+            allowed_suggestions=allowed_suggestions,
+            is_banking_reaction=is_banking_reaction,
+            is_joke_turn=is_joke_turn,
         )
-        if not preface:
-            if is_social_meta:
-                return ""
-            if is_contextual_worker_followup:
-                return contextual_responder.contextual_worker_fallback_reply(text, user_ctx, locale=locale)
-            if is_contextual_meta_followup:
-                return contextual_responder.contextual_meta_fallback_reply(user_ctx, locale=locale)
-            if is_unsupported_capability_followup:
-                return unsupported_responder.unsupported_capability_fallback_reply(user_ctx, locale)
-            if is_joke_turn:
-                return redirect_text
-            return redirect_text
-        if is_contextual_worker_followup:
-            if contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(
-                preface
-            ) or contextual_responder.CONTEXTUAL_UNGROUNDED_PREFACE_RE.search(preface):
-                return contextual_responder.contextual_worker_fallback_reply(text, user_ctx, locale=locale)
-            return preface
-        if is_contextual_meta_followup:
-            if contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(
-                preface
-            ) or responder_text.is_banking_refusal_reply(preface, locale=locale):
-                return contextual_responder.contextual_meta_fallback_reply(user_ctx, locale=locale)
-            return preface
-        if is_unsupported_capability_followup:
-            if contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(
-                preface
-            ) or unsupported_responder.UNSUPPORTED_CAPABILITY_PROMISE_RE.search(preface):
-                return unsupported_responder.unsupported_capability_fallback_reply(user_ctx, locale)
-            return preface
-        if is_social_meta:
-            if contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(preface):
-                return ""
-            return preface
-        if is_banking_reaction:
-            return preface
-        if preface == redirect_text:
-            return redirect_text
-        return f"{preface}\n{redirect_text}"
 
 
 def _model_name(llm: Any) -> str | None:

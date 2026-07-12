@@ -1,5 +1,6 @@
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import is_contextual_casual_followup_turn
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
     _is_query_domain_request,
@@ -69,7 +70,11 @@ async def _maybe_contextual_casual_followup(
     has_active_query_session: bool,
 ) -> dict[str, Any] | None:
     if _can_consider_contextual_casual_followup(ctx, has_active_query_session=has_active_query_session):
-        responder_reply = await _build_bounded_conversational_reply(ctx, ctx.current_locale)
+        responder_reply = await _build_bounded_conversational_reply(
+            ctx,
+            ctx.current_locale,
+            mode=ConversationResponseMode.CONTEXTUAL_WORKER,
+        )
         if responder_reply:
             logger.info("gate_contextual_casual_followup_responder")
             return direct_response(

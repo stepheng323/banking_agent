@@ -9,12 +9,12 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import
     conversation_display_name,
     conversation_topic_for_response,
 )
-from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
-    NON_BANKING_CONVERSATIONAL_INTENT,
-    SOCIAL_META_INTENT,
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import (
     SOCIAL_META_RENDER_PARAMS_CTX,
     SOCIAL_META_RESPONSE_KEY_CTX,
     SOCIAL_META_RESPONSE_KEYS,
+    ConversationResponseMode,
+    map_response_key_to_mode,
 )
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import (
     redirect_text,
@@ -89,6 +89,7 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
     locale_updates = _locale_update(ctx.state_view, locale) if response_locale else {}
 
     capability_boundary_updates: dict[str, Any] = {}
+    unsupported_user_ctx: dict[str, object] = {}
     render_params = deterministic_meta.params
     if response_key == "capability.unsupported_unavailable":
         capability = None
@@ -97,6 +98,11 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
         capability = capability or detect_unsupported_capability(ctx.message_text)
         if capability is not None:
             render_params = unsupported_capability_params(capability, locale=locale)
+            unsupported_user_ctx["unsupported_capability"] = {
+                "key": capability.key,
+                "label": render_params["capability"],
+                "supported_alternatives": render_params["supported"],
+            }
             capability_boundary_updates["capability_boundary"] = CapabilityBoundary(
                 key=capability.key,
                 label=capability.label,
@@ -116,17 +122,20 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
         final_response = await _build_bounded_conversational_reply(
             ctx,
             locale,
-            intent=NON_BANKING_CONVERSATIONAL_INTENT,
+            mode=ConversationResponseMode.CASUAL,
         ) or redirect_text(locale, casual_streak=0)
-    elif response_key in SOCIAL_META_RESPONSE_KEYS:
+    elif (response_mode := map_response_key_to_mode(response_key)) is not None:
+        extra_user_ctx = unsupported_user_ctx
+        if response_key in SOCIAL_META_RESPONSE_KEYS:
+            extra_user_ctx = {
+                SOCIAL_META_RESPONSE_KEY_CTX: response_key,
+                SOCIAL_META_RENDER_PARAMS_CTX: render_params or {},
+            }
         final_response = await _build_bounded_conversational_reply(
             ctx,
             locale,
-            intent=SOCIAL_META_INTENT,
-            extra_user_ctx={
-                SOCIAL_META_RESPONSE_KEY_CTX: response_key,
-                SOCIAL_META_RENDER_PARAMS_CTX: render_params or {},
-            },
+            mode=response_mode,
+            extra_user_ctx=extra_user_ctx,
         ) or render_message(response_key, locale, render_params)
     else:
         final_response = render_message(response_key, locale, render_params)

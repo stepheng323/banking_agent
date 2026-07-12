@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
-    SOCIAL_META_INTENT,
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import (
     SOCIAL_META_RESPONSE_KEY_CTX,
+    ConversationResponseMode,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.ingest import ingest_message
@@ -62,9 +62,9 @@ class _FakeConversationResponder:
         self,
         text: str,
         user_ctx: dict[str, Any],
-        intent: str | None = None,
+        mode: ConversationResponseMode,
     ) -> str:
-        self.calls.append({"text": text, "user_ctx": dict(user_ctx), "intent": intent})
+        self.calls.append({"text": text, "user_ctx": dict(user_ctx), "mode": mode,})
         return self.reply
 
 
@@ -148,7 +148,7 @@ async def test_planner_social_meta_response_key_uses_conversation_responder() ->
 
     assert state.final_response == responder.reply
     assert responder.calls
-    assert responder.calls[0]["intent"] == SOCIAL_META_INTENT
+    assert responder.calls[0]["mode"] == ConversationResponseMode.SOCIAL_META
     assert responder.calls[0]["user_ctx"][SOCIAL_META_RESPONSE_KEY_CTX] == "conversational.checkin"
 
 

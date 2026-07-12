@@ -2,11 +2,10 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import conversation_display_name
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
-from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
-    SOCIAL_META_INTENT,
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import (
     SOCIAL_META_RENDER_PARAMS_CTX,
     SOCIAL_META_RESPONSE_KEY_CTX,
-    SOCIAL_META_RESPONSE_KEYS,
+    map_response_key_to_mode,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _render_greeting
@@ -71,13 +70,14 @@ async def _response_key_render_response(
         if display_name:
             render_response_key = "conversational.greeting_named"
             render_params["display_name"] = display_name
-    if response_key in SOCIAL_META_RESPONSE_KEYS:
+    response_mode = map_response_key_to_mode(response_key)
+    if response_mode is not None:
         responder_reply = await _build_bounded_conversational_reply(
             state_view=state_view,
             text=text,
             locale=conversational_locale,
             conversation_responder=conversation_responder,
-            intent=SOCIAL_META_INTENT,
+            mode=response_mode,
             extra_user_ctx={
                 SOCIAL_META_RESPONSE_KEY_CTX: render_response_key,
                 SOCIAL_META_RENDER_PARAMS_CTX: render_params,
@@ -89,7 +89,7 @@ async def _response_key_render_response(
                 planner_output=planner_output,
                 selected_route="conversation_responder",
                 route_reason=f"response_key:{response_key}",
-                policy_blocked=False,
+                policy_blocked=response_mode.value in {"out_of_scope", "unsupported_boundary"},
                 fallback_path="planner_non_task",
                 route_logger=route_logger,
             )

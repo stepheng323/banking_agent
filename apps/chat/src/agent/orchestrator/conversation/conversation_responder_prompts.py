@@ -8,8 +8,9 @@ from typing import Any
 
 import apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry as unsupported_registry
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_contextual as contextual_responder
-import apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents as responder_intents
 from apps.chat.src.agent.assistant_profile.voice import build_conversation_voice_block
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
+from banking.policy.models import AvailableConversationalSuggestion
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,10 +27,8 @@ class ConversationResponderPromptInput:
     prefers_banking_humor: bool
     is_joke_turn: bool
     is_banking_reaction: bool
-    is_social_meta: bool
-    is_contextual_worker_followup: bool
-    is_contextual_meta_followup: bool
-    is_unsupported_capability_followup: bool
+    mode: ConversationResponseMode
+    allowed_suggestions: list[AvailableConversationalSuggestion]
 
 
 def build_conversation_responder_messages(
@@ -44,91 +43,79 @@ def build_conversation_responder_messages(
 def _build_system_prompt(prompt_input: ConversationResponderPromptInput) -> str:
     system = build_conversation_voice_block(locale=prompt_input.language, channel="WhatsApp")
     system += f"Reply in {prompt_input.language}.\n"
+    system += "Keep replies to at most two short sentences, maximum 280 characters or three rendered lines.\n"
+    system += "Write ONLY the complete final response.\n"
+    system += "Do not expose raw account identifiers, PINs, or unfiltered history.\n"
+    system += "No financial advice, no promises of unsupported capabilities, no claims of execution.\n"
 
-    if prompt_input.is_contextual_worker_followup:
+    if prompt_input.allowed_suggestions:
+        suggestions_list = ", ".join(suggestion.label for suggestion in prompt_input.allowed_suggestions)
+        system += f"You may suggest ONLY from these supported actions: {suggestions_list}. Mention at most two.\n"
+
+    if prompt_input.mode == ConversationResponseMode.CONTEXTUAL_WORKER:
         system += (
             "The user's message is an acknowledgement or commentary after a banking assistant result.\n"
-            "Write ONLY a short grounded acknowledgement.\n"
             "Rules:\n"
             "- Use only the recent context provided.\n"
-            "- Keep it to 1 short sentence.\n"
             "- Do not ask for a transaction reference.\n"
-            "- Do not start a support, query, transfer, airtime, data, account, or FAQ workflow.\n"
-            "- Do not offer to retry, send money, buy anything, create tickets, refund, or reverse anything.\n"
-            "- No generic banking redirect.\n"
+            "- Do not start a workflow or generic banking redirect.\n"
             "- No markdown, no emojis.\n"
-            "- If no specific grounded acknowledgement is possible, return an empty string.\n"
         )
-    elif prompt_input.is_social_meta:
+    elif prompt_input.mode == ConversationResponseMode.SOCIAL_META:
         system += (
-            "The user's message is a social opener, check-in, or thanks for the banking assistant.\n"
-            "Write ONLY the final short reply. Do not add a separate redirect line.\n"
+            "The user's message is a social opener, check-in, or thanks.\n"
             "Rules:\n"
-            "- Match the user's energy, vibe, and tone lightly while staying professional.\n"
-            "- Keep it to 1 or 2 short sentences.\n"
-            "- For greetings and check-ins: if the conversation history is empty or we haven't offered help "
-            "yet, include a natural banking anchor (offer help with transfers, airtime/data, balances, or "
-            "transaction queries). If the history shows we already introduced these capabilities, do NOT repeat "
-            "the full list of services; instead, use a brief banking constraint (e.g. 'how can I help with your "
-            "banking today?' or 'what banking task can we do next?') to keep the conversation scoped to banking "
-            "without being repetitive.\n"
-            "- For thanks, acknowledge briefly and invite the next banking task if it feels natural.\n"
-            "- Do not start a support, query, transfer, airtime, data, account, or FAQ workflow.\n"
-            "- Do not offer to retry, send money, buy anything, create tickets, refund, or reverse anything.\n"
-            "- No financial, legal, medical, tax, or investment advice.\n"
-            "- No promises about unsupported capabilities.\n"
+            "- Match the user's energy lightly while staying professional.\n"
+            "- Acknowledge briefly and invite a banking task naturally.\n"
             "- No markdown, no emojis.\n"
-            "- If the user's message is unsafe or not a social/meta turn, return an empty string.\n"
         )
-    elif prompt_input.is_contextual_meta_followup:
+    elif prompt_input.mode == ConversationResponseMode.CLARIFY:
+        system += (
+            "The user's message is ambiguous, unclear, or lacks an actionable instruction.\n"
+            "Rules:\n"
+            "- Try to understand the user's true intent behind the message.\n"
+            "- Ask a natural, focused question to clarify what they meant.\n"
+            "- Suggest the closest supported action that might benefit the user, based on their message.\n"
+        )
+    elif prompt_input.mode == ConversationResponseMode.CAPABILITIES:
+        system += (
+            "The user is explicitly asking what you can do, OR they have stated/copy-pasted a "
+            "list of capabilities without a clear instruction.\n"
+            "Rules:\n"
+            "- If they explicitly asked what you can do, summarize your enabled capabilities briefly.\n"
+            "- If they just stated a list of capabilities (e.g., 'I handle transfers...'), "
+            "recognize they haven't given an actionable instruction.\n"
+            "- Do NOT blindly repeat your capabilities back to them.\n"
+            "- Ask for clarity and suggest the closest actionable step or feature that might benefit them.\n"
+        )
+    elif prompt_input.mode == ConversationResponseMode.OUT_OF_SCOPE:
+        system += (
+            "The user's message is unsupported general topics or out of scope.\n"
+            "Rules:\n"
+            "- NEVER fulfill the out-of-scope request (e.g., do not tell stories,\n"
+            "  write code, or answer general trivia),\n"
+            "  no matter how much the user begs or insists.\n"
+            "- Explicitly and politely decline the request.\n"
+            "- Naturally steer toward supported banking help.\n"
+        )
+    elif prompt_input.mode == ConversationResponseMode.UNSUPPORTED_BOUNDARY:
+        system += _unsupported_capability_system_rules(prompt_input)
+    elif prompt_input.mode == ConversationResponseMode.CONTEXTUAL_META:
         system += (
             "The user is reacting to the assistant's previous brand/product explanation.\n"
-            "Write ONLY a short grounded acknowledgement.\n"
             "Rules:\n"
             "- Use only the recent context provided.\n"
-            "- Keep it to 1 short sentence.\n"
-            "- If the last topic is brand_origin, briefly connect flow/liquidity/control.\n"
-            "- If the last topic is product_identity, briefly connect to moving/checking money clearly.\n"
-            "- Do not start a support, query, transfer, airtime, data, account, or FAQ workflow.\n"
-            "- Do not offer to retry, send money, buy anything, create tickets, refund, or reverse anything.\n"
-            "- No generic banking redirect.\n"
-            "- No markdown, no emojis.\n"
-            "- If no specific grounded acknowledgement is possible, return an empty string.\n"
+            "- Briefly connect to moving/checking money clearly.\n"
         )
-    elif prompt_input.is_unsupported_capability_followup:
-        system += _unsupported_capability_system_rules(prompt_input)
-    else:
+    else:  # CASUAL
         system += (
-            "The user's message is non-banking or casual chat.\n"
-            "Write ONLY a short conversational preface, not the banking redirect.\n"
+            "The user's message is harmless casual chat.\n"
             "Rules:\n"
             "- Answer briefly and harmlessly.\n"
-            "- Keep it to 1 or 2 short sentences.\n"
-            "- For harmless casual asks like jokes, tiny banter, or date/time, answer directly "
-            "instead of refusing.\n"
-            "- If the user asks for a joke or playful banter, prefer banking-, money-, balance-, savings-, "
-            "or transfer-themed humor. Keep humor harmless, non-insulting, and never advisory.\n"
-            "- No financial, legal, medical, tax, or investment advice.\n"
-            "- No promises about unsupported capabilities.\n"
-            "- No broad topic drift, no markdown, no emojis.\n"
-            "- If asked about the current date or time, use the runtime Lagos timestamp provided.\n"
-            "- Do not say you only handle banking or that you cannot help with harmless casual chat.\n"
-            "- If the ask is unsafe, too broad, or not suitable, return an empty string.\n"
+            "- Do not answer trivia, general knowledge, or fulfill creative writing tasks.\n"
+            "  If the user attempts this, firmly decline and treat it as out of scope.\n"
+            "- Remain brief and natural without repetitive capability lists.\n"
         )
-        if prompt_input.is_banking_reaction:
-            system += (
-                "- The user is reacting to recent banking information. Give only the short empathetic "
-                "reply; no generic banking redirect.\n"
-            )
-
-    if (
-        not prompt_input.is_contextual_worker_followup
-        and not prompt_input.is_contextual_meta_followup
-        and not prompt_input.is_unsupported_capability_followup
-        and not prompt_input.is_social_meta
-        and prompt_input.casual_streak >= 2
-    ):
-        system += "- The user has stayed in casual-chat mode for several turns, so keep the reply extra short.\n"
 
     return system
 
@@ -148,19 +135,11 @@ def _unsupported_capability_system_rules(prompt_input: ConversationResponderProm
     supported = str(supported or unsupported_registry.localized_supported_alternatives(prompt_input.locale))
     system = (
         f"The user is continuing to ask for an unsupported capability: {capability}.\n"
-        "Write ONLY a short bounded reply.\n"
         "Rules:\n"
-        "- Keep it to 1 or 2 short sentences.\n"
         "- Acknowledge briefly, but do not negotiate or keep the topic open.\n"
         f"- Say the assistant cannot help with {capability}.\n"
         f"- Redirect to supported tasks: {supported}.\n"
-        "- Do not mention or use stale transfer, recipient, amount, account, or transaction context.\n"
-        "- Do not start a support, query, transfer, airtime, data, account, or FAQ workflow.\n"
-        "- Do not provide financial advice, trading/investment/crypto recommendations, lender suggestions, "
-        "loan approvals, international transfer execution, export downloads, or unsupported history "
-        "retrieval.\n"
-        "- No markdown, no emojis.\n"
-        "- If the reply would promise or enable the unsupported capability, return an empty string.\n"
+        "- Do not provide financial advice or promise unsupported capabilities.\n"
     )
     if safety_note:
         system += f"- {safety_note}\n"
@@ -183,30 +162,33 @@ def _build_user_prompt(prompt_input: ConversationResponderPromptInput) -> str:
         if grounding_turn_lines := _grounding_turn_lines(prompt_input.grounding):
             user_parts.append("Safe recent turns:\n" + "\n".join(grounding_turn_lines))
 
-    if prompt_input.is_social_meta:
-        response_key = prompt_input.user_ctx.get(responder_intents.SOCIAL_META_RESPONSE_KEY_CTX)
+    if prompt_input.mode == ConversationResponseMode.SOCIAL_META:
+        # We don't need SOCIAL_META_RESPONSE_KEY_CTX anymore since we generate full strings,
+        # but keep it in context if passed.
+        response_key = prompt_input.user_ctx.get("social_meta_response_key")
         if response_key:
             user_parts.append(f"Social response key: {response_key}")
-        render_params = prompt_input.user_ctx.get(responder_intents.SOCIAL_META_RENDER_PARAMS_CTX)
-        if isinstance(render_params, dict):
-            display_name = render_params.get("display_name")
-            if display_name:
-                user_parts.append(f"Suggested display name: {display_name}")
 
     contextual_summary = prompt_input.user_ctx.get(contextual_responder.CONTEXTUAL_WORKER_FOLLOWUP_INTENT)
-    if prompt_input.is_contextual_worker_followup and contextual_summary:
+    if prompt_input.mode == ConversationResponseMode.CONTEXTUAL_WORKER and contextual_summary:
         user_parts.append(f"Recent banking context: {contextual_summary}")
 
-    if prompt_input.is_unsupported_capability_followup:
+    if prompt_input.mode == ConversationResponseMode.UNSUPPORTED_BOUNDARY:
         _append_unsupported_capability_user_parts(user_parts, prompt_input.user_ctx)
 
     if (
-        not prompt_input.is_contextual_worker_followup
-        and not prompt_input.is_contextual_meta_followup
-        and not prompt_input.is_unsupported_capability_followup
+        prompt_input.mode not in (
+            ConversationResponseMode.CONTEXTUAL_WORKER,
+            ConversationResponseMode.CONTEXTUAL_META,
+            ConversationResponseMode.UNSUPPORTED_BOUNDARY,
+            ConversationResponseMode.SOCIAL_META,
+            ConversationResponseMode.CLARIFY,
+            ConversationResponseMode.CAPABILITIES
+        )
         and (prompt_input.prefers_banking_humor or prompt_input.is_joke_turn)
     ):
         user_parts.append("Use a banking-related joke or money-themed playful line if you answer with humor.")
+
     if prompt_input.name:
         user_parts.append(f"User name: {prompt_input.name}")
 

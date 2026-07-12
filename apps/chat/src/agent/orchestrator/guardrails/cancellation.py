@@ -31,10 +31,12 @@ _CANCEL_HINT_TOKENS = {
     "dakatar",
     "kagbuo",
     "kwusi",
+    "nvm",
+    "n/m",
 }
 _OBVIOUS_CANCEL_RE = re.compile(
     r"^(?:(?:please|pls|abeg|kindly|just)\s+)?"
-    r"(?:cancel|abort|stop)"
+    r"(?:cancel|abort|stop|nvm|nevermind|never mind)"
     r"(?:\s+(?:this|it|this one|this transfer|the transfer|this transaction|the transaction|"
     r"this flow|the flow|current transfer|current transaction|current flow))?"
     r"(?:\s+(?:please|pls|abeg))?$"
@@ -45,6 +47,8 @@ EXPLICIT_CANCEL_PATTERNS = (
     r"\bstop\b",
     r"\bnevermind\b",
     r"\bnever\s+mind\b",
+    r"\bnvm\b",
+    r"\bn/m\b",
 )
 
 

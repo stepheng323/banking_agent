@@ -2,13 +2,12 @@
 
 import re
 from dataclasses import dataclass
-from typing import cast
 
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
     unsupported_capability_params,
 )
-from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.message_keys import MessageKey, as_message_key
 from banking.presentation.i18n.renderer import message_key_exists
 from shared.branding import brand_name_aliases, normalize_brand_name
 
@@ -313,9 +312,11 @@ def classify_deterministic_meta_response(message_text: str) -> DeterministicMeta
         return _meta_response("conversational.brand_origin")
     unsupported_capability = detect_unsupported_capability(normalized)
     if unsupported_capability is not None:
-        base_key = "capability.unsupported_unavailable"
+        base_key: MessageKey = "capability.unsupported_unavailable"
         specific_key = f"{base_key}_{unsupported_capability.key}"
-        unsupported_response_key: MessageKey = (specific_key if message_key_exists(specific_key, "en") else base_key)
+        unsupported_response_key: MessageKey = (
+                as_message_key(specific_key) if message_key_exists(specific_key, "en") else base_key
+        )
         return _meta_response(
             unsupported_response_key,
             params=unsupported_capability_params(unsupported_capability),

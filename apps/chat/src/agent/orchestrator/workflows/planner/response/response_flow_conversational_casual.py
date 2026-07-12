@@ -1,6 +1,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_common import (
     _build_bounded_conversational_reply,
@@ -28,6 +29,7 @@ async def _casual_chat_response(
         text=text,
         locale=conversational_locale,
         conversation_responder=conversation_responder,
+        mode=ConversationResponseMode.CASUAL,
     )
     _log_unexpected_turn_route(
         state=state,

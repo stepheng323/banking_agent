@@ -153,7 +153,7 @@
         },
         "close_account": {
           "supported": false,
-          "limitation_message": "I can't close bank accounts — that needs to be done directly with your bank.\n\nWould you like me to *unlink* an account from this app instead?",
+          "limitation_message": "I can't close bank accounts \u2014 that needs to be done directly with your bank.\n\nWould you like me to *unlink* an account from this app instead?",
           "alternative": "unlink_account"
         },
         "change_bvn": {
@@ -217,5 +217,43 @@
         }
       }
     }
-  }
+  },
+  "conversational_suggestions": [
+    {
+      "id": "send_money",
+      "domain": "transfer",
+      "action": "send_money",
+      "label_key": "suggestions.send_money"
+    },
+    {
+      "id": "buy_airtime",
+      "domain": "airtime",
+      "action": "buy_airtime",
+      "label_key": "suggestions.buy_airtime"
+    },
+    {
+      "id": "buy_data",
+      "domain": "data",
+      "action": "buy_data",
+      "label_key": "suggestions.buy_data"
+    },
+    {
+      "id": "check_balance",
+      "domain": "account",
+      "action": "list_accounts",
+      "label_key": "suggestions.check_balance"
+    },
+    {
+      "id": "query_transactions",
+      "domain": "query",
+      "action": "time_relative",
+      "label_key": "suggestions.query_transactions"
+    },
+    {
+      "id": "scheduled_payments",
+      "domain": "schedule",
+      "action": "list_scheduled_transfers",
+      "label_key": "suggestions.scheduled_payments"
+    }
+  ]
 }

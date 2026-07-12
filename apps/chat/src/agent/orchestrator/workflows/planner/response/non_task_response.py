@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_regist
     get_unsupported_capability,
 )
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary, OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.reprompt.reprompt_flow import _reprompt_updates
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _detected_locale_value
@@ -69,14 +70,25 @@ async def _build_non_task_response(
         capability = get_unsupported_capability(unsupported_cap)
         if capability is not None:
             params = unsupported_capability_params(capability, locale=current_locale)
+            responder_reply = await _build_bounded_conversational_reply(
+                state_view=state_view,
+                text=text,
+                locale=current_locale,
+                conversation_responder=conversation_responder,
+                mode=ConversationResponseMode.UNSUPPORTED_BOUNDARY,
+                extra_user_ctx={
+                    "unsupported_capability": {
+                        "key": capability.key,
+                        "label": params["capability"],
+                        "supported_alternatives": params["supported"],
+                    }
+                },
+            )
             logger.info("planner_non_task_unsupported_capability", capability_key=capability.key)
             return {
                 "capability_boundary": CapabilityBoundary(key=capability.key, label=capability.label),
-                "final_response": render_message(
-                    "capability.unsupported_unavailable",
-                    current_locale,
-                    params,
-                ),
+                "final_response": responder_reply
+                or render_message("capability.unsupported_unavailable", current_locale, params),
                 **locale_updates,
                 **context_read_updates,
             }
@@ -130,6 +142,7 @@ async def _build_non_task_response(
             text=text,
             locale=current_locale,
             conversation_responder=conversation_responder,
+            mode=ConversationResponseMode.CASUAL,
         )
         if responder_reply:
             _log_unexpected_turn_route(

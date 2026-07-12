@@ -1,150 +1,152 @@
 {
   "common": {
-    "safe_capability_fallback": "Enweghị m ike ime nke ahụ ugbu a. Enwere m ike inyere gị aka na transfer, ịzụta airtime/data, ilele balance, na ajụjụ transaction.",
-    "cancelled_prompt": "A kagburu transaction, kedu ihe ọzọ m ga-enyere gị taa?",
-    "gibberish_prompt": "Aghọtaghị m nke ahụ. Kedu ọrụ banking ka ịchọrọ ka m nyere gị aka na ya?"
+    "safe_capability_fallback": "Enwegh\u1ecb m ike ime nke ah\u1ee5 ugbu a. Enwere m ike inyere g\u1ecb aka na transfer, \u1ecbz\u1ee5ta airtime/data, ilele balance, na aj\u1ee5j\u1ee5 transaction.",
+    "cancelled_prompt": "A kagburu transaction, kedu ihe \u1ecdz\u1ecd m ga-enyere g\u1ecb taa?",
+    "gibberish_prompt": "Agh\u1ecdtagh\u1ecb m nke ah\u1ee5. Kedu \u1ecdr\u1ee5 banking ka \u1ecbch\u1ecdr\u1ecd ka m nyere g\u1ecb aka na ya?"
   },
   "capability": {
-    "blocked_with_alternative": "Enweghị m ike ime {action} ebe a. Enwere m ike inyere gị aka na {alternative}. Zaghachi ihe ịchọrọ ka m gaa n'ihu na ya.",
-    "blocked_no_alternative": "Enweghị m ike ime {action} ebe a. Enwere m ike inyere gị aka naanị na ọrụ banking akwadoro. Gwa m ihe ịchọrọ ime ọzọ.",
-    "generic_blocked": "Omume ahụ adịghị ugbu a. Enwere m ike inyere gị aka na ọrụ banking akwadoro. Kedu ihe ịchọrọ ime ọzọ?",
-    "unsupported_unavailable": "Enweghị m ike inyere aka na {capability}. Enwere m ike inyere gị aka na {supported}.",
-    "unsupported_unavailable_lending": "Aghọtara m na ị nwere ike na-achọ enyemaka ego, mana enweghị m ike inyere gị aka na mbinye ego ma ọ bụ loan. Enwere m ike inyere gị aka ilele balance gị ma ọ bụ nyochaa transactions gị nke nso nso a.",
-    "unsupported_unavailable_followup": "Aghọtara m, mana enweghị m ike inyere aka na {capability}. Enwere m ike inyere gị aka na {supported}.",
-    "unsupported_unavailable_followup_lending": "Anụrụ m gị, ma ghọta na ọ dị mkpa, mana enweghị m ike inye mbinye ego. Enwere m ike inyere gị aka ilele balance gị ma ọ bụ nyochaa transactions gị.",
-    "unsupported_unavailable_firm": "Enweghị m ike inyere aka na {capability}. Ka anyị laghachi na banking: {supported}.",
-    "unsupported_unavailable_firm_lending": "Enweghị m ike inyere aka na mbinye ego. Ka anyị lelee balance gị ma ọ bụ nyochaa transactions gị."
+    "blocked_with_alternative": "Enwegh\u1ecb m ike ime {action} ebe a. Enwere m ike inyere g\u1ecb aka na {alternative}. Zaghachi ihe \u1ecbch\u1ecdr\u1ecd ka m gaa n'ihu na ya.",
+    "blocked_no_alternative": "Enwegh\u1ecb m ike ime {action} ebe a. Enwere m ike inyere g\u1ecb aka naan\u1ecb na \u1ecdr\u1ee5 banking akwadoro. Gwa m ihe \u1ecbch\u1ecdr\u1ecd ime \u1ecdz\u1ecd.",
+    "generic_blocked": "Omume ah\u1ee5 ad\u1ecbgh\u1ecb ugbu a. Enwere m ike inyere g\u1ecb aka na \u1ecdr\u1ee5 banking akwadoro. Kedu ihe \u1ecbch\u1ecdr\u1ecd ime \u1ecdz\u1ecd?",
+    "unsupported_unavailable": "Enwegh\u1ecb m ike inyere aka na {capability}. Enwere m ike inyere g\u1ecb aka na {supported}.",
+    "unsupported_unavailable_lending": "Agh\u1ecdtara m na \u1ecb nwere ike na-ach\u1ecd enyemaka ego, mana enwegh\u1ecb m ike inyere g\u1ecb aka na mbinye ego ma \u1ecd b\u1ee5 loan. Enwere m ike inyere g\u1ecb aka ilele balance g\u1ecb ma \u1ecd b\u1ee5 nyochaa transactions g\u1ecb nke nso nso a.",
+    "unsupported_unavailable_followup": "Agh\u1ecdtara m, mana enwegh\u1ecb m ike inyere aka na {capability}. Enwere m ike inyere g\u1ecb aka na {supported}.",
+    "unsupported_unavailable_followup_lending": "An\u1ee5r\u1ee5 m g\u1ecb, ma gh\u1ecdta na \u1ecd d\u1ecb mkpa, mana enwegh\u1ecb m ike inye mbinye ego. Enwere m ike inyere g\u1ecb aka ilele balance g\u1ecb ma \u1ecd b\u1ee5 nyochaa transactions g\u1ecb.",
+    "unsupported_unavailable_firm": "Enwegh\u1ecb m ike inyere aka na {capability}. Ka any\u1ecb laghachi na banking: {supported}.",
+    "unsupported_unavailable_firm_lending": "Enwegh\u1ecb m ike inyere aka na mbinye ego. Ka any\u1ecb lelee balance g\u1ecb ma \u1ecd b\u1ee5 nyochaa transactions g\u1ecb."
   },
   "planner": {
-    "policy_notice_with_alternative": "Enwere m ike ịga n'ihu na {supported}. Enweghị m ike ime {unsupported} ebe a. Enwere m ike inyere gị aka na {alternative} kama. Zaghachi nhọrọ gị.",
-    "policy_notice_no_alternative": "Enwere m ike ịga n'ihu na {supported}. Enweghị m ike ime {unsupported} ebe a. Zaghachi ihe ịchọrọ ka m gaa n'ihu na ya.",
-    "mixed_supported_unsupported_notice": "Enwere m ike inyere aka na {supported}. Enweghị m ike inyere aka na {unsupported} ebe a.",
+    "policy_notice_with_alternative": "Enwere m ike \u1ecbga n'ihu na {supported}. Enwegh\u1ecb m ike ime {unsupported} ebe a. Enwere m ike inyere g\u1ecb aka na {alternative} kama. Zaghachi nh\u1ecdr\u1ecd g\u1ecb.",
+    "policy_notice_no_alternative": "Enwere m ike \u1ecbga n'ihu na {supported}. Enwegh\u1ecb m ike ime {unsupported} ebe a. Zaghachi ihe \u1ecbch\u1ecdr\u1ecd ka m gaa n'ihu na ya.",
+    "mixed_supported_unsupported_notice": "Enwere m ike inyere aka na {supported}. Enwegh\u1ecb m ike inyere aka na {unsupported} ebe a.",
     "cancelled": "A kagburu.",
-    "conversational_bank_focus": "Ana m elekwasị anya na ọrụ banking."
+    "conversational_bank_focus": "Ana m elekwas\u1ecb anya na \u1ecdr\u1ee5 banking."
   },
   "transaction_slots": {
     "transfer": {
-      "amount_for_recipient": "Ahụrụ m {recipient_name}. Ego ole ka m ga-eziga?",
+      "amount_for_recipient": "Ah\u1ee5r\u1ee5 m {recipient_name}. Ego ole ka m ga-eziga?",
       "recipient_for_amount": "Enwetara m {amount}. Onye ka m ga-ezigara ya?",
       "account_bank_for_amount_recipient": "Enwetara m {amount} maka {recipient_name}. Biko ziga account number na bank.",
       "account_bank_for_recipient": "Biko ziga account number na bank maka {recipient_name}.",
-      "bank_for_account": "Enwere m account {account}. Kedu bank ọ bụ?"
+      "bank_for_account": "Enwere m account {account}. Kedu bank \u1ecd b\u1ee5?"
     },
     "data": {
       "request_amount_network": "{amount} data {network}",
       "request_network": "data {network}",
       "request_amount": "{amount} data",
-      "target_phone_for_request": "Enwetara m arịrịọ {request}. Kedu line ka m ga-azụrụ ya?",
-      "target_phone_for_network_request": "Enwetara m arịrịọ {request}. Kedu line {network} ka m ga-azụrụ ya?",
-      "network_for_phone": "Enwere m {target_phone}. Kedu network ọ nọ na ya?"
+      "target_phone_for_request": "Enwetara m ar\u1ecbr\u1ecb\u1ecd {request}. Kedu line ka m ga-az\u1ee5r\u1ee5 ya?",
+      "target_phone_for_network_request": "Enwetara m ar\u1ecbr\u1ecb\u1ecd {request}. Kedu line {network} ka m ga-az\u1ee5r\u1ee5 ya?",
+      "network_for_phone": "Enwere m {target_phone}. Kedu network \u1ecd n\u1ecd na ya?"
     },
     "airtime": {
       "request_amount_network": "{amount} airtime {network}",
       "request_network": "airtime {network}",
       "request_amount": "{amount} airtime",
-      "phone_amount": "Ọ dị mma. Kedu line ka m ga-azụrụ airtime, na ego ole?",
-      "phone_amount_for_network": "Ọ dị mma. Kedu line {network} ka m ga-azụrụ airtime, na ego ole?",
-      "amount_for_self": "Ọ dị mma. Aga m eji number gị. Ego ole airtime ka m ga-azụta?",
-      "amount_for_self_network": "Ọ dị mma. Aga m eji line {network} gị. Ego ole airtime ka m ga-azụta?",
-      "phone_for_request": "Enwetara m {request}. Kedu line ka m ga-azụrụ ya?",
-      "phone_for_network_request": "Enwetara m {request}. Kedu line {network} ka m ga-azụrụ ya?",
-      "amount_for_phone": "Enwere m {recipient_phone}. Ego ole airtime ka m ga-azụta?",
-      "network_for_phone": "Enwere m {recipient_phone}. Kedu network ọ nọ na ya?",
-      "network_for_amount_phone": "Enwetara m {amount} maka {recipient_phone}. Kedu network ọ nọ na ya?"
+      "phone_amount": "\u1ecc d\u1ecb mma. Kedu line ka m ga-az\u1ee5r\u1ee5 airtime, na ego ole?",
+      "phone_amount_for_network": "\u1ecc d\u1ecb mma. Kedu line {network} ka m ga-az\u1ee5r\u1ee5 airtime, na ego ole?",
+      "amount_for_self": "\u1ecc d\u1ecb mma. Aga m eji number g\u1ecb. Ego ole airtime ka m ga-az\u1ee5ta?",
+      "amount_for_self_network": "\u1ecc d\u1ecb mma. Aga m eji line {network} g\u1ecb. Ego ole airtime ka m ga-az\u1ee5ta?",
+      "phone_for_request": "Enwetara m {request}. Kedu line ka m ga-az\u1ee5r\u1ee5 ya?",
+      "phone_for_network_request": "Enwetara m {request}. Kedu line {network} ka m ga-az\u1ee5r\u1ee5 ya?",
+      "amount_for_phone": "Enwere m {recipient_phone}. Ego ole airtime ka m ga-az\u1ee5ta?",
+      "network_for_phone": "Enwere m {recipient_phone}. Kedu network \u1ecd n\u1ecd na ya?",
+      "network_for_amount_phone": "Enwetara m {amount} maka {recipient_phone}. Kedu network \u1ecd n\u1ecd na ya?"
     }
   },
   "locale": {
-    "switched": "A gbanwere asụsụ.",
-    "invalid": "Enwere m ike ịtọ asụsụ na English, Pidgin, Yoruba, Hausa, ma ọ bụ Igbo."
+    "switched": "A gbanwere as\u1ee5s\u1ee5.",
+    "invalid": "Enwere m ike \u1ecbt\u1ecd as\u1ee5s\u1ee5 na English, Pidgin, Yoruba, Hausa, ma \u1ecd b\u1ee5 Igbo."
   },
   "meta": {
-    "fallback": "Abụ m {name}. {description}\nEnwere m ike inyere gị aka na: {supported}.\nKedu ihe ịchọrọ ime?",
-    "unknown_self_lore_refusal": "Enwere m ike ịkekọrịta naanị ozi gọọmentị gbasara m na ihe m nwere ike ime.",
+    "fallback": "Ab\u1ee5 m {name}. {description}\nEnwere m ike inyere g\u1ecb aka na: {supported}.\nKedu ihe \u1ecbch\u1ecdr\u1ecd ime?",
+    "unknown_self_lore_refusal": "Enwere m ike \u1ecbkek\u1ecdr\u1ecbta naan\u1ecb ozi g\u1ecd\u1ecdment\u1ecb gbasara m na ihe m nwere ike ime.",
     "creator_fallback": "{creator} wuru {name}.",
     "brand_origin_fallback": "{brand_origin}",
-    "capabilities_fallback": "Enwere m ike inyere gị aka na: {supported}.",
-    "limits_fallback": "Enweghị m ike ime {unsupported} ebe a. Enwere m ike inyere gị aka na {supported}.",
-    "melkor_easter_egg": "Nice try, Melkor. The music is not changing today.\nLaghachi na banking: Enwere m ike inyere gị aka na transfers, airtime/data, balances, transactions, na receipts."
+    "capabilities_fallback": "Enwere m ike inyere g\u1ecb aka na: {supported}.",
+    "limits_fallback": "Enwegh\u1ecb m ike ime {unsupported} ebe a. Enwere m ike inyere g\u1ecb aka na {supported}.",
+    "melkor_easter_egg": "Nice try, Melkor. The music is not changing today.\nLaghachi na banking: Enwere m ike inyere g\u1ecb aka na transfers, airtime/data, balances, transactions, na receipts."
   },
   "conversational": {
-    "greeting": "Ndeewo. Abụ m {app_name}. Enwere m ike inyere gị aka na transfers, airtime/data, balances, na transactions. Kedu ihe ịchọrọ ime?",
-    "greeting_named": "Ndeewo {display_name}. Abụ m {app_name}. Enwere m ike inyere gị aka na transfers, airtime/data, balances, na transactions. Kedu ihe ịchọrọ ime?",
-    "appreciation": "Nnoo. Kedu ọrụ ọzọ ka anyị ga-eme ugbu a?",
-    "checkin": "Anọ m ebe a. Kedu mmegharị ego ka anyị ga-eme?",
-    "identity": "Abụ m {app_name}, onye enyemaka banking na-enyere gị ịkwaga na ilele ego gị: transfer, airtime/data, balance, na ajụjụ transaction.",
-    "identity_correction": "Ọ bụghị {addressed_name} Abụ m {app_name}. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction. Kedu ihe ịchọrọ ime?",
-    "brand_origin": "Aha {app_name_short} sitere na {app_brand_inspiration}. Anyị họọrọ ya n'ihi na {app_brand_symbolism}: echiche dị n'azụ {app_name} bụ inyere ego gị aka ịga nke ọma, nke doro anya, ma nọrọ n'okpuru njikwa gị.",
-    "capability_question": "Enwere m ike inyere gị aka na transfer, ịzụta airtime/data, ilele balance, na ajụjụ transaction.",
-    "out_of_scope": "Laghachi na banking: kedu ihe ịchọrọ ime?",
-    "out_of_scope_followup": "A ka m nọ ebe a maka banking mgbe ị dị njikere.",
-    "out_of_scope_firm": "Ka anyị laghachi na banking. Kedu ihe anyị ga-eme?",
-    "clarify": "Enwere m ike inyere gị aka na banking tasks: show scheduled transactions, transfer money, buy airtime/data, check balance, or view transactions.",
-    "security_confirmation_required": "Enweghị m ike ịgafe nkwenye ma ọ bụ ikike PIN. Biko nyochaa ma kwado azụmahịa ahụ mgbe ị dị njikere.",
+    "greeting": "Ndeewo. Ab\u1ee5 m {app_name}. Enwere m ike inyere g\u1ecb aka na transfers, airtime/data, balances, na transactions. Kedu ihe \u1ecbch\u1ecdr\u1ecd ime?",
+    "greeting_named": "Ndeewo {display_name}. Ab\u1ee5 m {app_name}. Enwere m ike inyere g\u1ecb aka na transfers, airtime/data, balances, na transactions. Kedu ihe \u1ecbch\u1ecdr\u1ecd ime?",
+    "appreciation": "Nnoo. Kedu \u1ecdr\u1ee5 \u1ecdz\u1ecd ka any\u1ecb ga-eme ugbu a?",
+    "checkin": "An\u1ecd m ebe a. Kedu mmeghar\u1ecb ego ka any\u1ecb ga-eme?",
+    "identity": "Ab\u1ee5 m {app_name}, onye enyemaka banking na-enyere g\u1ecb \u1ecbkwaga na ilele ego g\u1ecb: transfer, airtime/data, balance, na aj\u1ee5j\u1ee5 transaction.",
+    "identity_correction": "\u1ecc b\u1ee5gh\u1ecb {addressed_name} Ab\u1ee5 m {app_name}. Enwere m ike inyere g\u1ecb aka na transfer, airtime/data, balance, na aj\u1ee5j\u1ee5 transaction. Kedu ihe \u1ecbch\u1ecdr\u1ecd ime?",
+    "brand_origin": "Aha {app_name_short} sitere na {app_brand_inspiration}. Any\u1ecb h\u1ecd\u1ecdr\u1ecd ya n'ihi na {app_brand_symbolism}: echiche d\u1ecb n'az\u1ee5 {app_name} b\u1ee5 inyere ego g\u1ecb aka \u1ecbga nke \u1ecdma, nke doro anya, ma n\u1ecdr\u1ecd n'okpuru njikwa g\u1ecb.",
+    "capability_question": "Enwere m ike inyere g\u1ecb aka na transfer, \u1ecbz\u1ee5ta airtime/data, ilele balance, na aj\u1ee5j\u1ee5 transaction.",
+    "capabilities_dynamic": "Enwere m ike inyere gị aka na {capabilities}. Gịnị ka ị chọrọ ime?",
+    "out_of_scope": "Laghachi na banking: kedu ihe \u1ecbch\u1ecdr\u1ecd ime?",
+    "out_of_scope_followup": "A ka m n\u1ecd ebe a maka banking mgbe \u1ecb d\u1ecb njikere.",
+    "out_of_scope_firm": "Ka any\u1ecb laghachi na banking. Kedu ihe any\u1ecb ga-eme?",
+    "clarify": "Enwere m ike inyere g\u1ecb aka na banking tasks: show scheduled transactions, transfer money, buy airtime/data, check balance, or view transactions.",
+    "clarify_dynamic": "Biko kọwaa ihe ị chọrọ ime. Enwere m ike inyere gị aka {suggestions}.",
+    "security_confirmation_required": "Enwegh\u1ecb m ike \u1ecbgafe nkwenye ma \u1ecd b\u1ee5 ikike PIN. Biko nyochaa ma kwado az\u1ee5mah\u1ecba ah\u1ee5 mgbe \u1ecb d\u1ecb njikere.",
     "contextual_worker_followup": {
-      "generic": "Aghọtara m.",
-      "settled": "Enweghị nsogbu, nke ahụ edozila.",
-      "success": "Enweghị nsogbu, {subject} ahụ gara nke ọma.",
-      "pending": "Aghọtara m, {subject} ahụ ka na processing.",
+      "generic": "Agh\u1ecdtara m.",
+      "settled": "Enwegh\u1ecb nsogbu, nke ah\u1ee5 edozila.",
+      "success": "Enwegh\u1ecb nsogbu, {subject} ah\u1ee5 gara nke \u1ecdma.",
+      "pending": "Agh\u1ecdtara m, {subject} ah\u1ee5 ka na processing.",
       "subject": {
         "request": "request",
         "transaction": "transaction",
         "transfer": "transfer",
-        "airtime_purchase": "ịzụta airtime",
-        "data_purchase": "ịzụta data"
+        "airtime_purchase": "\u1ecbz\u1ee5ta airtime",
+        "data_purchase": "\u1ecbz\u1ee5ta data"
       }
     },
     "contextual_meta_followup": {
-      "generic": "Aghọtara m.",
-      "brand_origin": "Ee, nke ahụ bụ echiche ya: flow, nghọta, na njikwa ego gị.",
-      "product_identity": "Kpamkpam, Nenya na-enyere gị ịkwaga na ilele ego gị nke ọma."
+      "generic": "Agh\u1ecdtara m.",
+      "brand_origin": "Ee, nke ah\u1ee5 b\u1ee5 echiche ya: flow, ngh\u1ecdta, na njikwa ego g\u1ecb.",
+      "product_identity": "Kpamkpam, Nenya na-enyere g\u1ecb \u1ecbkwaga na ilele ego g\u1ecb nke \u1ecdma."
     }
   },
   "interrupt": {
     "return_to_flow": {
       "input": {
-        "amount": "Zaa na amount ahụ (dịka 5000).",
-        "recipient_account": "Zipu recipient account number ka anyị gaa n'ihu.",
-        "recipient_bank_name": "Zipu aha bank nke recipient ka anyị gaa n'ihu.",
-        "recipient_account_bank": "Zipu account number na aha bank ka anyị gaa n'ihu.",
+        "amount": "Zaa na amount ah\u1ee5 (d\u1ecbka 5000).",
+        "recipient_account": "Zipu recipient account number ka any\u1ecb gaa n'ihu.",
+        "recipient_bank_name": "Zipu aha bank nke recipient ka any\u1ecb gaa n'ihu.",
+        "recipient_account_bank": "Zipu account number na aha bank ka any\u1ecb gaa n'ihu.",
         "phone": "Zaa na phone number, ma obu kwuo my line ma o buru nke gi.",
-        "phone_amount": "Zaa na phone number na amount ka anyị gaa n'ihu.",
-        "phone_network": "Zaa na phone number na network ka anyị gaa n'ihu.",
-        "phone_data_preference": "Zaa na phone number na budget ma obu data size ka anyị gaa n'ihu.",
+        "phone_amount": "Zaa na phone number na amount ka any\u1ecb gaa n'ihu.",
+        "phone_network": "Zaa na phone number na network ka any\u1ecb gaa n'ihu.",
+        "phone_data_preference": "Zaa na phone number na budget ma obu data size ka any\u1ecb gaa n'ihu.",
         "network": "Zaa na network, dika MTN, Airtel, Glo, ma obu 9mobile.",
-        "data_plan_id": "Họrọ data plan site n'ịza option number.",
+        "data_plan_id": "H\u1ecdr\u1ecd data plan site n'\u1ecbza option number.",
         "data_plan_preference": "Zaa na budget ma obu size, dika 2k ma obu 5GB.",
-        "beneficiary_id": "Họrọ beneficiary option site na ịpị ya ma obu ịza number ahụ.",
-        "source_account_id": "Họrọ source account site na ịpị ya ma obu ịza number ahụ.",
-        "account_selection": "Họrọ account ma obu record site na ịpị ya ma obu ịza number ahụ.",
-        "transaction_reference": "Zaa na transaction reference, receipt, ma obu nkọwa zuru oke iji mata ya.",
+        "beneficiary_id": "H\u1ecdr\u1ecd beneficiary option site na \u1ecbp\u1ecb ya ma obu \u1ecbza number ah\u1ee5.",
+        "source_account_id": "H\u1ecdr\u1ecd source account site na \u1ecbp\u1ecb ya ma obu \u1ecbza number ah\u1ee5.",
+        "account_selection": "H\u1ecdr\u1ecd account ma obu record site na \u1ecbp\u1ecb ya ma obu \u1ecbza number ah\u1ee5.",
+        "transaction_reference": "Zaa na transaction reference, receipt, ma obu nk\u1ecdwa zuru oke iji mata ya.",
         "date_range": "Zaa na date range, dika today, last week, ma obu March 1 ruo March 15.",
-        "schedule_id": "Họrọ scheduled transaction site na ịpị ya ma obu ịza number ahụ.",
-        "schedule_time": "Zaa na date na time maka schedule ahụ.",
-        "authorization": "Mechaa authorization ka anyị gaa n'ihu.",
-        "pin": "Mechaa PIN authorization ka anyị gaa n'ihu.",
-        "named_field": "Zipu {field} ka anyị gaa n'ihu.",
-        "generic": "Zipu nkọwa ndị fọdụrụ ka anyị gaa n'ihu."
+        "schedule_id": "H\u1ecdr\u1ecd scheduled transaction site na \u1ecbp\u1ecb ya ma obu \u1ecbza number ah\u1ee5.",
+        "schedule_time": "Zaa na date na time maka schedule ah\u1ee5.",
+        "authorization": "Mechaa authorization ka any\u1ecb gaa n'ihu.",
+        "pin": "Mechaa PIN authorization ka any\u1ecb gaa n'ihu.",
+        "named_field": "Zipu {field} ka any\u1ecb gaa n'ihu.",
+        "generic": "Zipu nk\u1ecdwa nd\u1ecb f\u1ecdd\u1ee5r\u1ee5 ka any\u1ecb gaa n'ihu."
       },
       "confirmation": {
-        "to_authorization": "Zaa yes ka anyị gaa n'ihu na authorization, ma obu kwuo cancel.",
-        "to_continue": "Zaa yes ka anyị gaa n'ihu, ma obu kwuo cancel."
+        "to_authorization": "Zaa yes ka any\u1ecb gaa n'ihu na authorization, ma obu kwuo cancel.",
+        "to_continue": "Zaa yes ka any\u1ecb gaa n'ihu, ma obu kwuo cancel."
       },
       "auth": {
-        "pin": "Mechaa PIN authorization ka anyị gaa n'ihu, ma obu kwuo cancel.",
-        "generic": "Mechaa authorization ka anyị gaa n'ihu, ma obu kwuo cancel."
+        "pin": "Mechaa PIN authorization ka any\u1ecb gaa n'ihu, ma obu kwuo cancel.",
+        "generic": "Mechaa authorization ka any\u1ecb gaa n'ihu, ma obu kwuo cancel."
       }
     }
   },
   "support": {
-    "ask_reference": "Transaction nke ị na-ajụ bụ nkee?",
-    "ask_clarification": "Ị nwere ike ịkọwa nke ọma?",
-    "not_sure": "Anaghị m ama nke ọma otu m ga-esi nyere aka na arịrịọ support ahụ.",
-    "tx_not_found": "Ahụghị m transaction ọhụrụ dabara na arịrịọ gị.",
-    "tx_ambiguous": "Transaction nkee? Biko kọwaa nke ọma.",
-    "need_tx_reference": "Achọrọ m transaction reference iji nyere gị aka na nke a.",
-    "unavailable": "Enweghị m ike iru support ugbu a.",
-    "escalation_unavailable": "Ana m ebufe ya na support, mana ticket service adịghị ugbu a.",
-    "unable_to_process": "Enweghị ike ịhazi ya.",
+    "ask_reference": "Transaction nke \u1ecb na-aj\u1ee5 b\u1ee5 nkee?",
+    "ask_clarification": "\u1eca nwere ike \u1ecbk\u1ecdwa nke \u1ecdma?",
+    "not_sure": "Anagh\u1ecb m ama nke \u1ecdma otu m ga-esi nyere aka na ar\u1ecbr\u1ecb\u1ecd support ah\u1ee5.",
+    "tx_not_found": "Ah\u1ee5gh\u1ecb m transaction \u1ecdh\u1ee5r\u1ee5 dabara na ar\u1ecbr\u1ecb\u1ecd g\u1ecb.",
+    "tx_ambiguous": "Transaction nkee? Biko k\u1ecdwaa nke \u1ecdma.",
+    "need_tx_reference": "Ach\u1ecdr\u1ecd m transaction reference iji nyere g\u1ecb aka na nke a.",
+    "unavailable": "Enwegh\u1ecb m ike iru support ugbu a.",
+    "escalation_unavailable": "Ana m ebufe ya na support, mana ticket service ad\u1ecbgh\u1ecb ugbu a.",
+    "unable_to_process": "Enwegh\u1ecb ike \u1ecbhazi ya.",
     "common": {
       "reason": "Ihe kpatara: {reason}"
     },
@@ -156,190 +158,190 @@
       "reply_with_range": "Zaa na 1 ma obu {count}."
     },
     "failure": {
-      "success_no_failure": "• This transfer was actually gara nke ọma. No failure occurred.",
-      "reason_not_provided": "Banki enyeghị ihe kpatara doro anya.",
-      "marked_processing": "I found the ₦{amount} transfer to {recipient}, but our records currently show it as {status}, not dara.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
-      "debited_failed": "× This ₦{amount} transfer dara after your account ewepụla ego.\nReason: {reason}\nA refund na processed.",
-      "not_debited_failed": "× This ₦{amount} transfer dara.\nReason: {reason}\nNo money ewepụla ego from your account.",
-      "unknown_reason_contact": "Enweghị ike determine failure reason. Please contact support.",
+      "success_no_failure": "\u2022 This transfer was actually gara nke \u1ecdma. No failure occurred.",
+      "reason_not_provided": "Banki enyegh\u1ecb ihe kpatara doro anya.",
+      "marked_processing": "I found the \u20a6{amount} transfer to {recipient}, but our records currently show it as {status}, not dara.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
+      "debited_failed": "\u00d7 This \u20a6{amount} transfer dara after your account ewep\u1ee5la ego.\nReason: {reason}\nA refund na processed.",
+      "not_debited_failed": "\u00d7 This \u20a6{amount} transfer dara.\nReason: {reason}\nNo money ewep\u1ee5la ego from your account.",
+      "unknown_reason_contact": "Enwegh\u1ecb ike determine failure reason. Please contact support.",
       "guidance": {
         "provider_unavailable": "I nwere ike retry ugbu a, ma obu chere obere oge ma provider ka na-enwe nsogbu.",
-        "provider_declined": "Provider jụrụ ya. I nwere ike retry, mana ma o megharịa, kpọtụrụ support.",
-        "insufficient_funds": "Jiri source account ọzọ ma obu belata amount tupu retry.",
+        "provider_declined": "Provider j\u1ee5r\u1ee5 ya. I nwere ike retry, mana ma o meghar\u1ecba, kp\u1ecdt\u1ee5r\u1ee5 support.",
+        "insufficient_funds": "Jiri source account \u1ecdz\u1ecd ma obu belata amount tupu retry.",
         "validation_error": "Lelee recipient account na bank details tupu retry.",
-        "source_account": "Họrọ source account ọzọ ma obu dozie mandate tupu retry.",
-        "execution_error": "Nke a yiri processing error. I nwere ike retry, kpọtụrụ support ma o megharịa."
+        "source_account": "H\u1ecdr\u1ecd source account \u1ecdz\u1ecd ma obu dozie mandate tupu retry.",
+        "execution_error": "Nke a yiri processing error. I nwere ike retry, kp\u1ecdt\u1ee5r\u1ee5 support ma o meghar\u1ecba."
       }
     },
     "wrong_debit": {
-      "success_debit_correct": "• This transfer was gara nke ọma. The debit was correct.",
-      "failed_but_debited": "Your account ewepụla ego ₦{amount}, but the transfer did not complete.\nThis na reversed automatically.\nCurrent status: Reversal in progress",
-      "failed_not_debited": "× The transfer dara, but no money ewepụla ego from your account.",
-      "pending_processing": "○ This transfer ka nọ na-arụ ọrụ.\nIf it fails, any debit a ga-eme reversal automatically.",
-      "investigating": "Anyị na-enyocha debit issue a."
+      "success_debit_correct": "\u2022 This transfer was gara nke \u1ecdma. The debit was correct.",
+      "failed_but_debited": "Your account ewep\u1ee5la ego \u20a6{amount}, but the transfer did not complete.\nThis na reversed automatically.\nCurrent status: Reversal in progress",
+      "failed_not_debited": "\u00d7 The transfer dara, but no money ewep\u1ee5la ego from your account.",
+      "pending_processing": "\u25cb This transfer ka n\u1ecd na-ar\u1ee5 \u1ecdr\u1ee5.\nIf it fails, any debit a ga-eme reversal automatically.",
+      "investigating": "Any\u1ecb na-enyocha debit issue a."
     },
     "reversal": {
-      "success_no_reversal": "• Transfer a gara nke ọma. Enweghị reversal ma ọ bụ refund site ebe a.",
-      "reversed": "• Your ₦{amount} emeela reversed to your account.",
-      "no_refund_needed": "No money ewepụla ego, so no refund is needed.",
-      "completed": "• The ₦{amount} refund emeela gwụrụ.",
-      "processing": "○ The ₦{amount} reversal na processed.\nRefunds typically return to your account within 24-48 hours.",
-      "needs_escalation": "Ewepụla gị ₦{amount}, reversal dị mkpa.\nAna m ebuga ya na support team anyị.",
-      "unknown": "Enweghị ike determine refund status."
+      "success_no_reversal": "\u2022 Transfer a gara nke \u1ecdma. Enwegh\u1ecb reversal ma \u1ecd b\u1ee5 refund site ebe a.",
+      "reversed": "\u2022 Your \u20a6{amount} emeela reversed to your account.",
+      "no_refund_needed": "No money ewep\u1ee5la ego, so no refund is needed.",
+      "completed": "\u2022 The \u20a6{amount} refund emeela gw\u1ee5r\u1ee5.",
+      "processing": "\u25cb The \u20a6{amount} reversal na processed.\nRefunds typically return to your account within 24-48 hours.",
+      "needs_escalation": "Ewep\u1ee5la g\u1ecb \u20a6{amount}, reversal d\u1ecb mkpa.\nAna m ebuga ya na support team any\u1ecb.",
+      "unknown": "Enwegh\u1ecb ike determine refund status."
     },
     "retry": {
-      "already_success": "• This transfer was already gara nke ọma.\nỊ chọrọ to send another ₦{amount} to {recipient}?",
-      "pending_wait": "○ This transfer ka nọ na-arụ ọrụ.\nPlease wait for it to complete before retrying.",
-      "ready": "Ready to retry ₦{amount} to {recipient}.\nZaa 'yes' to confirm.",
-      "not_retryable": "× Enweghị ike retry this transfer: {error}\nPlease resolve the issue first.",
-      "unknown_status": "Enweghị ike determine if this transfer can be retried. Ọnọdụ: {status}",
+      "already_success": "\u2022 This transfer was already gara nke \u1ecdma.\n\u1eca ch\u1ecdr\u1ecd to send another \u20a6{amount} to {recipient}?",
+      "pending_wait": "\u25cb This transfer ka n\u1ecd na-ar\u1ee5 \u1ecdr\u1ee5.\nPlease wait for it to complete before retrying.",
+      "ready": "Ready to retry \u20a6{amount} to {recipient}.\nZaa 'yes' to confirm.",
+      "not_retryable": "\u00d7 Enwegh\u1ecb ike retry this transfer: {error}\nPlease resolve the issue first.",
+      "unknown_status": "Enwegh\u1ecb ike determine if this transfer can be retried. \u1eccn\u1ecdd\u1ee5: {status}",
       "block": {
-        "insufficient_funds": "Jiri source account ọzọ ma obu belata amount tupu retry.",
-        "source_account": "Họrọ source account ọzọ ma obu dozie mandate tupu retry.",
+        "insufficient_funds": "Jiri source account \u1ecdz\u1ecd ma obu belata amount tupu retry.",
+        "source_account": "H\u1ecdr\u1ecd source account \u1ecdz\u1ecd ma obu dozie mandate tupu retry.",
         "validation_error": "Dozie recipient account na bank details tupu retry."
       }
     },
     "status": {
-      "success_no_time": "• Transfer ₦{amount} nye {recipient} gara nke ọma.",
-      "success_with_time": "• This transfer of ₦{amount} to {recipient} was successful on {time}.",
-      "pending": "○ This transfer of ₦{amount} to {recipient} ka nọ pending.\nWe're awaiting confirmation from the bank.",
-      "failed": "× This transfer of ₦{amount} to {recipient} dara.",
-      "raw_status": "Ọnọdụ transfer: {status}"
+      "success_no_time": "\u2022 Transfer \u20a6{amount} nye {recipient} gara nke \u1ecdma.",
+      "success_with_time": "\u2022 This transfer of \u20a6{amount} to {recipient} was successful on {time}.",
+      "pending": "\u25cb This transfer of \u20a6{amount} to {recipient} ka n\u1ecd pending.\nWe're awaiting confirmation from the bank.",
+      "failed": "\u00d7 This transfer of \u20a6{amount} to {recipient} dara.",
+      "raw_status": "\u1eccn\u1ecdd\u1ee5 transfer: {status}"
     },
     "pending": {
-      "pending": "○ Your transfer of ₦{amount} to {recipient} ka nọ being processed.\nBank confirmations can take a few minutes.",
-      "success_completed": "• Good news! This transfer actually gwụrụ gara nke ọmaly.",
-      "failed_no_longer_pending": "× This transfer dara and is no longer pending.",
-      "raw_status": "Ọnọdụ ugbu a: {status}"
+      "pending": "\u25cb Your transfer of \u20a6{amount} to {recipient} ka n\u1ecd being processed.\nBank confirmations can take a few minutes.",
+      "success_completed": "\u2022 Good news! This transfer actually gw\u1ee5r\u1ee5 gara nke \u1ecdmaly.",
+      "failed_no_longer_pending": "\u00d7 This transfer dara and is no longer pending.",
+      "raw_status": "\u1eccn\u1ecdd\u1ee5 ugbu a: {status}"
     },
     "receipt": {
-      "unavailable_for_status": "× Enweghị ike provide receipt. This transfer {status}.",
+      "unavailable_for_status": "\u00d7 Enwegh\u1ecb ike provide receipt. This transfer {status}.",
       "title": "*Transfer Receipt*",
-      "divider": "─────────────────",
-      "amount": "Amount: ₦{amount}",
+      "divider": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+      "amount": "Amount: \u20a6{amount}",
       "to": "Nye: {recipient}",
       "bank": "Bank: {bank}",
       "account": "Account: {account}",
       "ref": "Ref: {reference}",
-      "date": "Ụbọchị: {date}",
-      "status_success": "Ọnọdụ: • Successful",
+      "date": "\u1ee4b\u1ecdch\u1ecb: {date}",
+      "status_success": "\u1eccn\u1ecdd\u1ee5: \u2022 Successful",
       "batch_sending_one": "Ana m ezipu receipt ugbu a.",
       "batch_sending_many": "Ana m ezipu receipts maka transfers gara nke oma ugbu a.",
       "batch_skipped_failed": "{count} dara",
       "batch_skipped_pending": "{count} ka pending",
-      "batch_skipped_non_transfer": "{count} abụghị transfer",
+      "batch_skipped_non_transfer": "{count} ab\u1ee5gh\u1ecb transfer",
       "batch_skipped_items": "{base} Ahapuru m {skipped} item{item_suffix}.",
       "batch_exhausted": "Ezitelam available receipts maka batch ahu.",
       "batch_no_completed": "Enweghi m ike izipu receipts maka batch ahu ugbu a n'ihi na onweghi transfer leg mechara successfully."
     },
     "ticket": {
-      "not_found": "Ahụghị m a ticket with code {ticket_code}.\n\nBiko lelee the code and try again.",
-      "none_open": "Enweghị m see any open support tickets for you.\n\nIs there something I can help you with?",
-      "status_open": "Case gị ka open ma na-eche review.",
-      "status_in_progress": "Team anyị na-arụ ọrụ na ya.",
+      "not_found": "Ah\u1ee5gh\u1ecb m a ticket with code {ticket_code}.\n\nBiko lelee the code and try again.",
+      "none_open": "Enwegh\u1ecb m see any open support tickets for you.\n\nIs there something I can help you with?",
+      "status_open": "Case g\u1ecb ka open ma na-eche review.",
+      "status_in_progress": "Team any\u1ecb na-ar\u1ee5 \u1ecdr\u1ee5 na ya.",
       "status_resolved": "This case emeela resolved.",
       "status_closed": "This case emeela closed.",
-      "status_unknown": "Ọnọdụ amaghị",
+      "status_unknown": "\u1eccn\u1ecdd\u1ee5 amagh\u1ecb",
       "created_recently": "recently",
-      "summary": "**Ticket:** {ticket_code}\n**Ọnọdụ:** {status_text}\n**Created:** {created}",
-      "open_hint": "Team anyị na-aza n’ime awa 24.",
-      "in_progress_hint": "Ị ga-enweta update mgbe anyị nwere ozi ọzọ.",
+      "summary": "**Ticket:** {ticket_code}\n**\u1eccn\u1ecdd\u1ee5:** {status_text}\n**Created:** {created}",
+      "open_hint": "Team any\u1ecb na-aza n\u2019ime awa 24.",
+      "in_progress_hint": "\u1eca ga-enweta update mgbe any\u1ecb nwere ozi \u1ecdz\u1ecd.",
       "resolved_on": "E doziri ya na {resolved}.",
-      "no_updates": "Enweghị m have any pending updates for you.\n\nIs there something specific I can help with?"
+      "no_updates": "Enwegh\u1ecb m have any pending updates for you.\n\nIs there something specific I can help with?"
     },
     "fraud": {
-      "alert": "We're taking this seriously.\nA support agent will contact ị shortly to investigate.\nDo not share any PINs or passwords."
+      "alert": "We're taking this seriously.\nA support agent will contact \u1ecb shortly to investigate.\nDo not share any PINs or passwords."
     },
     "escalation": {
       "logged": "Elogola m nke a maka review.",
       "ticket": "**Koodu ticket:** {ticket_code}",
-      "fraud_priority": "Security team anyị ga-enye nke a priority. Ị ga-anụ site n’aka anyị n’ime awa 1.",
-      "with_transaction_ref": "Team anyị ga-enyocha ma laghachi n’ime awa 24.",
-      "ask_transaction_ref": "Ọ bụrụ na ị nwere transaction reference, zaa na ya ka o mee ngwa ngwa.",
-      "summary_fraud_suspected": "User kọrọ fraud a na-enyo",
-      "summary_max_attempts": "Enweghị ike resolve after multiple attempts",
-      "summary_user_requested": "User rịọrọ support mmadụ",
+      "fraud_priority": "Security team any\u1ecb ga-enye nke a priority. \u1eca ga-an\u1ee5 site n\u2019aka any\u1ecb n\u2019ime awa 1.",
+      "with_transaction_ref": "Team any\u1ecb ga-enyocha ma laghachi n\u2019ime awa 24.",
+      "ask_transaction_ref": "\u1ecc b\u1ee5r\u1ee5 na \u1ecb nwere transaction reference, zaa na ya ka o mee ngwa ngwa.",
+      "summary_fraud_suspected": "User k\u1ecdr\u1ecd fraud a na-enyo",
+      "summary_max_attempts": "Enwegh\u1ecb ike resolve after multiple attempts",
+      "summary_user_requested": "User r\u1ecb\u1ecdr\u1ecd support mmad\u1ee5",
       "summary_default": "Escalation support: {reason_or_intent}",
       "summary_system": "Escalation system: {reason}",
       "summary_context_suffix": "- {message}"
     }
   },
   "faq": {
-    "info_trouble": "Enwere m nsogbu n'inweta ozi ahụ.",
-    "synthesis_failed": "Enwere m nsogbu ịkwadebe azịza ugbu a. Biko nwaa ọzọ.",
-    "uncertainty_response": "Amaghị m ma ozi m nwere zuru oke iji zaa nke a nke ọma. Biko jụọ ya n'ụzọ ọzọ, ma ọ bụ ka m ziga ya na support?",
-    "support_handoff": "Ka m ziga nke a na support ka ha lelee okwu gị kpọmkwem."
+    "info_trouble": "Enwere m nsogbu n'inweta ozi ah\u1ee5.",
+    "synthesis_failed": "Enwere m nsogbu \u1ecbkwadebe az\u1ecbza ugbu a. Biko nwaa \u1ecdz\u1ecd.",
+    "uncertainty_response": "Amagh\u1ecb m ma ozi m nwere zuru oke iji zaa nke a nke \u1ecdma. Biko j\u1ee5\u1ecd ya n'\u1ee5z\u1ecd \u1ecdz\u1ecd, ma \u1ecd b\u1ee5 ka m ziga ya na support?",
+    "support_handoff": "Ka m ziga nke a na support ka ha lelee okwu g\u1ecb kp\u1ecdmkwem."
   },
   "query": {
     "common": {
       "transaction": "transaction"
     },
     "drill_down": {
-      "details_intro": "Lee nkọwa transaction ahụ:",
-      "no_items": "Enweghị m transaction ahụ ọzọ. Gwa m ka m mee search ọzọ.",
-      "invalid_selection": "Enweghị m ike ịmata nhọrọ ahụ. Họrọ otu n'ime transactions {count} m gosiri."
+      "details_intro": "Lee nk\u1ecdwa transaction ah\u1ee5:",
+      "no_items": "Enwegh\u1ecb m transaction ah\u1ee5 \u1ecdz\u1ecd. Gwa m ka m mee search \u1ecdz\u1ecd.",
+      "invalid_selection": "Enwegh\u1ecb m ike \u1ecbmata nh\u1ecdr\u1ecd ah\u1ee5. H\u1ecdr\u1ecd otu n'ime transactions {count} m gosiri."
     },
     "pagination": {
-      "already_first_page": "Ị nọlarị na page mbụ.",
-      "end_of_results": "Nke a bụ list niile maka search a."
+      "already_first_page": "\u1eca n\u1ecdlar\u1ecb na page mb\u1ee5.",
+      "end_of_results": "Nke a b\u1ee5 list niile maka search a."
     },
     "coverage_copy": {
-      "result_more": "Mba. Egosila m transactions {count}, ma e nwere ndị ọzọ.",
-      "result_complete": "Nke a bụ matched results niile: transactions {count}. Nke a naanị anaghị akwado bank-data coverage.",
-      "result_empty": "Ahụghị m transaction dabara. Nke a naanị anaghị akwado coverage.",
-      "no_metadata": "Enwere m ike igosi local transactions, mana enweghị m linked-account metadata iji kwado coverage.",
-      "account_not_found": "Ahụghị m {account} n'ime linked accounts gị.",
-      "multiple_accounts": "Linked accounts ole na ole dabara na {account}: {options}. Kedu nke ị pụtara?",
-      "single_pending": "{account} emechabeghị sync n'ihi na authorization bụ {status}. Mezue ya tupu iwere results dị ka complete.",
+      "result_more": "Mba. Egosila m transactions {count}, ma e nwere nd\u1ecb \u1ecdz\u1ecd.",
+      "result_complete": "Nke a b\u1ee5 matched results niile: transactions {count}. Nke a naan\u1ecb anagh\u1ecb akwado bank-data coverage.",
+      "result_empty": "Ah\u1ee5gh\u1ecb m transaction dabara. Nke a naan\u1ecb anagh\u1ecb akwado coverage.",
+      "no_metadata": "Enwere m ike igosi local transactions, mana enwegh\u1ecb m linked-account metadata iji kwado coverage.",
+      "account_not_found": "Ah\u1ee5gh\u1ecb m {account} n'ime linked accounts g\u1ecb.",
+      "multiple_accounts": "Linked accounts ole na ole dabara na {account}: {options}. Kedu nke \u1ecb p\u1ee5tara?",
+      "single_pending": "{account} emechabegh\u1ecb sync n'ihi na authorization b\u1ee5 {status}. Mezue ya tupu iwere results d\u1ecb ka complete.",
       "single_covered": "{account} nwere transaction coverage akwadoro{period}.{sync}",
-      "single_gap": "{account} nwere coverage gap{period}. Enwere m ike igosi local transactions, mana agaghị m akpọ list ahụ complete.",
-      "single_unknown": "Enwere m ike igosi local transactions maka {account}, mana enweghị m ike ikwenye full coverage ugbu a.",
-      "all_covered": "Akwadoro m transaction coverage{period} maka linked accounts gị.",
-      "partial": "Enwere m ike igosi local transactions{period}, mana enweghị m ike ikwenye ihe niile maka account ọ bụla.",
+      "single_gap": "{account} nwere coverage gap{period}. Enwere m ike igosi local transactions, mana agagh\u1ecb m akp\u1ecd list ah\u1ee5 complete.",
+      "single_unknown": "Enwere m ike igosi local transactions maka {account}, mana enwegh\u1ecb m ike ikwenye full coverage ugbu a.",
+      "all_covered": "Akwadoro m transaction coverage{period} maka linked accounts g\u1ecb.",
+      "partial": "Enwere m ike igosi local transactions{period}, mana enwegh\u1ecb m ike ikwenye ihe niile maka account \u1ecd b\u1ee5la.",
       "status_covered": "{account}: coverage akwadoro. Last sync: {sync}.",
-      "status_pending": "○ {account}: authorization bụ {status}, ya mere sync ezughị.",
-      "status_gap": "○ {account}: coverage ezughị maka period a.",
-      "status_unknown": "? {account}: enweghị ike ikwenye coverage ugbu a.",
-      "best_local": "Were nke a dị ka best local view, ọ bụghị guaranteed complete statement."
+      "status_pending": "\u25cb {account}: authorization b\u1ee5 {status}, ya mere sync ezugh\u1ecb.",
+      "status_gap": "\u25cb {account}: coverage ezugh\u1ecb maka period a.",
+      "status_unknown": "? {account}: enwegh\u1ecb ike ikwenye coverage ugbu a.",
+      "best_local": "Were nke a d\u1ecb ka best local view, \u1ecd b\u1ee5gh\u1ecb guaranteed complete statement."
     },
     "receipt": {
-      "only_transfer": "Receipts dị naanị maka bank transfers. Nke a bụ {transaction_type}.",
-      "offer": "Ị chọrọ foto receipt maka transfer a?",
+      "only_transfer": "Receipts d\u1ecb naan\u1ecb maka bank transfers. Nke a b\u1ee5 {transaction_type}.",
+      "offer": "\u1eca ch\u1ecdr\u1ecd foto receipt maka transfer a?",
       "offer_accept": "Zipu foto receipt",
       "offer_accept_button": "Zipu receipt",
-      "generating": "Ana m arụpụta your receipt now. I'll send it to you as an image shortly.",
+      "generating": "Ana m ar\u1ee5p\u1ee5ta your receipt now. I'll send it to you as an image shortly.",
       "already_generating": "Ana m emeela generating that receipt image.",
-      "expired": "Ahụghị m the receipt details for that button. Zaa 'receipt' if you still need it.",
-      "failed": "Sorry, Enweghị m ike generate the receipt at this moment. Please try again later.",
-      "bank_unknown": "Amaghị Bank",
+      "expired": "Ah\u1ee5gh\u1ecb m the receipt details for that button. Zaa 'receipt' if you still need it.",
+      "failed": "Sorry, Enwegh\u1ecb m ike generate the receipt at this moment. Please try again later.",
+      "bank_unknown": "Amagh\u1ecb Bank",
       "na": "N/A",
       "user_account": "Account user"
     },
     "report_issue": {
-      "template": "I understand you have an issue with this transaction:\n\n*{description}* - ₦{amount}\n\nPlease describe the issue:\n1️⃣ Transaction dara but I ewepụla ego\n2️⃣ Enweghị m recognize this transaction\n3️⃣ Wrong amount was charged\n4️⃣ Other issue\n\n_Zaa na the number or describe your issue._"
+      "template": "I understand you have an issue with this transaction:\n\n*{description}* - \u20a6{amount}\n\nPlease describe the issue:\n1\ufe0f\u20e3 Transaction dara but I ewep\u1ee5la ego\n2\ufe0f\u20e3 Enwegh\u1ecb m recognize this transaction\n3\ufe0f\u20e3 Wrong amount was charged\n4\ufe0f\u20e3 Other issue\n\n_Zaa na the number or describe your issue._"
     },
     "reply": {
       "date": {
-        "debit_named": "Ị kwụrụ {counterparty} na {date}.",
-        "credit_named": "Ị natara ego n'aka {counterparty} na {date}.",
+        "debit_named": "\u1eca kw\u1ee5r\u1ee5 {counterparty} na {date}.",
+        "credit_named": "\u1eca natara ego n'aka {counterparty} na {date}.",
         "generic": "O mere na {date}."
       },
       "counterparty": {
-        "debit_named": "Ị kwụrụ {amount} nye {counterparty} na {date}.",
-        "credit_named": "Ị natara {amount} n'aka {counterparty} na {date}.",
-        "generic": "Ọ bụ na {counterparty}.",
-        "unavailable": "Achọpụtara m transaction ahụ, mana enweghị m ike ikwenye onye nke ọzọ."
+        "debit_named": "\u1eca kw\u1ee5r\u1ee5 {amount} nye {counterparty} na {date}.",
+        "credit_named": "\u1eca natara {amount} n'aka {counterparty} na {date}.",
+        "generic": "\u1ecc b\u1ee5 na {counterparty}.",
+        "unavailable": "Ach\u1ecdp\u1ee5tara m transaction ah\u1ee5, mana enwegh\u1ecb m ike ikwenye onye nke \u1ecdz\u1ecd."
       },
       "amount": {
-        "debit_named": "Ị kwụrụ {amount} nye {counterparty}.",
-        "credit_named": "Ị natara {amount} n'aka {counterparty}.",
-        "generic": "Ọ bụ {amount}."
+        "debit_named": "\u1eca kw\u1ee5r\u1ee5 {amount} nye {counterparty}.",
+        "credit_named": "\u1eca natara {amount} n'aka {counterparty}.",
+        "generic": "\u1ecc b\u1ee5 {amount}."
       },
       "bank": {
-        "debit_named": "Ị zigara ya {counterparty} site na {bank_name}.",
-        "credit_named": "Ị natara ya n'aka {counterparty} site na {bank_name}.",
+        "debit_named": "\u1eca zigara ya {counterparty} site na {bank_name}.",
+        "credit_named": "\u1eca natara ya n'aka {counterparty} site na {bank_name}.",
         "generic": "O gara site na {bank_name}.",
-        "unavailable": "Achọpụtara m transaction ahụ, mana aha bank adịghị."
+        "unavailable": "Ach\u1ecdp\u1ee5tara m transaction ah\u1ee5, mana aha bank ad\u1ecbgh\u1ecb."
       },
       "status": {
         "posted": "Transaction a abiala na history.",
@@ -348,268 +350,268 @@
         "processing": "Transaction a ka na processing.",
         "failed": "Transaction a failed.",
         "reversed": "Transaction a emeela reverse.",
-        "processing_bank_posted": "Transaction a ka na processing na app anyi, mana debit yiri ya apụtala na bank history gi.",
-        "failed_bank_posted": "App anyi kwuru na transaction a failed, mana debit yiri ya apụtala na bank history gi. Juo support ka ha nyochaa ya.",
+        "processing_bank_posted": "Transaction a ka na processing na app anyi, mana debit yiri ya ap\u1ee5tala na bank history gi.",
+        "failed_bank_posted": "App anyi kwuru na transaction a failed, mana debit yiri ya ap\u1ee5tala na bank history gi. Juo support ka ha nyochaa ya.",
         "generic": "Status transaction a bu {status}.",
         "unavailable": "Ahuru m transaction ahu, mana enweghi m ike ikwenye status ya."
       },
       "latest": {
         "date": {
-          "debit_named": "Oge ikpeazụ ị kwụrụ {counterparty} bụ na {date}.",
-          "credit_named": "Oge ikpeazụ ị natara ego n'aka {counterparty} bụ na {date}.",
-          "generic": "Nke ikpeazụ mere na {date}."
+          "debit_named": "Oge ikpeaz\u1ee5 \u1ecb kw\u1ee5r\u1ee5 {counterparty} b\u1ee5 na {date}.",
+          "credit_named": "Oge ikpeaz\u1ee5 \u1ecb natara ego n'aka {counterparty} b\u1ee5 na {date}.",
+          "generic": "Nke ikpeaz\u1ee5 mere na {date}."
         },
         "counterparty": {
-          "debit_named": "Onye ikpeazụ i zigara ego bụ {counterparty}.",
-          "credit_named": "Onye ikpeazụ zigara gị ego bụ {counterparty}.",
-          "generic": "Nke ikpeazụ bụ na {counterparty}."
+          "debit_named": "Onye ikpeaz\u1ee5 i zigara ego b\u1ee5 {counterparty}.",
+          "credit_named": "Onye ikpeaz\u1ee5 zigara g\u1ecb ego b\u1ee5 {counterparty}.",
+          "generic": "Nke ikpeaz\u1ee5 b\u1ee5 na {counterparty}."
         },
         "amount": {
-          "debit_named": "Transfer ikpeazụ gara {counterparty} bụ {amount}.",
-          "credit_named": "Ịkwụ ụgwọ ikpeazụ sitere na {counterparty} bụ {amount}.",
-          "generic": "Nke ikpeazụ bụ {amount}."
+          "debit_named": "Transfer ikpeaz\u1ee5 gara {counterparty} b\u1ee5 {amount}.",
+          "credit_named": "\u1ecakw\u1ee5 \u1ee5gw\u1ecd ikpeaz\u1ee5 sitere na {counterparty} b\u1ee5 {amount}.",
+          "generic": "Nke ikpeaz\u1ee5 b\u1ee5 {amount}."
         },
         "bank": {
-          "debit_named": "Transfer ikpeazụ gara {counterparty} sitere na {bank_name}.",
-          "credit_named": "Ịkwụ ụgwọ ikpeazụ sitere na {counterparty} bịara site na {bank_name}.",
-          "generic": "Nke ikpeazụ gara site na {bank_name}."
+          "debit_named": "Transfer ikpeaz\u1ee5 gara {counterparty} sitere na {bank_name}.",
+          "credit_named": "\u1ecakw\u1ee5 \u1ee5gw\u1ecd ikpeaz\u1ee5 sitere na {counterparty} b\u1ecbara site na {bank_name}.",
+          "generic": "Nke ikpeaz\u1ee5 gara site na {bank_name}."
         }
       },
       "description": {
-        "named": "Transaction {counterparty} a bụ maka {description}.",
-        "generic": "Ọ bụ maka {description}."
+        "named": "Transaction {counterparty} a b\u1ee5 maka {description}.",
+        "generic": "\u1ecc b\u1ee5 maka {description}."
       },
       "reference": {
-        "named": "Nọmba reference maka transaction {counterparty} ahụ bụ {reference}.",
-        "generic": "Reference ya bụ {reference}.",
-        "unavailable": "Ahụrụ m transaction ahụ, mana enweghị m ike ikwenye reference ya."
+        "named": "N\u1ecdmba reference maka transaction {counterparty} ah\u1ee5 b\u1ee5 {reference}.",
+        "generic": "Reference ya b\u1ee5 {reference}.",
+        "unavailable": "Ah\u1ee5r\u1ee5 m transaction ah\u1ee5, mana enwegh\u1ecb m ike ikwenye reference ya."
       },
       "account": {
-        "named": "Transaction {counterparty} ahụ siri na {account} gafee.",
+        "named": "Transaction {counterparty} ah\u1ee5 siri na {account} gafee.",
         "generic": "O siri na {account} gafee.",
-        "unavailable": "Ahụrụ m transaction ahụ, mana enweghị m ike ikwenye account ya."
+        "unavailable": "Ah\u1ee5r\u1ee5 m transaction ah\u1ee5, mana enwegh\u1ecb m ike ikwenye account ya."
       },
       "direction": {
-        "named": "Transaction {counterparty} ahụ bụ {direction}.",
-        "generic": "Ọ bụ {direction}.",
-        "unavailable": "Ahụrụ m transaction ahụ, mana enweghị m ike ikwenye direction ya."
+        "named": "Transaction {counterparty} ah\u1ee5 b\u1ee5 {direction}.",
+        "generic": "\u1ecc b\u1ee5 {direction}.",
+        "unavailable": "Ah\u1ee5r\u1ee5 m transaction ah\u1ee5, mana enwegh\u1ecb m ike ikwenye direction ya."
       },
       "category": {
-        "named": "Transaction {counterparty} ahụ dị n'okpuru ngalaba {category}.",
-        "generic": "Ọ dị n'okpuru ngalaba {category}.",
-        "unavailable": "Ahụrụ m transaction ahụ, mana enweghị m ike ikwenye category ya."
+        "named": "Transaction {counterparty} ah\u1ee5 d\u1ecb n'okpuru ngalaba {category}.",
+        "generic": "\u1ecc d\u1ecb n'okpuru ngalaba {category}.",
+        "unavailable": "Ah\u1ee5r\u1ee5 m transaction ah\u1ee5, mana enwegh\u1ecb m ike ikwenye category ya."
       },
       "aggregate": {
-        "scope": "Ngụkọta ahụ bụ naanị maka {scope_label}{period_suffix}.{total_suffix}",
-        "scope_hint": "Ọ bụ mkpokọta nke {count} {transaction_label} n’ime scope ahụ.",
-        "total_suffix": "Ngụkọta ya bụ {total}"
+        "scope": "Ng\u1ee5k\u1ecdta ah\u1ee5 b\u1ee5 naan\u1ecb maka {scope_label}{period_suffix}.{total_suffix}",
+        "scope_hint": "\u1ecc b\u1ee5 mkpok\u1ecdta nke {count} {transaction_label} n\u2019ime scope ah\u1ee5.",
+        "total_suffix": "Ng\u1ee5k\u1ecdta ya b\u1ee5 {total}"
       },
       "no_result": {
-        "debit_named": "Achọtaghị m ụgwọ nye {counterparty} {time_suffix}.",
-        "credit_named": "Achọtaghị m credit sitere na {counterparty} {time_suffix}.",
-        "debit_generic": "Achọtaghị m debit kwekọrọ {time_suffix}.",
-        "credit_generic": "Achọtaghị m credit kwekọrọ {time_suffix}.",
+        "debit_named": "Ach\u1ecdtagh\u1ecb m \u1ee5gw\u1ecd nye {counterparty} {time_suffix}.",
+        "credit_named": "Ach\u1ecdtagh\u1ecb m credit sitere na {counterparty} {time_suffix}.",
+        "debit_generic": "Ach\u1ecdtagh\u1ecb m debit kwek\u1ecdr\u1ecd {time_suffix}.",
+        "credit_generic": "Ach\u1ecdtagh\u1ecb m credit kwek\u1ecdr\u1ecd {time_suffix}.",
         "time": {
           "today": "taa",
-          "period": "n'oge ahụ"
+          "period": "n'oge ah\u1ee5"
         }
       }
     },
     "session": {
-      "completed": "Query agwụla.",
-      "dismissive_goodbye": "Ọ dị mma, aga m akwụsị ebe a ugbu a.",
-      "goodbye": "Ka ọ dị!",
-      "you_are_welcome": "Nnọọ!"
+      "completed": "Query agw\u1ee5la.",
+      "dismissive_goodbye": "\u1ecc d\u1ecb mma, aga m akw\u1ee5s\u1ecb ebe a ugbu a.",
+      "goodbye": "Ka \u1ecd d\u1ecb!",
+      "you_are_welcome": "Nn\u1ecd\u1ecd!"
     },
     "continuity": {
-      "prompt_items_header": "Items dị (maka drill_down, set drill_down_index ka ọ bụrụ nomba item):",
-      "prompt_surface_top_keys": "Key kachasị mkpa: {keys}",
+      "prompt_items_header": "Items d\u1ecb (maka drill_down, set drill_down_index ka \u1ecd b\u1ee5r\u1ee5 nomba item):",
+      "prompt_surface_top_keys": "Key kachas\u1ecb mkpa: {keys}",
       "prompt_surface_showing_items": "Na-egosi {count} items"
     },
     "clarify": {
-      "default": "Ị nwere ike kọwaa nke ọma?",
+      "default": "\u1eca nwere ike k\u1ecdwaa nke \u1ecdma?",
       "time_vague": "Kedu time period did you mean by '{context}'? You can say something like '{suggestion}'.",
-      "unsure_rephrase": "Amaghị m ihe ị na-ekwu. Ị nwere ike ikwu ya ọzọ?",
-      "multiple_matches": "Ahụrụ m transactions ole na ole dabara. Kedu nke ị pụtara?\n\n{options}",
-      "cancelled": "Ọ dị mma, akagbuola m nhọrọ ahụ.",
-      "exhausted": "Enweghị m ike ịmata nhọrọ ahụ. Biko kọwaa transaction ahụ ọzọ.",
-      "recent_read_only": "Enwere m ike iji closed result ahụ maka read-only question naanị. Bido transfer ma ọ bụ support request ọhụrụ.",
-      "missing_scope": "Kedu earlier result ma ọ bụ transaction ị pụtara?",
-      "memory_unavailable": "Enweghị m nkọwa zuru oke site na earlier result ahụ. Gwa m ka m mee search ọzọ.",
-      "grounded_query_failed": "Aghọtara m earlier result ahụ, mana achọrọ m account, transaction, ma ọ bụ time scope doro anya.",
-      "which_one": "Amaghị m nke ị na-ekwu{context_suffix}.",
-      "are_you_referring": "Ị na-ekwu maka:",
-      "reply_number_or_rephrase": "Zaa na nomba ma ọ bụ kwuo ya ọzọ.",
+      "unsure_rephrase": "Amagh\u1ecb m ihe \u1ecb na-ekwu. \u1eca nwere ike ikwu ya \u1ecdz\u1ecd?",
+      "multiple_matches": "Ah\u1ee5r\u1ee5 m transactions ole na ole dabara. Kedu nke \u1ecb p\u1ee5tara?\n\n{options}",
+      "cancelled": "\u1ecc d\u1ecb mma, akagbuola m nh\u1ecdr\u1ecd ah\u1ee5.",
+      "exhausted": "Enwegh\u1ecb m ike \u1ecbmata nh\u1ecdr\u1ecd ah\u1ee5. Biko k\u1ecdwaa transaction ah\u1ee5 \u1ecdz\u1ecd.",
+      "recent_read_only": "Enwere m ike iji closed result ah\u1ee5 maka read-only question naan\u1ecb. Bido transfer ma \u1ecd b\u1ee5 support request \u1ecdh\u1ee5r\u1ee5.",
+      "missing_scope": "Kedu earlier result ma \u1ecd b\u1ee5 transaction \u1ecb p\u1ee5tara?",
+      "memory_unavailable": "Enwegh\u1ecb m nk\u1ecdwa zuru oke site na earlier result ah\u1ee5. Gwa m ka m mee search \u1ecdz\u1ecd.",
+      "grounded_query_failed": "Agh\u1ecdtara m earlier result ah\u1ee5, mana ach\u1ecdr\u1ecd m account, transaction, ma \u1ecd b\u1ee5 time scope doro anya.",
+      "which_one": "Amagh\u1ecb m nke \u1ecb na-ekwu{context_suffix}.",
+      "are_you_referring": "\u1eca na-ekwu maka:",
+      "reply_number_or_rephrase": "Zaa na nomba ma \u1ecd b\u1ee5 kwuo ya \u1ecdz\u1ecd.",
       "context_suffix": "({context})",
-      "option_line": "{index}️⃣ {amount} — {description}"
+      "option_line": "{index}\ufe0f\u20e3 {amount} \u2014 {description}"
     },
     "notice": {
-      "clamped_days": "Na-egosi ụbọchị {days_back} ikpeazụ (max available)."
+      "clamped_days": "Na-egosi \u1ee5b\u1ecdch\u1ecb {days_back} ikpeaz\u1ee5 (max available)."
     },
     "error": {
-      "missing_params": "Nsogbu ime usoro: ozi query ezughị.",
-      "general": "Ndo, enwere nsogbu n’inye ozi ahụ.",
-      "unknown_intent": "Aghọtaghị m query ahụ.",
-      "execution_failed": "Ihe adịghị mma mere. Biko nwaa ọzọ."
+      "missing_params": "Nsogbu ime usoro: ozi query ezugh\u1ecb.",
+      "general": "Ndo, enwere nsogbu n\u2019inye ozi ah\u1ee5.",
+      "unknown_intent": "Agh\u1ecdtagh\u1ecb m query ah\u1ee5.",
+      "execution_failed": "Ihe ad\u1ecbgh\u1ecb mma mere. Biko nwaa \u1ecdz\u1ecd."
     },
     "account": {
-      "not_found_by_name": "Ahụghị m an account matching '{account_name}'."
+      "not_found_by_name": "Ah\u1ee5gh\u1ecb m an account matching '{account_name}'."
     },
     "format": {
-      "no_results_display": "Enweghị result a ga-egosi.",
-      "accounts_header": "💰 *Accounts Gị*",
+      "no_results_display": "Enwegh\u1ecb result a ga-egosi.",
+      "accounts_header": "\ud83d\udcb0 *Accounts G\u1ecb*",
       "total_line": "*Total: {total}*",
-      "breakdown_item": "{amount} — {name} ({percentage}, {count} txns)",
-      "total_spent_month": "Total ị nara n’ọnwa a: ₦{amount}",
-      "no_matching_transactions": "Enweghị transaction kwekọrọ na search gị.",
-      "no_transactions_today": "Ị nweghị transactions taa.",
-      "no_transactions_yesterday": "Ị nweghị transactions ụnyaahụ.",
-      "no_transactions_period": "Ị nweghị transactions n’oge ahụ.",
-      "no_transactions_with_type_today": "Ị nweghị {transaction_type} transactions taa.",
-      "no_transactions_with_type_yesterday": "Ị nweghị {transaction_type} transactions ụnyaahụ.",
-      "no_transactions_with_type_period": "Ị nweghị {transaction_type} transactions n’oge ahụ.",
-      "no_results_with_type": "Ahụghị {transaction_type} transactions{time_suffix}.",
+      "breakdown_item": "{amount} \u2014 {name} ({percentage}, {count} txns)",
+      "total_spent_month": "Total \u1ecb nara n\u2019\u1ecdnwa a: \u20a6{amount}",
+      "no_matching_transactions": "Enwegh\u1ecb transaction kwek\u1ecdr\u1ecd na search g\u1ecb.",
+      "no_transactions_today": "\u1eca nwegh\u1ecb transactions taa.",
+      "no_transactions_yesterday": "\u1eca nwegh\u1ecb transactions \u1ee5nyaah\u1ee5.",
+      "no_transactions_period": "\u1eca nwegh\u1ecb transactions n\u2019oge ah\u1ee5.",
+      "no_transactions_with_type_today": "\u1eca nwegh\u1ecb {transaction_type} transactions taa.",
+      "no_transactions_with_type_yesterday": "\u1eca nwegh\u1ecb {transaction_type} transactions \u1ee5nyaah\u1ee5.",
+      "no_transactions_with_type_period": "\u1eca nwegh\u1ecb {transaction_type} transactions n\u2019oge ah\u1ee5.",
+      "no_results_with_type": "Ah\u1ee5gh\u1ecb {transaction_type} transactions{time_suffix}.",
       "no_results_time_suffix_today": "today",
       "no_results_time_suffix_period": "maka oge a",
       "heading_transactions_default": "*Transactions*",
       "heading_transactions_type": "*{transaction_type} Transactions*",
       "heading_transactions_category": "*{category} Transactions*",
       "heading_spending_category": "*{category} Spending*",
-      "heading_suffix_account": "{heading} — {account}",
-      "heading_suffix_period": "{heading} — {period}",
+      "heading_suffix_account": "{heading} \u2014 {account}",
+      "heading_suffix_period": "{heading} \u2014 {period}",
       "heading_type_credit": "Credit na-abata",
-      "heading_type_debit": "Debit na-apụ",
+      "heading_type_debit": "Debit na-ap\u1ee5",
       "heading_period_today": "Today",
-      "heading_period_this_month": "Ọnwa a",
-      "heading_period_range": "{start}–{end}",
+      "heading_period_this_month": "\u1eccnwa a",
+      "heading_period_range": "{start}\u2013{end}",
       "transaction_details_title": "Transaction Details",
       "last_transaction_title": "Your last transaction was:",
       "last_transaction_type_title": "Your last {transaction_type} transaction was:",
       "field_amount": "*Amount:* {amount}",
-      "field_description": "*Nkọwa:* {description}",
-      "field_counterparty": "*Onye nke ọzọ:* {counterparty}",
-      "field_date": "*Ụbọchị:* {date}",
-      "field_type": "*Ụdị:* {type}",
+      "field_description": "*Nk\u1ecdwa:* {description}",
+      "field_counterparty": "*Onye nke \u1ecdz\u1ecd:* {counterparty}",
+      "field_date": "*\u1ee4b\u1ecdch\u1ecb:* {date}",
+      "field_type": "*\u1ee4d\u1ecb:* {type}",
       "field_bank": "*Bank:* {bank_name}",
       "field_category": "*Otu:* {category}",
-      "field_status": "*Ọnọdụ:* {status}",
+      "field_status": "*\u1eccn\u1ecdd\u1ee5:* {status}",
       "field_ref": "*Ref:* {reference}",
-      "status_success": "Gara nke ọma",
+      "status_success": "Gara nke \u1ecdma",
       "status_pending_generic": "{status}",
       "transfer_reply_hint": "_Zaa: 'receipt' for proof | 'issue' to report a problem_",
       "transactions_heading": "*Transactions*",
-      "pagination_showing": "Na-egosi {showing} n’ime {total}",
+      "pagination_showing": "Na-egosi {showing} n\u2019ime {total}",
       "transactions_across_accounts": "*Transactions* _(across {account_count} accounts)_",
       "recipient_fallback": "recipient",
       "label_received": "Natara",
       "label_sent": "Zitere",
       "remaining_transactions": "_{count} more transactions. Zaa **Next** to continue._",
-      "more_for_next_page": "_*karịa* maka page ọzọ_",
-      "unknown": "Amaghị",
+      "more_for_next_page": "_*kar\u1ecba* maka page \u1ecdz\u1ecd_",
+      "unknown": "Amagh\u1ecb",
       "narration": {
         "transaction": "Transaction",
         "transfer_to": "Transfer nye",
         "transfer_from": "Transfer site",
         "bank_transfer": "Bank Transfer",
-        "pos_purchase": "Ịzụta POS",
-        "atm_withdrawal": "Iwepụ ego ATM",
+        "pos_purchase": "\u1ecaz\u1ee5ta POS",
+        "atm_withdrawal": "Iwep\u1ee5 ego ATM",
         "airtime": "Airtime",
         "type_for_recipient": "{type} for {recipient}"
       },
       "type_incoming_credit": "Na-abata (Credit)",
-      "type_outgoing_debit": "Na-apụ (Debit)",
-      "accounts_item": "{amount} — {bank_name}",
+      "type_outgoing_debit": "Na-ap\u1ee5 (Debit)",
+      "accounts_item": "{amount} \u2014 {bank_name}",
       "breakdown_heading": "*{summary}*",
       "ranked_heading": "*{summary}*",
-      "ranked_item": "{rank}. *{amount}* — {name} {date}{bank_suffix}",
-      "transaction_item_with_bank": "{amount} • {label} — {narration} _({bank_name})_",
-      "transaction_item": "{amount} • {label} — {narration}",
-      "direct_answer_grouped_lead": "Nke a bụ {name}.",
+      "ranked_item": "{rank}. *{amount}* \u2014 {name} {date}{bank_suffix}",
+      "transaction_item_with_bank": "{amount} \u2022 {label} \u2014 {narration} _({bank_name})_",
+      "transaction_item": "{amount} \u2022 {label} \u2014 {narration}",
+      "direct_answer_grouped_lead": "Nke a b\u1ee5 {name}.",
       "show_more_hint": "_Kwuo 'show more' iji gaa n'ihu._"
     },
     "affordability": {
-      "balance_unavailable": "Enweghị ike inweta balance.",
-      "can_afford": "Nke gị balance (₦{balance}) covers ₦{amount}. Remaining: ₦{remaining}",
-      "cannot_afford": "₦{amount} exceeds ịr balance (₦{balance}). Shortfall: ₦{shortfall}"
+      "balance_unavailable": "Enwegh\u1ecb ike inweta balance.",
+      "can_afford": "Nke g\u1ecb balance (\u20a6{balance}) covers \u20a6{amount}. Remaining: \u20a6{remaining}",
+      "cannot_afford": "\u20a6{amount} exceeds \u1ecbr balance (\u20a6{balance}). Shortfall: \u20a6{shortfall}"
     },
     "balance": {
-      "unavailable": "Enweghị ike inweta balance.",
-      "single_account": "Nke gị {bank_name} balance: ₦{balance}",
+      "unavailable": "Enwegh\u1ecb ike inweta balance.",
+      "single_account": "Nke g\u1ecb {bank_name} balance: \u20a6{balance}",
       "account_fallback": "Account"
     },
     "analytics": {
-      "no_aggregation": "Enweghị ụdị nchịkọta ahọpụtara.",
-      "no_transactions": "Enweghị transaction achọtara.",
-      "no_spending": "Ị naghị nara anything{target_description}{timeframe}.",
-      "no_sent": "Ị ziteghị anything{target_description}{timeframe}.",
-      "no_income": "Ị nataghị any inflow{target_description}{timeframe}.",
+      "no_aggregation": "Enwegh\u1ecb \u1ee5d\u1ecb nch\u1ecbk\u1ecdta ah\u1ecdp\u1ee5tara.",
+      "no_transactions": "Enwegh\u1ecb transaction ach\u1ecdtara.",
+      "no_spending": "\u1eca nagh\u1ecb nara anything{target_description}{timeframe}.",
+      "no_sent": "\u1eca zitegh\u1ecb anything{target_description}{timeframe}.",
+      "no_income": "\u1eca natagh\u1ecb any inflow{target_description}{timeframe}.",
       "target_merchant": "na {merchant}",
       "target_account": "na {account}",
       "target_counterparty": "na {counterparty}",
       "target_counterparty_debit": "nye {counterparty}",
       "target_counterparty_credit": "site {counterparty}",
-      "summary_spent": "Ị nara *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
-      "summary_sent": "Ị zitere *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
-      "summary_received": "Ị natara *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
-      "summary_average": "Average transaction gị bụ *₦{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' nye see details_",
-      "summary_count": "Ị mere *{count}* {transaction_label}{timeframe}.",
-      "summary_count_zero": "Ị meghị any transactions{timeframe}.",
+      "summary_spent": "\u1eca nara *\u20a6{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_sent": "\u1eca zitere *\u20a6{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_received": "\u1eca natara *\u20a6{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_average": "Average transaction g\u1ecb b\u1ee5 *\u20a6{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' nye see details_",
+      "summary_count": "\u1eca mere *{count}* {transaction_label}{timeframe}.",
+      "summary_count_zero": "\u1eca megh\u1ecb any transactions{timeframe}.",
       "transaction_singular": "transaction",
       "transaction_plural": "transactions",
-      "single_expense": "Nke gị {adjective} expense{timeframe}",
+      "single_expense": "Nke g\u1ecb {adjective} expense{timeframe}",
       "label_expenses": "Mmefu",
       "label_transactions": "Transactions",
-      "title_largest": "Kachasị ukwuu",
-      "title_smallest": "Kachasị nta",
-      "adjective_biggest": "kachasị ukwuu",
-      "adjective_smallest": "kachasị nta",
-      "ranked_other": "Ndị ọzọ {adjective} expenses (Rank {start}-{end})",
+      "title_largest": "Kachas\u1ecb ukwuu",
+      "title_smallest": "Kachas\u1ecb nta",
+      "adjective_biggest": "kachas\u1ecb ukwuu",
+      "adjective_smallest": "kachas\u1ecb nta",
+      "ranked_other": "Nd\u1ecb \u1ecdz\u1ecd {adjective} expenses (Rank {start}-{end})",
       "ranked_top": "Top {limit} {adj_title} {label}",
-      "aggregation_completed": "Aggregation gwụrụ.",
+      "aggregation_completed": "Aggregation gw\u1ee5r\u1ee5.",
       "breakdown_by": "Nkewa site na {group_by}",
-      "group_by_transaction_type": "ụdị transaction",
-      "timeframe_last_30_days": "n'ụbọchị 30 gara aga",
-      "timeframe_month": "n'ọnwa {month}",
-      "timeframe_this_month": "n'ọnwa a",
-      "timeframe_default": "n’ụbọchị 30 gara aga",
+      "group_by_transaction_type": "\u1ee5d\u1ecb transaction",
+      "timeframe_last_30_days": "n'\u1ee5b\u1ecdch\u1ecb 30 gara aga",
+      "timeframe_month": "n'\u1ecdnwa {month}",
+      "timeframe_this_month": "n'\u1ecdnwa a",
+      "timeframe_default": "n\u2019\u1ee5b\u1ecdch\u1ecb 30 gara aga",
       "timeframe_today": "today",
-      "timeframe_yesterday": "ụnyaahụ",
+      "timeframe_yesterday": "\u1ee5nyaah\u1ee5",
       "timeframe_on_date": "na {date}",
       "timeframe_range": "from {start} to {end}"
     },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",
       "heading_top": "Top",
-      "timeframe_range": "{start} – {end}",
+      "timeframe_range": "{start} \u2013 {end}",
       "timeframe_last_30_days": "timeframe last 30 days: last 30 days",
       "summary_header": "*{heading_type} Recipients* ({timeframe})",
-      "summary_line": "{name} • ₦{total} ({count}x)",
-      "no_outgoing_transfers": "Enweghị outgoing transfers found.",
+      "summary_line": "{name} \u2022 \u20a6{total} ({count}x)",
+      "no_outgoing_transfers": "Enwegh\u1ecb outgoing transfers found.",
       "reply_name_hint": "_Zaa na a name to see those transactions_",
-      "summary_heading": "Nke a bụ {summary}:"
+      "summary_heading": "Nke a b\u1ee5 {summary}:"
     },
     "time_comparison": {
-      "prompt_specify_period": "Biko kọwaa a time period to compare.",
+      "prompt_specify_period": "Biko k\u1ecdwaa a time period to compare.",
       "item_spending": "Mmefu: {change}",
       "item_income": "Ego mbata: {change}",
       "item_transactions": "Transactions: {current} na {comparison}",
-      "no_change": "Enweghị mgbanwe",
-      "verb_spent_more": "nara karịa",
+      "no_change": "Enwegh\u1ecb mgbanwe",
+      "verb_spent_more": "nara kar\u1ecba",
       "verb_spent_less": "nara obere",
-      "same_spending": "Nke gị spending in {current_label} is the same as {comparison_label}.",
-      "summary": "You {verb} (₦{amount}) in {current_label} compared nye {comparison_label}.",
-      "summary_spent_more": "I mefuru ego karịrị {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nIhe dị iche: ₦{amount}",
-      "summary_spent_less": "I mefuru ego pere mpe {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nIhe dị iche: ₦{amount}"
+      "same_spending": "Nke g\u1ecb spending in {current_label} is the same as {comparison_label}.",
+      "summary": "You {verb} (\u20a6{amount}) in {current_label} compared nye {comparison_label}.",
+      "summary_spent_more": "I mefuru ego kar\u1ecbr\u1ecb {current_label}.\n{comparison_label}: \u20a6{comparison_amount}\n{current_label}: \u20a6{current_amount}\nIhe d\u1ecb iche: \u20a6{amount}",
+      "summary_spent_less": "I mefuru ego pere mpe {current_label}.\n{comparison_label}: \u20a6{comparison_amount}\n{current_label}: \u20a6{current_amount}\nIhe d\u1ecb iche: \u20a6{amount}"
     },
     "fetch": {
       "counterparty": {
-        "unknown": "Amaghị",
+        "unknown": "Amagh\u1ecb",
         "bank_transfer": "Bank Transfer",
         "transfer": "Transfer",
-        "pos_purchase": "Ịzụta POS",
-        "bank_charges": "Ụgwọ banki",
+        "pos_purchase": "\u1ecaz\u1ee5ta POS",
+        "bank_charges": "\u1ee4gw\u1ecd banki",
         "airtime": "Airtime",
-        "atm_withdrawal": "Iwepụ ego ATM"
+        "atm_withdrawal": "Iwep\u1ee5 ego ATM"
       },
       "local": {
         "transfer_to": "Transfer to {recipient}",
@@ -618,59 +620,59 @@
     }
   },
   "account": {
-    "user_not_found": "Ahụghị user.",
-    "no_linked_accounts": "Ị nweghị linked account.",
-    "account_not_found": "Ahụghị m an account matching '{identifier}'.",
-    "account_not_found_with_count": "Ahụghị m an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
-    "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now ịr default.",
+    "user_not_found": "Ah\u1ee5gh\u1ecb user.",
+    "no_linked_accounts": "\u1eca nwegh\u1ecb linked account.",
+    "account_not_found": "Ah\u1ee5gh\u1ecb m an account matching '{identifier}'.",
+    "account_not_found_with_count": "Ah\u1ee5gh\u1ecb m an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
+    "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now \u1ecbr default.",
     "unlink": {
       "success": "success: *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
-      "only_account": "️ Ị can't unlink ịr only account. Link another one first."
+      "only_account": "\ufe0f \u1eca can't unlink \u1ecbr only account. Link another one first."
     },
-    "mandate_reinitiated_success": "Ezigara m ntuziaka setup ahụ na ekwentị gị ọzọ. Biko soro ha iji mezue linking gị!",
+    "mandate_reinitiated_success": "Ezigara m ntuziaka setup ah\u1ee5 na ekwent\u1ecb g\u1ecb \u1ecdz\u1ecd. Biko soro ha iji mezue linking g\u1ecb!",
     "list": {
-      "empty": "Ị don't have any linked bank accounts yet.\n\nSay 'link account' to connect ịr bank.",
-      "header": "*Nke gị Bank Accounts*",
-      "count_zero": "Ị nweghị linked account ọ bụla.",
-      "count_one": "Ị nwere linked account 1.",
-      "count_many": "Ị nwere linked accounts {count}.",
-      "preview_header": "Ihe atụ:",
+      "empty": "\u1eca don't have any linked bank accounts yet.\n\nSay 'link account' to connect \u1ecbr bank.",
+      "header": "*Nke g\u1ecb Bank Accounts*",
+      "count_zero": "\u1eca nwegh\u1ecb linked account \u1ecd b\u1ee5la.",
+      "count_one": "\u1eca nwere linked account 1.",
+      "count_many": "\u1eca nwere linked accounts {count}.",
+      "preview_header": "Ihe at\u1ee5:",
       "default_badge": "(default)",
       "commands_hint": "_'set 2 as default' | 'unlink GTB'_"
     },
     "balance": {
-      "none_available": "Enweghị ozi balance ugbu a.",
-      "header_single": "💰 *Your Balance*",
-      "header_multi": "💰 *Your Balances*",
-      "total": "Nchikota ego gị bụ **₦{total_balance}**.",
-      "unavailable": "Enweghị m ike retrieve your balance at the moment.",
-      "natural_single": "Akaụntụ {bank_name} gị ({masked}) nwere ego **₦{amount}**.",
-      "natural_multi_intro": "Lee ego dị n'akaụntụ gị niile:",
-      "natural_multi_item": "• {bank_name} ({masked}): **₦{amount}**"
+      "none_available": "Enwegh\u1ecb ozi balance ugbu a.",
+      "header_single": "\ud83d\udcb0 *Your Balance*",
+      "header_multi": "\ud83d\udcb0 *Your Balances*",
+      "total": "Nchikota ego g\u1ecb b\u1ee5 **\u20a6{total_balance}**.",
+      "unavailable": "Enwegh\u1ecb m ike retrieve your balance at the moment.",
+      "natural_single": "Aka\u1ee5nt\u1ee5 {bank_name} g\u1ecb ({masked}) nwere ego **\u20a6{amount}**.",
+      "natural_multi_intro": "Lee ego d\u1ecb n'aka\u1ee5nt\u1ee5 g\u1ecb niile:",
+      "natural_multi_item": "\u2022 {bank_name} ({masked}): **\u20a6{amount}**"
     },
     "prompt": {
       "unlink_identifier": "Kedu account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'.",
       "default_identifier": "Kedu account should be your default? Say 'set [bank name] as default'.",
       "which_account": "Kedu account?",
-      "reinitiate_clarify": "Ị nwere pending setup maka {bank_name}. M zigharịa ntuziaka ahụ, ka ị chọrọ ibido ọhụrụ jikọọ akaụntụ ọzọ?"
+      "reinitiate_clarify": "\u1eca nwere pending setup maka {bank_name}. M zighar\u1ecba ntuziaka ah\u1ee5, ka \u1ecb ch\u1ecdr\u1ecd ibido \u1ecdh\u1ee5r\u1ee5 jik\u1ecd\u1ecd aka\u1ee5nt\u1ee5 \u1ecdz\u1ecd?"
     },
     "error": {
-      "status_check_failed": "Account status check dara. Biko nwaa ọzọ.",
-      "default_update_failed": "Sorry, Enweghị m ike update your default account.",
-      "unlink_failed": "Sorry, Enweghị m ike unlink that account.",
-      "no_pending_mandate": "Ahụghị m pending account setup ọ bụla iji malitegharịa.",
-      "mandate_not_pending": "Setup account ahụ agwụla ma ọ na-arụ ọrụ."
+      "status_check_failed": "Account status check dara. Biko nwaa \u1ecdz\u1ecd.",
+      "default_update_failed": "Sorry, Enwegh\u1ecb m ike update your default account.",
+      "unlink_failed": "Sorry, Enwegh\u1ecb m ike unlink that account.",
+      "no_pending_mandate": "Ah\u1ee5gh\u1ecb m pending account setup \u1ecd b\u1ee5la iji maliteghar\u1ecba.",
+      "mandate_not_pending": "Setup account ah\u1ee5 agw\u1ee5la ma \u1ecd na-ar\u1ee5 \u1ecdr\u1ee5."
     },
     "linking": {
-      "unavailable": "Linking account adịghị ugbu a.",
-      "bvn_missing": "BVN ahụghị. Biko mezue onboarding first.",
-      "start_failed": "Ọ dara ị start linking.",
+      "unavailable": "Linking account ad\u1ecbgh\u1ecb ugbu a.",
+      "bvn_missing": "BVN ah\u1ee5gh\u1ecb. Biko mezue onboarding first.",
+      "start_failed": "\u1ecc dara \u1ecb start linking.",
       "fallback_link": "Link account: {app_public_base_url}/link/{flow_token}"
     }
   },
   "orchestrator": {
     "fallback": {
-      "processing_error": "Ndo, enwere nsogbu n’ịrụ nke a ugbu a."
+      "processing_error": "Ndo, enwere nsogbu n\u2019\u1ecbr\u1ee5 nke a ugbu a."
     },
     "ambiguity": {
       "transfer_recipient": "Ichoro iziga ego? O buru ee, onye ka i na-ezigara?",
@@ -679,51 +681,51 @@
       "support_transaction": "Kedu transaction ichoro ka m lelee?",
       "account_query": "Ichoro ile balance gi ma obu icho transaction?",
       "generic": "Gwa m banking action ichoro ka m nyere gi aka.",
-      "mixed_supported_unsupported": "Enwere m ike inyere aka na {supported}, mana enweghị m ike inyere aka na {unsupported} ebe a. Kedu supported request ka m buru ụzọ mee?"
+      "mixed_supported_unsupported": "Enwere m ike inyere aka na {supported}, mana enwegh\u1ecb m ike inyere aka na {unsupported} ebe a. Kedu supported request ka m buru \u1ee5z\u1ecd mee?"
     },
     "error": {
-      "transfer_worker_unavailable": "System error: Transfer worker adịghị",
-      "account_worker_unavailable": "System error: Account worker adịghị",
+      "transfer_worker_unavailable": "System error: Transfer worker ad\u1ecbgh\u1ecb",
+      "account_worker_unavailable": "System error: Account worker ad\u1ecbgh\u1ecb",
       "account_action_failed": "Account action dara.",
       "beneficiary_operation_failed": "Beneficiary operation dara.",
-      "suggestion_service_unavailable": "System error: Suggestion service adịghị",
-      "save_beneficiary_failed": "Ọ dara ị save beneficiary.",
-      "airtime_worker_unavailable": "System error: Airtime worker adịghị",
+      "suggestion_service_unavailable": "System error: Suggestion service ad\u1ecbgh\u1ecb",
+      "save_beneficiary_failed": "\u1ecc dara \u1ecb save beneficiary.",
+      "airtime_worker_unavailable": "System error: Airtime worker ad\u1ecbgh\u1ecb",
       "airtime_purchase_failed": "Airtime purchase dara",
-      "query_worker_unavailable": "System error: Query worker adịghị",
-      "query_processing_failed": "Query na-arụ ọrụ dara.",
-      "data_worker_unavailable": "System error: Data worker adịghị",
+      "query_worker_unavailable": "System error: Query worker ad\u1ecbgh\u1ecb",
+      "query_processing_failed": "Query na-ar\u1ee5 \u1ecdr\u1ee5 dara.",
+      "data_worker_unavailable": "System error: Data worker ad\u1ecbgh\u1ecb",
       "data_purchase_failed": "Data purchase dara",
-      "faq_worker_unavailable": "System error: FAQ worker adịghị",
+      "faq_worker_unavailable": "System error: FAQ worker ad\u1ecbgh\u1ecb",
       "faq_failed": "FAQ dara",
-      "support_worker_unavailable": "System error: Support worker adịghị",
+      "support_worker_unavailable": "System error: Support worker ad\u1ecbgh\u1ecb",
       "support_flow_failed": "Support flow dara",
       "audio_unprocessable": "Attributes of the audio could not be processed.",
-      "image_unprocessable": "Enweghị m ike read that image clearly. Please type the bank name, account number, amount, and what you want me to do."
+      "image_unprocessable": "Enwegh\u1ecb m ike read that image clearly. Please type the bank name, account number, amount, and what you want me to do."
     },
     "session": {
-      "no_stashed": "Enweghị session a ga-aga n’ihu.",
+      "no_stashed": "Enwegh\u1ecb session a ga-aga n\u2019ihu.",
       "default_intent": "transaction",
       "resume_declined": "O di mma, agaghi m alaghachi na aririo ahu.",
-      "resuming": "Na-aga n’ihu na {intent}...",
-      "transaction_expired": "That transaction session agwụla, so I can't continue it. Please start the transaction again."
+      "resuming": "Na-aga n\u2019ihu na {intent}...",
+      "transaction_expired": "That transaction session agw\u1ee5la, so I can't continue it. Please start the transaction again."
     },
     "closure": {
       "intent": {
         "transfer": "transfer",
-        "airtime": "ịzụta airtime",
-        "data": "ịzụta data",
+        "airtime": "\u1ecbz\u1ee5ta airtime",
+        "data": "\u1ecbz\u1ee5ta data",
         "transaction": "transaction"
       },
       "detour": {
-        "paused_while": "Akwụsịrị m the {paused_intent} mgbe m na {target_action}.",
+        "paused_while": "Akw\u1ee5s\u1ecbr\u1ecb m the {paused_intent} mgbe m na {target_action}.",
         "action": {
-          "account": "check ịr account",
-          "query": "lelee transactions ndị ahụ",
-          "support": "rụọ support request ahụ",
-          "faq": "zaa ajụjụ ahụ",
-          "beneficiary": "check ịr beneficiaries",
-          "transaction": "malite nke ọhụrụ {intent}",
+          "account": "check \u1ecbr account",
+          "query": "lelee transactions nd\u1ecb ah\u1ee5",
+          "support": "r\u1ee5\u1ecd support request ah\u1ee5",
+          "faq": "zaa aj\u1ee5j\u1ee5 ah\u1ee5",
+          "beneficiary": "check \u1ecbr beneficiaries",
+          "transaction": "malite nke \u1ecdh\u1ee5r\u1ee5 {intent}",
           "generic": "generic: handle that"
         }
       },
@@ -741,49 +743,49 @@
       }
     },
     "execution": {
-      "source_account_info": "Site na: {bank} (···{last4})",
-      "source_account_info_with_balance": "Site na: {bank} (···{last4}) • Balans: ₦{balance}",
-      "recipient_resolved_with_bank": "{label} edozila: {resolved} ({bank} • {account})",
+      "source_account_info": "Site na: {bank} (\u00b7\u00b7\u00b7{last4})",
+      "source_account_info_with_balance": "Site na: {bank} (\u00b7\u00b7\u00b7{last4}) \u2022 Balans: \u20a6{balance}",
+      "recipient_resolved_with_bank": "{label} edozila: {resolved} ({bank} \u2022 {account})",
       "recipient_resolved": "{label} edozila: {resolved}",
       "recipient_resolved_generic": "{label} edozila",
-      "input_attempts_exhausted": "Enweghị m ike ịghọta nkọwa ndị m chọrọ, ya mere akpochara m transaction ahụ. Ka anyị bido ọzọ. Kedu ihe ịchọrọ ime?",
-      "input_greeting": "Ndeewo. Achọrọ m azịza gị ka anyị gaa n'ihu. Biko zaa ajụjụ ikpeazụ, ma obu kwuo cancel.",
-      "input_greeting_data_plan": "Ndeewo. Anyị ka na-ahọrọ data plan. Zaa nomba option, ma obu kwuo cancel.",
-      "input_greeting_data_plan_network": "Ndeewo. Anyị ka na-ahọrọ data plan na {network}. Zaa nomba option, ma obu kwuo cancel.",
-      "input_greeting_data_preference": "Ndeewo. Achọrọ m budget ma obu data size ka anyị gaa n'ihu. Zaa dịka 2k ma obu 5GB, ma obu kwuo cancel.",
-      "input_greeting_data_preference_network": "Ndeewo. Achọrọ m budget ma obu data size maka data {network} a. Zaa dịka 2k ma obu 5GB, ma obu kwuo cancel.",
-      "input_greeting_airtime_amount": "Ndeewo. Achọrọ m ego airtime ka anyị gaa n'ihu. Zaa ego ahụ, ma obu kwuo cancel.",
-      "input_greeting_airtime_amount_network": "Ndeewo. Achọrọ m ego airtime maka line {network} a. Zaa ego ahụ, ma obu kwuo cancel.",
-      "input_greeting_airtime_line_amount": "Ndeewo. Achọrọ m line na ego maka airtime a. Zaa ha abụọ, ma obu kwuo cancel.",
-      "input_greeting_airtime_line_amount_network": "Ndeewo. Achọrọ m line {network} na ego airtime. Zaa ha abụọ, ma obu kwuo cancel.",
-      "pin_prompt_default": "Biko enter ịr PIN.",
-      "batch_each_total": "Ị na-eziga {amount_each} each (total {total_amount}).",
+      "input_attempts_exhausted": "Enwegh\u1ecb m ike \u1ecbgh\u1ecdta nk\u1ecdwa nd\u1ecb m ch\u1ecdr\u1ecd, ya mere akpochara m transaction ah\u1ee5. Ka any\u1ecb bido \u1ecdz\u1ecd. Kedu ihe \u1ecbch\u1ecdr\u1ecd ime?",
+      "input_greeting": "Ndeewo. Ach\u1ecdr\u1ecd m az\u1ecbza g\u1ecb ka any\u1ecb gaa n'ihu. Biko zaa aj\u1ee5j\u1ee5 ikpeaz\u1ee5, ma obu kwuo cancel.",
+      "input_greeting_data_plan": "Ndeewo. Any\u1ecb ka na-ah\u1ecdr\u1ecd data plan. Zaa nomba option, ma obu kwuo cancel.",
+      "input_greeting_data_plan_network": "Ndeewo. Any\u1ecb ka na-ah\u1ecdr\u1ecd data plan na {network}. Zaa nomba option, ma obu kwuo cancel.",
+      "input_greeting_data_preference": "Ndeewo. Ach\u1ecdr\u1ecd m budget ma obu data size ka any\u1ecb gaa n'ihu. Zaa d\u1ecbka 2k ma obu 5GB, ma obu kwuo cancel.",
+      "input_greeting_data_preference_network": "Ndeewo. Ach\u1ecdr\u1ecd m budget ma obu data size maka data {network} a. Zaa d\u1ecbka 2k ma obu 5GB, ma obu kwuo cancel.",
+      "input_greeting_airtime_amount": "Ndeewo. Ach\u1ecdr\u1ecd m ego airtime ka any\u1ecb gaa n'ihu. Zaa ego ah\u1ee5, ma obu kwuo cancel.",
+      "input_greeting_airtime_amount_network": "Ndeewo. Ach\u1ecdr\u1ecd m ego airtime maka line {network} a. Zaa ego ah\u1ee5, ma obu kwuo cancel.",
+      "input_greeting_airtime_line_amount": "Ndeewo. Ach\u1ecdr\u1ecd m line na ego maka airtime a. Zaa ha ab\u1ee5\u1ecd, ma obu kwuo cancel.",
+      "input_greeting_airtime_line_amount_network": "Ndeewo. Ach\u1ecdr\u1ecd m line {network} na ego airtime. Zaa ha ab\u1ee5\u1ecd, ma obu kwuo cancel.",
+      "pin_prompt_default": "Biko enter \u1ecbr PIN.",
+      "batch_each_total": "\u1eca na-eziga {amount_each} each (total {total_amount}).",
       "batch_total_only": "Total: {total_amount}.",
       "choose_account_fallback": "*Kedu account would you like to use?*",
-      "single_found_with_bank_need_details": "Achọtara m {resolved_name} ({resolved_bank}). I now need account details for {focused_name}.",
-      "single_found_need_details": "Achọtara m {resolved_name}. I now need account details for {focused_name}.",
-      "need_account_details_for": "Achọrọ m account details for {focused_name}.",
-      "found_many_need_details": "Achọtara m {found_names}. Achọrọ m account details for {focused_name}.",
-      "found_names": "Achọtara m {found_names}.",
+      "single_found_with_bank_need_details": "Ach\u1ecdtara m {resolved_name} ({resolved_bank}). I now need account details for {focused_name}.",
+      "single_found_need_details": "Ach\u1ecdtara m {resolved_name}. I now need account details for {focused_name}.",
+      "need_account_details_for": "Ach\u1ecdr\u1ecd m account details for {focused_name}.",
+      "found_many_need_details": "Ach\u1ecdtara m {found_names}. Ach\u1ecdr\u1ecd m account details for {focused_name}.",
+      "found_names": "Ach\u1ecdtara m {found_names}.",
       "queued_next_notice": "Also in this batch:\n{queued_intents}",
-      "need_some_details": "Achọrọ m some details.",
+      "need_some_details": "Ach\u1ecdr\u1ecd m some details.",
       "auth_reason_transfer": "Authorization Transfer",
-      "auth_reason_airtime": "Ịzụta Airtime",
-      "auth_reason_data": "Ịzụta Data",
+      "auth_reason_airtime": "\u1ecaz\u1ee5ta Airtime",
+      "auth_reason_data": "\u1ecaz\u1ee5ta Data",
       "auth_reason_default": "Nye transaction authorization",
-      "source_repair_header": "Aghọtara m - {count} action{plural_suffix}:",
-      "source_repair_bullet": "• {intent}",
-      "source_repair_discrepancy": "Ị said from ịr **{failed_hint}**, but I can't see an **{failed_hint}** account linked.",
-      "source_repair_question": "Do ị want to:",
+      "source_repair_header": "Agh\u1ecdtara m - {count} action{plural_suffix}:",
+      "source_repair_bullet": "\u2022 {intent}",
+      "source_repair_discrepancy": "\u1eca said from \u1ecbr **{failed_hint}**, but I can't see an **{failed_hint}** account linked.",
+      "source_repair_question": "Do \u1ecb want to:",
       "source_repair_use_bank": "Use **{bank}**",
       "source_repair_use_bank_for_both": "Use **{bank}** for both",
-      "source_repair_use_different_accounts": "Jiri accounts dị iche maka nke ọ bụla",
+      "source_repair_use_different_accounts": "Jiri accounts d\u1ecb iche maka nke \u1ecd b\u1ee5la",
       "source_repair_reply_hint": "_Zaa na {choices}._"
     },
     "finalize": {
       "failed_unknown": "Nsogbu amaghi ama.",
-      "failed_prefix": "Ọ dara: {error}",
-      "resume_prompt": "Ị chọrọ to resume your {intent}?",
+      "failed_prefix": "\u1ecc dara: {error}",
+      "resume_prompt": "\u1eca ch\u1ecdr\u1ecd to resume your {intent}?",
       "resume_prompt_transfer_specific": "I ka nwere transfer na-eche: {amount} nye {recipient}. Ka m gaa n'ihu?",
       "resume_prompt_transfer_generic": "I ka nwere transfer na-eche. Ka m gaa n'ihu?",
       "resume_prompt_airtime_specific": "I ka nwere izu airtime na-eche: {amount} maka {phone}. Ka m gaa n'ihu?",
@@ -791,9 +793,9 @@
       "resume_prompt_data_specific": "I ka nwere izu data na-eche: {amount} maka {phone}. Ka m gaa n'ihu?",
       "resume_prompt_data_generic": "I ka nwere izu data na-eche. Ka m gaa n'ihu?",
       "recipient_fallback": "recipient",
-      "transfer_processing": "Transfer of ₦{amount} to {display_name} na processed.",
-      "transaction_completed": "Transaction gwụrụ",
-      "async_status_message": "• *{status}*: {message}",
+      "transfer_processing": "Transfer of \u20a6{amount} to {display_name} na processed.",
+      "transaction_completed": "Transaction gw\u1ee5r\u1ee5",
+      "async_status_message": "\u2022 *{status}*: {message}",
       "na": "N/A"
     }
   },
@@ -814,41 +816,41 @@
       "items": "items"
     },
     "header": {
-      "data_plan_details": "Data Plan Nkọwa",
-      "saved_beneficiary_details": "Saved Beneficiary Nkọwa",
-      "beneficiary_details": "Beneficiary Nkọwa",
-      "linked_account_details": "Linked Account Nkọwa",
-      "account_details": "Account Nkọwa",
-      "transaction_details": "Transaction Nkọwa",
-      "receipt_details": "Receipt Nkọwa",
-      "scheduled_transaction_details": "Scheduled Transaction Nkọwa",
-      "details": "Nkọwa"
+      "data_plan_details": "Data Plan Nk\u1ecdwa",
+      "saved_beneficiary_details": "Saved Beneficiary Nk\u1ecdwa",
+      "beneficiary_details": "Beneficiary Nk\u1ecdwa",
+      "linked_account_details": "Linked Account Nk\u1ecdwa",
+      "account_details": "Account Nk\u1ecdwa",
+      "transaction_details": "Transaction Nk\u1ecdwa",
+      "receipt_details": "Receipt Nk\u1ecdwa",
+      "scheduled_transaction_details": "Scheduled Transaction Nk\u1ecdwa",
+      "details": "Nk\u1ecdwa"
     },
     "detail": {
       "next_run": "Next run: {value}",
       "from": "From: {value}",
-      "status": "Ọnọdụ: {value}"
+      "status": "\u1eccn\u1ecdd\u1ee5: {value}"
     },
     "followup": {
       "showing_items": "Na-egosi {shown_count} of {total_count} {noun}.",
       "showing_matches": "Na-egosi {shown_count} of {total_count} matches.",
-      "missing_entity": "Enweghị m see {target} in the {noun} I showed.",
+      "missing_entity": "Enwegh\u1ecb m see {target} in the {noun} I showed.",
       "found_entity": "Yes. {target} is in the {noun} I showed.",
-      "found_matching": "Achọtara m {count} matching {noun}:",
-      "found_matches_in_frame": "Achọtara m {count} matches in the {noun} I showed.",
-      "pending_scheduled_count": "Ị have {count} pending {noun}.",
-      "only_found": "Yes. That's the only {noun} Achọtara m.",
-      "count_found": "Yes. Those are the {count} {noun} Achọtara m.",
-      "count_preview_clarification": "Egosiri m atụ {shown_count} ka o dị mkpụmkpụ. Ị nwere {total_count} {noun} n'ozuzu.",
+      "found_matching": "Ach\u1ecdtara m {count} matching {noun}:",
+      "found_matches_in_frame": "Ach\u1ecdtara m {count} matches in the {noun} I showed.",
+      "pending_scheduled_count": "\u1eca have {count} pending {noun}.",
+      "only_found": "Yes. That's the only {noun} Ach\u1ecdtara m.",
+      "count_found": "Yes. Those are the {count} {noun} Ach\u1ecdtara m.",
+      "count_preview_clarification": "Egosiri m at\u1ee5 {shown_count} ka o d\u1ecb mkp\u1ee5mkp\u1ee5. \u1eca nwere {total_count} {noun} n'ozuzu.",
       "comparison_header": "Comparison",
       "explain_count": "I showed {count} {noun} from the last result.",
       "and_more_suffix": ", and {count} more",
       "explain_labels": "I showed {count} {noun}: {labels}{suffix}.",
-      "clarify_beneficiary": "Are ị asking about the saved beneficiaries I just showed?",
-      "clarify_account": "Are ị asking about the linked accounts I just showed?",
-      "clarify_query": "Are ị asking about the result I just showed?",
-      "clarify_schedule": "Are ị asking about the scheduled transactions I just showed?",
-      "clarify_items": "Are ị asking about the items I just showed?"
+      "clarify_beneficiary": "Are \u1ecb asking about the saved beneficiaries I just showed?",
+      "clarify_account": "Are \u1ecb asking about the linked accounts I just showed?",
+      "clarify_query": "Are \u1ecb asking about the result I just showed?",
+      "clarify_schedule": "Are \u1ecb asking about the scheduled transactions I just showed?",
+      "clarify_items": "Are \u1ecb asking about the items I just showed?"
     }
   },
   "referent": {
@@ -857,13 +859,13 @@
     }
   },
   "source_account": {
-    "no_accounts": "Enweghị accounts available.",
-    "bank_not_found": "Ahụghị m your {bank_name} account.",
+    "no_accounts": "Enwegh\u1ecb accounts available.",
+    "bank_not_found": "Ah\u1ee5gh\u1ecb m your {bank_name} account.",
     "choose_prompt": "*Kedu account would you like to use?*\n\n{accounts_list}",
-    "no_accounts_found": "Enweghị accounts found.",
-    "profile_no_accounts": "Ahụghị m any account on your profile. Please add an account first.",
-    "profile_no_accounts_proceed": "Ahụghị m any account on your profile. Please add an account first to proceed with this transaction.",
-    "select_account_prompt": "Biko họrọ an account.",
+    "no_accounts_found": "Enwegh\u1ecb accounts found.",
+    "profile_no_accounts": "Ah\u1ee5gh\u1ecb m any account on your profile. Please add an account first.",
+    "profile_no_accounts_proceed": "Ah\u1ee5gh\u1ecb m any account on your profile. Please add an account first to proceed with this transaction.",
+    "select_account_prompt": "Biko h\u1ecdr\u1ecd an account.",
     "list": {
       "bank_label_fallback": "Account",
       "last4_fallback": "????",
@@ -876,56 +878,56 @@
     },
     "error": {
       "user_identification_failed": "User identification dara.",
-      "process_failed": "Ọ dara ị process beneficiary request."
+      "process_failed": "\u1ecc dara \u1ecb process beneficiary request."
     },
     "list": {
-      "empty": "Ị haven't saved any beneficiaries yet.",
+      "empty": "\u1eca haven't saved any beneficiaries yet.",
       "header": "*Echekwara Beneficiaries*",
-      "count_zero": "Ị chekwabeghị beneficiary ọ bụla.",
-      "count_one": "Ị nwere saved beneficiary 1.",
-      "count_many": "Ị nwere saved beneficiaries {count}.",
-      "preview_header": "Ihe atụ:"
+      "count_zero": "\u1eca chekwabegh\u1ecb beneficiary \u1ecd b\u1ee5la.",
+      "count_one": "\u1eca nwere saved beneficiary 1.",
+      "count_many": "\u1eca nwere saved beneficiaries {count}.",
+      "preview_header": "Ihe at\u1ee5:"
     },
     "common": {
       "default_name": "Beneficiary",
-      "bank_unknown": "Amaghị Bank"
+      "bank_unknown": "Amagh\u1ecb Bank"
     },
     "add": {
-      "manual_disabled": "Beneficiaries are saved after a gara nke ọma transfer. Send money to the recipient first, then I can save them for next time.",
-      "missing_account_or_bank": "Achọrọ m the account number and bank to add a beneficiary.",
-      "account_verification_failed": "Enweghị ike verify account {account_number}. Biko lelee the details.",
+      "manual_disabled": "Beneficiaries are saved after a gara nke \u1ecdma transfer. Send money to the recipient first, then I can save them for next time.",
+      "missing_account_or_bank": "Ach\u1ecdr\u1ecd m the account number and bank to add a beneficiary.",
+      "account_verification_failed": "Enwegh\u1ecb ike verify account {account_number}. Biko lelee the details.",
       "account_lookup_failed": "Account lookup dara/invalid for {account_number} at {bank_name}.",
-      "success": "Verified & Added **{display_name}** ({account_name}) to ịr beneficiaries."
+      "success": "Verified & Added **{display_name}** ({account_name}) to \u1ecbr beneficiaries."
     },
     "delete": {
-      "missing_target": "Biko kọwaa which beneficiary to remove.",
-      "not_found": "Ahụghị m a beneficiary named '{target}'.",
-      "success": "Ehichapụla **{target}** from beneficiaries."
+      "missing_target": "Biko k\u1ecdwaa which beneficiary to remove.",
+      "not_found": "Ah\u1ee5gh\u1ecb m a beneficiary named '{target}'.",
+      "success": "Ehichap\u1ee5la **{target}** from beneficiaries."
     },
     "update": {
       "not_supported": "Update beneficiaries is not yet supported."
     },
     "suggestion": {
-      "ask_save_transfer_with_alias": "Ị chọrọ ka m chekwaa ya dịka beneficiary? Zaa 'save' ka m jiri '{alias}' ma ọ bụ zitere m aha ọzọ.",
-      "ask_save_transfer_default": "Ị chọrọ ka m chekwaa ya dịka beneficiary? Zaa 'save' ma ọ bụ zitere m aha (e.g., 'Mum').",
-      "ask_save_phone_default": "Ị chọrọ ka m chekwaa ya dịka beneficiary? Zaa 'save' ma ọ bụ zitere m aha (e.g., 'Mum').",
-      "no_recent": "Anaghị m echeta beneficiary suggestion ọ bụla n'oge na-adịbeghị anya. Transaction ahụ ga-abụ nke nso nso a tupu m nwee ike ichekwa ya.",
-      "user_not_found": "Ahụghị user.",
+      "ask_save_transfer_with_alias": "\u1eca ch\u1ecdr\u1ecd ka m chekwaa ya d\u1ecbka beneficiary? Zaa 'save' ka m jiri '{alias}' ma \u1ecd b\u1ee5 zitere m aha \u1ecdz\u1ecd.",
+      "ask_save_transfer_default": "\u1eca ch\u1ecdr\u1ecd ka m chekwaa ya d\u1ecbka beneficiary? Zaa 'save' ma \u1ecd b\u1ee5 zitere m aha (e.g., 'Mum').",
+      "ask_save_phone_default": "\u1eca ch\u1ecdr\u1ecd ka m chekwaa ya d\u1ecbka beneficiary? Zaa 'save' ma \u1ecd b\u1ee5 zitere m aha (e.g., 'Mum').",
+      "no_recent": "Anagh\u1ecb m echeta beneficiary suggestion \u1ecd b\u1ee5la n'oge na-ad\u1ecbbegh\u1ecb anya. Transaction ah\u1ee5 ga-ab\u1ee5 nke nso nso a tupu m nwee ike ichekwa ya.",
+      "user_not_found": "Ah\u1ee5gh\u1ecb user.",
       "default_alias": "My Beneficiary",
-      "saved": "Echekwara **{alias}** na beneficiaries gị.",
-      "save_failed": "Ndo, enweghị m ike ichekwa beneficiary ahụ ugbu a."
+      "saved": "Echekwara **{alias}** na beneficiaries g\u1ecb.",
+      "save_failed": "Ndo, enwegh\u1ecb m ike ichekwa beneficiary ah\u1ee5 ugbu a."
     },
     "format": {
-      "suggestion": "Ị chọrọ to save {recipient_name} as a beneficiary for faster transfers? Zaa to confirm."
+      "suggestion": "\u1eca ch\u1ecdr\u1ecd to save {recipient_name} as a beneficiary for faster transfers? Zaa to confirm."
     }
   },
   "transfer": {
     "confirmation": {
-      "name_mismatch_warning": "Ị sịrị ka m zipu na {requested_name}, mana account ahụ pụtara {resolved_name}.",
-      "high_risk_unsaved_warning": "️ Nke a bụ transfer dị ize ndụ: {amount} gaa na onye a na-echekwabeghị. Biko nyochaa nkọwa tupu ikwenye.",
+      "name_mismatch_warning": "\u1eca s\u1ecbr\u1ecb ka m zipu na {requested_name}, mana account ah\u1ee5 p\u1ee5tara {resolved_name}.",
+      "high_risk_unsaved_warning": "\ufe0f Nke a b\u1ee5 transfer d\u1ecb ize nd\u1ee5: {amount} gaa na onye a na-echekwabegh\u1ecb. Biko nyochaa nk\u1ecdwa tupu ikwenye.",
       "high_risk_unsaved_warning_variants": {
-        "standard": "️ Nke a bụ transfer dị ize ndụ: {amount} gaa na onye a na-echekwabeghị. Biko nyochaa nkọwa tupu ikwenye.",
-        "careful": "️ Biko lelee transfer dị ize ndụ a nke ọma: {amount} ga-aga onye a na-echekwabeghị."
+        "standard": "\ufe0f Nke a b\u1ee5 transfer d\u1ecb ize nd\u1ee5: {amount} gaa na onye a na-echekwabegh\u1ecb. Biko nyochaa nk\u1ecdwa tupu ikwenye.",
+        "careful": "\ufe0f Biko lelee transfer d\u1ecb ize nd\u1ee5 a nke \u1ecdma: {amount} ga-aga onye a na-echekwabegh\u1ecb."
       },
       "change": {
         "join_two": "{first} na {second}",
@@ -935,30 +937,30 @@
         "bank_to": "bank to {bank}",
         "account_to": "account to {account}",
         "narration_to": "narration to {narration}",
-        "details_fallback": "ịr transfer details"
+        "details_fallback": "\u1ecbr transfer details"
       }
     },
     "funding": {
-      "plan_failed": "Ọ dara ị plan funding.",
-      "insufficient_funds": "Ego ezughị.",
+      "plan_failed": "\u1ecc dara \u1ecb plan funding.",
+      "insufficient_funds": "Ego ezugh\u1ecb.",
       "insufficient_funds_variants": {
-        "standard": "Ego ezughị.",
-        "reassuring": "Balance ezughị maka transfer a. Ị nwere ike belata ego ahụ, tinye ego, ma ọ bụ họrọ account ọzọ."
+        "standard": "Ego ezugh\u1ecb.",
+        "reassuring": "Balance ezugh\u1ecb maka transfer a. \u1eca nwere ike belata ego ah\u1ee5, tinye ego, ma \u1ecd b\u1ee5 h\u1ecdr\u1ecd account \u1ecdz\u1ecd."
       }
     },
     "validation": {
-      "ask_amount": "Ego ole would ị like to send?",
-      "ask_amount_with_suggestion": "Ego ole ka m ga-eziga na {recipient_name}? Enwere m ike iji ego ikpeazụ gị ({amount}). Zaghachi 'yes' ka m jiri ya, ma ọ bụ dee ego ọhụrụ.",
+      "ask_amount": "Ego ole would \u1ecb like to send?",
+      "ask_amount_with_suggestion": "Ego ole ka m ga-eziga na {recipient_name}? Enwere m ike iji ego ikpeaz\u1ee5 g\u1ecb ({amount}). Zaghachi 'yes' ka m jiri ya, ma \u1ecd b\u1ee5 dee ego \u1ecdh\u1ee5r\u1ee5.",
       "same_bank_fallback": "otu banki",
       "self_transfer_same_account": "The recipient account ({recipient_account}) at {bank_identifier} cannot be the same as your source account. Biko nye a different recipient account.",
-      "same_source_destination_fallback": "Source and destination accounts are the same. Biko kọwaa different accounts.",
+      "same_source_destination_fallback": "Source and destination accounts are the same. Biko k\u1ecdwaa different accounts.",
       "try_again_or_provide_details": "Biko try again or provide different details."
     },
     "resolve": {
-      "need_bank_name_for_account": "I have account {recipient_account}, but Achọrọ m the Bank Name.",
-      "bank_name_not_found": "Ahụghị m a bank named '{bank_name}'. Could you verify the name?",
-      "account_verification_failed_need_name": "Enweghị m ike verify account {recipient_account} at {recipient_bank_name}. Biko nye the Recipient Name to proceed manually.",
-      "ask_recipient": "Onye bụ recipient?",
+      "need_bank_name_for_account": "I have account {recipient_account}, but Ach\u1ecdr\u1ecd m the Bank Name.",
+      "bank_name_not_found": "Ah\u1ee5gh\u1ecb m a bank named '{bank_name}'. Could you verify the name?",
+      "account_verification_failed_need_name": "Enwegh\u1ecb m ike verify account {recipient_account} at {recipient_bank_name}. Biko nye the Recipient Name to proceed manually.",
+      "ask_recipient": "Onye b\u1ee5 recipient?",
       "my_bank_account": "My {bank_name} Account",
       "my_bank_name": "My {bank_name}",
       "which_recipient": "Kedu recipient did you mean?",
@@ -972,16 +974,16 @@
       "summary": {
         "recipient_fallback": "Recipient",
         "last4_fallback": "????",
-        "title": "*{amount} → {recipient_name}*",
+        "title": "*{amount} \u2192 {recipient_name}*",
         "title_variants": {
-          "standard": "*{amount} → {recipient_name}*",
+          "standard": "*{amount} \u2192 {recipient_name}*",
           "warm": "*Njikere: {amount} na {recipient_name}*",
-          "careful": "*Lelee nke ọma: {amount} na {recipient_name}*",
+          "careful": "*Lelee nke \u1ecdma: {amount} na {recipient_name}*",
           "trusted_careful": "*Njikere, biko lelee: {amount} na {recipient_name}*"
         },
-        "recipient_line": "{recipient_bank} • {recipient_account}",
+        "recipient_line": "{recipient_bank} \u2022 {recipient_account}",
         "user_note": "Narration: {user_note}",
-        "source_line": "From: {source_bank} (···{last4})"
+        "source_line": "From: {source_bank} (\u00b7\u00b7\u00b7{last4})"
       },
       "multi_source_summary": {
         "field_amount": "*Amount:* {amount}",
@@ -991,44 +993,44 @@
         "narration": "narration: Narration: {narration}",
         "funding_header": "*Funding from:*",
         "bank_fallback": "Account",
-        "funding_item": "• {bank} (···{last4}): {amount}",
+        "funding_item": "\u2022 {bank} (\u00b7\u00b7\u00b7{last4}): {amount}",
         "fee": "fee: *Fee:* {fee}",
         "total": "total: *Total:* {total}",
-        "authorize": "Tap *Authorize* to enter ịr PIN."
+        "authorize": "Tap *Authorize* to enter \u1ecbr PIN."
       },
       "multi_source_receipt": {
-        "success_header": "*Transfer gara nke ọma!*",
-        "title": "*{amount}* → {recipient_name}",
+        "success_header": "*Transfer gara nke \u1ecdma!*",
+        "title": "*{amount}* \u2192 {recipient_name}",
         "location_line": "{recipient_bank} (`{recipient_account}`)",
         "funded_header": "*Funded from:*",
-        "from_line": "*From:* {bank} (···{last4})",
+        "from_line": "*From:* {bank} (\u00b7\u00b7\u00b7{last4})",
         "ref": "*Ref:* `{reference}`",
         "time": "time: *Time:* {time}"
       },
       "funding_plan": {
         "secondary_bank_fallback": "another account",
         "bank_fallback": "Account",
-        "recipient_title": "*{amount} → {recipient_display} ({recipient_bank})*",
+        "recipient_title": "*{amount} \u2192 {recipient_display} ({recipient_bank})*",
         "account_line": "Account: {recipient_account}",
-        "primary_balance": "Nke gị {primary_bank} has *{balance}* — not enough for this transfer.",
-        "ask_use_secondary": "Ị chọrọ to use *{amount}* from your {secondary_bank} to complete it?",
+        "primary_balance": "Nke g\u1ecb {primary_bank} has *{balance}* \u2014 not enough for this transfer.",
+        "ask_use_secondary": "\u1eca ch\u1ecdr\u1ecd to use *{amount}* from your {secondary_bank} to complete it?",
         "suggested_header": "*Suggested breakdown:*",
-        "suggested_item": "• {bank}: *{amount}*",
-        "divider": "─────────────",
+        "suggested_item": "\u2022 {bank}: *{amount}*",
+        "divider": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
         "total_line": "*Total:* {amount}",
         "credit_after_debits": "Recipient ga-enweta ego once funding debits niile succeed."
       },
       "notifications": {
-        "success": "Transfer gara nke ọma! {amount} emeela sent to {recipient_name}.",
+        "success": "Transfer gara nke \u1ecdma! {amount} emeela sent to {recipient_name}.",
         "success_variants": {
-          "standard": "Transfer gara nke ọma! {amount} emeela sent to {recipient_name}.",
+          "standard": "Transfer gara nke \u1ecdma! {amount} emeela sent to {recipient_name}.",
           "warm": "Emechaala. E zigala {amount} na {recipient_name}.",
-          "celebratory": "Ọ dịla njikere. E zigala {amount} na {recipient_name}."
+          "celebratory": "\u1ecc d\u1ecbla njikere. E zigala {amount} na {recipient_name}."
         },
-        "pending": "Your {amount} transfer to {recipient_name} is na-arụ ọrụ.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+        "pending": "Your {amount} transfer to {recipient_name} is na-ar\u1ee5 \u1ecdr\u1ee5.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
         "pending_variants": {
-          "standard": "Your {amount} transfer to {recipient_name} is na-arụ ọrụ.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
-          "warm": "Aghọtala m. Transfer {amount} na {recipient_name} na-aga n'ihu.\n\nỊ ga-enweta nkwado n'oge na-adịghị anya.",
+          "standard": "Your {amount} transfer to {recipient_name} is na-ar\u1ee5 \u1ecdr\u1ee5.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+          "warm": "Agh\u1ecdtala m. Transfer {amount} na {recipient_name} na-aga n'ihu.\n\n\u1eca ga-enweta nkwado n'oge na-ad\u1ecbgh\u1ecb anya.",
           "reassuring": "Transfer {amount} na {recipient_name} na-aga n'ihu. Nkwado banki nwere ike were nkeji ole na ole."
         },
         "queued": "Your transfer of {amount} to {recipient_name} emeela authorized and na processed."
@@ -1040,20 +1042,20 @@
       "funding_setup_failed": "Funding setup dara",
       "failed_variants": {
         "standard": "Execution dara: {error}",
-        "reassuring": "Enweghị m ike mezue transfer ahụ: {error}. Biko nwaa ọzọ ma ọ bụ kpọtụrụ support ma ọ bụrụ na ọ gara n'ihu."
+        "reassuring": "Enwegh\u1ecb m ike mezue transfer ah\u1ee5: {error}. Biko nwaa \u1ecdz\u1ecd ma \u1ecd b\u1ee5 kp\u1ecdt\u1ee5r\u1ee5 support ma \u1ecd b\u1ee5r\u1ee5 na \u1ecd gara n'ihu."
       }
     },
     "error": {
-      "execution_failed": "Transfer agwụchaghị. Biko nwaa ọzọ.",
+      "execution_failed": "Transfer agw\u1ee5chagh\u1ecb. Biko nwaa \u1ecdz\u1ecd.",
       "execution_failed_variants": {
-        "standard": "Transfer agwụchaghị. Biko nwaa ọzọ.",
-        "reassuring": "Transfer ahụ enweghị ike imecha ugbu a. Biko nwaa ọzọ."
+        "standard": "Transfer agw\u1ee5chagh\u1ecb. Biko nwaa \u1ecdz\u1ecd.",
+        "reassuring": "Transfer ah\u1ee5 enwegh\u1ecb ike imecha ugbu a. Biko nwaa \u1ecdz\u1ecd."
       },
       "pipeline_failed": "Pipeline dara: {error}",
       "provider_failed": "Transfer dara at provider",
       "provider_failed_variants": {
         "standard": "Transfer dara at provider",
-        "reassuring": "Provider enweghị ike imecha transfer ahụ ugbu a."
+        "reassuring": "Provider enwegh\u1ecb ike imecha transfer ah\u1ee5 ugbu a."
       }
     }
   },
@@ -1080,13 +1082,13 @@
       "join_many": "{head}, na {last}",
       "invalid_phone": "Biko tinye ezigbo nomba ekwenti Naijiria.",
       "amount_gt_zero": "Ego ahu ga-akariri zero.",
-      "max_amount": "Airtime purchase kachasi elu bu ₦50,000. Biko tinye ego pere mpe.",
+      "max_amount": "Airtime purchase kachasi elu bu \u20a650,000. Biko tinye ego pere mpe.",
       "network_not_identified": "Enweghi m ike ichota network maka {recipient_phone}. Biko lelee nomba ahu."
     },
     "format": {
       "summary": {
         "source_bank_fallback": "Account",
-        "target_self": "nomba gị",
+        "target_self": "nomba g\u1ecb",
         "title": "*{amount} airtime maka {recipient_display}*",
         "title_variants": {
           "standard": "*{amount} airtime maka {recipient_display}*",
@@ -1100,44 +1102,44 @@
     "execution": {
       "recipient_fallback": "Airtime Beneficiary",
       "date_now": "Now",
-      "message_queued": "Airtime ₦{amount} maka {recipient_target} ({network}) na-aga n'ihu.",
+      "message_queued": "Airtime \u20a6{amount} maka {recipient_target} ({network}) na-aga n'ihu.",
       "message_queued_variants": {
-        "standard": "Airtime ₦{amount} maka {recipient_target} ({network}) na-aga n'ihu.",
-        "warm": "Enwetara m ya. Airtime ₦{amount} maka {recipient_target} ({network}) na-aga n'ihu.",
-        "reassuring": "Airtime ₦{amount} maka {recipient_target} ({network}) na-aga n'ihu. Confirmation provider nwere ike were obere oge."
+        "standard": "Airtime \u20a6{amount} maka {recipient_target} ({network}) na-aga n'ihu.",
+        "warm": "Enwetara m ya. Airtime \u20a6{amount} maka {recipient_target} ({network}) na-aga n'ihu.",
+        "reassuring": "Airtime \u20a6{amount} maka {recipient_target} ({network}) na-aga n'ihu. Confirmation provider nwere ike were obere oge."
       },
-      "processing_status": "Nzụta airtime a ka na-aga n'ihu.",
+      "processing_status": "Nz\u1ee5ta airtime a ka na-aga n'ihu.",
       "system_error": "Nsogbu system during execution."
     },
     "error": {
-      "execution_failed": "Ịzụta airtime agwụchaghị. Biko nwaa ọzọ.",
+      "execution_failed": "\u1ecaz\u1ee5ta airtime agw\u1ee5chagh\u1ecb. Biko nwaa \u1ecdz\u1ecd.",
       "pipeline_failed": "Pipeline dara: {error}",
       "provider_failed": "Airtime purchase dara at provider"
     },
     "executor": {
       "reference_fallback": "N/A",
-      "success_message": "Airtime gara nke ọma\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+      "success_message": "Airtime gara nke \u1ecdma\n\nAmount: \u20a6{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
       "success_message_variants": {
-        "standard": "Airtime gara nke ọma\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
-        "warm": "Emechala. Airtime ₦{amount} erutela {recipient_target} ({network}).\nRef: {reference}",
-        "celebratory": "O doola. Airtime ₦{amount} erutela {recipient_target} ({network}).\nRef: {reference}"
+        "standard": "Airtime gara nke \u1ecdma\n\nAmount: \u20a6{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+        "warm": "Emechala. Airtime \u20a6{amount} erutela {recipient_target} ({network}).\nRef: {reference}",
+        "celebratory": "O doola. Airtime \u20a6{amount} erutela {recipient_target} ({network}).\nRef: {reference}"
       },
       "failure_message": "Airtime purchase dara maka {recipient_target} ({network}).\nIhe kpatara ya: {reason}",
       "failure_message_variants": {
         "standard": "Airtime purchase dara maka {recipient_target} ({network}).\nIhe kpatara ya: {reason}",
-        "reassuring": "Enweghị m ike imecha airtime purchase maka {recipient_target} ({network}).\nIhe kpatara ya: {reason}"
+        "reassuring": "Enwegh\u1ecb m ike imecha airtime purchase maka {recipient_target} ({network}).\nIhe kpatara ya: {reason}"
       }
     }
   },
   "data": {
     "resolve": {
-      "ask_target_phone": "Onye ka m zụtara data?",
+      "ask_target_phone": "Onye ka m z\u1ee5tara data?",
       "ask_network": "Network kedu ka {target_phone} ji?"
     },
     "confirmation": {
       "buy_network_for_phone": "Zuta data {network} maka {target_phone}?",
       "buy_plan_for_phone": "Zuta {plan_name} maka {target_phone}?",
-      "buy_amount_network_for_phone": "Zuta data {network} nke ₦{amount} maka {target_phone}?",
+      "buy_amount_network_for_phone": "Zuta data {network} nke \u20a6{amount} maka {target_phone}?",
       "change": {
         "amount_to": "O di mma, ana m emelite budget data gaa {amount}.",
         "phone_to": "O di mma, aga m azuta data a maka {phone}.",
@@ -1159,51 +1161,51 @@
       "ask_preference_target_network": "O di mma. Kedu budget ma obu data size ka m jiri maka {target_phone} na {network}?",
       "ask_preference_target_unknown_network": "O di mma. Kedu network ka {target_phone} ji, ma kedu budget ma obu data size ka m jiri?",
       "choose_plan": "Ahuru m data plans ole na ole dabara:\n{options}\n{reply_hint}",
-      "recommendation_ask_phone": "Ahuru m {plan_name} maka ₦{amount}, o na-adị {validity}. Kedu line {network} ka m zuta ya maka?",
+      "recommendation_ask_phone": "Ahuru m {plan_name} maka \u20a6{amount}, o na-ad\u1ecb {validity}. Kedu line {network} ka m zuta ya maka?",
       "reply_with_one": "Zaa 1.",
       "reply_with_two": "Zaa 1 ma obu 2.",
       "reply_with_range": "Zaa 1, 2, ma obu {count}.",
-      "option": "{index}. {plan_name} — ₦{amount} ({validity})",
-      "missing_plan": "Biko họrọ data plan ziri ezi tupu anyi aga n'ihu.",
-      "invalid_plan_code": "Ahughi m data plan ahu. Biko họrọ otu n'ime options di.",
-      "catalog_unavailable": "Enweghị m ike iweta data plans ugbu a. Biko nwaa ọzọ obere oge.",
-      "no_budget_match": "Ahughi m data plan {network} n'ime ₦{budget}. I nwere ike ibuli budget ma obu họrọ obere plan.",
-      "size_budget_conflict": "Ahughi m {size} n'ime ₦{budget}. Plan {size} kacha nso bu ₦{amount}.",
+      "option": "{index}. {plan_name} \u2014 \u20a6{amount} ({validity})",
+      "missing_plan": "Biko h\u1ecdr\u1ecd data plan ziri ezi tupu anyi aga n'ihu.",
+      "invalid_plan_code": "Ahughi m data plan ahu. Biko h\u1ecdr\u1ecd otu n'ime options di.",
+      "catalog_unavailable": "Enwegh\u1ecb m ike iweta data plans ugbu a. Biko nwaa \u1ecdz\u1ecd obere oge.",
+      "no_budget_match": "Ahughi m data plan {network} n'ime \u20a6{budget}. I nwere ike ibuli budget ma obu h\u1ecdr\u1ecd obere plan.",
+      "size_budget_conflict": "Ahughi m {size} n'ime \u20a6{budget}. Plan {size} kacha nso bu \u20a6{amount}.",
       "validity_unknown": "validity adighi egosi"
     },
     "plan_query": {
       "ask_network": "Kedu network ka m lelee?",
-      "exact_match": "{plan_name} bu ₦{amount}, o na-adị {validity}.",
+      "exact_match": "{plan_name} bu \u20a6{amount}, o na-ad\u1ecb {validity}.",
       "multiple_matches": "Ahuru m options ole na ole dabara:\n{options}",
-      "nearest_matches": "Ahughi m size ahu kpọmkwem. Options kacha nso bu:\n{options}",
-      "budget_matches": "Maka ₦{budget} na {network}, ndia bu options kacha ike:\n{options}",
+      "nearest_matches": "Ahughi m size ahu kp\u1ecdmkwem. Options kacha nso bu:\n{options}",
+      "budget_matches": "Maka \u20a6{budget} na {network}, ndia bu options kacha ike:\n{options}",
       "validity_matches": "Options ndia kacha nso na validity i juru:\n{options}",
-      "generic_matches": "Lee ụfọdụ data plans {network}:\n{options}"
+      "generic_matches": "Lee \u1ee5f\u1ecdd\u1ee5 data plans {network}:\n{options}"
     },
     "error": {
-      "execution_failed": "Ịzụta data agwụchaghị. Biko nwaa ọzọ.",
+      "execution_failed": "\u1ecaz\u1ee5ta data agw\u1ee5chagh\u1ecb. Biko nwaa \u1ecdz\u1ecd.",
       "pipeline_failed": "Pipeline dara: {error}",
-      "system_processing": "System error during transaction na-arụ ọrụ.",
-      "pipeline_no_result": "Pipeline gwụrụ without definitive result.",
+      "system_processing": "System error during transaction na-ar\u1ee5 \u1ecdr\u1ee5.",
+      "pipeline_no_result": "Pipeline gw\u1ee5r\u1ee5 without definitive result.",
       "provider_failed": "Data purchase dara at provider"
     },
     "format": {
       "validity_days": "{days} days",
       "suggestion": {
-        "repeat": "You usually buy *{size} {network}* ({validity}) for ₦{amount}.\nWant me to get that again?\n\nZaa *yes* to continue or *show plans* to see other options.",
-        "budget": "With ₦{amount}, the best option is:\n• *{network} {size}* — valid {validity}\n\nZaa *yes* to continue or *show plans* to choose.",
-        "default": "I recommend:\n• *{network} {size}* — ₦{amount} ({validity})\n\nZaa *yes* to continue or *show plans* to see other options."
+        "repeat": "You usually buy *{size} {network}* ({validity}) for \u20a6{amount}.\nWant me to get that again?\n\nZaa *yes* to continue or *show plans* to see other options.",
+        "budget": "With \u20a6{amount}, the best option is:\n\u2022 *{network} {size}* \u2014 valid {validity}\n\nZaa *yes* to continue or *show plans* to choose.",
+        "default": "I recommend:\n\u2022 *{network} {size}* \u2014 \u20a6{amount} ({validity})\n\nZaa *yes* to continue or *show plans* to see other options."
       },
       "plan_list": {
         "header": "header: *{network} Data Plans:*",
-        "item": "• *{size}* — ₦{amount} ({validity})",
+        "item": "\u2022 *{size}* \u2014 \u20a6{amount} ({validity})",
         "reply_show_more": "Zaa na plan size (e.g. *5GB*) or *show more*.",
         "reply_select": "Zaa na plan size (e.g. *5GB*) to select."
       },
       "summary": {
         "plan_name_fallback": "Data Plan",
         "source_bank_fallback": "Account",
-        "target_self": "nomba gị",
+        "target_self": "nomba g\u1ecb",
         "title": "*{plan_name} maka {target_display}*",
         "title_variants": {
           "standard": "*{plan_name} maka {target_display}*",
@@ -1211,47 +1213,47 @@
           "careful": "*Lelee data purchase: {plan_name} maka {target_display}*",
           "trusted_careful": "*Biko lelee: {plan_name} maka {target_display}*"
         },
-        "network_amount": "Network: {network} • Amount: ₦{amount}"
+        "network_amount": "Network: {network} \u2022 Amount: \u20a6{amount}"
       }
     },
     "completion": {
-      "success_message": "Data purchase gara nke ọma\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
+      "success_message": "Data purchase gara nke \u1ecdma\n\nPlan: {plan_name}\nAmount: \u20a6{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
       "success_message_variants": {
-        "standard": "Data purchase gara nke ọma\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
-        "warm": "Emechala. Data {plan_name} dị active maka {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}",
-        "celebratory": "O doola. Data {plan_name} dị active maka {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}"
+        "standard": "Data purchase gara nke \u1ecdma\n\nPlan: {plan_name}\nAmount: \u20a6{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
+        "warm": "Emechala. Data {plan_name} d\u1ecb active maka {recipient_phone} ({network}).\nAmount: \u20a6{amount}\nTransaction ID: {transaction_id}",
+        "celebratory": "O doola. Data {plan_name} d\u1ecb active maka {recipient_phone} ({network}).\nAmount: \u20a6{amount}\nTransaction ID: {transaction_id}"
       },
-      "pending_message": "{plan_name} purchase (₦{amount}) maka {recipient_phone} na-aga n'ihu.\n\nỊ ga-enweta confirmation n'oge na-adịghị anya. Ọ bụrụ na ọ bataghị n'ime nkeji 5, kpọtụrụ support.",
+      "pending_message": "{plan_name} purchase (\u20a6{amount}) maka {recipient_phone} na-aga n'ihu.\n\n\u1eca ga-enweta confirmation n'oge na-ad\u1ecbgh\u1ecb anya. \u1ecc b\u1ee5r\u1ee5 na \u1ecd batagh\u1ecb n'ime nkeji 5, kp\u1ecdt\u1ee5r\u1ee5 support.",
       "pending_message_variants": {
-        "standard": "{plan_name} purchase (₦{amount}) maka {recipient_phone} na-aga n'ihu.\n\nỊ ga-enweta confirmation n'oge na-adịghị anya. Ọ bụrụ na ọ bataghị n'ime nkeji 5, kpọtụrụ support.",
-        "warm": "Enwetara m ya. {plan_name} purchase (₦{amount}) maka {recipient_phone} na-aga n'ihu.\n\nỊ ga-enweta confirmation n'oge na-adịghị anya.",
-        "reassuring": "{plan_name} purchase (₦{amount}) maka {recipient_phone} na-aga n'ihu. Confirmation provider nwere ike were obere oge."
+        "standard": "{plan_name} purchase (\u20a6{amount}) maka {recipient_phone} na-aga n'ihu.\n\n\u1eca ga-enweta confirmation n'oge na-ad\u1ecbgh\u1ecb anya. \u1ecc b\u1ee5r\u1ee5 na \u1ecd batagh\u1ecb n'ime nkeji 5, kp\u1ecdt\u1ee5r\u1ee5 support.",
+        "warm": "Enwetara m ya. {plan_name} purchase (\u20a6{amount}) maka {recipient_phone} na-aga n'ihu.\n\n\u1eca ga-enweta confirmation n'oge na-ad\u1ecbgh\u1ecb anya.",
+        "reassuring": "{plan_name} purchase (\u20a6{amount}) maka {recipient_phone} na-aga n'ihu. Confirmation provider nwere ike were obere oge."
       },
-      "processing_status": "Nzụta data a ka na-aga n'ihu.",
-      "failed_message": "Data purchase dara: {error_message}. Biko nwaa ọzọ.",
+      "processing_status": "Nz\u1ee5ta data a ka na-aga n'ihu.",
+      "failed_message": "Data purchase dara: {error_message}. Biko nwaa \u1ecdz\u1ecd.",
       "failed_message_variants": {
-        "standard": "Data purchase dara: {error_message}. Biko nwaa ọzọ.",
-        "reassuring": "Enweghị m ike imecha data purchase: {error_message}. Biko nwaa ọzọ."
+        "standard": "Data purchase dara: {error_message}. Biko nwaa \u1ecdz\u1ecd.",
+        "reassuring": "Enwegh\u1ecb m ike imecha data purchase: {error_message}. Biko nwaa \u1ecdz\u1ecd."
       }
     }
   },
   "onboarding": {
-    "fallback_text": "Welcome to {app_name}! To complete ịr onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
+    "fallback_text": "Welcome to {app_name}! To complete \u1ecbr onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
     "flow": {
       "cta": "Malite onboarding",
-      "header": "Nnọọ na {app_name}",
+      "header": "Nn\u1ecd\u1ecd na {app_name}",
       "body": "Hi, Ana m {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
   "pre_onboarding": {
-    "greeting": "Nnọọ na {app_name}. Enwere m ike inyere gị aka na transfers, airtime/data, balances, na transaction history. Nke mbụ, ka anyị mezue account setup gị.",
-    "inquiry": "Setup na-enyere m verify onye ị bụ ma jikọọ bank accounts gị n'udo. A na-encrypt details gị ma jiri ha naanị maka verification.",
-    "compliance": "Ọ dị mma. Pịa bọtịnụ dị n'elu iji gaa n'ihu na account setup gị.",
-    "objection": "Aghọtara m nchegbu gị. Setup dị mkpa tupu m nwee ike ịnweta banking information ma ọ bụ nyere gị aka na transactions.",
-    "banking_request": "Enwere m ike inyere gị aka na nke ahụ mgbe setup gwụchara. Nke mbụ, ka anyị mechaa account setup gị.",
-    "out_of_scope": "Ana m elekwasị anya na banking. Iji jiri Nenya, biko mezue account setup gị mbụ.",
-    "cooldown": "Aga m anọ ebe a mgbe ị dị njikere. Pịa bọtịnụ oge ọ bụla iji gaa n'ihu na setup.",
-    "telegram_share_contact_hint": "Pịa Share Contact dị n'okpuru iji gaa n'ihu."
+    "greeting": "Nn\u1ecd\u1ecd na {app_name}. Enwere m ike inyere g\u1ecb aka na transfers, airtime/data, balances, na transaction history. Nke mb\u1ee5, ka any\u1ecb mezue account setup g\u1ecb.",
+    "inquiry": "Setup na-enyere m verify onye \u1ecb b\u1ee5 ma jik\u1ecd\u1ecd bank accounts g\u1ecb n'udo. A na-encrypt details g\u1ecb ma jiri ha naan\u1ecb maka verification.",
+    "compliance": "\u1ecc d\u1ecb mma. P\u1ecba b\u1ecdt\u1ecbn\u1ee5 d\u1ecb n'elu iji gaa n'ihu na account setup g\u1ecb.",
+    "objection": "Agh\u1ecdtara m nchegbu g\u1ecb. Setup d\u1ecb mkpa tupu m nwee ike \u1ecbnweta banking information ma \u1ecd b\u1ee5 nyere g\u1ecb aka na transactions.",
+    "banking_request": "Enwere m ike inyere g\u1ecb aka na nke ah\u1ee5 mgbe setup gw\u1ee5chara. Nke mb\u1ee5, ka any\u1ecb mechaa account setup g\u1ecb.",
+    "out_of_scope": "Ana m elekwas\u1ecb anya na banking. Iji jiri Nenya, biko mezue account setup g\u1ecb mb\u1ee5.",
+    "cooldown": "Aga m an\u1ecd ebe a mgbe \u1ecb d\u1ecb njikere. P\u1ecba b\u1ecdt\u1ecbn\u1ee5 oge \u1ecd b\u1ee5la iji gaa n'ihu na setup.",
+    "telegram_share_contact_hint": "P\u1ecba Share Contact d\u1ecb n'okpuru iji gaa n'ihu."
   },
   "schedule": {
     "prompt": {
@@ -1292,7 +1294,7 @@
       "with_timezone": "{time} WAT"
     },
     "row": {
-      "basic": "{index}. {domain}: {amount} {target} • {recurrence} na {time} WAT",
+      "basic": "{index}. {domain}: {amount} {target} \u2022 {recurrence} na {time} WAT",
       "with_id": "{row} (ID: {schedule_id})"
     },
     "list": {
@@ -1301,8 +1303,8 @@
       "header": "Scheduled transactions gi:"
     },
     "find": {
-      "not_found": "Ahughi m active scheduled transaction kwekọrọ na nke ahụ.",
-      "header": "Schedules kwekọrọ:"
+      "not_found": "Ahughi m active scheduled transaction kwek\u1ecdr\u1ecd na nke ah\u1ee5.",
+      "header": "Schedules kwek\u1ecdr\u1ecd:"
     },
     "cancel": {
       "none": "I nweghi active schedules ka a cancel.",
@@ -1349,26 +1351,26 @@
       "transfer_variants": {
         "standard": "Kwenye Transfer",
         "warm": "Lelee Transfer",
-        "careful": "Lelee Transfer Nke Ọma",
+        "careful": "Lelee Transfer Nke \u1eccma",
         "trusted_careful": "Lelee Transfer"
       },
       "scheduled_transfer": "Kwenye scheduled transfer",
       "scheduled_airtime": "Kwenye scheduled airtime",
       "scheduled_data": "Kwenye scheduled data",
       "schedule_update": "Kwenye update schedule",
-      "airtime": "Kwenye ịzụta airtime",
+      "airtime": "Kwenye \u1ecbz\u1ee5ta airtime",
       "airtime_variants": {
-        "standard": "Lelee ịzụta airtime",
-        "warm": "Lelee ịzụta airtime",
-        "careful": "Lelee Airtime Purchase Nke Ọma",
-        "trusted_careful": "Lelee ịzụta airtime"
+        "standard": "Lelee \u1ecbz\u1ee5ta airtime",
+        "warm": "Lelee \u1ecbz\u1ee5ta airtime",
+        "careful": "Lelee Airtime Purchase Nke \u1eccma",
+        "trusted_careful": "Lelee \u1ecbz\u1ee5ta airtime"
       },
-      "data": "Kwenye ịzụta data",
+      "data": "Kwenye \u1ecbz\u1ee5ta data",
       "data_variants": {
-        "standard": "Lelee ịzụta data",
-        "warm": "Lelee ịzụta data",
-        "careful": "Lelee Data Purchase Nke Ọma",
-        "trusted_careful": "Lelee ịzụta data"
+        "standard": "Lelee \u1ecbz\u1ee5ta data",
+        "warm": "Lelee \u1ecbz\u1ee5ta data",
+        "careful": "Lelee Data Purchase Nke \u1eccma",
+        "trusted_careful": "Lelee \u1ecbz\u1ee5ta data"
       },
       "mixed": "Kwenye transactions",
       "generic": "Kwenye transaction",
@@ -1381,37 +1383,37 @@
     },
     "completion": {
       "header": {
-        "transfer": "*Transfer agwụla*",
-        "transfer_plural": "*Transfers agwụla*",
-        "airtime": "*Ịzụta airtime agwụla*",
+        "transfer": "*Transfer agw\u1ee5la*",
+        "transfer_plural": "*Transfers agw\u1ee5la*",
+        "airtime": "*\u1ecaz\u1ee5ta airtime agw\u1ee5la*",
         "airtime_plural": "*Airtime Purchases Complete*",
-        "data": "*Ịzụta data agwụla*",
+        "data": "*\u1ecaz\u1ee5ta data agw\u1ee5la*",
         "data_plural": "*Data Purchases Complete*",
         "mixed": "*Transaction Summary*"
       },
       "footer": {
-        "transfer": "_Transfer gwụrụ gara nke ọmaly_",
-        "transfer_plural": "_Transfers gwụrụ gara nke ọmaly_",
-        "airtime": "_Airtime purchase gwụrụ gara nke ọmaly_",
-        "airtime_plural": "_Airtime purchases gwụrụ gara nke ọmaly_",
-        "data": "_Data purchase gwụrụ gara nke ọmaly_",
-        "data_plural": "_Data purchases gwụrụ gara nke ọmaly_",
-        "mixed": "_All transactions gwụrụ gara nke ọmaly_"
+        "transfer": "_Transfer gw\u1ee5r\u1ee5 gara nke \u1ecdmaly_",
+        "transfer_plural": "_Transfers gw\u1ee5r\u1ee5 gara nke \u1ecdmaly_",
+        "airtime": "_Airtime purchase gw\u1ee5r\u1ee5 gara nke \u1ecdmaly_",
+        "airtime_plural": "_Airtime purchases gw\u1ee5r\u1ee5 gara nke \u1ecdmaly_",
+        "data": "_Data purchase gw\u1ee5r\u1ee5 gara nke \u1ecdmaly_",
+        "data_plural": "_Data purchases gw\u1ee5r\u1ee5 gara nke \u1ecdmaly_",
+        "mixed": "_All transactions gw\u1ee5r\u1ee5 gara nke \u1ecdmaly_"
       }
     }
   },
   "transaction_summary": {
     "batch": {
       "confirm_title": "*Kwenye Transfers ({count})*",
-      "total": "Ngụkọta ga-apụ: {amount}"
+      "total": "Ng\u1ee5k\u1ecdta ga-ap\u1ee5: {amount}"
     },
     "multi": {
       "header": "*Transaction Summary*",
       "transfer_batch_line": "*Transfer:* {amount} to {count} recipients",
-      "recipient_unknown": "Amaghị",
+      "recipient_unknown": "Amagh\u1ecb",
       "recipient_fallback": "recipient",
       "transfer_single_line": "*Transfer:* {amount} to {recipient}",
-      "transfer_compact_line": "{icon} {amount} → {recipient} • {bank} • {account}",
+      "transfer_compact_line": "{icon} {amount} \u2192 {recipient} \u2022 {bank} \u2022 {account}",
       "bank_fallback": "Bank",
       "account_fallback": "N/A",
       "phone_fallback": "N/A",
@@ -1421,7 +1423,7 @@
       "failure_reason": "Reason: {reason}",
       "other_completed_line": "* {task_type}:* Completed",
       "total_spent": "*Total Spent:* {amount}",
-      "success_footer": "_All transactions gwụrụ gara nke ọmaly_",
+      "success_footer": "_All transactions gw\u1ee5r\u1ee5 gara nke \u1ecdmaly_",
       "update_header": {
         "transfer": "*Transfer Update*",
         "transfer_plural": "*Transfers Update*",
@@ -1430,19 +1432,19 @@
         "generic": "*Transaction Update*"
       },
       "processing_footer": {
-        "success_failed": "Ụfọdụ transactions emechala, ụfọdụ dara, ndị ọzọ ka na-eche confirmation provider. Anyị ga-eme ka ị mara mgbe final update bịara.",
-        "success": "Ụfọdụ transactions emechala successfully. Ndị ọzọ ka na-eche confirmation provider. Anyị ga-eme ka ị mara mgbe final update bịara.",
-        "failed": "Ụfọdụ transactions dara. Ndị ọzọ ka na-eche confirmation provider. Anyị ga-eme ka ị mara mgbe final update bịara.",
-        "all_processing": "Ụfọdụ transactions ka na-eche confirmation provider. Anyị ga-eme ka ị mara mgbe final update bịara."
+        "success_failed": "\u1ee4f\u1ecdd\u1ee5 transactions emechala, \u1ee5f\u1ecdd\u1ee5 dara, nd\u1ecb \u1ecdz\u1ecd ka na-eche confirmation provider. Any\u1ecb ga-eme ka \u1ecb mara mgbe final update b\u1ecbara.",
+        "success": "\u1ee4f\u1ecdd\u1ee5 transactions emechala successfully. Nd\u1ecb \u1ecdz\u1ecd ka na-eche confirmation provider. Any\u1ecb ga-eme ka \u1ecb mara mgbe final update b\u1ecbara.",
+        "failed": "\u1ee4f\u1ecdd\u1ee5 transactions dara. Nd\u1ecb \u1ecdz\u1ecd ka na-eche confirmation provider. Any\u1ecb ga-eme ka \u1ecb mara mgbe final update b\u1ecbara.",
+        "all_processing": "\u1ee4f\u1ecdd\u1ee5 transactions ka na-eche confirmation provider. Any\u1ecb ga-eme ka \u1ecb mara mgbe final update b\u1ecbara."
       },
       "failed_footer": {
-        "partial": "Ụfọdụ transactions emechala, mana ndị ọzọ dara.",
+        "partial": "\u1ee4f\u1ecdd\u1ee5 transactions emechala, mana nd\u1ecb \u1ecdz\u1ecd dara.",
         "all_failed": "Transactions niile dara."
       }
     },
     "intent": {
       "transfer_recipient_fallback": "Recipient",
-      "phone_fallback": "laini gị",
+      "phone_fallback": "laini g\u1ecb",
       "data_plan_fallback": "Data",
       "transfer": "Send {amount} to {recipient}",
       "airtime": "Buy {amount} airtime for {phone}",
@@ -1452,14 +1454,14 @@
   },
   "funding": {
     "planner": {
-      "no_active_mandates": "Enweghị accounts with active mandates.",
-      "preferred_account_not_eligible": "Specified account ahụghị or not eligible for direct debit.",
-      "preferred_insufficient": "Nke gị {bank_name} has ₦{balance}. Need ₦{shortfall} more.",
-      "unable_to_create": "Enweghị ike create funding plan."
+      "no_active_mandates": "Enwegh\u1ecb accounts with active mandates.",
+      "preferred_account_not_eligible": "Specified account ah\u1ee5gh\u1ecb or not eligible for direct debit.",
+      "preferred_insufficient": "Nke g\u1ecb {bank_name} has \u20a6{balance}. Need \u20a6{shortfall} more.",
+      "unable_to_create": "Enwegh\u1ecb ike create funding plan."
     },
     "batch": {
-      "shortfall_header": "️ Ego ezughị maka batch a",
-      "shortfall_body": "Batch a chọrọ {demanded}, but only {available} is currently available.",
+      "shortfall_header": "\ufe0f Ego ezugh\u1ecb maka batch a",
+      "shortfall_body": "Batch a ch\u1ecdr\u1ecd {demanded}, but only {available} is currently available.",
       "task_covered": "{task_id}: {amount} available from {bank}.",
       "task_short": "{task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
       "alternate_suggestion": "{bank} has {available}. Ka m jiri ya kama?",
@@ -1474,37 +1476,37 @@
     },
     "format": {
       "insufficient": {
-        "header": "*Ego Ezughị*",
+        "header": "*Ego Ezugh\u1ecb*",
         "recipient_fallback": "Recipient",
-        "body": "Ị na-agbalị izipu *{transfer_amount}* nye {recipient_display}, mana balance *{bank_name}* gị bụ naanị *{balance}*.",
+        "body": "\u1eca na-agbal\u1ecb izipu *{transfer_amount}* nye {recipient_display}, mana balance *{bank_name}* g\u1ecb b\u1ee5 naan\u1ecb *{balance}*.",
         "options_header": "*Options:*",
-        "option_send_instead": "• Send *{amount}* instead",
-        "option_add_funds_retry": "• Tinye ego ma nwaa ọzọ",
-        "option_cancel": "• Kagbuo transaction"
+        "option_send_instead": "\u2022 Send *{amount}* instead",
+        "option_add_funds_retry": "\u2022 Tinye ego ma nwaa \u1ecdz\u1ecd",
+        "option_cancel": "\u2022 Kagbuo transaction"
       },
       "plan": {
         "bank_fallback_lower": "account",
         "bank_fallback": "Account",
-        "single_source_debit": "{amount} will be debited from ịr {bank} account.",
+        "single_source_debit": "{amount} will be debited from \u1ecbr {bank} account.",
         "multi_source_header": "Iji zipu {amount}, I'll combine:",
-        "multi_source_item": "• {amount} from {bank}"
+        "multi_source_item": "\u2022 {amount} from {bank}"
       }
     }
   },
   "mandate": {
-    "expired_reinitiate": "Authorization account gị agwụla. Biko malite ọzọ ka ị gaa n’ihu.",
-    "pending_with_destinations": "Nke gị account authorization is pending.\n\nTransfer ₦50 to any of these accounts:\n{destinations}\n\n {minutes_left} minutes remaining",
-    "pending_complete_transfer": "Your account authorization is pending. Biko mezue the ₦50 transfer to activate your account.",
-    "bank_fallback": "ịr bank",
-    "approved_awaiting_nibss": "Your ₦50 authorization transfer was received!\n\nYour {bank_name} account {account_suffix} is being verified by NIBSS. This usually takes a few minutes but can take up to 24 hours.\n\nWe'll notify you as soon as it's ready!",
-    "status_paused": "⏸️ Your account has been temporarily paused.\nPlease contact support to reinstate it.",
+    "expired_reinitiate": "Authorization account g\u1ecb agw\u1ee5la. Biko malite \u1ecdz\u1ecd ka \u1ecb gaa n\u2019ihu.",
+    "pending_with_destinations": "Nke g\u1ecb account authorization is pending.\n\nTransfer \u20a650 to any of these accounts:\n{destinations}\n\n {minutes_left} minutes remaining",
+    "pending_complete_transfer": "Your account authorization is pending. Biko mezue the \u20a650 transfer to activate your account.",
+    "bank_fallback": "\u1ecbr bank",
+    "approved_awaiting_nibss": "Your \u20a650 authorization transfer was received!\n\nYour {bank_name} account {account_suffix} is being verified by NIBSS. This usually takes a few minutes but can take up to 24 hours.\n\nWe'll notify you as soon as it's ready!",
+    "status_paused": "\u23f8\ufe0f Your account has been temporarily paused.\nPlease contact support to reinstate it.",
     "status_rejected": "Your account authorization was rejected.\nPlease contact support to resolve this.",
-    "status_cancelled": "Your account authorization was cancelled.\nỊ chọrọ to reinitiate? Say *'reinitiate'* to start again.",
-    "status_not_ready": "Account gị adịghị njikere maka payments."
+    "status_cancelled": "Your account authorization was cancelled.\n\u1eca ch\u1ecdr\u1ecd to reinitiate? Say *'reinitiate'* to start again.",
+    "status_not_ready": "Account g\u1ecb ad\u1ecbgh\u1ecb njikere maka payments."
   },
   "authorization": {
     "error": {
-      "processing_failed": "Authorization adaghị. Biko nwaa ọzọ."
+      "processing_failed": "Authorization adagh\u1ecb. Biko nwaa \u1ecdz\u1ecd."
     }
   },
   "validation": {
@@ -1513,8 +1515,8 @@
       "invalid_format": "Ezighi ezi amount format. Biko enter a valid number.",
       "invalid_format_short": "Ezighi ezi amount format",
       "gt_zero": "Amount must be greater than zero.",
-      "minimum": "Kachasị nta {transaction_type} amount is ₦{amount}.",
-      "maximum": "Kachasị elu {transaction_type} amount is ₦{amount}."
+      "minimum": "Kachas\u1ecb nta {transaction_type} amount is \u20a6{amount}.",
+      "maximum": "Kachas\u1ecb elu {transaction_type} amount is \u20a6{amount}."
     },
     "percentage": {
       "invalid_format": "Ezighi ezi percentage format. Biko enter a valid number.",
@@ -1555,22 +1557,22 @@
       "comparing_periods": {
         "first_generic": "Let me compare that.",
         "first_scoped": "Let me compare {scope_label}.",
-        "first_sent_to": "Ana m atụnyere payments to {counterparty_label}.",
-        "first_received_from": "Ana m atụnyere payments from {counterparty_label}.",
-        "first_with_counterparty": "Ana m atụnyere transactions with {counterparty_label}.",
+        "first_sent_to": "Ana m at\u1ee5nyere payments to {counterparty_label}.",
+        "first_received_from": "Ana m at\u1ee5nyere payments from {counterparty_label}.",
+        "first_with_counterparty": "Ana m at\u1ee5nyere transactions with {counterparty_label}.",
         "followup_generic": "Still comparing that.",
-        "followup_scoped": "Ana m ka atụnyere {scope_label}.",
-        "followup_sent_to": "Ana m ka atụnyere payments to {counterparty_label}.",
-        "followup_received_from": "Ana m ka atụnyere payments from {counterparty_label}.",
-        "followup_with_counterparty": "Ana m ka atụnyere transactions with {counterparty_label}."
+        "followup_scoped": "Ana m ka at\u1ee5nyere {scope_label}.",
+        "followup_sent_to": "Ana m ka at\u1ee5nyere payments to {counterparty_label}.",
+        "followup_received_from": "Ana m ka at\u1ee5nyere payments from {counterparty_label}.",
+        "followup_with_counterparty": "Ana m ka at\u1ee5nyere transactions with {counterparty_label}."
       }
     },
     "transfer": {
       "resolving_recipient": {
         "first_generic": "Let me sort that out.",
-        "first_scoped": "Ana m achọ {recipient_display}.",
+        "first_scoped": "Ana m ach\u1ecd {recipient_display}.",
         "followup_generic": "Still working on that.",
-        "followup_scoped": "Ana m ka achọ {recipient_display}."
+        "followup_scoped": "Ana m ka ach\u1ecd {recipient_display}."
       },
       "confirming_details": {
         "first_generic": "Let me sort that out.",
@@ -1585,70 +1587,70 @@
         "followup_scoped": "Ana m ka authorize {amount} transfer to {recipient_display}."
       },
       "processing_transfer": {
-        "first_generic": "Ana m arụ transfer gị ugbu a.",
-        "followup_generic": "Still na-arụ ọrụ your transfer.",
-        "first_scoped": "A na-ahazi nnyefe {amount} gị gaa na {recipient_display} ugbua.",
-        "followup_scoped": "Ka na-ahazi nnyefe {amount} gị gaa na {recipient_display}."
+        "first_generic": "Ana m ar\u1ee5 transfer g\u1ecb ugbu a.",
+        "followup_generic": "Still na-ar\u1ee5 \u1ecdr\u1ee5 your transfer.",
+        "first_scoped": "A na-ahazi nnyefe {amount} g\u1ecb gaa na {recipient_display} ugbua.",
+        "followup_scoped": "Ka na-ahazi nnyefe {amount} g\u1ecb gaa na {recipient_display}."
       }
     },
     "scope": {
-      "transactions": "transactions gị",
-      "outgoing_transactions": "transactions ị zigara",
-      "incoming_transactions": "transactions ị natara",
-      "spending": "mmefu gị",
-      "sent": "ihe ị ziterela",
-      "received": "ihe ị natara",
-      "sent_to": "ihe ị zigara {counterparty}",
-      "received_from": "ihe ị natara site na {counterparty}",
-      "transactions_with": "transactions gị with {counterparty}",
+      "transactions": "transactions g\u1ecb",
+      "outgoing_transactions": "transactions \u1ecb zigara",
+      "incoming_transactions": "transactions \u1ecb natara",
+      "spending": "mmefu g\u1ecb",
+      "sent": "ihe \u1ecb ziterela",
+      "received": "ihe \u1ecb natara",
+      "sent_to": "ihe \u1ecb zigara {counterparty}",
+      "received_from": "ihe \u1ecb natara site na {counterparty}",
+      "transactions_with": "transactions g\u1ecb with {counterparty}",
       "with_category": "{scope_label} maka {category}",
       "with_time": "{scope_label} {time_phrase}"
     },
     "time": {
       "today": "today",
-      "this_month": "ọnwa a",
+      "this_month": "\u1ecdnwa a",
       "range": "site {start} ruo {end}"
     }
   },
   "response": {
     "common": {
       "recipient_fallback": "recipient",
-      "unknown": "Amaghị",
+      "unknown": "Amagh\u1ecb",
       "na": "N/A",
       "error_occurred": "Nsogbu mere"
     },
     "format": {
-      "candidate_item": "• {name} ({bank_name} • …{last4})"
+      "candidate_item": "\u2022 {name} ({bank_name} \u2022 \u2026{last4})"
     },
     "fallback": {
-      "generic": "Ndo, ihe adịghị mma mere. Biko nwaa ọzọ."
+      "generic": "Ndo, ihe ad\u1ecbgh\u1ecb mma mere. Biko nwaa \u1ecdz\u1ecd."
     },
     "templates": {
-      "ask_amount": "Ego ole ka ị chọrọ izipu?",
-      "ask_recipient": "Echekwabeghị m '{recipient_name}' dị ka beneficiary. Kedu account number na banki ha?",
-      "ask_recipient_no_name": "Onye ka ịchọrọ izipu ego? Ị nwere ike izipu aha, account number, ma ọ bụ ha abụọ.",
+      "ask_amount": "Ego ole ka \u1ecb ch\u1ecdr\u1ecd izipu?",
+      "ask_recipient": "Echekwabegh\u1ecb m '{recipient_name}' d\u1ecb ka beneficiary. Kedu account number na banki ha?",
+      "ask_recipient_no_name": "Onye ka \u1ecbch\u1ecdr\u1ecd izipu ego? \u1eca nwere ike izipu aha, account number, ma \u1ecd b\u1ee5 ha ab\u1ee5\u1ecd.",
       "ask_bank": "Kedu banki?",
       "ask_account_number": "Kedu account number maka {recipient_name}?",
       "ask_account_number_and_bank": "Kedu account number na bank nke {recipient_name}?",
-      "ask_phone_number": "Kedu nomba ekwentị ka m ga-eziga?",
-      "ask_network": "Kedu network ka {phone_masked} nọ?",
-      "ask_data_plan": "Kedu data plan ị chọrọ?",
-      "clarify_beneficiary": "Achọtara m matches karịrị otu maka '{recipient_name}'. Kedu nke ị na-ekwu?\n{candidates_list}",
-      "clarify_account": "Kedu account gị ka m ga-eji?",
-      "clarify_bank": "Ahụghị m banki a na-akpọ '{bank_name}'. Biko zipu aha banki ziri ezi.",
+      "ask_phone_number": "Kedu nomba ekwent\u1ecb ka m ga-eziga?",
+      "ask_network": "Kedu network ka {phone_masked} n\u1ecd?",
+      "ask_data_plan": "Kedu data plan \u1ecb ch\u1ecdr\u1ecd?",
+      "clarify_beneficiary": "Ach\u1ecdtara m matches kar\u1ecbr\u1ecb otu maka '{recipient_name}'. Kedu nke \u1ecb na-ekwu?\n{candidates_list}",
+      "clarify_account": "Kedu account g\u1ecb ka m ga-eji?",
+      "clarify_bank": "Ah\u1ee5gh\u1ecb m banki a na-akp\u1ecd '{bank_name}'. Biko zipu aha banki ziri ezi.",
       "confirm_transfer": "Ka m kwado: {formatted_amount} nye {recipient_name} na {bank_name}?",
       "confirm_airtime": "Ka m kwado: {formatted_amount} airtime to {phone_masked} ({network})?",
       "confirm_data": "Ka m kwado: {data_plan} data for {phone_masked} ({network})?",
-      "transfer_success": "Agwụla! {formatted_amount} ezipula nye {recipient_name}.",
+      "transfer_success": "Agw\u1ee5la! {formatted_amount} ezipula nye {recipient_name}.",
       "airtime_success": "Emechala! Airtime {formatted_amount} erutela {phone_masked}.",
-      "data_success": "Emechala! Data {data_plan} dị active maka {phone_masked}.",
-      "insufficient_balance": "Balance gị ezughị. Nke dị: {formatted_amount}.",
-      "account_not_found": "Ahụghị m account ahụ. Biko lelee account number ma nwaa ọzọ.",
-      "account_validation_failed": "Enweghị m ike verify that account right now. Biko nwaa ọzọ.",
-      "bank_not_found": "Ahụghị m a bank called '{bank_name}'. Biko nye the correct bank name.",
-      "session_expired": "Session gị agwụla. Biko malite ọzọ.",
-      "pin_failed": "PIN ezighi ezi. Biko nwaa ọzọ.",
-      "max_attempts_exceeded": "Kachasị elu attempts exceeded. Biko start a new transaction.",
+      "data_success": "Emechala! Data {data_plan} d\u1ecb active maka {phone_masked}.",
+      "insufficient_balance": "Balance g\u1ecb ezugh\u1ecb. Nke d\u1ecb: {formatted_amount}.",
+      "account_not_found": "Ah\u1ee5gh\u1ecb m account ah\u1ee5. Biko lelee account number ma nwaa \u1ecdz\u1ecd.",
+      "account_validation_failed": "Enwegh\u1ecb m ike verify that account right now. Biko nwaa \u1ecdz\u1ecd.",
+      "bank_not_found": "Ah\u1ee5gh\u1ecb m a bank called '{bank_name}'. Biko nye the correct bank name.",
+      "session_expired": "Session g\u1ecb agw\u1ee5la. Biko malite \u1ecdz\u1ecd.",
+      "pin_failed": "PIN ezighi ezi. Biko nwaa \u1ecdz\u1ecd.",
+      "max_attempts_exceeded": "Kachas\u1ecb elu attempts exceeded. Biko start a new transaction.",
       "transfer_failed": "Transfer dara: {error_message}",
       "airtime_failed": "Airtime purchase dara: {error_message}",
       "data_failed": "Data purchase dara: {error_message}",
@@ -1656,16 +1658,24 @@
       "invalid_phone_number": "Ezighi ezi phone number. Biko enter a valid Nigerian number (e.g., 08012345678).",
       "invalid_network": "Ezighi ezi network. Biko choose from: MTN, Airtel, Glo, or 9mobile.",
       "cancelled": "A kagbuola transaction.",
-      "mandate_required": "️ {error_message}",
+      "mandate_required": "\ufe0f {error_message}",
       "account_selection_required": "Kedu account would you like to use?",
-      "greeting": "Ndewo{user_greeting}! Kedu ihe m ga-enyere gị taa?",
-      "help": "I can help you with:\n• Sending money\n• Buying airtime\n• Buying data\n• Checking your balance\n\nKedu would you like to do?",
+      "greeting": "Ndewo{user_greeting}! Kedu ihe m ga-enyere g\u1ecb taa?",
+      "help": "I can help you with:\n\u2022 Sending money\n\u2022 Buying airtime\n\u2022 Buying data\n\u2022 Checking your balance\n\nKedu would you like to do?",
       "beneficiary_saved": "Echekwara {recipient_name} as a beneficiary.",
-      "recipient_changed": "Aghọtara m, na-update the recipient to {recipient_name}.",
-      "amount_changed": "Aghọtara m, na-update the amount to {formatted_amount}.",
-      "acknowledge_change": "Ọ dị mma, changing {changes_text}.",
-      "transfer_all_acknowledged": "Sending ịr full balance to {recipient_name}...",
-      "cancellation_continue": "Enweghị problem, continuing with ịr {formatted_amount} transfer to {recipient_name}."
+      "recipient_changed": "Agh\u1ecdtara m, na-update the recipient to {recipient_name}.",
+      "amount_changed": "Agh\u1ecdtara m, na-update the amount to {formatted_amount}.",
+      "acknowledge_change": "\u1ecc d\u1ecb mma, changing {changes_text}.",
+      "transfer_all_acknowledged": "Sending \u1ecbr full balance to {recipient_name}...",
+      "cancellation_continue": "Enwegh\u1ecb problem, continuing with \u1ecbr {formatted_amount} transfer to {recipient_name}."
     }
+  },
+  "suggestions": {
+    "send_money": "iziga ego",
+    "buy_airtime": "ịzụ airtime",
+    "buy_data": "ịzụ data",
+    "check_balance": "ilele balance gị",
+    "query_transactions": "ilele transactions gị",
+    "scheduled_payments": "ilele scheduled payments"
   }
 }

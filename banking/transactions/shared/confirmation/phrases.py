@@ -55,7 +55,7 @@ REJECT_PHRASES_BY_LOCALE: dict[LocaleCode, set[str]] = {
 }
 
 CANCEL_PHRASES_BY_LOCALE: dict[LocaleCode, set[str]] = {
-    LocaleCode.EN: {"cancel", "abort", "stop", "nevermind", "never mind"},
+    LocaleCode.EN: {"cancel", "abort", "stop", "nevermind", "never mind", "nvm", "n/m", "nvm then"},
     LocaleCode.PCM: {"cancel", "abort", "stop", "commot", "no do again"},
     LocaleCode.YO: {"fagile", "da duro", "ma se", "dawoduro"},
     LocaleCode.HA: {"soke", "dakatar"},

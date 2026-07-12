@@ -3,6 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import is_contextual_casual_followup_turn
 from apps.chat.src.agent.orchestrator.guardrails.banking_ambiguity import (
     classify_banking_coded_ambiguity,
@@ -71,6 +72,7 @@ async def _build_contextual_casual_followup_response(
         text=text,
         locale=conversational_locale,
         conversation_responder=conversation_responder,
+        mode=ConversationResponseMode.CASUAL,
     )
     if not responder_reply:
         return None

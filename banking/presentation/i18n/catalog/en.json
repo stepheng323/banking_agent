@@ -72,14 +72,13 @@
     "appreciation": "Anytime. What should we handle next?",
     "checkin": "I'm here. What would you like to do?",
     "identity": "I'm {app_name}, a banking assistant that helps you move and check your money through transfers, airtime/data, balances, and transaction queries.",
-    "identity_correction": "Not {addressed_name} I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
+    "identity_correction": "Not {addressed_name} 😄 I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
     "brand_origin": "The name {app_name_short} comes from {app_brand_inspiration}. We chose it because {app_brand_symbolism}: the idea behind {app_name} is to help your money move smoothly, clearly, and under your control.",
     "capability_question": "I handle transfers, airtime/data, balance checks, and transaction queries.",
     "out_of_scope": "Back to banking: what would you like to do?",
     "out_of_scope_followup": "Still here for banking when you're ready.",
     "out_of_scope_firm": "Let's switch back to banking. What should we handle?",
     "clarify": "I can help with banking tasks. Try: show scheduled transactions, send money, buy airtime/data, check balance, or view transactions.",
-    "security_confirmation_required": "I can’t skip confirmation or PIN authorization. Please review and confirm the transaction when you’re ready.",
     "contextual_worker_followup": {
       "generic": "Got it.",
       "settled": "No worries, that's settled.",
@@ -97,7 +96,10 @@
       "generic": "Got it.",
       "brand_origin": "Yeah, that's the idea: flow, clarity, and control around your money.",
       "product_identity": "Exactly, Nenya is built to help you move and check your money clearly."
-    }
+    },
+    "security_confirmation_required": "",
+    "clarify_dynamic": "Could you clarify what you mean? I can help you {suggestions}.",
+    "capabilities_dynamic": "I can help you {capabilities}. What would you like to do?"
   },
   "interrupt": {
     "return_to_flow": {
@@ -173,7 +175,7 @@
     },
     "wrong_debit": {
       "success_debit_correct": "• This transfer was successful. The debit was correct.",
-      "failed_but_debited": "Your account was debited ₦{amount}, but the transfer did not complete.\nThis is being reversed automatically.\nCurrent status: Reversal in progress",
+      "failed_but_debited": "⚠ Your account was debited ₦{amount}, but the transfer did not complete.\nThis is being reversed automatically.\nCurrent status: Reversal in progress",
       "failed_not_debited": "× The transfer failed, but no money was debited from your account.",
       "pending_processing": "○ This transfer is still processing.\nIf it fails, any debit will be reversed automatically.",
       "investigating": "We're investigating this debit issue."
@@ -184,7 +186,7 @@
       "no_refund_needed": "No money was debited, so no refund is needed.",
       "completed": "• The ₦{amount} refund has been completed.",
       "processing": "○ The ₦{amount} reversal is being processed.\nRefunds typically return to your account within 24-48 hours.",
-      "needs_escalation": "You were debited ₦{amount} and a reversal is needed.\nEscalating this to our support team.",
+      "needs_escalation": "⚠ You were debited ₦{amount} and a reversal is needed.\nEscalating this to our support team.",
       "unknown": "Unable to determine refund status."
     },
     "retry": {
@@ -241,18 +243,18 @@
       "status_closed": "This case has been closed.",
       "status_unknown": "Status unknown",
       "created_recently": "recently",
-      "summary": "**Ticket:** {ticket_code}\n**Status:** {status_text}\n**Created:** {created}",
+      "summary": "**Ticket:** {ticket_code}\n**Status:** {status_text}\n**Created:** {created}\n\n",
       "open_hint": "Our team typically responds within 24 hours.",
       "in_progress_hint": "You'll receive an update once we have more information.",
       "resolved_on": "Resolved on {resolved}.",
       "no_updates": "I don't have any pending updates for you.\n\nIs there something specific I can help with?"
     },
     "fraud": {
-      "alert": "We're taking this seriously.\nA support agent will contact you shortly to investigate.\nDo not share any PINs or passwords."
+      "alert": "⚠ We're taking this seriously.\nA support agent will contact you shortly to investigate.\nDo not share any PINs or passwords."
     },
     "escalation": {
-      "logged": "I've logged this for review.",
-      "ticket": "**Ticket:** {ticket_code}",
+      "logged": "I've logged this for review.\n\n",
+      "ticket": "**Ticket:** {ticket_code}\n\n",
       "fraud_priority": "Our security team will prioritize this. You'll hear back within 1 hour.",
       "with_transaction_ref": "Our team will investigate and get back to you within 24 hours.",
       "ask_transaction_ref": "If you have the transaction reference, reply with it to speed things up.",
@@ -261,7 +263,7 @@
       "summary_user_requested": "User requested human support",
       "summary_default": "Support escalation: {reason_or_intent}",
       "summary_system": "System escalation: {reason}",
-      "summary_context_suffix": "- {message}"
+      "summary_context_suffix": " - {message}"
     }
   },
   "faq": {
@@ -275,32 +277,9 @@
       "transaction": "transaction"
     },
     "drill_down": {
-      "details_intro": "Here are the transaction details:",
-      "no_items": "I no longer have a transaction to open. Ask me to run the search again.",
-      "invalid_selection": "I couldn't match that selection. Choose one of the {count} transactions shown."
-    },
-    "pagination": {
-      "already_first_page": "You're already on the first page.",
-      "end_of_results": "That's the full list for this search."
-    },
-    "coverage_copy": {
-      "result_more": "No, this is not the complete list. I have shown {count} matching transactions so far, with more results available.",
-      "result_complete": "That is the full matched result list: {count} transactions. This does not by itself confirm bank-data coverage.",
-      "result_empty": "I found no matching transactions. This does not by itself confirm bank-data coverage.",
-      "no_metadata": "I can show local transaction results, but I do not have linked-account metadata to confirm coverage.",
-      "account_not_found": "I don't see {account} among your linked accounts.",
-      "multiple_accounts": "I found multiple linked accounts matching {account}: {options}. Which one do you mean?",
-      "single_pending": "{account} is not fully synced because authorization is {status}. Complete the account authorization before treating its results as complete.",
-      "single_covered": "{account} has confirmed transaction coverage{period}.{sync}",
-      "single_gap": "{account} has a transaction coverage gap{period}. I can show local transactions, but cannot claim the list is complete.",
-      "single_unknown": "I can show local transactions for {account}, but cannot confirm full coverage right now.",
-      "all_covered": "I have confirmed transaction coverage{period} for your linked accounts.",
-      "partial": "I can show local transactions{period}, but cannot confirm the full set for every linked account.",
-      "status_covered": "{account}: coverage confirmed. Last sync: {sync}.",
-      "status_pending": "○ {account}: authorization is {status}, so sync is incomplete.",
-      "status_gap": "○ {account}: coverage is incomplete for this period.",
-      "status_unknown": "? {account}: coverage could not be confirmed right now.",
-      "best_local": "Treat this as the best local view, not a guaranteed complete statement."
+      "no_items": "No items to drill down into.",
+      "invalid_selection": "",
+      "details_intro": ""
     },
     "receipt": {
       "only_transfer": "Receipts are only available for bank transfers. This is a {transaction_type}.",
@@ -402,7 +381,7 @@
       "aggregate": {
         "scope": "That total only covers {scope_label}{period_suffix}.{total_suffix}",
         "scope_hint": "It adds up {count} {transaction_label} in that scope.",
-        "total_suffix": "The total is {total}"
+        "total_suffix": " The total is {total}"
       },
       "no_result": {
         "debit_named": "I couldn't find a payment to {counterparty} {time_suffix}.",
@@ -419,7 +398,7 @@
       "completed": "Query completed.",
       "dismissive_goodbye": "Okay. I'll step back now.",
       "goodbye": "Goodbye!",
-      "you_are_welcome": "You're welcome!"
+      "you_are_welcome": "You're welcome! 😊"
     },
     "continuity": {
       "prompt_items_header": "Available items (for drill_down, set drill_down_index to item number):",
@@ -430,18 +409,18 @@
       "default": "Could you clarify?",
       "time_vague": "What time period did you mean by '{context}'? You can say something like '{suggestion}'.",
       "unsure_rephrase": "I'm not sure what you're referring to. Could you rephrase?",
-      "multiple_matches": "I found multiple matching transactions. Which one did you mean?\n\n{options}",
-      "cancelled": "Okay, I cancelled that selection.",
-      "exhausted": "I still couldn't match that selection. Please describe the transaction again.",
-      "recent_read_only": "I can only use that closed result for read-only questions. Ask me to start a new transfer or support request instead.",
-      "missing_scope": "Which earlier result or transaction do you mean?",
-      "memory_unavailable": "I no longer have enough detail from that earlier result. Ask me to run the search again.",
-      "grounded_query_failed": "I understood the earlier result, but need a clearer account, transaction, or time scope.",
       "which_one": "I'm not sure which one you mean{context_suffix}.",
       "are_you_referring": "Are you referring to:",
       "reply_number_or_rephrase": "Reply with the number or rephrase.",
-      "context_suffix": "({context})",
-      "option_line": "{index}️⃣ {amount} — {description}"
+      "context_suffix": " ({context})",
+      "option_line": "{index}️⃣ {amount} — {description}",
+      "missing_scope": "",
+      "grounded_query_failed": "",
+      "exhausted": "",
+      "multiple_matches": "",
+      "memory_unavailable": "",
+      "cancelled": "",
+      "recent_read_only": ""
     },
     "notice": {
       "clamped_days": "Showing last {days_back} days (max available)."
@@ -469,8 +448,8 @@
       "no_transactions_with_type_yesterday": "You had no {transaction_type} transactions yesterday.",
       "no_transactions_with_type_period": "You had no {transaction_type} transactions during that period.",
       "no_results_with_type": "No {transaction_type} transactions found{time_suffix}.",
-      "no_results_time_suffix_today": "today",
-      "no_results_time_suffix_period": "for this period",
+      "no_results_time_suffix_today": " today",
+      "no_results_time_suffix_period": " for this period",
       "heading_transactions_default": "*Transactions*",
       "heading_transactions_type": "*{transaction_type} Transactions*",
       "heading_transactions_category": "*{category} Transactions*",
@@ -494,8 +473,8 @@
       "field_category": "*Category:* {category}",
       "field_status": "*Status:* {status}",
       "field_ref": "*Ref:* {reference}",
-      "status_success": "Successful",
-      "status_pending_generic": "{status}",
+      "status_success": "✓ Successful",
+      "status_pending_generic": "⏳ {status}",
       "transfer_reply_hint": "_Reply: 'receipt' for proof | 'issue' to report a problem_",
       "transactions_heading": "*Transactions*",
       "pagination_showing": "Showing {showing} of {total}",
@@ -520,8 +499,8 @@
       "type_outgoing_debit": "Outgoing (Debit)",
       "accounts_item": "{amount} — {bank_name}",
       "direct_answer_grouped_lead": "That was {name}.",
-      "breakdown_heading": "Here is your {summary}:",
-      "ranked_heading": "Here are your {summary}:",
+      "breakdown_heading": "Here is your 📊 {summary}:",
+      "ranked_heading": "Here are your 🏆 {summary}:",
       "show_more_hint": "_Say 'show more' to keep going._",
       "ranked_item": "{rank}. *{amount}* — {name} {date}{bank_suffix}",
       "transaction_item_with_bank": "{amount} • {label} — {narration} _({bank_name})_",
@@ -614,6 +593,29 @@
         "transfer_to": "Transfer to {recipient}",
         "wallet": "Wallet"
       }
+    },
+    "pagination": {
+      "end_of_results": "That's the full list for this search.",
+      "already_first_page": "You're already on the first page."
+    },
+    "coverage_copy": {
+      "single_covered": "I've confirmed transaction coverage for {account}{period}.{sync}",
+      "status_unknown": "⚠️ {account} (cannot confirm full coverage right now)",
+      "multiple_accounts": "We found multiple accounts for '{account}': {options}.",
+      "partial": "I've confirmed transaction coverage{period} for some of your accounts:",
+      "single_gap": "Transaction coverage is incomplete for {account}{period}.",
+      "account_not_found": "We couldn't find an account matching '{account}'.",
+      "single_unknown": "I cannot confirm full coverage right now for {account}.",
+      "result_more": "This is not the complete list. There are more results available. You are viewing {count} matching transactions.",
+      "status_gap": "⚠️ {account} (coverage gap)",
+      "status_pending": "⚠️ {account} (authorization is pending, status: {status})",
+      "single_pending": "Account authorization is pending for {account} (Status: {status}). Complete the account authorization.",
+      "status_covered": "✓ {account} (Last sync: {sync})",
+      "result_complete": "All transactions are complete.",
+      "best_local": "Note: Since coverage is incomplete, this is my best local view.",
+      "result_empty": "No transactions found.",
+      "all_covered": "I've confirmed transaction coverage{period} across your accounts:",
+      "no_metadata": "No account metadata available."
     }
   },
   "account": {
@@ -621,10 +623,10 @@
     "no_linked_accounts": "You don't have any linked accounts.",
     "account_not_found": "I couldn't find an account matching '{identifier}'.",
     "account_not_found_with_count": "I couldn't find an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
-    "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now your default.",
+    "default_updated": "✓ *Default account updated!*\n\n{bank_name} ({masked}) is now your default.",
     "unlink": {
-      "success": "*Account unlinked!*\n\n{bank_name} ({masked}) removed.",
-      "only_account": "️ You can't unlink your only account. Link another one first."
+      "success": "✓ *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
+      "only_account": "⚠️ You can't unlink your only account. Link another one first."
     },
     "mandate_reinitiated_success": "I've re-sent the setup instructions to your phone. Please follow them to complete your linking!",
     "list": {
@@ -634,7 +636,7 @@
       "count_one": "You have 1 linked account.",
       "count_many": "You have {count} linked accounts.",
       "preview_header": "Examples:",
-      "default_badge": "(default)",
+      "default_badge": " (default)",
       "commands_hint": "_'set 2 as default' | 'unlink GTB'_"
     },
     "balance": {
@@ -742,9 +744,9 @@
     "execution": {
       "source_account_info": "From: {bank} (···{last4})",
       "source_account_info_with_balance": "From: {bank} (···{last4}) • Bal: ₦{balance}",
-      "recipient_resolved_with_bank": "{label} resolved: {resolved} ({bank} • {account})",
-      "recipient_resolved": "{label} resolved: {resolved}",
-      "recipient_resolved_generic": "{label} resolved",
+      "recipient_resolved_with_bank": "✓ {label} resolved: {resolved} ({bank} • {account})",
+      "recipient_resolved": "✓ {label} resolved: {resolved}",
+      "recipient_resolved_generic": "✓ {label} resolved",
       "input_attempts_exhausted": "I couldn't understand the details I need, so I cleared that transaction. Let's start fresh. What would you like to do?",
       "input_greeting": "Hi. I still need your answer to continue. Please reply to the last question, or say cancel.",
       "input_greeting_data_plan": "Hi. You're still choosing a data plan. Reply with an option number, or say cancel.",
@@ -894,7 +896,7 @@
       "missing_account_or_bank": "I need the account number and bank to add a beneficiary.",
       "account_verification_failed": "Could not verify account {account_number}. Please check the details.",
       "account_lookup_failed": "Account lookup failed/invalid for {account_number} at {bank_name}.",
-      "success": "Verified & Added **{display_name}** ({account_name}) to your beneficiaries."
+      "success": "✓ Verified & Added **{display_name}** ({account_name}) to your beneficiaries."
     },
     "delete": {
       "missing_target": "Please specify which beneficiary to remove.",
@@ -905,7 +907,7 @@
       "not_supported": "Updating beneficiaries is not yet supported."
     },
     "format": {
-      "suggestion": "Would you like to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm."
+      "suggestion": "💡 Would you like to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm."
     },
     "suggestion": {
       "ask_save_transfer_with_alias": "Save as beneficiary? Reply 'save' to use '{alias}' or send a different nickname.",
@@ -914,17 +916,17 @@
       "no_recent": "I don't recall suggesting a beneficiary recently. Transactions need to be recent to save them.",
       "user_not_found": "User not found.",
       "default_alias": "My Beneficiary",
-      "saved": "Saved **{alias}** to your beneficiaries.",
+      "saved": "✓ Saved **{alias}** to your beneficiaries.",
       "save_failed": "Sorry, I couldn't save that beneficiary due to an error."
     }
   },
   "transfer": {
     "confirmation": {
       "name_mismatch_warning": "You asked to send to {requested_name}, but the account resolved as {resolved_name}.",
-      "high_risk_unsaved_warning": "️ This is a high-risk transfer: {amount} to an unsaved recipient. Please confirm details carefully.",
+      "high_risk_unsaved_warning": "⚠️ This is a high-risk transfer: {amount} to an unsaved recipient. Please confirm details carefully.",
       "high_risk_unsaved_warning_variants": {
-        "standard": "️ This is a high-risk transfer: {amount} to an unsaved recipient. Please confirm details carefully.",
-        "careful": "️ Please review this high-risk transfer carefully: {amount} is going to an unsaved recipient."
+        "standard": "⚠️ This is a high-risk transfer: {amount} to an unsaved recipient. Please confirm details carefully.",
+        "careful": "⚠️ Please review this high-risk transfer carefully: {amount} is going to an unsaved recipient."
       },
       "change": {
         "join_two": "{first} and {second}",
@@ -1012,15 +1014,15 @@
         "narration": "Narration: {narration}",
         "funding_header": "*Funding from:*",
         "bank_fallback": "Account",
-        "funding_item": "• {bank} (···{last4}): {amount}",
+        "funding_item": "  • {bank} (···{last4}): {amount}",
         "fee": "*Fee:* {fee}",
         "total": "*Total:* {total}",
         "authorize": "Tap *Authorize* to enter your PIN."
       },
       "multi_source_receipt": {
-        "success_header": "*Transfer Successful!*",
+        "success_header": "✓ *Transfer Successful!*",
         "title": "*{amount}* → {recipient_name}",
-        "location_line": "{recipient_bank} (`{recipient_account}`)",
+        "location_line": "📍 {recipient_bank} (`{recipient_account}`)",
         "funded_header": "*Funded from:*",
         "from_line": "*From:* {bank} (···{last4})",
         "ref": "*Ref:* `{reference}`",
@@ -1040,19 +1042,19 @@
         "credit_after_debits": "The recipient will be credited once all funding debits succeed."
       },
       "notifications": {
-        "success": "Transfer successful! {amount} has been sent to {recipient_name}.",
+        "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
         "success_variants": {
-          "standard": "Transfer successful! {amount} has been sent to {recipient_name}.",
+          "standard": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
           "warm": "Done. {amount} has been sent to {recipient_name}.",
           "celebratory": "All set. {amount} has been sent to {recipient_name}."
         },
-        "pending": "Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+        "pending": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
         "pending_variants": {
-          "standard": "Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+          "standard": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
           "warm": "Got it. Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly.",
           "reassuring": "Your {amount} transfer to {recipient_name} is processing. Bank confirmation can take a few minutes."
         },
-        "queued": "Your transfer of {amount} to {recipient_name} has been authorized and is being processed."
+        "queued": "✓ Your transfer of {amount} to {recipient_name} has been authorized and is being processed."
       }
     }
   },
@@ -1115,9 +1117,9 @@
     },
     "executor": {
       "reference_fallback": "N/A",
-      "success_message": "Airtime purchase successful\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+      "success_message": "✓ Airtime purchase successful\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
       "success_message_variants": {
-        "standard": "Airtime purchase successful\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+        "standard": "✓ Airtime purchase successful\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
         "warm": "Done. ₦{amount} airtime has been sent to {recipient_target} ({network}).\nRef: {reference}",
         "celebratory": "All set. ₦{amount} airtime has been sent to {recipient_target} ({network}).\nRef: {reference}"
       },
@@ -1214,15 +1216,15 @@
       }
     },
     "completion": {
-      "success_message": "Data purchase successful!\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
+      "success_message": "✓ Data purchase successful!\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
       "success_message_variants": {
-        "standard": "Data purchase successful!\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
+        "standard": "✓ Data purchase successful!\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
         "warm": "Done. {plan_name} data is active for {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}",
         "celebratory": "All set. {plan_name} data is active for {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}"
       },
-      "pending_message": "Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support.",
+      "pending_message": "⏳ Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support.",
       "pending_message_variants": {
-        "standard": "Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support.",
+        "standard": "⏳ Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support.",
         "warm": "Got it. Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing.\n\nYou'll receive confirmation shortly.",
         "reassuring": "Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing. Provider confirmation can take a few minutes."
       },
@@ -1244,7 +1246,7 @@
     "batch": {
       "shortfall_header": "Insufficient funds for this batch",
       "shortfall_body": "This batch needs {demanded}, but only {available} is currently available.",
-      "task_covered": "{task_id}: {amount} available from {bank}.",
+      "task_covered": "✓ {task_id}: {amount} available from {bank}.",
       "task_short": "{task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
       "alternate_suggestion": "{bank} has {available}. Should I use it instead?",
       "total_infeasible": "Reply with updated source accounts/split, or reduce the transfer amounts."
@@ -1353,7 +1355,7 @@
       "stale": "This schedule is already being processed or is no longer active. Please try again.",
       "success": "Schedule updated: {changes}. Next run: {next_run}.",
       "change": {
-        "separator": ";",
+        "separator": "; ",
         "amount_from_to": "amount changed from {old} to {new}",
         "amount_to": "amount changed to {new}",
         "time_from_to": "time changed from {old} to {new} WAT",
@@ -1458,7 +1460,7 @@
       "airtime_line": "*Airtime:* {amount} for {phone} ({network})",
       "data_plan_fallback": "data",
       "data_line": "*Data:* {plan} - {amount} for {phone}",
-      "failure_reason": "Reason: {reason}",
+      "failure_reason": "  Reason: {reason}",
       "other_completed_line": "* {task_type}:* Completed",
       "total_spent": "*Total Spent:* {amount}",
       "success_footer": "_All transactions completed successfully_",
@@ -1492,10 +1494,10 @@
   },
   "mandate": {
     "expired_reinitiate": "Your account authorization has expired. Please reinitiate to continue.",
-    "pending_with_destinations": "Your account authorization is pending.\n\nTransfer ₦50 to any of these accounts:\n{destinations}\n\n {minutes_left} minutes remaining",
+    "pending_with_destinations": "Your account authorization is pending.\n\nTransfer ₦50 to any of these accounts:\n{destinations}\n\n⏱️ {minutes_left} minutes remaining",
     "pending_complete_transfer": "Your account authorization is pending. Please complete the ₦50 transfer to activate your account.",
     "bank_fallback": "your bank",
-    "approved_awaiting_nibss": "Your ₦50 authorization transfer was received!\n\nYour {bank_name} account {account_suffix} is being verified by NIBSS. This usually takes a few minutes but can take up to 24 hours.\n\nWe'll notify you as soon as it's ready!",
+    "approved_awaiting_nibss": "Your ₦50 authorization transfer was received!\n\nYour {bank_name} account {account_suffix} is being verified by NIBSS. This usually takes a few minutes but can take up to 24 hours.\n\nWe'll notify you as soon as it's ready! 🔔",
     "status_paused": "Your account has been temporarily paused.\nPlease contact support to reinstate it.",
     "status_rejected": "Your account authorization was rejected.\nPlease contact support to resolve this.",
     "status_cancelled": "Your account authorization was cancelled.\nWould you like to reinitiate? Say *'reinitiate'* to start again.",
@@ -1638,9 +1640,9 @@
       "confirm_transfer": "Just to confirm: {formatted_amount} to {recipient_name} at {bank_name}?",
       "confirm_airtime": "Just to confirm: {formatted_amount} airtime to {phone_masked} ({network})?",
       "confirm_data": "Just to confirm: {data_plan} data for {phone_masked} ({network})?",
-      "transfer_success": "Done! {formatted_amount} has been sent to {recipient_name}.",
-      "airtime_success": "Done! {formatted_amount} airtime sent to {phone_masked}.",
-      "data_success": "Done! {data_plan} data activated for {phone_masked}.",
+      "transfer_success": "✓ Done! {formatted_amount} has been sent to {recipient_name}.",
+      "airtime_success": "✓ Done! {formatted_amount} airtime sent to {phone_masked}.",
+      "data_success": "✓ Done! {data_plan} data activated for {phone_masked}.",
       "insufficient_balance": "You don't have enough balance. Available: {formatted_amount}.",
       "account_not_found": "I couldn't find that account. Please check the account number and try again.",
       "account_validation_failed": "I couldn't verify that account right now. Please try again.",
@@ -1655,16 +1657,24 @@
       "invalid_phone_number": "Invalid phone number. Please enter a valid Nigerian number (e.g., 08012345678).",
       "invalid_network": "Invalid network. Please choose from: MTN, Airtel, Glo, or 9mobile.",
       "cancelled": "Transaction cancelled.",
-      "mandate_required": "️ {error_message}",
+      "mandate_required": "⚠️ {error_message}",
       "account_selection_required": "Which account would you like to use?",
       "greeting": "Hi{user_greeting}! How can I help you today?",
       "help": "I can help you with:\n• Sending money\n• Buying airtime\n• Buying data\n• Checking your balance\n\nWhat would you like to do?",
-      "beneficiary_saved": "Saved {recipient_name} as a beneficiary.",
+      "beneficiary_saved": "✓ Saved {recipient_name} as a beneficiary.",
       "recipient_changed": "Got it, updating the recipient to {recipient_name}.",
       "amount_changed": "Got it, updating the amount to {formatted_amount}.",
       "acknowledge_change": "Alright, changing {changes_text}.",
       "transfer_all_acknowledged": "Sending your full balance to {recipient_name}...",
       "cancellation_continue": "No problem, continuing with your {formatted_amount} transfer to {recipient_name}."
     }
+  },
+  "suggestions": {
+    "send_money": "make a transfer",
+    "buy_airtime": "buy airtime",
+    "buy_data": "buy data",
+    "check_balance": "check your balance",
+    "query_transactions": "view transactions",
+    "scheduled_payments": "show scheduled transactions"
   }
 }

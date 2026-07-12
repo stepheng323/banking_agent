@@ -1,6 +1,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import map_response_key_to_mode
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_conversational_casual import (
     _casual_chat_response,
@@ -50,6 +51,19 @@ async def _build_standard_conversational_response(
             state_view=state_view,
             planner_output=planner_output,
             text=text,
+            conversational_locale=conversational_locale,
+            conversational_locale_updates=conversational_locale_updates,
+            context_read_updates=context_read_updates,
+            conversation_responder=conversation_responder,
+            route_logger=route_logger,
+        )
+    if response_key and map_response_key_to_mode(response_key) is not None:
+        return await _response_key_render_response(
+            state=state,
+            state_view=state_view,
+            planner_output=planner_output,
+            text=text,
+            response_key=response_key,
             conversational_locale=conversational_locale,
             conversational_locale_updates=conversational_locale_updates,
             context_read_updates=context_read_updates,

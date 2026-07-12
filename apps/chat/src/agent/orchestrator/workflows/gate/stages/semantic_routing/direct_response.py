@@ -2,14 +2,12 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
-    SOCIAL_META_INTENT,
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import (
     SOCIAL_META_RENDER_PARAMS_CTX,
     SOCIAL_META_RESPONSE_KEY_CTX,
     SOCIAL_META_RESPONSE_KEYS,
-)
-from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import (
-    is_banking_refusal_reply,
+    ConversationResponseMode,
+    map_response_key_to_mode,
 )
 from apps.chat.src.agent.orchestrator.guardrails.banking_ambiguity import (
     render_banking_coded_ambiguity_prompt,
@@ -117,40 +115,42 @@ async def _handle_semantic_direct_response(
             **updates,
         }
     if route.response_key:
-        if route.response_key == "conversational.casual_chat":
-            text = await _build_bounded_conversational_reply(ctx, locale) or render_message(
-                "conversational.out_of_scope",
-                locale,
-            )
-        elif route.response_key in SOCIAL_META_RESPONSE_KEYS:
-            text = await _build_bounded_conversational_reply(
-                ctx,
-                locale,
-                intent=SOCIAL_META_INTENT,
-                extra_user_ctx={
-                    SOCIAL_META_RESPONSE_KEY_CTX: route.response_key,
-                    SOCIAL_META_RENDER_PARAMS_CTX: {},
-                },
-            ) or render_message(route.response_key, locale)
-        elif route.response_key == "conversational.out_of_scope":
-            responder_reply = None
-            if canonical_decision == "direct_reply" and (
-                not route.response or is_banking_refusal_reply(route.response, locale=locale)
-            ):
-                responder_reply = await _build_bounded_conversational_reply(ctx, locale)
-            text = responder_reply or format_out_of_scope_reply(locale, route.response)
-        elif route.response_key == "planner.cancelled":
+        if route.response_key == "planner.cancelled":
             if has_cancelable_state(ctx.state):
                 text = cancelled_message(ctx.state, locale)
                 updates.update(await build_cancellation_reset_updates(ctx.state, ctx.redis_client))
             else:
                 text = clarify_message(ctx.state, locale)
         else:
-            text = render_message(route.response_key, locale)
+            response_mode = map_response_key_to_mode(route.response_key)
+            responder_reply = None
+            if response_mode is not None:
+                extra_user_ctx: dict[str, object] = {}
+                if route.response_key in SOCIAL_META_RESPONSE_KEYS:
+                    extra_user_ctx = {
+                        SOCIAL_META_RESPONSE_KEY_CTX: route.response_key,
+                        SOCIAL_META_RENDER_PARAMS_CTX: {},
+                    }
+                responder_reply = await _build_bounded_conversational_reply(
+                    ctx,
+                    locale,
+                    mode=response_mode,
+                    extra_user_ctx=extra_user_ctx,
+                )
+            if responder_reply:
+                text = responder_reply
+            elif route.response_key == "conversational.out_of_scope":
+                text = format_out_of_scope_reply(locale, route.response)
+            else:
+                text = render_message(route.response_key, locale)
     else:
         text = route.response or ""
         if not text:
-            responder_reply = await _build_bounded_conversational_reply(ctx, locale)
+            responder_reply = await _build_bounded_conversational_reply(
+                ctx,
+                locale,
+                mode=ConversationResponseMode.CASUAL,
+            )
             if responder_reply:
                 text = responder_reply
         if not text:

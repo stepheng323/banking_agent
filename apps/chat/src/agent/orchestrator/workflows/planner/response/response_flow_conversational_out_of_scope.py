@@ -1,6 +1,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import is_banking_refusal_reply
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.presentation.conversational_style import format_out_of_scope_reply
@@ -35,6 +36,7 @@ async def _out_of_scope_response(
             text=text,
             locale=conversational_locale,
             conversation_responder=conversation_responder,
+            mode=ConversationResponseMode.OUT_OF_SCOPE,
         )
     empathy_source = (
         _localized_planner_response(planner_output.response, conversational_locale) if planner_output.response else None

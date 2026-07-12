@@ -16,11 +16,10 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.context.referents.frame_memory import remember_referents_from_frame
-from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
-    NON_BANKING_CONVERSATIONAL_INTENT,
-    SOCIAL_META_INTENT,
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import (
     SOCIAL_META_RENDER_PARAMS_CTX,
     SOCIAL_META_RESPONSE_KEY_CTX,
+    ConversationResponseMode,
 )
 from apps.chat.src.agent.orchestrator.models.domain import (
     ActiveSession,
@@ -5538,7 +5537,7 @@ async def test_gate_routes_contextual_worker_acknowledgement_before_support_issu
     assert updates["routing_heuristic_name"] == "worker_acknowledgement"
     assert updates["final_response"] == "No worries. That transfer was successful."
     assert "tasks" not in updates
-    assert responder.calls[0]["intent"] == "contextual_worker_followup"
+    assert responder.calls[0]["mode"] == ConversationResponseMode.CONTEXTUAL_WORKER
     assert "contextual_worker_followup" in responder.calls[0]["user_ctx"]
 
 
@@ -5772,7 +5771,7 @@ async def test_gate_exact_thanks_uses_social_meta_responder_with_context() -> No
     updates = await session_gate_direct_path(state, config)
 
     assert responder.calls
-    assert responder.calls[0]["intent"] == SOCIAL_META_INTENT
+    assert responder.calls[0]["mode"] == ConversationResponseMode.SOCIAL_META
     assert responder.calls[0]["user_ctx"][SOCIAL_META_RESPONSE_KEY_CTX] == "conversational.appreciation"
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "meta_direct"
@@ -5877,7 +5876,7 @@ async def test_gate_contextual_meta_acknowledgement_uses_responder_when_availabl
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "contextual_meta_followup"
     assert updates["final_response"] == responder.reply
-    assert responder.calls[0]["intent"] == "contextual_meta_followup"
+    assert responder.calls[0]["mode"] == ConversationResponseMode.CONTEXTUAL_META
     assert responder.calls[0]["user_ctx"]["conversation_grounding"]["last_topic"] == "brand_origin"
 
 
@@ -7153,13 +7152,13 @@ class _FakeConversationResponder:
         self,
         text: str,
         user_ctx: dict[str, object],
-        intent: str | None = None,
+        mode: ConversationResponseMode,
     ) -> str:
         self.calls.append(
             {
                 "text": text,
                 "user_ctx": dict(user_ctx),
-                "intent": intent,
+                "mode": mode,
             }
         )
         return self.reply
@@ -7196,7 +7195,7 @@ async def test_gate_deterministic_social_meta_uses_conversation_responder(
     assert updates["semantic_path_shape"] == "meta_direct"
     assert updates["final_response"] == responder.reply
     assert responder.calls
-    assert responder.calls[0]["intent"] == SOCIAL_META_INTENT
+    assert responder.calls[0]["mode"] == ConversationResponseMode.SOCIAL_META
     assert responder.calls[0]["user_ctx"]["language"] == expected_locale
     assert responder.calls[0]["user_ctx"][SOCIAL_META_RESPONSE_KEY_CTX] == expected_key
 
@@ -7217,7 +7216,7 @@ async def test_gate_deterministic_social_meta_falls_back_when_responder_returns_
 
     assert updates["final_response"] == render_message("conversational.greeting", "en")
     assert responder.calls
-    assert responder.calls[0]["intent"] == SOCIAL_META_INTENT
+    assert responder.calls[0]["mode"] == ConversationResponseMode.SOCIAL_META
 
 
 @pytest.mark.asyncio
@@ -7259,7 +7258,7 @@ async def test_gate_deterministic_joke_request_uses_casual_conversation_responde
 
     assert updates["final_response"] == responder.reply
     assert responder.calls
-    assert responder.calls[0]["intent"] == NON_BANKING_CONVERSATIONAL_INTENT
+    assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
 
 
 async def test_gate_semantic_router_can_bypass_planner_with_direct_response() -> None:
@@ -7400,7 +7399,7 @@ async def test_gate_semantic_router_missing_reply_uses_conversation_responder_fo
     assert updates["semantic_path_shape"] == "semantic_router_direct"
     assert updates["final_response"] == responder.reply
     assert responder.calls
-    assert responder.calls[0]["intent"] == "non_banking_conversational"
+    assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
 
 
 async def test_gate_semantic_router_can_answer_grounded_account_follow_up_without_planner() -> None:
@@ -7805,7 +7804,7 @@ async def test_gate_joke_request_uses_casual_conversation_responder_before_seman
     assert updates["routing_decision"] == "meta_direct"
     assert updates["final_response"] == responder.reply
     assert responder.calls
-    assert responder.calls[0]["intent"] == NON_BANKING_CONVERSATIONAL_INTENT
+    assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
     assert planner.route_calls == 0
 
 
@@ -7844,7 +7843,7 @@ async def test_gate_joke_request_ignores_semantic_banking_refusal_and_uses_respo
     assert updates["routing_decision"] == "meta_direct"
     assert updates["final_response"] == responder.reply
     assert responder.calls
-    assert responder.calls[0]["intent"] == NON_BANKING_CONVERSATIONAL_INTENT
+    assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
     assert planner.route_calls == 0
 
 

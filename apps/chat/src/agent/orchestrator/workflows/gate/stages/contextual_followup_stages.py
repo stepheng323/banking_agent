@@ -8,6 +8,7 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_responder_contex
     contextual_meta_fallback_reply,
     contextual_worker_fallback_reply,
 )
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
@@ -242,8 +243,10 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] 
     last_topic = str(grounding.get("last_topic") or "")
     if last_topic in {"brand_origin", "product_identity"}:
         responder_intent = "contextual_meta_followup"
+        response_mode = ConversationResponseMode.CONTEXTUAL_META
     else:
         responder_intent = "contextual_worker_followup"
+        response_mode = ConversationResponseMode.CONTEXTUAL_WORKER
 
     fallback_user_ctx = {
         **loaded_context,
@@ -258,7 +261,7 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] 
     reply = await _build_bounded_conversational_reply(
         ctx,
         ctx.current_locale,
-        intent=responder_intent,
+        mode=response_mode,
         extra_user_ctx=extra_user_ctx,
     )
     if reply:

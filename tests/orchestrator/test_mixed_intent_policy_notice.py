@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
@@ -139,13 +140,13 @@ class _FakeConversationResponder:
         self,
         text: str,
         user_ctx: dict[str, Any],
-        intent: str | None = None,
+        mode: ConversationResponseMode,
     ) -> str:
         self.calls.append(
             {
                 "text": text,
                 "user_ctx": dict(user_ctx),
-                "intent": intent,
+                "mode": mode,
             }
         )
         return self.reply
@@ -679,7 +680,7 @@ async def test_conversational_casual_chat_uses_conversation_responder_when_avail
 
     assert state.final_response == responder.reply
     assert responder.calls
-    assert responder.calls[0]["intent"] == "non_banking_conversational"
+    assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
 
 
 @pytest.mark.asyncio
@@ -854,7 +855,7 @@ async def test_conversational_contextual_casual_followup_uses_responder_even_if_
 
     assert state.final_response == responder.reply
     assert responder.calls
-    assert responder.calls[0]["intent"] == "non_banking_conversational"
+    assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
 
 
 @pytest.mark.asyncio
@@ -1053,7 +1054,7 @@ async def test_conversational_missing_response_uses_conversation_responder_not_c
 
     assert state.final_response == responder.reply
     assert responder.calls
-    assert responder.calls[0]["intent"] == "non_banking_conversational"
+    assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
 
 
 @pytest.mark.asyncio
@@ -1220,7 +1221,7 @@ async def test_no_task_no_response_without_active_flow_uses_conversation_respond
 
     assert state.final_response == responder.reply
     assert responder.calls
-    assert responder.calls[0]["intent"] == "non_banking_conversational"
+    assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
 
 
 @pytest.mark.asyncio

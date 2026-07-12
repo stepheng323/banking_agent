@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from banking.policy.adapters import (
     is_capability_supported,
     resolve_capability_alternative,
     resolve_capability_message,
 )
-from banking.policy.models import CapabilityPolicy
+from banking.policy.models import AvailableConversationalSuggestion, CapabilityPolicy
 from banking.presentation.i18n.bridge import render_capability_limitation
 
 
@@ -35,3 +37,26 @@ def capability_block_message(
         action_label=resolved_action_label,
         alternative_labels=alternative_labels,
     )
+
+def resolve_available_conversational_suggestions(
+    *,
+    locale: str = "en",
+    policy: CapabilityPolicy | None = None,
+) -> list[AvailableConversationalSuggestion]:
+    """Return a localized list of currently supported capability suggestions."""
+    from banking.policy.loader import get_cached_policy
+    from banking.presentation.i18n.message_keys import MessageKey
+    from banking.presentation.i18n.renderer import message_key_exists, render_message
+
+    effective_policy = policy or get_cached_policy()
+    available: list[AvailableConversationalSuggestion] = []
+
+    for suggestion in effective_policy.conversational_suggestions:
+        if is_capability_supported(domain=suggestion.domain, action=suggestion.action, policy=effective_policy):
+            if not message_key_exists(suggestion.label_key, locale):
+                continue
+            label = render_message(cast(MessageKey, suggestion.label_key), locale)
+            if label:
+                available.append(AvailableConversationalSuggestion(id=suggestion.id, label=label))
+
+    return available
