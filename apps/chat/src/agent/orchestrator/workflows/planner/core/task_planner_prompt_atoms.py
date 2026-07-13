@@ -67,7 +67,10 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
         "csv_exports/all_time_history)->set unsupported_capability field"
     ),
     "R08_ACTION_EXECUTOR": "canonical action determines fixed runtime executor; never invent executor-like actions",
-    "R09_CONTEXT_OVERRIDE": "active_flow_reply->slot_update unless switch/cancel",
+    "R09_CONTEXT_OVERRIDE": (
+        "active_flow_reply->slot_update unless switch/cancel; "
+        "relative_math_modifier(e.g. 'add 5k', 'reduce 2k')->compute_and_emit_final_value(e.g. 20000+5000=25000)"
+    ),
     "R10_LANGUAGE_ALIGNMENT": "response_lang=detected_lang",
     "R11_RESPONSE_KEYS": "conversational_no_task->allowed response_key; cancel->planner.cancelled",
     "R12_BENEFICIARY_HANDLING": "save_beneficiary only_if explicit",
