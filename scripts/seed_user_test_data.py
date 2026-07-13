@@ -57,7 +57,6 @@ def _seed_account_specs(user_suffix: str) -> list[dict[str, str]]:
 
 
 def _seed_beneficiary_specs() -> list[dict[str, str]]:
-    # Similar names on purpose to trigger beneficiary disambiguation for inputs like "Tolu".
     return [
         {
             "account_name": "Tolu Adebayo",
@@ -67,19 +66,33 @@ def _seed_beneficiary_specs() -> list[dict[str, str]]:
             "bank_name": "Access Bank",
         },
         {
-            "account_name": "Tolu Adeyemi",
+            "account_name": "Tolu Adebayo",
             "alias": "Tolu GTB",
             "account_number": "2010000002",
             "bank_code": "058",
             "bank_name": "GTBank",
         },
         {
-            "account_name": "Tolulope Johnson",
+            "account_name": "Tolulope Adebayo",
             "alias": "Tolu First",
             "account_number": "2010000003",
             "bank_code": "011",
             "bank_name": "First Bank",
         },
+        {
+            "account_name": "Esther Oyebanji",
+            "alias": "Mom",
+            "account_number": "2010000005",
+            "bank_code": "044",
+            "bank_name": "Access Bank",
+        },
+        {
+            "account_name": "Ayomide oyebanji",
+            "alias": "Ayo",
+            "account_number": "2010000006",
+            "bank_code": "058",
+            "bank_name": "GTBank",
+        }
     ]
 
 
