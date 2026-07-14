@@ -8,10 +8,11 @@ from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
     clarify_message,
     has_cancelable_state,
 )
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, planner_handoff
 from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
     TRANSACTION_EXECUTORS,
-    _route_observability_updates,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.schedule_read_stage import (
     _build_direct_schedule_read_updates,
@@ -40,7 +41,7 @@ def support_hint_veto_updates(
     *,
     canonical_decision: str | None,
     canonical_mode: str | None,
-) -> dict[str, Any] | None:
+) -> RouteResolution | None:
     if not _has_support_issue_hint(ctx) or canonical_decision not in {
         "domain_query",
         "direct_reply",
@@ -53,20 +54,17 @@ def support_hint_veto_updates(
         decision=canonical_decision,
         mode=canonical_mode,
     )
-    return {
-        **ctx.gate_updates,
-        **(ctx.summary_updates or {}),
-        "semantic_path_shape": "support_hint_planner_handoff",
-        **_route_observability_updates(
-            owner="planner",
-            decision="support_hint_planner_handoff",
-            target_domain=None,
-            mode=canonical_mode,
-            route_source="semantic_router_veto",
-            heuristic_type="routing_hint",
-            heuristic_name="support_issue_phrase",
-        ),
-    }
+    return planner_handoff(
+        ctx,
+        owner="semantic_router",
+        decision="support_hint_planner_handoff",
+        target_domain=None,
+        mode=canonical_mode,
+        source="semantic_router_veto",
+        path_shape="support_hint_planner_handoff",
+        heuristic_type="routing_hint",
+        heuristic_name="support_issue_phrase",
+    )
 
 
 async def semantic_locale_switch_updates(
@@ -75,7 +73,7 @@ async def semantic_locale_switch_updates(
     *,
     canonical_decision: str | None,
     canonical_mode: str | None,
-) -> dict[str, Any] | None:
+) -> RouteResolution | None:
     requested_locale = getattr(route, "requested_language", None)
     if not requested_locale:
         return None
@@ -102,16 +100,19 @@ async def semantic_locale_switch_updates(
     else:
         next_locale = resolved_locale.value
     logger.info("gate_semantic_router_locale_switch", locale=next_locale)
-    return {
-        "direct_path_triggered": True,
-        "final_response": render_locale_switched(next_locale),
-        **_locale_update(ctx.state_view, next_locale),
-        **_route_observability_updates(
-            owner="semantic_router",
-            decision=canonical_decision or "direct_reply",
-            mode=canonical_mode,
-        ),
-    }
+    return direct_response(
+        ctx,
+        response=render_locale_switched(next_locale),
+        owner="semantic_router",
+        decision=canonical_decision or "direct_reply",
+        mode=canonical_mode,
+        source="semantic_router",
+        path_shape="semantic_locale_switch",
+        extra_updates={
+            **(ctx.summary_updates or {}),
+            **_locale_update(ctx.state_view, next_locale),
+        },
+    )
 
 
 def semantic_route_executor_updates(route: Any) -> tuple[dict[str, Any], list[str]]:
@@ -132,7 +133,7 @@ async def semantic_cancel_updates(
     updates: dict[str, Any],
     canonical_decision: str | None,
     canonical_mode: str | None,
-) -> dict[str, Any] | None:
+) -> RouteResolution | None:
     if canonical_decision != "cancel":
         return None
 
@@ -147,19 +148,16 @@ async def semantic_cancel_updates(
         updates.update(await build_cancellation_reset_updates(ctx.state, ctx.redis_client))
     else:
         text = clarify_message(ctx.state, locale)
-    return {
-        **ctx.gate_updates,
-        **(ctx.summary_updates or {}),
-        "direct_path_triggered": True,
-        "final_response": text,
-        "semantic_path_shape": "semantic_router_direct",
-        **_route_observability_updates(
-            owner="semantic_router",
-            decision=canonical_decision,
-            mode=canonical_mode,
-        ),
-        **updates,
-    }
+    return direct_response(
+        ctx,
+        response=text,
+        owner="semantic_router",
+        decision=canonical_decision,
+        mode=canonical_mode,
+        source="semantic_router",
+        path_shape="semantic_router_direct",
+        extra_updates={**(ctx.summary_updates or {}), **updates},
+    )
 
 
 def semantic_schedule_target_updates(
@@ -169,7 +167,7 @@ def semantic_schedule_target_updates(
     updates: dict[str, Any],
     canonical_decision: str | None,
     canonical_mode: str | None,
-) -> dict[str, Any] | None:
+) -> RouteResolution | None:
     if getattr(route, "target_intent", None) != "schedule":
         return None
 
@@ -187,7 +185,7 @@ def semantic_schedule_target_updates(
             schedule_response_mode=schedule_response_mode,
             canonical_decision=canonical_decision,
             canonical_mode=canonical_mode,
-            route_source="semantic_router_target_intent",
+            source="semantic_router_target_intent",
         )
 
     logger.info(
@@ -195,19 +193,16 @@ def semantic_schedule_target_updates(
         decision=canonical_decision,
         mode=canonical_mode,
     )
-    return {
-        **ctx.gate_updates,
-        **(ctx.summary_updates or {}),
-        "semantic_path_shape": "semantic_router_schedule_planner_handoff",
-        **_route_observability_updates(
-            owner="planner",
-            decision="planner_handoff",
-            target_domain="schedule",
-            mode=canonical_mode,
-            route_source="semantic_router_target_intent",
-        ),
-        **updates,
-    }
+    return planner_handoff(
+        ctx,
+        owner="semantic_router",
+        decision="planner_handoff",
+        target_domain="schedule",
+        mode=canonical_mode,
+        source="semantic_router_target_intent",
+        path_shape="semantic_router_schedule_planner_handoff",
+        extra_updates=updates,
+    )
 
 
 def semantic_executor_handoff_updates(
@@ -216,14 +211,13 @@ def semantic_executor_handoff_updates(
     updates: dict[str, Any],
     canonical_decision: str | None,
     canonical_mode: str | None,
-) -> dict[str, Any]:
-    return {
-        **ctx.gate_updates,
-        **(ctx.summary_updates or {}),
-        **_route_observability_updates(
-            owner="planner",
-            decision=canonical_decision or "planner_handoff",
-            mode=canonical_mode,
-        ),
-        **updates,
-    }
+) -> RouteResolution:
+    return planner_handoff(
+        ctx,
+        owner="semantic_router",
+        decision=canonical_decision or "planner_handoff",
+        mode=canonical_mode,
+        source="semantic_router",
+        path_shape="semantic_executor_planner_handoff",
+        extra_updates=updates,
+    )

@@ -64,10 +64,9 @@ class GateContext:
             return None
         from apps.chat.src.agent.orchestrator.workflows.gate.utils.support_identity import _support_user_id
         from banking.support.context_manager import SupportContextManager
+
         try:
-            self.support_context = await SupportContextManager(self.redis_client).get(
-                _support_user_id(self.state_view)
-            )
+            self.support_context = await SupportContextManager(self.redis_client).get(_support_user_id(self.state_view))
         except Exception:
             self.support_context = None
         return self.support_context

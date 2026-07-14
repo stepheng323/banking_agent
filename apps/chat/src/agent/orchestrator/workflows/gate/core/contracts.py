@@ -7,10 +7,16 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.models.turn_directive import (
+    RouteResolution,
+    TurnDirective,
+    TurnNextStep,
+    TurnOutcomeKind,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 
 GateUpdates = dict[str, Any]
-GateHandler = Callable[[GateContext], Awaitable[GateUpdates | None]]
+GateHandler = Callable[[GateContext], Awaitable[RouteResolution | None]]
 GateEligibility = Callable[[GateContext], "GateEligibilityResult"]
 
 
@@ -28,17 +34,6 @@ class GateLayer(str, Enum):
     PLANNER_FALLBACK = "planner_fallback"
 
 
-class GateOutcomeKind(str, Enum):
-    """Expected outcome shape for gate handler reviewability."""
-
-    CONTINUE_ONLY = "continue_only"
-    DIRECT_RESPONSE = "direct_response"
-    TASK_DISPATCH = "task_dispatch"
-    PLANNER_HANDOFF = "planner_handoff"
-    POLICY_BLOCK = "policy_block"
-    HINT_ONLY = "hint_only"
-
-
 @dataclass(frozen=True, slots=True)
 class GateHandlerSpec:
     """Declarative metadata for a gate handler."""
@@ -48,10 +43,39 @@ class GateHandlerSpec:
     priority: int
     handler: GateHandler
     owner: str
-    outcome_kind: GateOutcomeKind
+    outcome_kind: TurnOutcomeKind | None
     may_call_llm: bool
     description: str
     eligibility: GateEligibility | None = None
+    allowed_owners: frozenset[str] = frozenset()
+    allowed_outcomes: frozenset[TurnOutcomeKind] = frozenset()
+    allowed_next_steps: frozenset[TurnNextStep] = frozenset()
+
+    @property
+    def resolved_allowed_outcomes(self) -> frozenset[TurnOutcomeKind]:
+        if self.allowed_outcomes:
+            return self.allowed_outcomes
+        return frozenset({self.outcome_kind}) if self.outcome_kind is not None else frozenset()
+
+    @property
+    def resolved_allowed_owners(self) -> frozenset[str]:
+        return self.allowed_owners or frozenset({self.owner})
+
+    @property
+    def resolved_allowed_next_steps(self) -> frozenset[TurnNextStep]:
+        if self.allowed_next_steps:
+            return self.allowed_next_steps
+        steps: set[TurnNextStep] = set()
+        for outcome in self.resolved_allowed_outcomes:
+            if outcome in {TurnOutcomeKind.DIRECT_RESPONSE, TurnOutcomeKind.POLICY_BLOCK}:
+                steps.add(TurnNextStep.FINALIZE)
+            elif outcome == TurnOutcomeKind.TASK_DISPATCH:
+                steps.add(TurnNextStep.ADVANCE)
+            elif outcome == TurnOutcomeKind.PLANNER_HANDOFF:
+                steps.add(TurnNextStep.PLAN)
+            elif outcome == TurnOutcomeKind.INTERRUPT_HANDOFF:
+                steps.add(TurnNextStep.HANDLE_INTERRUPT)
+        return frozenset(steps)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,8 +97,7 @@ class GateTraceEntry:
     matched: bool
     executed: bool
     gate_updates_changed: bool
-    routing_owner: str | None = None
-    routing_decision: str | None = None
+    turn_directive: TurnDirective | None = None
     skip_reason: str | None = None
     skip_details: dict[str, object] | None = None
 
@@ -113,7 +136,7 @@ __all__ = [
     "GateHandler",
     "GateHandlerSpec",
     "GateLayer",
-    "GateOutcomeKind",
     "GateTraceEntry",
     "GateUpdates",
+    "TurnOutcomeKind",
 ]

@@ -3,6 +3,7 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrameType, EntityType
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.receipt_requests import (
     _has_receipt_thread_candidates,
     _looks_like_receipt_request,
@@ -15,7 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _obvious_mixed_transaction_executors,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, policy_block, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
     _build_direct_domain_task,
     _direct_domain_capability_block_message,
@@ -60,7 +61,7 @@ def _is_fresh_transaction_request(message_text: str) -> bool:
     )
 
 
-async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_receipt_thread_followup(ctx: GateContext) -> RouteResolution | None:
     """Active receipt thread support dispatch."""
     if (
         ctx.live_pending_interrupt
@@ -78,12 +79,12 @@ async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | N
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
         logger.info("gate_receipt_thread_support_policy_blocked")
-        return direct_response(
+        return policy_block(
             ctx,
             response=block_message,
             owner="guardrail",
             decision="capability_blocked",
-            semantic_path_shape="support_receipt_thread_policy_blocked",
+            path_shape="support_receipt_thread_policy_blocked",
             target_domain="support",
         )
     task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="support")
@@ -101,13 +102,13 @@ async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | N
         waves=[[task_id]],
         owner="guardrail",
         decision="receipt_thread_support",
-        semantic_path_shape="support_receipt_thread_direct",
+        path_shape="support_receipt_thread_direct",
         extra_updates={"pending_interrupt": None},
         target_domain="support",
     )
 
 
-async def _stage_receipt_request(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_receipt_request(ctx: GateContext) -> RouteResolution | None:
     """Recent batch receipt request."""
     if (
         ctx.live_pending_interrupt
@@ -122,12 +123,12 @@ async def _stage_receipt_request(ctx: GateContext) -> dict[str, Any] | None:
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
         logger.info("gate_recent_batch_receipt_support_policy_blocked")
-        return direct_response(
+        return policy_block(
             ctx,
             response=block_message,
             owner="guardrail",
             decision="capability_blocked",
-            semantic_path_shape="support_receipt_policy_blocked",
+            path_shape="support_receipt_policy_blocked",
             target_domain="support",
         )
     task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="support")
@@ -145,7 +146,7 @@ async def _stage_receipt_request(ctx: GateContext) -> dict[str, Any] | None:
         waves=[[task_id]],
         owner="guardrail",
         decision="recent_batch_receipt_support",
-        semantic_path_shape="support_receipt_direct",
+        path_shape="support_receipt_direct",
         extra_updates={"pending_interrupt": None},
         target_domain="support",
     )
@@ -263,7 +264,7 @@ def _looks_like_support_context_followup(message_text: str, support_ctx: Any) ->
     return False
 
 
-async def _stage_support_context_followup(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_support_context_followup(ctx: GateContext) -> RouteResolution | None:
     """Route active support clarification/detail follow-ups back to support."""
     if ctx.live_pending_interrupt or not ctx.redis_client:
         return None
@@ -272,14 +273,14 @@ async def _stage_support_context_followup(ctx: GateContext) -> dict[str, Any] | 
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
         logger.info("gate_support_context_followup_policy_blocked")
-        return direct_response(
+        return policy_block(
             ctx,
             response=block_message,
             owner="guardrail",
             decision="capability_blocked",
-            semantic_path_shape="support_context_policy_blocked",
+            path_shape="support_context_policy_blocked",
             target_domain="support",
-            route_source="support_context",
+            source="support_context",
             heuristic_type="guardrail_shortcut",
             heuristic_name="active_support_context",
         )
@@ -292,16 +293,16 @@ async def _stage_support_context_followup(ctx: GateContext) -> dict[str, Any] | 
         waves=[[task_id]],
         owner="guardrail",
         decision="support_context_followup",
-        semantic_path_shape="support_context_direct",
+        path_shape="support_context_direct",
         extra_updates={"pending_interrupt": None},
         target_domain="support",
-        route_source="support_context",
+        source="support_context",
         heuristic_type="guardrail_shortcut",
         heuristic_name="active_support_context",
     )
 
 
-async def _stage_recent_transaction_support_request(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_recent_transaction_support_request(ctx: GateContext) -> RouteResolution | None:
     """Route reversal/refund follow-ups against a just-displayed transaction."""
     if ctx.live_pending_interrupt or ctx.state_view.has_quote:
         return None
@@ -319,22 +320,22 @@ async def _stage_recent_transaction_support_request(ctx: GateContext) -> dict[st
                 response=render_message("orchestrator.ambiguity.support_transaction", ctx.current_locale),
                 owner="guardrail",
                 decision="banking_coded_ambiguity_support",
-                semantic_path_shape="banking_coded_ambiguity_clarify",
-                route_source="context_frame",
+                path_shape="banking_coded_ambiguity_clarify",
+                source="context_frame",
                 heuristic_type="guardrail_shortcut",
                 heuristic_name="recent_transaction_reversal_ambiguity",
             )
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
         logger.info("gate_recent_transaction_support_policy_blocked")
-        return direct_response(
+        return policy_block(
             ctx,
             response=block_message,
             owner="guardrail",
             decision="capability_blocked",
-            semantic_path_shape="recent_transaction_support_policy_blocked",
+            path_shape="recent_transaction_support_policy_blocked",
             target_domain="support",
-            route_source="context_frame",
+            source="context_frame",
             heuristic_type="guardrail_shortcut",
             heuristic_name="recent_transaction_reversal",
         )
@@ -349,16 +350,16 @@ async def _stage_recent_transaction_support_request(ctx: GateContext) -> dict[st
         waves=[[task_id]],
         owner="guardrail",
         decision="recent_transaction_support",
-        semantic_path_shape="recent_transaction_support_direct",
+        path_shape="recent_transaction_support_direct",
         extra_updates={"pending_interrupt": None},
         target_domain="support",
-        route_source="context_frame",
+        source="context_frame",
         heuristic_type="guardrail_shortcut",
         heuristic_name="recent_transaction_reversal",
     )
 
 
-async def _stage_support_issue_request(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_support_issue_request(ctx: GateContext) -> RouteResolution | None:
     """Route common transaction/ticket issue phrases directly to support."""
     if (
         ctx.live_pending_interrupt
@@ -372,14 +373,14 @@ async def _stage_support_issue_request(ctx: GateContext) -> dict[str, Any] | Non
 
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
         logger.info("gate_support_issue_policy_blocked")
-        return direct_response(
+        return policy_block(
             ctx,
             response=block_message,
             owner="guardrail",
             decision="capability_blocked",
-            semantic_path_shape="support_issue_policy_blocked",
+            path_shape="support_issue_policy_blocked",
             target_domain="support",
-            route_source="support_issue_guard",
+            source="support_issue_guard",
             heuristic_type="guardrail_shortcut",
             heuristic_name="support_issue_phrase",
         )
@@ -395,10 +396,10 @@ async def _stage_support_issue_request(ctx: GateContext) -> dict[str, Any] | Non
         waves=[[task_id]],
         owner="guardrail",
         decision="support_issue_direct",
-        semantic_path_shape="support_issue_direct",
+        path_shape="support_issue_direct",
         extra_updates={"pending_interrupt": None},
         target_domain="support",
-        route_source="support_issue_guard",
+        source="support_issue_guard",
         heuristic_type="guardrail_shortcut",
         heuristic_name="support_issue_phrase",
     )

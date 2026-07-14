@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_responder_contex
     contextual_worker_fallback_reply,
 )
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
@@ -211,7 +212,7 @@ def _contextual_summary_text(ctx: GateContext, support_context: dict[str, Any] |
     return "\n".join(parts)[:1200]
 
 
-async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_contextual_worker_followup(ctx: GateContext) -> RouteResolution | None:
     """Route non-actionable acknowledgement/commentary after prior results to conversation."""
     candidate_locales = _candidate_locales(ctx)
     if (
@@ -222,7 +223,6 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] 
         return None
 
     await ctx.ensure_turn_summary()
-
 
     support_context = await _support_context_summary(ctx)
     has_grounded_context = bool(
@@ -287,12 +287,12 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] 
         response=final_response,
         owner="guardrail",
         decision=responder_intent,
-        semantic_path_shape=responder_intent,
+        path_shape=responder_intent,
         extra_updates={
             **(ctx.summary_updates or {}),
             "conversation_topic": last_topic or "casual",
         },
-        route_source=responder_intent,
+        source=responder_intent,
         heuristic_type="guardrail_shortcut",
         heuristic_name="worker_acknowledgement",
     )

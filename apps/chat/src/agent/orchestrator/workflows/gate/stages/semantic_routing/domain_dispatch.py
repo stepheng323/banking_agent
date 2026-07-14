@@ -2,14 +2,17 @@
 
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _obvious_mixed_transaction_executors,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
-    TRANSACTION_EXECUTORS,
-    _route_observability_updates,
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import (
+    planner_handoff,
+    policy_block,
+    task_dispatch,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import TRANSACTION_EXECUTORS
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.schedule_read_stage import (
     _build_direct_schedule_read_updates,
     _semantic_schedule_response_mode,
@@ -24,7 +27,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
 from banking.intent.routing_signals import (
     looks_like_transaction_replay_modifier_request,
 )
-from shared.types.planner import RouterDomainIntent
+from shared.types.planner import RouterDomainIntent, SemanticRoutingMode
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -47,8 +50,8 @@ async def _handle_semantic_domain_dispatch(
     route: Any,
     updates: dict[str, Any],
     canonical_decision: str | None,
-    canonical_mode: str | None,
-) -> dict[str, Any] | None:
+    canonical_mode: SemanticRoutingMode | None,
+) -> RouteResolution | None:
     if canonical_decision == "domain_schedule":
         schedule_response_mode = _semantic_schedule_response_mode(route)
         if schedule_response_mode is not None:
@@ -64,26 +67,23 @@ async def _handle_semantic_domain_dispatch(
                 schedule_response_mode=schedule_response_mode,
                 canonical_decision=canonical_decision,
                 canonical_mode=canonical_mode,
-                route_source="semantic_router",
+                source="semantic_router",
             )
         logger.info(
             "gate_semantic_router_schedule_planner_handoff",
             decision=canonical_decision,
             mode=canonical_mode,
         )
-        return {
-            **ctx.gate_updates,
-            **(ctx.summary_updates or {}),
-            "semantic_path_shape": "semantic_router_schedule_planner_handoff",
-            **_route_observability_updates(
-                owner="planner",
-                decision="planner_handoff",
-                target_domain="schedule",
-                mode=canonical_mode,
-                route_source="semantic_router",
-            ),
-            **updates,
-        }
+        return planner_handoff(
+            ctx,
+            owner="semantic_router",
+            decision="planner_handoff",
+            target_domain="schedule",
+            mode=canonical_mode,
+            source="semantic_router",
+            path_shape="semantic_router_schedule_planner_handoff",
+            extra_updates=updates,
+        )
 
     if canonical_decision not in _ROUTE_TO_DOMAIN:
         return None
@@ -101,23 +101,19 @@ async def _handle_semantic_domain_dispatch(
                 decision=canonical_decision,
                 mode=canonical_mode,
             )
-            return {
-                **ctx.gate_updates,
-                **(ctx.summary_updates or {}),
-                "direct_path_triggered": True,
-                "final_response": block_message,
-                "semantic_path_shape": "transaction_replay_modifier_transfer_policy_blocked",
-                **_route_observability_updates(
-                    owner="guardrail",
-                    decision="capability_blocked",
-                    target_domain="transfer",
-                    mode=canonical_mode,
-                    route_source="semantic_router_veto",
-                    heuristic_type="negative_guard",
-                    heuristic_name="transaction_replay_modifier",
-                ),
-                **updates,
-            }
+            return policy_block(
+                ctx,
+                response=block_message,
+                owner="guardrail",
+                decision="capability_blocked",
+                target_domain="transfer",
+                mode=canonical_mode,
+                source="semantic_router_veto",
+                path_shape="transaction_replay_modifier_transfer_policy_blocked",
+                heuristic_type="negative_guard",
+                heuristic_name="transaction_replay_modifier",
+                extra_updates={**(ctx.summary_updates or {}), **updates},
+            )
         if await ctx.has_active_query_session():
             updates.update(
                 _build_query_session_exit_updates(
@@ -129,26 +125,20 @@ async def _handle_semantic_domain_dispatch(
             domain="transfer",
             mode=canonical_mode,
         )
-        return {
-            **ctx.gate_updates,
-            **(ctx.summary_updates or {}),
-            "tasks": {task_id: spec},
-            "waves": [[task_id]],
-            "current_wave_index": 0,
-            "planner_output": None,
-            "direct_path_triggered": True,
-            "semantic_path_shape": "transaction_replay_modifier_transfer",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="transaction_replay_modifier_transfer",
-                target_domain="transfer",
-                mode=canonical_mode,
-                route_source="semantic_router_veto",
-                heuristic_type="negative_guard",
-                heuristic_name="transaction_replay_modifier",
-            ),
-            **updates,
-        }
+        return task_dispatch(
+            ctx,
+            tasks={task_id: spec},
+            waves=[[task_id]],
+            owner="guardrail",
+            decision="transaction_replay_modifier_transfer",
+            target_domain="transfer",
+            mode=canonical_mode,
+            source="semantic_router_veto",
+            path_shape="transaction_replay_modifier_transfer",
+            heuristic_type="negative_guard",
+            heuristic_name="transaction_replay_modifier",
+            extra_updates={**(ctx.summary_updates or {}), **updates},
+        )
 
     mixed_executors = _obvious_mixed_transaction_executors(ctx.message_text)
     if domain in TRANSACTION_EXECUTORS and mixed_executors:
@@ -159,16 +149,15 @@ async def _handle_semantic_domain_dispatch(
             attempted_domain=domain,
             expected_executors=mixed_executors,
         )
-        return {
-            **ctx.gate_updates,
-            **(ctx.summary_updates or {}),
-            **_route_observability_updates(
-                owner="planner",
-                decision="planner_handoff",
-                mode=canonical_mode,
-            ),
-            **updates,
-        }
+        return planner_handoff(
+            ctx,
+            owner="semantic_router",
+            decision="planner_handoff",
+            mode=canonical_mode,
+            source="semantic_router_mixed_veto",
+            path_shape="semantic_router_mixed_planner_handoff",
+            extra_updates=updates,
+        )
 
     if block_message := _direct_domain_capability_block_message(ctx.state_view, domain):
         logger.info(
@@ -177,20 +166,17 @@ async def _handle_semantic_domain_dispatch(
             domain=domain,
             mode=canonical_mode,
         )
-        return {
-            **ctx.gate_updates,
-            **(ctx.summary_updates or {}),
-            "direct_path_triggered": True,
-            "final_response": block_message,
-            "semantic_path_shape": "semantic_router_domain_policy_blocked",
-            **_route_observability_updates(
-                owner="semantic_router",
-                decision="capability_blocked",
-                target_domain=domain,
-                mode=canonical_mode,
-            ),
-            **updates,
-        }
+        return policy_block(
+            ctx,
+            response=block_message,
+            owner="semantic_router",
+            decision="capability_blocked",
+            target_domain=domain,
+            mode=canonical_mode,
+            source="semantic_router",
+            path_shape="semantic_router_domain_policy_blocked",
+            extra_updates={**(ctx.summary_updates or {}), **updates},
+        )
 
     if domain != "query" and await ctx.has_active_query_session():
         updates.update(
@@ -211,20 +197,15 @@ async def _handle_semantic_domain_dispatch(
         mode=canonical_mode,
         task_id=task_id,
     )
-    return {
-        **ctx.gate_updates,
-        **(ctx.summary_updates or {}),
-        "tasks": {task_id: spec},
-        "waves": [[task_id]],
-        "current_wave_index": 0,
-        "planner_output": None,
-        "direct_path_triggered": True,
-        "semantic_path_shape": "semantic_router_domain",
-        **_route_observability_updates(
-            owner="semantic_router",
-            decision=canonical_decision,
-            target_domain=domain,
-            mode=canonical_mode,
-        ),
-        **updates,
-    }
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="semantic_router",
+        decision=canonical_decision,
+        target_domain=domain,
+        mode=canonical_mode,
+        source="semantic_router",
+        path_shape="semantic_router_domain",
+        extra_updates={**(ctx.summary_updates or {}), **updates},
+    )

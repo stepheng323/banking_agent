@@ -18,13 +18,12 @@ from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
     clarify_message,
     has_cancelable_state,
 )
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.presentation.conversational_style import (
     format_out_of_scope_reply,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
-    _route_observability_updates,
-)
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import (
     _build_bounded_conversational_reply,
 )
@@ -51,7 +50,7 @@ async def _handle_semantic_direct_response(
     updates: dict[str, Any],
     canonical_decision: str | None,
     canonical_mode: str | None,
-) -> dict[str, Any] | None:
+) -> RouteResolution | None:
     if canonical_decision not in {"direct_reply", "direct_context_answer"}:
         return None
 
@@ -73,23 +72,18 @@ async def _handle_semantic_direct_response(
             semantic_decision=canonical_decision,
             response_key=route.response_key,
         )
-        return {
-            **ctx.gate_updates,
-            **(ctx.summary_updates or {}),
-            "tasks": {task_id: spec},
-            "waves": [[task_id]],
-            "current_wave_index": 0,
-            "planner_output": None,
-            "direct_path_triggered": True,
-            "semantic_path_shape": "query_followup_bypass",
-            **_route_observability_updates(
-                owner="query_session",
-                decision="query_followup_bypass",
-                target_domain="query",
-                mode="continuation",
-            ),
-            **updates,
-        }
+        return task_dispatch(
+            ctx,
+            tasks={task_id: spec},
+            waves=[[task_id]],
+            owner="query_session",
+            decision="query_followup_bypass",
+            target_domain="query",
+            mode="continuation",
+            source="semantic_router",
+            path_shape="query_followup_bypass",
+            extra_updates={**(ctx.summary_updates or {}), **updates},
+        )
     if (
         ctx.ambiguous_banking_domain is not None
         and not ctx.state_view.has_session_stack
@@ -102,18 +96,15 @@ async def _handle_semantic_direct_response(
             domain=ctx.ambiguous_banking_domain,
             response_key=route.response_key,
         )
-        return {
-            **ctx.gate_updates,
-            **(ctx.summary_updates or {}),
-            "direct_path_triggered": True,
-            "final_response": render_banking_coded_ambiguity_prompt(ctx.message_text, locale=locale),
-            "semantic_path_shape": "banking_coded_ambiguity_clarify",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision=f"banking_coded_ambiguity_{ctx.ambiguous_banking_domain}",
-            ),
-            **updates,
-        }
+        return direct_response(
+            ctx,
+            response=render_banking_coded_ambiguity_prompt(ctx.message_text, locale=locale),
+            owner="guardrail",
+            decision=f"banking_coded_ambiguity_{ctx.ambiguous_banking_domain}",
+            source="semantic_router_veto",
+            path_shape="banking_coded_ambiguity_clarify",
+            extra_updates={**(ctx.summary_updates or {}), **updates},
+        )
     if route.response_key:
         if route.response_key == "planner.cancelled":
             if has_cancelable_state(ctx.state):
@@ -172,16 +163,13 @@ async def _handle_semantic_direct_response(
         response_key=route.response_key,
         locale=locale,
     )
-    return {
-        **ctx.gate_updates,
-        **(ctx.summary_updates or {}),
-        "direct_path_triggered": True,
-        "final_response": text,
-        "semantic_path_shape": "semantic_router_direct",
-        **_route_observability_updates(
-            owner="semantic_router",
-            decision=canonical_decision,
-            mode=canonical_mode,
-        ),
-        **updates,
-    }
+    return direct_response(
+        ctx,
+        response=text,
+        owner="semantic_router",
+        decision=canonical_decision,
+        mode=canonical_mode,
+        source="semantic_router",
+        path_shape="semantic_router_direct",
+        extra_updates={**(ctx.summary_updates or {}), **updates},
+    )

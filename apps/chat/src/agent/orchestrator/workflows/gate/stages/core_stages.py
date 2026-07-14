@@ -1,4 +1,3 @@
-from typing import Any
 
 from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
     build_cancellation_reset_updates,
@@ -9,12 +8,12 @@ from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
     is_explicit_cancel_message,
 )
 from apps.chat.src.agent.orchestrator.guardrails.gibberish import looks_like_gibberish, render_gibberish_prompt
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic import (
     classify_deterministic_meta_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response
-from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import _route_observability_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import _locale_update
 from apps.chat.src.agent.orchestrator.workflows.gate.state.mandate_state import (
     _has_pending_mandate_without_ready_accounts,
@@ -41,7 +40,7 @@ def _stage_stale_interrupt_cleanup(ctx: GateContext) -> None:
         ctx.gate_updates["pending_interrupt"] = None
 
 
-async def _stage_language_switch(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_language_switch(ctx: GateContext) -> RouteResolution | None:
     """Deterministic explicit language switch command."""
     requested_locale = _resolve_explicit_language_switch(ctx.message_text)
     if requested_locale is None:
@@ -61,12 +60,12 @@ async def _stage_language_switch(ctx: GateContext) -> dict[str, Any] | None:
         response=render_locale_switched(next_locale),
         owner="guardrail",
         decision="language_switch",
-        semantic_path_shape="language_switch_direct",
+        path_shape="language_switch_direct",
         extra_updates=_locale_update(ctx.state_view, next_locale),
     )
 
 
-async def _stage_cancel(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_cancel(ctx: GateContext) -> RouteResolution | None:
     """Explicit cancel handling."""
     if not is_explicit_cancel_message(ctx.message_text):
         return None
@@ -78,40 +77,44 @@ async def _stage_cancel(ctx: GateContext) -> dict[str, Any] | None:
         and ctx.query_session_snapshot.get("pending_clarification")
     ):
         await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
-        return {
-            **ctx.gate_updates,
-            "direct_path_triggered": True,
-            "final_response": render_message("query.session.goodbye", ctx.current_locale),
-            "pending_query_clarification": None,
-            **_route_observability_updates(owner="guardrail", decision="cancel"),
-        }
+        return direct_response(
+            ctx,
+            response=render_message("query.session.goodbye", ctx.current_locale),
+            owner="guardrail",
+            decision="cancel",
+            path_shape="cancel_query_clarification",
+            extra_updates={"pending_query_clarification": None},
+        )
 
     if has_cancelable_state(ctx.state):
         cleanup_updates = await build_cancellation_reset_updates(ctx.state, ctx.redis_client)
-        return {
-            **ctx.gate_updates,
-            **cleanup_updates,
-            "direct_path_triggered": True,
-            "final_response": cancelled_message(ctx.state, ctx.current_locale),
-            **_route_observability_updates(owner="guardrail", decision="cancel"),
-        }
+        return direct_response(
+            ctx,
+            response=cancelled_message(ctx.state, ctx.current_locale),
+            owner="guardrail",
+            decision="cancel",
+            path_shape="cancel_direct",
+            extra_updates=cleanup_updates,
+        )
     if _has_pending_mandate_without_ready_accounts(ctx.state_view.loaded_context):
         logger.info("gate_pending_mandate_notice_dismissed")
-        return {
-            **ctx.gate_updates,
-            "direct_path_triggered": True,
-            "final_response": cancelled_message(ctx.state, ctx.current_locale),
-            **_route_observability_updates(owner="guardrail", decision="cancel_pending_mandate_notice"),
-        }
-    return {
-        **ctx.gate_updates,
-        "direct_path_triggered": True,
-        "final_response": clarify_message(ctx.state, ctx.current_locale),
-        **_route_observability_updates(owner="guardrail", decision="cancel"),
-    }
+        return direct_response(
+            ctx,
+            response=cancelled_message(ctx.state, ctx.current_locale),
+            owner="guardrail",
+            decision="cancel_pending_mandate_notice",
+            path_shape="cancel_pending_mandate_notice",
+        )
+    return direct_response(
+        ctx,
+        response=clarify_message(ctx.state, ctx.current_locale),
+        owner="guardrail",
+        decision="cancel",
+        path_shape="cancel_clarify",
+    )
 
 
-async def _stage_gibberish_filter(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_gibberish_filter(ctx: GateContext) -> RouteResolution | None:
     """Deterministic fast-path for obvious gibberish/spam before semantic routing."""
     if looks_like_gibberish(ctx.message_text):
         logger.info("gate_gibberish_filtered")
@@ -120,12 +123,12 @@ async def _stage_gibberish_filter(ctx: GateContext) -> dict[str, Any] | None:
             response=render_gibberish_prompt(ctx.current_locale),
             owner="guardrail",
             decision="gibberish_filtered",
-            semantic_path_shape="gibberish_direct",
+            path_shape="gibberish_direct",
         )
     return None
 
 
-async def _stage_expired_pin(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_expired_pin(ctx: GateContext) -> RouteResolution | None:
     """PIN verified but no active session (checkpoint was cleaned)."""
     if not ctx.state_view.pin_verified or ctx.live_pending_interrupt:
         return None
@@ -145,7 +148,7 @@ async def _stage_expired_pin(ctx: GateContext) -> dict[str, Any] | None:
         ),
         owner="guardrail",
         decision="expired_pin_session",
-        semantic_path_shape="expired_pin_session",
+        path_shape="expired_pin_session",
     )
 
 

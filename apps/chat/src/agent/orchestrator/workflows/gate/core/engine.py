@@ -5,6 +5,11 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable, Mapping
 
+from apps.chat.src.agent.orchestrator.models.turn_directive import (
+    RouteResolution,
+    RoutingContractError,
+    TurnDirective,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.contracts import (
     GATE_LAYER_INDEX,
@@ -26,9 +31,11 @@ def ordered_gate_handlers(handlers: Iterable[GateHandlerSpec]) -> tuple[GateHand
     return tuple(sorted(handlers, key=lambda spec: (GATE_LAYER_INDEX[spec.layer], spec.priority)))
 
 
-def _routing_value(updates: Mapping[str, object], key: str) -> str | None:
-    value = updates.get(key)
-    return value if isinstance(value, str) and value else None
+def _extract_directive(updates: Mapping[str, object] | RouteResolution) -> TurnDirective | None:
+    if isinstance(updates, RouteResolution):
+        return updates.directive
+    value = updates.get("turn_directive")
+    return value if isinstance(value, TurnDirective) else None
 
 
 def _log_engine_result(result: GateEngineResult) -> None:
@@ -57,8 +64,7 @@ def _build_trace_entry(
         matched=matched,
         executed=executed,
         gate_updates_changed=gate_updates_changed,
-        routing_owner=_routing_value(routing_updates, "routing_owner"),
-        routing_decision=_routing_value(routing_updates, "routing_decision"),
+        turn_directive=_extract_directive(routing_updates),
         skip_reason=skip_reason,
         skip_details=skip_details,
     )
@@ -66,6 +72,33 @@ def _build_trace_entry(
 
 def _default_eligibility() -> GateEligibilityResult:
     return GateEligibilityResult(eligible=True, reason="default_eligible", details={})
+
+
+def _validate_resolution(spec: GateHandlerSpec, resolution: RouteResolution) -> dict[str, object]:
+    directive = resolution.directive
+
+    allowed_owners = spec.resolved_allowed_owners
+    if directive.owner not in allowed_owners:
+        allowed = ", ".join(sorted(allowed_owners)) or "none"
+        raise RoutingContractError(
+            f"gate handler {spec.id} returned owner {directive.owner}; allowed owners: {allowed}"
+        )
+
+    allowed_outcomes = spec.resolved_allowed_outcomes
+    if directive.outcome_kind not in allowed_outcomes:
+        allowed = ", ".join(sorted(item.value for item in allowed_outcomes)) or "none"
+        raise RoutingContractError(
+            f"gate handler {spec.id} returned {directive.outcome_kind.value}; allowed outcomes: {allowed}"
+        )
+
+    allowed_next_steps = spec.resolved_allowed_next_steps
+    if directive.next_step not in allowed_next_steps:
+        allowed = ", ".join(sorted(item.value for item in allowed_next_steps)) or "none"
+        raise RoutingContractError(
+            f"gate handler {spec.id} returned next step {directive.next_step.value}; allowed next steps: {allowed}"
+        )
+
+    return resolution.materialize()
 
 
 async def run_gate_engine(ctx: GateContext, handlers: Iterable[GateHandlerSpec]) -> GateEngineResult:
@@ -118,8 +151,13 @@ async def run_gate_engine(ctx: GateContext, handlers: Iterable[GateHandlerSpec])
         )
 
         if updates is not None:
+            if not isinstance(updates, RouteResolution):
+                raise RoutingContractError(
+                    f"gate handler {spec.id} returned {type(updates).__name__}; expected RouteResolution"
+                )
+            committed_updates = _validate_resolution(spec, updates)
             result = GateEngineResult(
-                updates=updates,
+                updates=committed_updates,
                 matched_handler_id=spec.id,
                 matched_layer=spec.layer,
                 trace=tuple(trace),
@@ -128,22 +166,23 @@ async def run_gate_engine(ctx: GateContext, handlers: Iterable[GateHandlerSpec])
             return result
 
     logger.info("gate_dispatch_to_planner", reason="planner_owned_or_unresolved_route")
-    fallback_updates = planner_handoff(ctx)
+    fallback_resolution = planner_handoff(ctx)
+    fallback_updates = fallback_resolution.materialize()
+    fallback_id = "planner_fallback"
     trace.append(
         GateTraceEntry(
-            handler_id="planner_fallback",
+            handler_id=fallback_id,
             layer=GateLayer.PLANNER_FALLBACK,
             duration_ms=0.0,
             matched=True,
             executed=True,
             gate_updates_changed=False,
-            routing_owner=_routing_value(fallback_updates, "routing_owner"),
-            routing_decision=_routing_value(fallback_updates, "routing_decision"),
+            turn_directive=_extract_directive(fallback_updates),
         )
     )
     result = GateEngineResult(
         updates=fallback_updates,
-        matched_handler_id="planner_fallback",
+        matched_handler_id=fallback_id,
         matched_layer=GateLayer.PLANNER_FALLBACK,
         trace=tuple(trace),
     )

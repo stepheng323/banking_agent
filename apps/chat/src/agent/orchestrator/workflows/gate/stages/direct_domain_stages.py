@@ -5,6 +5,7 @@ from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
     has_explicit_cancel,
 )
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
     _is_account_balance_request,
     _is_account_domain_request,
@@ -15,7 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _is_obvious_airtime_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import policy_block, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
     _build_direct_domain_task,
     _direct_domain_capability_block_message,
@@ -26,7 +27,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def _stage_balance_direct(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_balance_direct(ctx: GateContext) -> RouteResolution | None:
     """Direct balance check shortcut."""
     if ctx.live_pending_interrupt or not ctx.phrase_heavy_fastpath_allowed:
         return None
@@ -59,17 +60,17 @@ async def _stage_balance_direct(ctx: GateContext) -> dict[str, Any] | None:
         waves=[[task_id]],
         owner="guardrail",
         decision="balance_direct",
-        semantic_path_shape="balance_direct",
+        path_shape="balance_direct",
         extra_updates={**cleanup_updates, "pending_interrupt": None},
         target_domain="account",
         mode="new",
-        route_source="account_balance_guard",
+        source="account_balance_guard",
         heuristic_type="guardrail_shortcut",
         heuristic_name="balance_request",
     )
 
 
-async def _stage_account_domain(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_account_domain(ctx: GateContext) -> RouteResolution | None:
     """Deterministic account domain shortcut."""
     if (
         ctx.live_pending_interrupt
@@ -92,17 +93,17 @@ async def _stage_account_domain(ctx: GateContext) -> dict[str, Any] | None:
         waves=[[task_id]],
         owner="guardrail",
         decision="deterministic_account_domain",
-        semantic_path_shape="deterministic_account_domain",
+        path_shape="deterministic_account_domain",
         extra_updates={**cleanup_updates, "pending_interrupt": None},
         target_domain="account",
         mode="new",
-        route_source="account_domain_guard",
+        source="account_domain_guard",
         heuristic_type="guardrail_shortcut",
         heuristic_name="account_domain_request",
     )
 
 
-async def _stage_beneficiary_domain(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_beneficiary_domain(ctx: GateContext) -> RouteResolution | None:
     """Deterministic beneficiary domain shortcut."""
     if (
         ctx.live_pending_interrupt
@@ -122,17 +123,17 @@ async def _stage_beneficiary_domain(ctx: GateContext) -> dict[str, Any] | None:
         waves=[[task_id]],
         owner="guardrail",
         decision="deterministic_beneficiary_domain",
-        semantic_path_shape="deterministic_beneficiary_domain",
+        path_shape="deterministic_beneficiary_domain",
         extra_updates={"pending_interrupt": None},
         target_domain="beneficiary",
         mode="new",
-        route_source="beneficiary_domain_guard",
+        source="beneficiary_domain_guard",
         heuristic_type="guardrail_shortcut",
         heuristic_name="beneficiary_list_request",
     )
 
 
-async def _stage_airtime_domain(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_airtime_domain(ctx: GateContext) -> RouteResolution | None:
     """Deterministic airtime domain shortcut."""
     if (
         ctx.live_pending_interrupt
@@ -146,15 +147,15 @@ async def _stage_airtime_domain(ctx: GateContext) -> dict[str, Any] | None:
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "airtime"):
         logger.info("gate_deterministic_airtime_domain_policy_blocked")
-        return direct_response(
+        return policy_block(
             ctx,
             response=block_message,
             owner="guardrail",
             decision="capability_blocked",
-            semantic_path_shape="deterministic_airtime_domain_policy_blocked",
+            path_shape="deterministic_airtime_domain_policy_blocked",
             target_domain="airtime",
             mode="new",
-            route_source="airtime_domain_guard",
+            source="airtime_domain_guard",
             heuristic_type="slot_parser",
             heuristic_name="obvious_airtime_request",
         )
@@ -166,11 +167,11 @@ async def _stage_airtime_domain(ctx: GateContext) -> dict[str, Any] | None:
         waves=[[task_id]],
         owner="guardrail",
         decision="deterministic_airtime_domain",
-        semantic_path_shape="deterministic_airtime_domain",
+        path_shape="deterministic_airtime_domain",
         extra_updates={"pending_interrupt": None},
         target_domain="airtime",
         mode="new",
-        route_source="airtime_domain_guard",
+        source="airtime_domain_guard",
         heuristic_type="slot_parser",
         heuristic_name="obvious_airtime_request",
     )

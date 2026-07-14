@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
     _is_account_balance_request,
     _is_account_domain_request,
@@ -27,7 +28,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.contextual_followup_
     _looks_like_contextual_worker_acknowledgement,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.schedule_read_stage import _could_be_schedule_read_request
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_routing.pipeline import _stage_semantic_router
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_routing.pipeline import resolve_semantic_route
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.support_identity import (
     _recent_batch_identity,
     _support_user_id,
@@ -128,6 +129,7 @@ async def detect_stale_context(ctx: GateContext) -> StaleContextSnapshot:
 def is_strict_context_selector(message: str, snapshot: StaleContextSnapshot) -> bool:
     """Return true when deterministic stale-context routing is safe."""
     import time
+
     current_time = time.time()
 
     # Prevent terse menu/selector collisions if the context is older than 180 seconds
@@ -256,15 +258,16 @@ def _should_arbitrate(ctx: GateContext, snapshot: StaleContextSnapshot) -> bool:
     return snapshot.has_context_frame and _looks_like_fresh_context_frame_domain_turn(ctx.message_text)
 
 
-def _semantic_updates_start_non_support_flow(updates: dict[str, Any]) -> bool:
-    target_domain = updates.get("routing_target_domain")
-    routing_owner = updates.get("routing_owner")
-    routing_decision = updates.get("routing_decision")
-    if target_domain == "support" or routing_decision == "domain_support":
+def _semantic_updates_start_non_support_flow(updates: RouteResolution) -> bool:
+    directive = updates.directive
+    target_domain = directive.target_domain
+    turn_owner = directive.owner
+    turn_decision = directive.decision
+    if target_domain == "support" or turn_decision == "domain_support":
         return False
     if isinstance(target_domain, str) and target_domain:
         return True
-    return routing_owner == "planner" or routing_decision in {
+    return turn_owner == "planner" or turn_decision in {
         "planner_handoff",
         "planner_mixed",
         "planner_ambiguous",
@@ -272,7 +275,7 @@ def _semantic_updates_start_non_support_flow(updates: dict[str, Any]) -> bool:
     }
 
 
-async def _stage_stale_context_arbitration(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_stale_context_arbitration(ctx: GateContext) -> RouteResolution | None:
     """Let semantic routing arbitrate non-terse turns while stale context exists."""
     if ctx.live_pending_interrupt or ctx.task_planner is None:
         return None
@@ -299,7 +302,7 @@ async def _stage_stale_context_arbitration(ctx: GateContext) -> dict[str, Any] |
         has_recent_batch_reference=snapshot.has_recent_batch_reference,
         has_context_frame=snapshot.has_context_frame,
     )
-    updates = await _stage_semantic_router(ctx)
+    updates = await resolve_semantic_route(ctx)
     if updates is None:
         logger.warning("gate_stale_context_arbitration_semantic_router_unresolved")
         if snapshot.support_user_id and snapshot.has_support_context:

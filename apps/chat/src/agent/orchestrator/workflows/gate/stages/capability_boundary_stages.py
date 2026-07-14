@@ -1,5 +1,5 @@
 from time import time
-from typing import Any, cast
+from typing import cast
 
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.casual import (
     looks_like_obvious_casual_or_meta_turn,
 )
@@ -20,7 +21,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.query_followups
     _query_followup_bypass_reason,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import _route_observability_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, policy_block
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.unsupported_capability_routing import (
     FOLLOWUP_CONVERSATIONAL_LIMIT,
@@ -88,7 +89,8 @@ async def _query_can_own_capability_turn(ctx: GateContext) -> bool:
     )
     return bypass_reason is not None
 
-async def _stage_deterministic_unsupported_capability(ctx: GateContext) -> dict[str, Any] | None:
+
+async def _stage_deterministic_unsupported_capability(ctx: GateContext) -> RouteResolution | None:
     """Deterministic check for unsupported capabilities matching registry phrases."""
     if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state:
         return None
@@ -98,27 +100,22 @@ async def _stage_deterministic_unsupported_capability(ctx: GateContext) -> dict[
         return None
 
     logger.info("gate_deterministic_unsupported_capability", capability_key=capability.key)
-    return {
-        **ctx.gate_updates,
-        "capability_boundary": CapabilityBoundary(
-            key=capability.key,
-            label=capability.label,
-        ),
-        "direct_path_triggered": True,
-        "final_response": await _unsupported_response(
+    return policy_block(
+        ctx,
+        response=await _unsupported_response(
             ctx,
             capability,
             fallback_base_key="capability.unsupported_unavailable",
         ),
-        "semantic_path_shape": "meta_direct",
-        **_route_observability_updates(
-            owner="guardrail",
-            decision="meta_direct",
-        ),
-    }
+        decision="deterministic_unsupported_capability",
+        path_shape="meta_direct",
+        extra_updates={
+            "capability_boundary": CapabilityBoundary(key=capability.key, label=capability.label),
+        },
+    )
 
 
-async def _stage_semantic_unsupported_capability(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_semantic_unsupported_capability(ctx: GateContext) -> RouteResolution | None:
     """Semantic fallback for unsupported capability boundaries not caught by registry phrases."""
     if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state or not ctx.phrase_heavy_fastpath_allowed:
         return None
@@ -135,28 +132,22 @@ async def _stage_semantic_unsupported_capability(ctx: GateContext) -> dict[str, 
         return None
 
     logger.info("gate_semantic_unsupported_capability", capability_key=capability.key)
-    return {
-        **ctx.gate_updates,
-        "capability_boundary": CapabilityBoundary(key=capability.key, label=capability.label),
-        "direct_path_triggered": True,
-        "final_response": await _unsupported_response(
+    return policy_block(
+        ctx,
+        response=await _unsupported_response(
             ctx,
             capability,
             fallback_base_key="capability.unsupported_unavailable",
         ),
-        "semantic_path_shape": "semantic_unsupported_capability",
-        **_route_observability_updates(
-            owner="guardrail",
-            decision="semantic_unsupported_capability",
-        ),
-    }
+        decision="semantic_unsupported_capability",
+        path_shape="semantic_unsupported_capability",
+        extra_updates={
+            "capability_boundary": CapabilityBoundary(key=capability.key, label=capability.label),
+        },
+    )
 
 
-
-
-
-
-async def _stage_capability_boundary_followup(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_capability_boundary_followup(ctx: GateContext) -> RouteResolution | None:
     """Handle short follow-ups after unsupported capability refusals before stale context reuse."""
     if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state:
         return None
@@ -253,14 +244,11 @@ async def _stage_capability_boundary_followup(ctx: GateContext) -> dict[str, Any
         followup_count=next_count,
         firm=next_count > FOLLOWUP_CONVERSATIONAL_LIMIT,
     )
-    return {
-        **ctx.gate_updates,
-        "capability_boundary": updated_boundary,
-        "direct_path_triggered": True,
-        "final_response": response,
-        "semantic_path_shape": "capability_boundary_followup",
-        **_route_observability_updates(
-            owner="guardrail",
-            decision="unsupported_capability_followup",
-        ),
-    }
+    return direct_response(
+        ctx,
+        response=response,
+        owner="guardrail",
+        decision="unsupported_capability_followup",
+        path_shape="capability_boundary_followup",
+        extra_updates={"capability_boundary": updated_boundary},
+    )

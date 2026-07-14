@@ -9,9 +9,10 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_regist
     get_unsupported_capability,
 )
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import policy_block
 from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
-    _route_observability_updates,
     _semantic_route_decision,
     _semantic_route_mode,
 )
@@ -43,7 +44,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def _handle_semantic_route(ctx: GateContext, route: Any) -> dict[str, Any] | None:
+async def _handle_semantic_route(ctx: GateContext, route: Any) -> RouteResolution | None:
     canonical_decision = _semantic_route_decision(route)
     canonical_mode = _semantic_route_mode(route)
     if veto_updates := support_hint_veto_updates(
@@ -71,29 +72,25 @@ async def _handle_semantic_route(ctx: GateContext, route: Any) -> dict[str, Any]
     if route is not None:
         unsupported_cap = getattr(route, "unsupported_capability", None)
         if unsupported_cap is not None:
-
-
             capability = get_unsupported_capability(unsupported_cap)
             if capability is not None:
                 params = unsupported_capability_params(capability, locale=ctx.current_locale)
                 logger.info("gate_semantic_router_unsupported_capability", capability_key=capability.key)
-                return {
-                    **ctx.gate_updates,
-                    **(ctx.summary_updates or {}),
-                    "capability_boundary": CapabilityBoundary(key=capability.key, label=capability.label),
-                    "direct_path_triggered": True,
-                    "final_response": render_message(
+                return policy_block(
+                    ctx,
+                    response=render_message(
                         "capability.unsupported_unavailable",
                         ctx.current_locale,
                         params,
                     ),
-                    "semantic_path_shape": "semantic_unsupported_capability",
-                    **_route_observability_updates(
-                        owner="guardrail",
-                        decision="semantic_unsupported_capability",
-                    ),
-                    **updates,
-                }
+                    decision="semantic_unsupported_capability",
+                    path_shape="semantic_unsupported_capability",
+                    extra_updates={
+                        **(ctx.summary_updates or {}),
+                        "capability_boundary": CapabilityBoundary(key=capability.key, label=capability.label),
+                        **updates,
+                    },
+                )
 
     if route is not None:
         cancel_updates = await semantic_cancel_updates(
@@ -134,7 +131,7 @@ async def _handle_semantic_route(ctx: GateContext, route: Any) -> dict[str, Any]
             route=route,
             updates=updates,
             canonical_decision=canonical_decision,
-            canonical_mode=canonical_mode,
+            canonical_mode=canonical_mode,  # type: ignore
         )
         if domain_dispatch is not None:
             return domain_dispatch
@@ -156,8 +153,8 @@ async def _handle_semantic_route(ctx: GateContext, route: Any) -> dict[str, Any]
     return None
 
 
-async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
-    """LLM semantic router dispatch."""
+async def resolve_semantic_route(ctx: GateContext) -> RouteResolution | None:
+    """Resolve semantic evidence without invoking a registered gate stage."""
     await ctx.ensure_turn_summary()
     assert ctx.turn_summary is not None  # noqa: S101 – ensured by ensure_turn_summary
 
@@ -178,3 +175,8 @@ async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
     if route is None:
         return None
     return await _handle_semantic_route(ctx, route)
+
+
+async def _stage_semantic_router(ctx: GateContext) -> RouteResolution | None:
+    """Registered semantic-routing stage."""
+    return await resolve_semantic_route(ctx)

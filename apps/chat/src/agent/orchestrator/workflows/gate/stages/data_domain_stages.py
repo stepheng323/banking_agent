@@ -1,10 +1,10 @@
-from typing import Any
 
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _is_obvious_data_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import policy_block, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.domain_data_plan import (
     _apply_self_data_target,
     _extract_data_purchase_hints,
@@ -22,7 +22,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def _stage_data_plan_query(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_data_plan_query(ctx: GateContext) -> RouteResolution | None:
     """Deterministic catalog-question shortcut for data plan prices/availability."""
     if (
         ctx.live_pending_interrupt
@@ -36,15 +36,15 @@ async def _stage_data_plan_query(ctx: GateContext) -> dict[str, Any] | None:
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "data"):
         logger.info("gate_data_plan_query_policy_blocked")
-        return direct_response(
+        return policy_block(
             ctx,
             response=block_message,
             owner="guardrail",
             decision="capability_blocked",
-            semantic_path_shape="deterministic_data_plan_query_policy_blocked",
+            path_shape="deterministic_data_plan_query_policy_blocked",
             target_domain="data",
             mode="new",
-            route_source="data_plan_query_guard",
+            source="data_plan_query_guard",
             heuristic_type="slot_parser",
             heuristic_name="data_plan_query",
         )
@@ -59,17 +59,17 @@ async def _stage_data_plan_query(ctx: GateContext) -> dict[str, Any] | None:
         waves=[[task_id]],
         owner="guardrail",
         decision="deterministic_data_plan_query",
-        semantic_path_shape="deterministic_data_plan_query",
+        path_shape="deterministic_data_plan_query",
         extra_updates={"pending_interrupt": None},
         target_domain="data",
         mode="new",
-        route_source="data_plan_query_guard",
+        source="data_plan_query_guard",
         heuristic_type="slot_parser",
         heuristic_name="data_plan_query",
     )
 
 
-async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_data_plan_reference_purchase(ctx: GateContext) -> RouteResolution | None:
     """Route "buy it" after a data-plan answer into a normal data purchase."""
     if (
         ctx.live_pending_interrupt
@@ -85,15 +85,15 @@ async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "data"):
         logger.info("gate_data_plan_reference_purchase_policy_blocked")
-        return direct_response(
+        return policy_block(
             ctx,
             response=block_message,
             owner="guardrail",
             decision="capability_blocked",
-            semantic_path_shape="data_plan_reference_policy_blocked",
+            path_shape="data_plan_reference_policy_blocked",
             target_domain="data",
             mode="new",
-            route_source="data_plan_referent",
+            source="data_plan_referent",
             heuristic_type="referent_memory",
             heuristic_name="data_plan_reference",
         )
@@ -121,17 +121,17 @@ async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any
         waves=[[task_id]],
         owner="guardrail",
         decision="data_plan_reference_purchase",
-        semantic_path_shape="data_plan_reference_purchase",
+        path_shape="data_plan_reference_purchase",
         extra_updates={"pending_interrupt": None},
         target_domain="data",
         mode="new",
-        route_source="data_plan_referent",
+        source="data_plan_referent",
         heuristic_type="referent_memory",
         heuristic_name="data_plan_reference",
     )
 
 
-async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_data_domain(ctx: GateContext) -> RouteResolution | None:
     """Deterministic data domain shortcut."""
     if (
         ctx.live_pending_interrupt
@@ -145,15 +145,15 @@ async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "data"):
         logger.info("gate_deterministic_data_domain_policy_blocked")
-        return direct_response(
+        return policy_block(
             ctx,
             response=block_message,
             owner="guardrail",
             decision="capability_blocked",
-            semantic_path_shape="deterministic_data_domain_policy_blocked",
+            path_shape="deterministic_data_domain_policy_blocked",
             target_domain="data",
             mode="new",
-            route_source="data_domain_guard",
+            source="data_domain_guard",
             heuristic_type="slot_parser",
             heuristic_name="obvious_data_request",
         )
@@ -166,11 +166,11 @@ async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
         waves=[[task_id]],
         owner="guardrail",
         decision="deterministic_data_domain",
-        semantic_path_shape="deterministic_data_domain",
+        path_shape="deterministic_data_domain",
         extra_updates={"pending_interrupt": None},
         target_domain="data",
         mode="new",
-        route_source="data_domain_guard",
+        source="data_domain_guard",
         heuristic_type="slot_parser",
         heuristic_name="obvious_data_request",
     )

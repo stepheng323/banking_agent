@@ -110,7 +110,6 @@ _MIXED_DATA_CLAUSE_RE = re.compile(
 )
 
 
-
 def _is_obvious_airtime_request(message_text: str) -> bool:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if not normalized or not _AIRTIME_DIRECT_PREFIX_RE.search(normalized):
@@ -148,8 +147,6 @@ def _clean_source_text(value: str | None) -> str:
 
 def _clean_slot_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", value or "").strip(" \t\r\n.,;:!?\"'()[]{}")
-
-
 
 
 def _looks_like_multi_recipient_transfer(normalized: str) -> bool:

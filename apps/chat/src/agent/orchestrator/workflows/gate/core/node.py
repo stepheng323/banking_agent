@@ -20,8 +20,9 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
     Applies deterministic guardrails first, then delegates first-pass semantic routing
     to the semantic router, and falls through to planner only for planner-owned routes.
 
-    Architecture: a pipeline of focused stage functions. Each stage returns a dict
-    (short-circuit with a gate response) or None (continue to the next stage).
+    Architecture: a pipeline of focused stage functions. Each matched stage returns
+    a typed ``RouteResolution``; ``None`` continues to the next stage. The engine
+    validates and materializes the selected resolution exactly once.
     """
     runtime = build_gate_runtime(state, config)
     logger.info(

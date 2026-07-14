@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text i
     is_contextual_casual_followup_turn,
 )
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.casual import (
     looks_like_obvious_casual_or_meta_turn,
 )
@@ -26,10 +27,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _obvious_mixed_transaction_executors,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import task_dispatch
-from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
-    _route_observability_updates,
-)
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import _next_direct_domain_task_id
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_context_for_state as build_context_frame_followup_context_for_state,
@@ -120,22 +118,36 @@ def _looks_like_read_only_refresh_request(text: str) -> bool:
 def _context_frame_followup_updates(
     ctx: GateContext,
     frame_followup: ContextFrameFollowupResponse,
-) -> dict[str, Any]:
-    return {
-        **ctx.gate_updates,
-        "direct_path_triggered": True,
-        "semantic_path_shape": frame_followup.semantic_path_shape,
+) -> RouteResolution:
+    extra_updates: dict[str, Any] = {
         "context_frames": frame_followup.context_frames or ctx.state_view.context_frames,
-        **({"final_response": frame_followup.response} if frame_followup.response else {}),
-        **({"tasks": frame_followup.tasks} if frame_followup.tasks else {}),
-        **({"waves": frame_followup.waves} if frame_followup.waves else {}),
-        **({"current_wave_index": 0} if frame_followup.waves else {}),
-        **_route_observability_updates(
-            owner="guardrail",
-            decision="context_frame_followup",
-            target_domain=frame_followup.recent_domain_focus,
-        ),
     }
+    if frame_followup.response:
+        extra_updates["final_response"] = frame_followup.response
+    if frame_followup.tasks and frame_followup.waves:
+        return task_dispatch(
+            ctx,
+            tasks=frame_followup.tasks,
+            waves=frame_followup.waves,
+            owner="semantic_router",
+            decision="context_frame_followup",
+            path_shape=frame_followup.path_shape,
+            extra_updates=extra_updates,
+            target_domain=frame_followup.recent_domain_focus,
+            mode="continuation",
+            source="context_frame_followup",
+        )
+    return direct_response(
+        ctx,
+        response=frame_followup.response or "",
+        owner="semantic_router",
+        decision="context_frame_followup",
+        path_shape=frame_followup.path_shape,
+        extra_updates=extra_updates,
+        target_domain=frame_followup.recent_domain_focus,
+        mode="continuation",
+        source="context_frame_followup",
+    )
 
 
 def _build_read_only_refresh_spec(ctx: GateContext, frame: ContextFrame | None) -> tuple[str, TaskSpec, str] | None:
@@ -229,7 +241,7 @@ def _latest_completed_read_only_account_task(ctx: GateContext) -> TaskSpec | Non
     return None
 
 
-def _read_only_refresh_updates(ctx: GateContext, frame: ContextFrame | None) -> dict[str, Any] | None:
+def _read_only_refresh_updates(ctx: GateContext, frame: ContextFrame | None) -> RouteResolution | None:
     refresh_spec = _build_read_only_refresh_spec(ctx, frame)
     if refresh_spec is None:
         return None
@@ -246,17 +258,17 @@ def _read_only_refresh_updates(ctx: GateContext, frame: ContextFrame | None) -> 
         waves=[[task_id]],
         owner="guardrail",
         decision="read_only_refresh_followup",
-        semantic_path_shape="read_only_refresh_followup",
+        path_shape="read_only_refresh_followup",
         extra_updates={"pending_interrupt": None},
         target_domain=spec.type,
         mode="continuation",
-        route_source="context_frame_followup",
+        source="context_frame_followup",
         heuristic_type="context_frame_shortcut",
         heuristic_name="read_only_refresh",
     )
 
 
-def _data_plan_redisplay_updates(ctx: GateContext) -> dict[str, Any] | None:
+def _data_plan_redisplay_updates(ctx: GateContext) -> RouteResolution | None:
     frame_followup = build_context_frame_followup_response(
         ctx.state,
         ctx.message_text,
@@ -277,9 +289,6 @@ def _context_frame_followup_eligible(ctx: GateContext) -> bool:
     return (
         not ctx.live_pending_interrupt and not ctx.state_view.has_gate_blocking_state and ctx.task_planner is not None
     )
-
-
-
 
 
 def _is_contextual_casual_continuation(ctx: GateContext) -> bool:
@@ -366,7 +375,7 @@ async def _resolve_context_frame_followup(
     return decision, frame_followup
 
 
-async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_context_frame_followup(ctx: GateContext) -> RouteResolution | None:
     """Resolve semantic follow-ups against the latest displayed response frame before domain routing."""
     if not _context_frame_followup_eligible(ctx):
         return None
@@ -379,7 +388,6 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
     if detect_unsupported_capability(ctx.message_text) is not None:
         logger.info("gate_context_frame_followup_skipped_for_unsupported_capability")
         return None
-
 
     frame = ContextFrameManager().latest_active_frame(ctx.state)
     if _looks_like_read_only_refresh_request(ctx.message_text):

@@ -1,6 +1,7 @@
 import re
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
@@ -62,31 +63,31 @@ def _build_direct_schedule_read_updates(
     schedule_response_mode: str,
     canonical_decision: str | None,
     canonical_mode: str | None,
-    route_source: str,
+    source: str,
     owner: str = "semantic_router",
-) -> dict[str, Any]:
+    path_shape: str | None = None,
+) -> RouteResolution:
     task_id, spec = _build_direct_domain_task(
         state_view=ctx.state_view,
         domain="schedule",
         mode=canonical_mode,
         schedule_response_mode="count" if schedule_response_mode == "count" else "list",
     )
-    semantic_path_shape = updates.get("semantic_path_shape")
     return task_dispatch(
         ctx,
         tasks={task_id: spec},
         waves=[[task_id]],
         owner=owner,
         decision=canonical_decision or "domain_schedule",
-        semantic_path_shape=semantic_path_shape if isinstance(semantic_path_shape, str) else None,
+        path_shape=path_shape,
         extra_updates={**(ctx.summary_updates or {}), **updates},
         target_domain="schedule",
         mode=canonical_mode,
-        route_source=route_source,
+        source=source,
     )
 
 
-async def _stage_schedule_read_router(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_schedule_read_router(ctx: GateContext) -> RouteResolution | None:
     """Use a small semantic classifier for simple scheduled-transaction read turns."""
     if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state:
         return None
@@ -101,12 +102,13 @@ async def _stage_schedule_read_router(ctx: GateContext) -> dict[str, Any] | None
         )
         return _build_direct_schedule_read_updates(
             ctx,
-            updates={"semantic_path_shape": "deterministic_schedule_read"},
+            updates={},
             schedule_response_mode=deterministic_mode,
             canonical_decision="deterministic_schedule_read",
             canonical_mode="new",
-            route_source="schedule_read_guard",
+            source="schedule_read_guard",
             owner="guardrail",
+            path_shape="deterministic_schedule_read",
         )
 
     router = ctx.semantic_router_llm
@@ -137,9 +139,10 @@ async def _stage_schedule_read_router(ctx: GateContext) -> dict[str, Any] | None
     )
     return _build_direct_schedule_read_updates(
         ctx,
-        updates={"semantic_path_shape": "schedule_read_router_direct"},
+        updates={},
         schedule_response_mode=schedule_response_mode,
         canonical_decision=canonical_decision,
         canonical_mode=_semantic_route_mode(route) or "new",
-        route_source="schedule_read_router",
+        source="schedule_read_router",
+        path_shape="schedule_read_router_direct",
     )

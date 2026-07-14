@@ -1,6 +1,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.mixed_capabilities import (
     MixedCapabilityMatch,
     SupportedClause,
@@ -10,7 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.mixed_capabilit
     mixed_policy_notice,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, policy_block, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.state.state_view import GateStateView
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
     _build_direct_domain_task,
@@ -72,7 +73,7 @@ async def _classify_mixed_capability(ctx: GateContext) -> MixedCapabilityMatch |
     )
 
 
-def _mixed_clarify_updates(ctx: GateContext, match: MixedCapabilityMatch) -> dict[str, Any]:
+def _mixed_clarify_updates(ctx: GateContext, match: MixedCapabilityMatch) -> RouteResolution:
     logger.info(
         "gate_mixed_capability_ambiguous",
         supported_count=len(match.supported),
@@ -87,7 +88,7 @@ def _mixed_clarify_updates(ctx: GateContext, match: MixedCapabilityMatch) -> dic
         ),
         owner="guardrail",
         decision="mixed_supported_unsupported_clarify",
-        semantic_path_shape="mixed_capability_clarify",
+        path_shape="mixed_capability_clarify",
         extra_updates={"capability_boundary": None},
     )
 
@@ -98,16 +99,14 @@ def _mixed_policy_block_updates(
     supported: SupportedClause,
     notice: str,
     block_message: str,
-) -> dict[str, Any]:
-    return direct_response(
+) -> RouteResolution:
+    return policy_block(
         ctx,
         response=f"{notice}\n\n{block_message}",
-        owner="guardrail",
         decision="mixed_supported_unsupported_policy_blocked",
-        semantic_path_shape="mixed_capability_supported_policy_blocked",
+        path_shape="mixed_capability_supported_policy_blocked",
         extra_updates={"capability_boundary": None},
         target_domain=supported.domain,
-        mode="new",
     )
 
 
@@ -121,7 +120,7 @@ async def _mixed_supported_direct_updates(
     match: MixedCapabilityMatch,
     supported: SupportedClause,
     notice: str,
-) -> dict[str, Any]:
+) -> RouteResolution:
     task_id, spec = _build_supported_task(ctx.state_view, supported)
     task_updates = await _mixed_supported_task_extra_updates(ctx, supported)
     if supported.domain == "transfer" and supported.heuristic_name == "recipient_bank_details_only":
@@ -138,7 +137,7 @@ async def _mixed_supported_direct_updates(
         waves=[[task_id]],
         owner="guardrail",
         decision="mixed_supported_unsupported",
-        semantic_path_shape="mixed_capability_supported_direct",
+        path_shape="mixed_capability_supported_direct",
         extra_updates={
             **(ctx.summary_updates or {}),
             **task_updates,
@@ -148,13 +147,13 @@ async def _mixed_supported_direct_updates(
         },
         target_domain=supported.domain,
         mode="new",
-        route_source="mixed_capability_guard",
+        source="mixed_capability_guard",
         heuristic_type="clause_splitter",
         heuristic_name=supported.heuristic_name,
     )
 
 
-async def _stage_mixed_supported_unsupported_capability(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_mixed_supported_unsupported_capability(ctx: GateContext) -> RouteResolution | None:
     """Route one supported banking clause while refusing unsupported clauses."""
     if not _mixed_capability_eligible(ctx):
         return None

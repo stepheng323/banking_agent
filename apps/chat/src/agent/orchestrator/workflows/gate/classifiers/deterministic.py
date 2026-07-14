@@ -315,7 +315,7 @@ def classify_deterministic_meta_response(message_text: str) -> DeterministicMeta
         base_key: MessageKey = "capability.unsupported_unavailable"
         specific_key = f"{base_key}_{unsupported_capability.key}"
         unsupported_response_key: MessageKey = (
-                as_message_key(specific_key) if message_key_exists(specific_key, "en") else base_key
+            as_message_key(specific_key) if message_key_exists(specific_key, "en") else base_key
         )
         return _meta_response(
             unsupported_response_key,

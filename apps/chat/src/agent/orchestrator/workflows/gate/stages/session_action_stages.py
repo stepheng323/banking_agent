@@ -5,6 +5,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.beneficiary_suggestions import (
     _resolve_beneficiary_suggestion_reply,
 )
@@ -24,7 +25,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def _stage_beneficiary_suggestion(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_beneficiary_suggestion(ctx: GateContext) -> RouteResolution | None:
     """Beneficiary save/dismiss from Redis suggestion."""
     if ctx.live_pending_interrupt or not ctx.redis_client:
         return None
@@ -74,7 +75,7 @@ async def _stage_beneficiary_suggestion(ctx: GateContext) -> dict[str, Any] | No
             extra_updates={"pending_interrupt": None},
             target_domain="beneficiary",
             mode="new",
-            route_source="beneficiary_suggestion",
+            source="beneficiary_suggestion",
             heuristic_type="guardrail_shortcut",
             heuristic_name="beneficiary_suggestion_reply",
         )
@@ -86,7 +87,6 @@ async def _stage_beneficiary_suggestion(ctx: GateContext) -> dict[str, Any] | No
     else:
         logger.info("beneficiary_suggestion_dismissed", reason=decision.reason)
     return None
-
 
 
 def _normalize_resume_reply(text: str) -> str:
@@ -137,7 +137,7 @@ def _has_live_resume_prompt_frame(ctx: GateContext) -> bool:
     return False
 
 
-def _build_resume_action_updates(ctx: GateContext, *, action: str, semantic_path_shape: str) -> dict[str, Any]:
+def _build_resume_action_updates(ctx: GateContext, *, action: str, path_shape: str) -> RouteResolution:
     task_id = f"orchestrator_{action}_{uuid.uuid4().hex[:8]}"
     spec = TaskSpec(
         id=task_id,
@@ -150,15 +150,15 @@ def _build_resume_action_updates(ctx: GateContext, *, action: str, semantic_path
         tasks={task_id: spec},
         waves=[[task_id]],
         owner="guardrail",
-        decision=semantic_path_shape,
-        semantic_path_shape=semantic_path_shape,
+        decision=path_shape,
+        path_shape=path_shape,
         target_domain="orchestrator",
         mode="continuation",
-        route_source="resume_prompt_guard",
+        source="resume_prompt_guard",
     )
 
 
-async def _stage_resume_prompt_action(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_resume_prompt_action(ctx: GateContext) -> RouteResolution | None:
     """Resolve terse replies to a live stashed-session resume prompt."""
     if (
         ctx.live_pending_interrupt
@@ -182,14 +182,14 @@ async def _stage_resume_prompt_action(ctx: GateContext) -> dict[str, Any] | None
         return _build_resume_action_updates(
             ctx,
             action="resume_session",
-            semantic_path_shape="resume_session_direct",
+            path_shape="resume_session_direct",
         )
     if decision.action == "reject":
         logger.info("gate_resume_prompt_dismiss", phrase=normalized, source=decision.source)
         return _build_resume_action_updates(
             ctx,
             action="dismiss_resume_session",
-            semantic_path_shape="dismiss_resume_session_direct",
+            path_shape="dismiss_resume_session_direct",
         )
     return None
 

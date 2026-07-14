@@ -4,17 +4,46 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from apps.chat.src.agent.orchestrator.models.turn_directive import (
+    RouteResolution,
+    TurnNextStep,
+    TurnOutcomeKind,
+    route_resolution,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.core.contracts import GateUpdates
-from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import _route_observability_updates
 
 
-def planner_handoff(ctx: GateContext) -> GateUpdates:
-    return {
+def planner_handoff(
+    ctx: GateContext,
+    *,
+    owner: str = "guardrail",
+    decision: str = "planner_handoff",
+    extra_updates: Mapping[str, object] | None = None,
+    target_domain: str | None = None,
+    mode: str | None = None,
+    source: str = "planner_fallback",
+    path_shape: str = "planner_handoff",
+    heuristic_type: str | None = None,
+    heuristic_name: str | None = None,
+) -> RouteResolution:
+    updates = {
         **ctx.gate_updates,
         **(ctx.summary_updates or {}),
-        **_route_observability_updates(owner="planner", decision="planner_handoff"),
+        **dict(extra_updates or {}),
     }
+    return route_resolution(
+        updates=updates,
+        owner=owner,  # type: ignore[arg-type]
+        decision=decision,
+        outcome_kind=TurnOutcomeKind.PLANNER_HANDOFF,
+        next_step=TurnNextStep.PLAN,
+        target_domain=target_domain,  # type: ignore[arg-type]
+        mode=mode,  # type: ignore[arg-type]
+        source=source,
+        path_shape=path_shape,
+        heuristic_type=heuristic_type,
+        heuristic_name=heuristic_name,
+    )
 
 
 def direct_response(
@@ -23,30 +52,32 @@ def direct_response(
     response: str,
     owner: str,
     decision: str,
-    semantic_path_shape: str,
+    path_shape: str,
     extra_updates: Mapping[str, object] | None = None,
     target_domain: str | None = None,
     mode: str | None = None,
-    route_source: str | None = None,
+    source: str | None = None,
     heuristic_type: str | None = None,
     heuristic_name: str | None = None,
-) -> GateUpdates:
-    return {
+) -> RouteResolution:
+    updates = {
         **ctx.gate_updates,
         **dict(extra_updates or {}),
-        "direct_path_triggered": True,
         "final_response": response,
-        "semantic_path_shape": semantic_path_shape,
-        **_route_observability_updates(
-            owner=owner,
-            decision=decision,
-            target_domain=target_domain,
-            mode=mode,
-            route_source=route_source,
-            heuristic_type=heuristic_type,
-            heuristic_name=heuristic_name,
-        ),
     }
+    return route_resolution(
+        updates=updates,
+        owner=owner,  # type: ignore[arg-type]
+        decision=decision,
+        outcome_kind=TurnOutcomeKind.DIRECT_RESPONSE,
+        next_step=TurnNextStep.FINALIZE,
+        target_domain=target_domain,  # type: ignore[arg-type]
+        mode=mode,  # type: ignore[arg-type]
+        source=source,
+        path_shape=path_shape,
+        heuristic_type=heuristic_type,
+        heuristic_name=heuristic_name,
+    )
 
 
 def task_dispatch(
@@ -56,35 +87,36 @@ def task_dispatch(
     waves: Sequence[Sequence[str]],
     owner: str,
     decision: str,
-    semantic_path_shape: str | None = None,
+    path_shape: str | None = None,
     extra_updates: Mapping[str, object] | None = None,
     target_domain: str | None = None,
     mode: str | None = None,
-    route_source: str | None = None,
+    source: str | None = None,
     heuristic_type: str | None = None,
     heuristic_name: str | None = None,
-) -> GateUpdates:
-    updates: GateUpdates = {
+) -> RouteResolution:
+    updates: dict[str, object] = {
         **ctx.gate_updates,
         **dict(extra_updates or {}),
         "tasks": dict(tasks),
         "waves": [list(wave) for wave in waves],
         "current_wave_index": 0,
         "planner_output": None,
-        "direct_path_triggered": True,
-        **_route_observability_updates(
-            owner=owner,
-            decision=decision,
-            target_domain=target_domain,
-            mode=mode,
-            route_source=route_source,
-            heuristic_type=heuristic_type,
-            heuristic_name=heuristic_name,
-        ),
     }
-    if semantic_path_shape is not None:
-        updates["semantic_path_shape"] = semantic_path_shape
-    return updates
+    path_shape = path_shape or source or decision
+    return route_resolution(
+        updates=updates,
+        owner=owner,  # type: ignore[arg-type]
+        decision=decision,
+        outcome_kind=TurnOutcomeKind.TASK_DISPATCH,
+        next_step=TurnNextStep.ADVANCE,
+        target_domain=target_domain,  # type: ignore[arg-type]
+        mode=mode,  # type: ignore[arg-type]
+        source=source,
+        path_shape=path_shape,
+        heuristic_type=heuristic_type,
+        heuristic_name=heuristic_name,
+    )
 
 
 def policy_block(
@@ -92,52 +124,64 @@ def policy_block(
     *,
     response: str,
     decision: str,
-    semantic_path_shape: str,
+    path_shape: str,
     extra_updates: Mapping[str, object] | None = None,
     target_domain: str | None = None,
-) -> GateUpdates:
-    return direct_response(
-        ctx,
-        response=response,
-        owner="guardrail",
+    owner: str = "guardrail",
+    mode: str | None = "new",
+    source: str = "capability_guard",
+    heuristic_type: str | None = None,
+    heuristic_name: str | None = None,
+) -> RouteResolution:
+    updates = {
+        **ctx.gate_updates,
+        **dict(extra_updates or {}),
+        "final_response": response,
+    }
+    return route_resolution(
+        updates=updates,
+        owner=owner,  # type: ignore[arg-type]
         decision=decision,
-        semantic_path_shape=semantic_path_shape,
-        extra_updates=extra_updates,
-        target_domain=target_domain,
-        mode="new",
+        outcome_kind=TurnOutcomeKind.POLICY_BLOCK,
+        next_step=TurnNextStep.FINALIZE,
+        target_domain=target_domain,  # type: ignore[arg-type]
+        mode=mode,  # type: ignore[arg-type]
+        source=source,
+        path_shape=path_shape,
+        heuristic_type=heuristic_type,
+        heuristic_name=heuristic_name,
     )
 
 
-def hint_only(
+def interrupt_handoff(
     ctx: GateContext,
     *,
-    owner: str,
-    decision: str,
+    pending_interrupt: object,
+    owner: str = "guardrail",
+    decision: str = "interrupt_handoff",
     extra_updates: Mapping[str, object] | None = None,
-    target_domain: str | None = None,
-    mode: str | None = None,
-    route_source: str | None = None,
-    heuristic_type: str | None = None,
-    heuristic_name: str | None = None,
-) -> GateUpdates:
-    return {
+    source: str = "gate_interrupt_fallback",
+    path_shape: str = "interrupt_handoff",
+) -> RouteResolution:
+    updates = {
         **ctx.gate_updates,
         **dict(extra_updates or {}),
-        **_route_observability_updates(
-            owner=owner,
-            decision=decision,
-            target_domain=target_domain,
-            mode=mode,
-            route_source=route_source,
-            heuristic_type=heuristic_type,
-            heuristic_name=heuristic_name,
-        ),
+        "pending_interrupt": pending_interrupt,
     }
+    return route_resolution(
+        updates=updates,
+        owner=owner,  # type: ignore[arg-type]
+        decision=decision,
+        outcome_kind=TurnOutcomeKind.INTERRUPT_HANDOFF,
+        next_step=TurnNextStep.HANDLE_INTERRUPT,
+        source=source,
+        path_shape=path_shape,
+    )
 
 
 __all__ = [
     "direct_response",
-    "hint_only",
+    "interrupt_handoff",
     "planner_handoff",
     "policy_block",
     "task_dispatch",
