@@ -176,17 +176,14 @@ def _build_user_prompt(prompt_input: ConversationResponderPromptInput) -> str:
     if prompt_input.mode == ConversationResponseMode.UNSUPPORTED_BOUNDARY:
         _append_unsupported_capability_user_parts(user_parts, prompt_input.user_ctx)
 
-    if (
-        prompt_input.mode not in (
-            ConversationResponseMode.CONTEXTUAL_WORKER,
-            ConversationResponseMode.CONTEXTUAL_META,
-            ConversationResponseMode.UNSUPPORTED_BOUNDARY,
-            ConversationResponseMode.SOCIAL_META,
-            ConversationResponseMode.CLARIFY,
-            ConversationResponseMode.CAPABILITIES
-        )
-        and (prompt_input.prefers_banking_humor or prompt_input.is_joke_turn)
-    ):
+    if prompt_input.mode not in (
+        ConversationResponseMode.CONTEXTUAL_WORKER,
+        ConversationResponseMode.CONTEXTUAL_META,
+        ConversationResponseMode.UNSUPPORTED_BOUNDARY,
+        ConversationResponseMode.SOCIAL_META,
+        ConversationResponseMode.CLARIFY,
+        ConversationResponseMode.CAPABILITIES,
+    ) and (prompt_input.prefers_banking_humor or prompt_input.is_joke_turn):
         user_parts.append("Use a banking-related joke or money-themed playful line if you answer with humor.")
 
     if prompt_input.name:

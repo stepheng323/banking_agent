@@ -4,17 +4,34 @@ from collections import deque
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
+from apps.chat.src.agent.orchestrator.models.turn_directive import TurnDirective, TurnNextStep
 from shared.config.settings import settings
 from shared.utils.logging import log_orchestrator_diagnostic
+
+
+def _turn_directive(final_state: dict[str, Any]) -> TurnDirective | None:
+    value = final_state.get("turn_directive")
+    if isinstance(value, TurnDirective):
+        return value
+    if isinstance(value, dict):
+        try:
+            return TurnDirective.model_validate(value)
+        except ValueError:
+            return None
+    return None
 
 
 def resolve_path_label(context: MessageContext, final_state: dict[str, Any]) -> str:
     if getattr(context, "is_media_input", False) or bool(context.image_data):
         return "media_path"
-    if final_state.get("direct_path_triggered"):
+    directive = _turn_directive(final_state)
+    if directive is not None:
+        if directive.next_step == TurnNextStep.HANDLE_INTERRUPT or directive.owner == "interrupt":
+            return "interrupt_path"
+        if directive.next_step == TurnNextStep.PLAN or directive.owner == "planner":
+            return "planner_path"
         return "direct_path"
-    if final_state.get("last_interrupt") or final_state.get("pending_interrupt"):
-        return "interrupt_path"
+    # Pre-route and hydrated legacy states have no routing authority yet.
     return "planner_path"
 
 
@@ -23,11 +40,11 @@ def resolve_semantic_path_shape(
     final_state: dict[str, Any],
     path_label: str,
 ) -> str:
-    explicit = final_state.get("semantic_path_shape")
-    if isinstance(explicit, str) and explicit:
-        return explicit
     if getattr(context, "is_media_input", False) or bool(context.image_data):
         return "media"
+    directive = _turn_directive(final_state)
+    if directive is not None:
+        return directive.path_shape
     if path_label == "planner_path":
         return "planner"
     return path_label
@@ -111,6 +128,11 @@ def _llm_total_ms(final_state: dict[str, Any]) -> float | None:
     return round(total, 2) if has_duration else None
 
 
+def _llm_call_count(final_state: dict[str, Any]) -> int | None:
+    calls = final_state.get("llm_calls")
+    return len(calls) if isinstance(calls, list) else None
+
+
 def log_turn_summary(
     logger: Any,
     *,
@@ -120,13 +142,15 @@ def log_turn_summary(
 ) -> None:
     task_map = final_state.get("tasks")
     task_count = len(task_map) if isinstance(task_map, dict) else 0
+    directive = _turn_directive(final_state)
     logger.info(
         "orchestrator_turn_summary",
         total_ms=round(total_duration_ms, 2),
         llm_ms=_llm_total_ms(final_state),
+        llm_call_count=_llm_call_count(final_state),
         path_label=path_label,
-        routing_owner=final_state.get("routing_owner"),
-        routing_decision=final_state.get("routing_decision"),
+        routing_owner=directive.owner if directive else None,
+        routing_decision=directive.decision if directive else None,
         interrupt_status=_pending_interrupt_kind(final_state),
         task_count=task_count,
     )
@@ -145,20 +169,21 @@ def log_route_metrics(
     task_executors = _task_executor_labels(final_state)
     task_map = final_state.get("tasks")
     task_count = len(task_map) if isinstance(task_map, dict) else len(task_executors)
+    directive = _turn_directive(final_state)
     logger.info(
         "orchestrator_route_metrics",
         phone_number=phone_number,
         path_label=path_label,
         semantic_path_shape=semantic_path_shape,
-        routing_owner=final_state.get("routing_owner"),
-        routing_decision=final_state.get("routing_decision"),
-        routing_target_domain=final_state.get("routing_target_domain"),
-        routing_mode=final_state.get("routing_mode"),
+        routing_owner=directive.owner if directive else None,
+        routing_decision=directive.decision if directive else None,
+        routing_target_domain=directive.target_domain if directive else None,
+        routing_mode=directive.mode if directive else None,
         planner_used=bool(final_state.get("planner_used")),
         planner_primary_intent=_planner_primary_intent(final_state),
         planner_clean=final_state.get("planner_clean"),
         planner_dirty_reasons=list(final_state.get("planner_dirty_reasons") or []),
-        direct_path_triggered=bool(final_state.get("direct_path_triggered")),
+        direct_path_triggered=path_label == "direct_path",
         expected_transaction_executors=list(final_state.get("preplanner_expected_transaction_executors") or []),
         task_executors=task_executors,
         task_count=task_count,

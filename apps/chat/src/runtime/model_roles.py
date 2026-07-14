@@ -39,7 +39,6 @@ def resolve_role_model(*, role: str, configured_model: str, planner_model: str, 
     return model
 
 
-
 def build_chat_role_models(
     *,
     planner_model: str,

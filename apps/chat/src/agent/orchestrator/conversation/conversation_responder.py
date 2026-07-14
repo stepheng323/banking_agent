@@ -77,11 +77,12 @@ class ConversationResponder:
 
         is_joke_turn = responder_text.is_joke_turn(text, history)
         is_banking_reaction = (
-            mode not in (
+            mode
+            not in (
                 ConversationResponseMode.CONTEXTUAL_WORKER,
                 ConversationResponseMode.CONTEXTUAL_META,
                 ConversationResponseMode.UNSUPPORTED_BOUNDARY,
-                ConversationResponseMode.SOCIAL_META
+                ConversationResponseMode.SOCIAL_META,
             )
             and casual_streak == 0
             and responder_text.is_banking_result_reaction(text, history)

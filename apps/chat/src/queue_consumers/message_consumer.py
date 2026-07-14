@@ -185,9 +185,7 @@ class TypingHeartbeatController:
         self.enabled = settings.chat_typing_heartbeat_enabled if enabled is None else enabled
         self.interval_seconds = max(
             0.1,
-            settings.chat_typing_heartbeat_interval_seconds
-            if interval_seconds is None
-            else float(interval_seconds),
+            settings.chat_typing_heartbeat_interval_seconds if interval_seconds is None else float(interval_seconds),
         )
         self.max_seconds = max(
             0.0,

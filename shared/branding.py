@@ -40,8 +40,6 @@ def brand_name_aliases() -> set[str]:
     return _normalized_brand_names((settings.app_name, settings.app_name_short, *settings.app_name_aliases))
 
 
-
-
 def brand_template_params(*, html_escape_values: bool = False) -> dict[str, str]:
     """Return the canonical app/brand template parameters."""
     from shared.config.settings import settings

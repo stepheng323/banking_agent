@@ -46,8 +46,7 @@ def build_interactive_message_payload(
 
 def build_inline_keyboard_rows(options: list[dict[str, str]]) -> list[list[dict[str, str]]]:
     return [
-        [{"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")}]
-        for opt in options
+        [{"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")}] for opt in options
     ]
 
 

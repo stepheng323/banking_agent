@@ -96,11 +96,7 @@ def _ready_for_batch_funding(task: Any) -> bool:
         return False
     payload = _task_payload(task)
     parsed_amount = to_naira(payload.get("amount"))
-    return bool(
-        _recipient_ready_for_funding(payload)
-        and parsed_amount is not None
-        and parsed_amount > 0
-    )
+    return bool(_recipient_ready_for_funding(payload) and parsed_amount is not None and parsed_amount > 0)
 
 
 def _task_async_group_id(task: Any) -> str | None:
@@ -133,9 +129,7 @@ def _batch_transfer_tasks_for_wave(
     group_id = _task_async_group_id(current_task)
     if group_id:
         grouped_tasks = [
-            (candidate_id, task)
-            for candidate_id, task in transfer_tasks
-            if _task_async_group_id(task) == group_id
+            (candidate_id, task) for candidate_id, task in transfer_tasks if _task_async_group_id(task) == group_id
         ]
         return grouped_tasks if len(grouped_tasks) >= 2 else []
 

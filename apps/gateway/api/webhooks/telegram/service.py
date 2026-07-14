@@ -44,7 +44,6 @@ def _telegram_onboarding_token_key(chat_id: str) -> str:
     return f"telegram:onboarding:{chat_id}:flow_token"
 
 
-
 async def _store_telegram_onboarding_token(chat_id: str, flow_token: str) -> None:
     await session_manager.redis.set(_telegram_onboarding_token_key(chat_id), flow_token, ex=session_manager.ttl)
 

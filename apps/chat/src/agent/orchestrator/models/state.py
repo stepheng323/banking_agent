@@ -10,7 +10,7 @@ and return structured results. Never let workers maintain competing state.
 from time import time
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
 from apps.chat.src.agent.orchestrator.context.referents.models import ShortTermReferentMemory
@@ -20,6 +20,7 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     PendingInterrupt,
     TaskSpec,
 )
+from apps.chat.src.agent.orchestrator.models.turn_directive import TurnDirective
 from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
@@ -45,7 +46,43 @@ class OrchestratorState(BaseModel):
     This is the ONLY source of truth for workflow state.
     """
 
-    schema_version: Literal["v1"] = "v1"
+    schema_version: Literal["v2"] = "v2"
+
+    @model_validator(mode="before")
+    @classmethod
+    def upgrade_legacy_checkpoint(cls, value: Any) -> Any:
+        """Accept v1 checkpoints without reviving their competing route metadata."""
+        if not isinstance(value, dict):
+            return value
+        legacy_route_keys = (
+            "routing_owner",
+            "routing_decision",
+            "routing_target_domain",
+            "routing_mode",
+            "route_source",
+            "routing_heuristic_type",
+            "routing_heuristic_name",
+        )
+        version = value.get("schema_version")
+        if version != "v1" and not (version is None and any(key in value for key in legacy_route_keys)):
+            return value
+        upgraded = dict(value)
+        upgraded["schema_version"] = "v2"
+        upgraded["turn_directive"] = None
+        for key in legacy_route_keys:
+            upgraded.pop(key, None)
+        return upgraded
+
+    @field_validator("turn_directive", mode="before", check_fields=False)
+    @classmethod
+    def drop_invalid_legacy_directive(cls, value: Any) -> Any:
+        if value is None or isinstance(value, TurnDirective):
+            return value
+        try:
+            return TurnDirective.model_validate(value)
+        except ValidationError:
+            logger.warning("invalid_turn_directive_dropped")
+            return None
 
     user_id: str
     phone_number: str
@@ -96,22 +133,14 @@ class OrchestratorState(BaseModel):
     context_frames: list[ContextFrame] = Field(default_factory=list)
     referent_memory: ShortTermReferentMemory = Field(default_factory=ShortTermReferentMemory)
 
-    # Direct Path & Session Stack (Optimization)
-    direct_path_triggered: bool = False
+    # Session stack and canonical route identity.
     session_stack: list[ActiveSession] = Field(default_factory=list)
     active_domain: str | None = None
 
     loaded_context: dict[str, Any] = Field(default_factory=dict)
     capability_boundary: CapabilityBoundary | None = None
     turn_context_summary: dict[str, Any] | None = None
-    semantic_path_shape: str | None = None
-    routing_owner: str | None = None
-    routing_decision: str | None = None
-    routing_target_domain: str | None = None
-    routing_mode: str | None = None
-    route_source: str | None = None
-    routing_heuristic_type: str | None = None
-    routing_heuristic_name: str | None = None
+    turn_directive: TurnDirective | None = None
     planner_used: bool = False
     planner_clean: bool | None = None
     planner_dirty_reasons: list[str] = Field(default_factory=list)

@@ -38,6 +38,7 @@ from apps.chat.src.agent.orchestrator.graph.runtime import GraphRunnableConfig
 from apps.chat.src.agent.orchestrator.graph.turn_trace import log_orchestrator_turn_trace
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from shared.observability.llm import build_llm_runnable_config
+from shared.observability.llm_call_metrics import start_llm_call_recording, stop_llm_call_recording
 from shared.utils.logging import log_fingerprint, log_orchestrator_diagnostic
 
 
@@ -126,11 +127,21 @@ class GraphInvocationRunner:
             )
 
             g_start = time.perf_counter()
+            llm_recording_token = start_llm_call_recording()
             try:
                 final_state = await self.graph.ainvoke(inputs, config=config)
             finally:
+                llm_calls = stop_llm_call_recording(llm_recording_token)
                 progress_snapshot = await stop_progress_delivery(progress_run)
             g_duration = (time.perf_counter() - g_start) * 1000
+
+            # Invocation-local diagnostics only: this is attached after graph
+            # completion, so it is neither checkpointed nor application state.
+            final_state["llm_calls"] = [dict(call) for call in llm_calls]
+            final_state["llm_total_ms"] = round(
+                sum(float(call.get("duration_ms") or 0.0) for call in llm_calls),
+                2,
+            )
 
             path_label = resolve_path_label(context, final_state)
             semantic_path_shape = resolve_semantic_path_shape(context, final_state, path_label)
@@ -159,7 +170,7 @@ class GraphInvocationRunner:
             result = build_invocation_result(
                 final_state=final_state,
                 loaded_context=loaded_context,
-                semantic_path_shape=semantic_path_shape,
+                path_shape=semantic_path_shape,
             )
             log_orchestrator_diagnostic(
                 self.logger,

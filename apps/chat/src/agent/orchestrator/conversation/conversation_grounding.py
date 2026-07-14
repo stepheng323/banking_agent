@@ -163,10 +163,11 @@ def conversation_topic_for_response(
     response_text: str | None,
     *,
     response_key: str | None = None,
-    semantic_path_shape: str | None = None,
-    routing_decision: str | None = None,
+    path_shape: str | None = None,
+    turn_decision: str | None = None,
 ) -> str | None:
-    """Infer a safe topic label to persist with assistant history.
+    """
+    Infer the topic state of the conversation from the semantic path and route decision.
 
     Prefer structured route metadata; only fall back to response text when no
     explicit route signal exists. The topic is for conversational grounding, not
@@ -177,8 +178,8 @@ def conversation_topic_for_response(
         if topic:
             return topic
 
-    path = (semantic_path_shape or "").strip().lower()
-    decision = (routing_decision or "").strip().lower()
+    path = (path_shape or "").strip().lower()
+    decision = (turn_decision or "").strip().lower()
     joined = f"{path} {decision}"
     if any(token in joined for token in ("brand_origin", "contextual_meta_followup")):
         inferred = infer_last_topic(response_text)

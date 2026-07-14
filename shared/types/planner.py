@@ -6,6 +6,7 @@ from typing import Annotated, Any, ClassVar, Literal, TypeAlias, cast, get_args
 from pydantic import BaseModel, ConfigDict, Field
 
 from shared.money import MoneyAmount
+from shared.types.amount_mutation import AmountMutation, set_amount_mutation
 
 
 class ContextReference(BaseModel):
@@ -1043,7 +1044,14 @@ class PendingActionFieldUpdates(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    amount: MoneyAmount | None = Field(default=None, description="Updated transaction amount")
+    amount: MoneyAmount | None = Field(
+        default=None,
+        description="Deprecated absolute replacement amount; normalized to amount_mutation internally",
+    )
+    amount_mutation: AmountMutation | None = Field(
+        default=None,
+        description="Authoritative bounded mutation of the current pending transaction amount",
+    )
     narration: str | None = Field(default=None, description="Updated transfer narration")
     recipient_name: str | None = Field(default=None, description="Updated recipient/beneficiary reference")
     recipient_account: str | None = Field(default=None, description="Updated recipient account number")
@@ -1119,7 +1127,14 @@ class PendingActionEditDecision(BaseModel):
         default=None,
         description="Scoped field updates when one message edits multiple targets differently",
     )
-    amount: MoneyAmount | None = Field(default=None, description="Updated transaction amount")
+    amount: MoneyAmount | None = Field(
+        default=None,
+        description="Deprecated absolute replacement amount; normalized to amount_mutation internally",
+    )
+    amount_mutation: AmountMutation | None = Field(
+        default=None,
+        description="Authoritative bounded mutation of the current pending transaction amount",
+    )
     narration: str | None = Field(default=None, description="Updated transfer narration")
     recipient_name: str | None = Field(default=None, description="Updated recipient/beneficiary reference")
     recipient_account: str | None = Field(default=None, description="Updated recipient account number")
@@ -1155,8 +1170,12 @@ class PendingActionEditDecision(BaseModel):
 
     @property
     def fields(self) -> PendingActionFieldUpdates:
+        amount_mutation = self.amount_mutation
+        if amount_mutation is None and self.amount is not None:
+            amount_mutation = set_amount_mutation(self.amount)
         return PendingActionFieldUpdates(
             amount=self.amount,
+            amount_mutation=amount_mutation,
             narration=self.narration,
             recipient_name=self.recipient_name,
             recipient_account=self.recipient_account,
@@ -1254,7 +1273,14 @@ class BatchSlotPatchUpdate(BaseModel):
     )
     recipient_account: str | None = Field(default=None, description="Destination account number")
     recipient_bank_name: str | None = Field(default=None, description="Destination bank name")
-    amount: MoneyAmount | None = Field(default=None, description="Updated transfer amount")
+    amount: MoneyAmount | None = Field(
+        default=None,
+        description="Deprecated absolute replacement amount; normalized to amount_mutation internally",
+    )
+    amount_mutation: AmountMutation | None = Field(
+        default=None,
+        description="Authoritative bounded mutation of the current pending transaction amount",
+    )
     narration: str | None = Field(default=None, description="Updated transfer narration/memo")
     source_bank_name: str | None = Field(default=None, description="Source account bank reference")
     source_accounts: list[str] | None = Field(default=None, description="Source accounts/banks requested for pooling")

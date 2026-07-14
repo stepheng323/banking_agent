@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import
 )
 from apps.chat.src.agent.orchestrator.graph.preflight import InvocationPreflight
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
+from apps.chat.src.agent.orchestrator.models.turn_directive import TurnDirective
 from apps.chat.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 from banking.presentation.i18n.locale import LocaleManager
 from shared.config.settings import settings
@@ -67,36 +68,44 @@ def typing_visibility_delay_ms(channel: str) -> int:
     return 0
 
 
+def _serialize_turn_directive(value: object) -> dict[str, Any] | None:
+    """Return the public, JSON-safe representation of a turn directive."""
+    if isinstance(value, TurnDirective):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        try:
+            return TurnDirective.model_validate(value).model_dump(mode="json")
+        except ValueError:
+            return None
+    return None
+
+
 def build_invocation_result(
     *,
     final_state: dict[str, Any],
     loaded_context: dict[str, Any],
-    semantic_path_shape: str,
+    path_shape: str,
 ) -> dict[str, Any]:
     outbox = final_state.get("outbox", [])
     response_text = final_state.get("final_response")
     resolved_locale = LocaleManager.normalize(
         (final_state.get("loaded_context") or {}).get("language") or loaded_context.get("language")
     ).value
+    directive = _serialize_turn_directive(final_state.get("turn_directive"))
     return {
         "text": response_text,
         "intents": map_outbox_to_intents(outbox, response_text),
         "outbox": outbox,
         "locale": resolved_locale,
         "delivery_metadata": {},
-        "semantic_path_shape": semantic_path_shape,
-        "routing_owner": final_state.get("routing_owner"),
-        "routing_decision": final_state.get("routing_decision"),
-        "routing_target_domain": final_state.get("routing_target_domain"),
-        "routing_mode": final_state.get("routing_mode"),
-        "route_source": final_state.get("route_source"),
+        "turn_directive": directive,
         "planner_clean": final_state.get("planner_clean"),
         "planner_dirty_reasons": list(final_state.get("planner_dirty_reasons") or []),
         "conversation_topic": final_state.get("conversation_topic")
         or conversation_topic_for_response(
             response_text,
-            semantic_path_shape=semantic_path_shape,
-            routing_decision=final_state.get("routing_decision"),
+            path_shape=path_shape,
+            turn_decision=directive.get("decision") if directive else None,
         ),
         "suppress_empty_fallback": bool(final_state.get("suppress_empty_fallback")),
     }

@@ -166,9 +166,11 @@ class OrchestratorAgent:
 
         create_background_task(self.context_manager.add_conversation_turn(phone_number, "user", text))
         if final_response:
+            directive = result.get("turn_directive")
+            path_shape = directive.get("path_shape") if isinstance(directive, dict) else None
             conversation_topic = result.get("conversation_topic") or conversation_topic_for_response(
                 final_response,
-                semantic_path_shape=result.get("semantic_path_shape"),
+                path_shape=path_shape,
             )
             assistant_metadata = {"topic": conversation_topic} if conversation_topic else None
             create_background_task(

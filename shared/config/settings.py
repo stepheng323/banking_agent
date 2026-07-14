@@ -147,14 +147,6 @@ class Settings:
         self.llm_slow_call_threshold_ms: int = int(os.getenv("LLM_SLOW_CALL_THRESHOLD_MS", "10000"))
         self.llm_high_prompt_size_chars: int = int(os.getenv("LLM_HIGH_PROMPT_SIZE_CHARS", "24000"))
         self.llm_max_calls_per_turn_warning: int = int(os.getenv("LLM_MAX_CALLS_PER_TURN_WARNING", "8"))
-        self.llm_response_cache_enabled: bool = (
-            os.getenv("LLM_RESPONSE_CACHE_ENABLED", "false").strip().lower() == "true"
-        )
-        self.llm_response_cache_ttl_seconds: int = int(os.getenv("LLM_RESPONSE_CACHE_TTL_SECONDS", "300"))
-        self.llm_response_cache_types: tuple[str, ...] = self._parse_csv(
-            os.getenv("LLM_RESPONSE_CACHE_TYPES", "SemanticRouteDecision")
-        )
-
         self.flutterwave_secret_key: str = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
         self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
         self.flutterwave_webhook_secret_hash: str = os.getenv("FLUTTERWAVE_WEBHOOK_SECRET_HASH", "").strip()

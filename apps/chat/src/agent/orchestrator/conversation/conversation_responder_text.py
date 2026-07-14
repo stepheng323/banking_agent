@@ -102,6 +102,8 @@ BANKING_REACTION_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+
 def recent_history_text(history: list[Any], *, limit: int = 4) -> str:
     lines: list[str] = []
     for turn in history[-limit:]:

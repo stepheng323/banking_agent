@@ -97,7 +97,7 @@
       "brand_origin": "Yeah, that's the idea: flow, clarity, and control around your money.",
       "product_identity": "Exactly, Nenya is built to help you move and check your money clearly."
     },
-    "security_confirmation_required": "",
+    "security_confirmation_required": "I can't bypass confirmation or PIN authorization. Please review and confirm the transaction when you're ready.",
     "clarify_dynamic": "Could you clarify what you mean? I can help you {suggestions}.",
     "capabilities_dynamic": "I can help you {capabilities}. What would you like to do?"
   },

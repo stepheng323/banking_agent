@@ -120,17 +120,11 @@ def _batch_recipient_review_waiting_task_ids(
     current_wave: list[str],
 ) -> list[str]:
     transfer_tasks = [
-        (task_id, task)
-        for task_id, task in existing_tasks(state, current_wave)
-        if _is_live_transfer_task(task)
+        (task_id, task) for task_id, task in existing_tasks(state, current_wave) if _is_live_transfer_task(task)
     ]
     if len(transfer_tasks) < 2:
         return []
-    return [
-        task_id
-        for task_id, task in transfer_tasks
-        if not _ready_for_batch_recipient_review(task)
-    ]
+    return [task_id for task_id, task in transfer_tasks if not _ready_for_batch_recipient_review(task)]
 
 
 def _recipient_line(payload: dict[str, Any]) -> str:

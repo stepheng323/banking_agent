@@ -90,21 +90,23 @@ _COMPONENT_MAP: list[tuple[str, str]] = [
     ("shared.observability", "observability"),
 ]
 
-_SKIP_FIELDS = frozenset({
-    "event",
-    "level",
-    "logger",
-    "timestamp",
-    "_record",
-    "_from_structlog",
-    "runtime_name",
-    "app_env",
-    "environment",
-    "chat_transport",
-    "async_transport",
-    "infrastructure_environment",
-    "project_name",
-})
+_SKIP_FIELDS = frozenset(
+    {
+        "event",
+        "level",
+        "logger",
+        "timestamp",
+        "_record",
+        "_from_structlog",
+        "runtime_name",
+        "app_env",
+        "environment",
+        "chat_transport",
+        "async_transport",
+        "infrastructure_environment",
+        "project_name",
+    }
+)
 _MAX_VALUE_LEN = 120
 
 
@@ -138,21 +140,23 @@ def _humanize_event(event: str) -> str:
     """Convert snake_case event names to readable text."""
     return event.replace("_", " ")
 
+
 # Component color mapping for easy line-by-line tracking
 _COMPONENT_COLORS = {
-    "gateway": "\033[36m",         # Cyan
-    "whatsapp": "\033[32m",        # Green
-    "telegram": "\033[34m",        # Blue
-    "mono": "\033[35m",            # Magenta
-    "flutterwave": "\033[33m",     # Yellow
-    "transaction": "\033[31m",     # Red
-    "receipt": "\033[33m",         # Yellow
-    "chat-worker": "\033[35m",     # Magenta
-    "scheduler": "\033[33m",       # Yellow
-    "queue": "\033[35m",           # Magenta
-    "cache": "\033[90m",           # Dark Gray (kept muted for low priority)
-    "orchestrator": "\033[34m",    # Blue
+    "gateway": "\033[36m",  # Cyan
+    "whatsapp": "\033[32m",  # Green
+    "telegram": "\033[34m",  # Blue
+    "mono": "\033[35m",  # Magenta
+    "flutterwave": "\033[33m",  # Yellow
+    "transaction": "\033[31m",  # Red
+    "receipt": "\033[33m",  # Yellow
+    "chat-worker": "\033[35m",  # Magenta
+    "scheduler": "\033[33m",  # Yellow
+    "queue": "\033[35m",  # Magenta
+    "cache": "\033[90m",  # Dark Gray (kept muted for low priority)
+    "orchestrator": "\033[34m",  # Blue
 }
+
 
 def _color_for_component(component: str) -> str:
     """Return a consistent ANSI color code for the component."""
@@ -191,6 +195,7 @@ class BeautifulConsoleRenderer:
             time_part = timestamp.split("T")[1][:8] if "T" in timestamp else timestamp[:8]
         if not time_part:
             import datetime
+
             time_part = datetime.datetime.now().strftime("%H:%M:%S")
 
         component = _resolve_component(logger_name)
@@ -258,8 +263,7 @@ class BeautifulConsoleRenderer:
         console = _Console(file=buf, force_terminal=True, width=120)
 
         console.print(
-            f"[dim]{time_part}[/dim] [bold cyan][gate][/bold cyan] "
-            f"[bold yellow]Evaluated Routing Gate[/bold yellow]"
+            f"[dim]{time_part}[/dim] [bold cyan][gate][/bold cyan] [bold yellow]Evaluated Routing Gate[/bold yellow]"
         )
 
         skipped_by_layer: dict[str, int] = {}
@@ -272,8 +276,7 @@ class BeautifulConsoleRenderer:
 
         for layer_name, count in skipped_by_layer.items():
             console.print(
-                f"         [bold yellow][~][/bold yellow] "
-                f"[bold white]Skipped {count} in {layer_name}[/bold white]"
+                f"         [bold yellow][~][/bold yellow] [bold white]Skipped {count} in {layer_name}[/bold white]"
             )
 
         console.print(
