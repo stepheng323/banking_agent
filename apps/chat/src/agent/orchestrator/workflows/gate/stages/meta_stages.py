@@ -24,14 +24,12 @@ from apps.chat.src.agent.orchestrator.guardrails.banking_ambiguity import (
     render_banking_coded_ambiguity_prompt,
 )
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic import (
     classify_deterministic_meta_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response
-from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
-    _route_observability_updates,
-)
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
 from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import _locale_update
 from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit import (
@@ -54,7 +52,7 @@ def _banking_ambiguity_can_clarify(ctx: GateContext, ambiguous_domain: str | Non
     )
 
 
-def _banking_ambiguity_updates(ctx: GateContext, ambiguous_domain: str) -> dict[str, Any]:
+def _banking_ambiguity_updates(ctx: GateContext, ambiguous_domain: str) -> RouteResolution:
     logger.info(
         "gate_banking_coded_ambiguity_clarify",
         domain=ambiguous_domain,
@@ -64,11 +62,11 @@ def _banking_ambiguity_updates(ctx: GateContext, ambiguous_domain: str) -> dict[
         response=render_banking_coded_ambiguity_prompt(ctx.message_text, locale=ctx.current_locale),
         owner="guardrail",
         decision=f"banking_coded_ambiguity_{ambiguous_domain}",
-        semantic_path_shape="banking_coded_ambiguity_clarify",
+        path_shape="banking_coded_ambiguity_clarify",
     )
 
 
-async def _stage_banking_ambiguity(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_banking_ambiguity(ctx: GateContext) -> RouteResolution | None:
     """Deterministic ambiguous banking clarification."""
     ambiguous_domain = _classify_banking_ambiguity(ctx)
     if ambiguous_domain is not None and _banking_ambiguity_can_clarify(ctx, ambiguous_domain):
@@ -76,7 +74,7 @@ async def _stage_banking_ambiguity(ctx: GateContext) -> dict[str, Any] | None:
     return None
 
 
-async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_deterministic_meta(ctx: GateContext) -> RouteResolution | None:
     """Deterministic meta response (greeting, appreciation, identity, etc.)."""
     if ctx.live_pending_interrupt or ctx.state_view.has_quote:
         return None
@@ -125,7 +123,7 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
             mode=ConversationResponseMode.CASUAL,
         ) or redirect_text(locale, casual_streak=0)
     elif (response_mode := map_response_key_to_mode(response_key)) is not None:
-        extra_user_ctx = unsupported_user_ctx
+        extra_user_ctx: dict[str, Any] = unsupported_user_ctx
         if response_key in SOCIAL_META_RESPONSE_KEYS:
             extra_user_ctx = {
                 SOCIAL_META_RESPONSE_KEY_CTX: response_key,
@@ -145,18 +143,20 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
         exit_updates = _build_query_session_exit_updates(ctx.state)
         logger.info("gate_query_session_exited_on_direct_reply")
 
-    return {
-        **ctx.gate_updates,
-        **locale_updates,
-        **capability_boundary_updates,
-        **exit_updates,
-        "direct_path_triggered": True,
-        "final_response": final_response,
-        "conversation_topic": conversation_topic_for_response(
-            final_response,
-            response_key=response_key,
-            semantic_path_shape="meta_direct",
-        ),
-        "semantic_path_shape": "meta_direct",
-        **_route_observability_updates(owner="guardrail", decision="meta_direct"),
-    }
+    return direct_response(
+        ctx,
+        response=final_response,
+        owner="guardrail",
+        decision="meta_direct",
+        path_shape="meta_direct",
+        extra_updates={
+            **locale_updates,
+            **capability_boundary_updates,
+            **exit_updates,
+            "conversation_topic": conversation_topic_for_response(
+                final_response,
+                response_key=response_key,
+                path_shape="meta_direct",
+            ),
+        },
+    )
