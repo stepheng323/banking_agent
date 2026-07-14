@@ -115,7 +115,7 @@ def _surface_view_from_frame(frame: dict[str, Any]) -> SurfaceView:
         mode = SurfaceViewMode.TRANSACTION_LIST
 
     items: list[SurfaceItemView] = []
-    for idx, entity in enumerate(frame.get("items", []), 1):
+    for idx, entity in enumerate(frame.get("items") or [], 1):
         entity_payload = entity.get("selection_payload")
         if isinstance(entity_payload, dict):
             try:

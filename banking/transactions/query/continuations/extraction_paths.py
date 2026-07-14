@@ -63,6 +63,7 @@ def _normalize_show_existing_message(message: str) -> str:
 def _is_show_existing_transactions_followup(message: str, session_query_contract: Any | None) -> bool:
     if session_query_contract is None or session_query_contract.intent not in {
         QueryIntent.ANALYTICS_SUMMARY,
+        QueryIntent.BENEFICIARY_SUMMARY,
         QueryIntent.CASH_FLOW_SUMMARY,
         QueryIntent.TIME_COMPARISON,
     }:

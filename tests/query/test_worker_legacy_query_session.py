@@ -213,7 +213,9 @@ def _active_surface_context_from_result(result: TransactionResult) -> dict[str, 
 def _active_surface_context_from_session(session: dict[str, Any]) -> dict[str, Any]:
     raw_contract = session["query_contract"]
     query_contract = (
-        raw_contract if isinstance(raw_contract, QueryExecutionContract) else QueryExecutionContract.model_validate(raw_contract)
+        raw_contract
+        if isinstance(raw_contract, QueryExecutionContract)
+        else QueryExecutionContract.model_validate(raw_contract)
     )
     raw_result = session.get("query_result")
     summary_text = raw_result.get("summary_text") if isinstance(raw_result, dict) else ""
@@ -607,25 +609,25 @@ async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
             "today": date(2026, 3, 13),
             **_active_surface_context_from_session(
                 {
-                "session_active": True,
-                "query_contract": _contract(
-                    _query_ir(
-                        intent=QueryIntent.TRANSACTION_SEARCH,
-                        time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
-                    )
-                ).model_dump(),
-                "query_result": {
-                    "items": [
-                        {
-                            "id": "txn-1",
-                            "description": "Payment to Mum",
-                            "amount": 10000.0,
-                            "date": "2026-03-13",
-                            "metadata": {"status": "processing"},
-                        }
-                    ],
-                    "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
-                },
+                    "session_active": True,
+                    "query_contract": _contract(
+                        _query_ir(
+                            intent=QueryIntent.TRANSACTION_SEARCH,
+                            time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                        )
+                    ).model_dump(),
+                    "query_result": {
+                        "items": [
+                            {
+                                "id": "txn-1",
+                                "description": "Payment to Mum",
+                                "amount": 10000.0,
+                                "date": "2026-03-13",
+                                "metadata": {"status": "processing"},
+                            }
+                        ],
+                        "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
+                    },
                 }
             ),
         },
@@ -692,17 +694,17 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
             "today": date(2026, 3, 13),
             **_active_surface_context_from_session(
                 {
-                "session_active": True,
-                "query_contract": _contract(
-                    _query_ir(
-                        intent=QueryIntent.ANALYTICS_SUMMARY,
-                        time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
-                    )
-                ).model_dump(),
-                "query_result": {
-                    "summary_text": "You spent ₦10,000 yesterday.",
-                    "surface_view": {"mode": "grouped_summary", "context": {"type": "spending_total"}},
-                },
+                    "session_active": True,
+                    "query_contract": _contract(
+                        _query_ir(
+                            intent=QueryIntent.ANALYTICS_SUMMARY,
+                            time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
+                        )
+                    ).model_dump(),
+                    "query_result": {
+                        "summary_text": "You spent ₦10,000 yesterday.",
+                        "surface_view": {"mode": "grouped_summary", "context": {"type": "spending_total"}},
+                    },
                 }
             ),
         },

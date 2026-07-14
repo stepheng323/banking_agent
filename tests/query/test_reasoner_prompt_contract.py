@@ -137,6 +137,8 @@ def test_query_prompts_require_typed_multilingual_fact_semantics() -> None:
 def test_query_parser_prompt_distinguishes_plain_grouped_sender_from_winner() -> None:
     assert '"who sent me money this month" → beneficiary_summary' in QUERY_PARSER_PROMPT
     assert '"who sent me the most money this month" → beneficiary_summary' in QUERY_PARSER_PROMPT
+    assert '"who did I send money to the most" → beneficiary_summary' in QUERY_PARSER_PROMPT
+    assert "ANY singular grouped recipient/ranking asks" in QUERY_PARSER_PROMPT
     assert "aggregation.limit=1" in QUERY_PARSER_PROMPT
     assert "Do not answer plain grouped sender/recipient asks as a winner" in QUERY_PARSER_PROMPT
 

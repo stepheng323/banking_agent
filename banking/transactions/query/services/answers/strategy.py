@@ -53,6 +53,12 @@ def select_answer_strategy(result: QueryResult, *, locale: str = "en") -> QueryR
             result.answer_context = QueryAnswerContext(primary_text=result.summary_text)
         else:
             result.answer_strategy = QueryAnswerStrategy.SUMMARY_LIST
+            if query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY and result.items and len(result.items) == 1:
+                from banking.transactions.query.presentation.surface_builder import build_focus_referent
+
+                focus_referent = build_focus_referent(result.items[0], query_contract=query_contract)
+                if focus_referent is not None:
+                    result.followup_referent = focus_referent
         return result
 
     if result.summary_text and not result.items and not parse_summary_parts(result.summary_text):

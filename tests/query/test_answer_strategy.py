@@ -111,6 +111,37 @@ def test_select_answer_strategy_direct_answers_analytics_sum_without_list_dump()
     assert selected.answer_context.primary_text == "You spent ₦42,000 today, across 2 transactions."
 
 
+def test_single_beneficiary_summary_sets_followup_referent() -> None:
+    result = QueryResult(
+        summary_text="You sent Cowrywise the most this month.",
+        items=[
+            QueryResultItem(
+                id="beneficiary-cowrywise",
+                description="Cowrywise",
+                amount=150000,
+                date=date(2026, 3, 28),
+                metadata={"recipient_name": "Cowrywise", "count": 3},
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.BENEFICIARY_SUMMARY,
+                filters=Filters(transaction_type="debit"),
+                aggregation={"type": "sum", "sort_by": "amount", "limit": 1},
+                result_limit=1,
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST
+    assert selected.followup_referent is not None
+    assert selected.followup_referent.label == "Cowrywise"
+    assert selected.followup_referent.recipient_name == "Cowrywise"
+    assert selected.followup_referent.entity_id == "beneficiary-cowrywise"
+
+
 def test_select_answer_strategy_uses_localized_reply_for_single_fact_match() -> None:
     result = QueryResult(
         summary_text="accounts:1|showing:1-1|total:1",

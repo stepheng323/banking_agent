@@ -155,7 +155,9 @@ def build_time_range(
             granularity="day",
         )
     if reference_type == TimeReference.UNSPECIFIED:
-        return default_rolling_time_range(today)
+        if today.day <= 7:
+            return default_rolling_time_range(today)
+        return TimeRange(start=date(today.year, today.month, 1), end=today, granularity="month")
     if period_lower == "today":
         days_back = 0
     elif period_lower == "yesterday":

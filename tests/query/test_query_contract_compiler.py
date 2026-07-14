@@ -41,7 +41,7 @@ def test_build_query_contract_from_extraction_preserves_lagos_today_window() -> 
     assert contract.intent == QueryIntent.ANALYTICS_SUMMARY
 
 
-def test_unspecified_time_defaults_to_rolling_30_days() -> None:
+def test_unspecified_time_defaults_to_month_to_date_after_first_week() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 6, 29)
     extraction = QueryExtractionResult(
@@ -53,14 +53,14 @@ def test_unspecified_time_defaults_to_rolling_30_days() -> None:
     query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
     contract = parser.build_execution_contract_from_ir(query_ir)
 
-    assert query_ir.time_range.start == date(2026, 5, 31)
+    assert query_ir.time_range.start == date(2026, 6, 1)
     assert query_ir.time_range.end == today
-    assert query_ir.time_range.granularity == "day"
-    assert contract.time_start == date(2026, 5, 31)
+    assert query_ir.time_range.granularity == "month"
+    assert contract.time_start == date(2026, 6, 1)
     assert contract.time_end == today
 
 
-def test_missing_time_defaults_to_rolling_30_days() -> None:
+def test_missing_time_defaults_to_month_to_date_after_first_week() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 6, 29)
     extraction = QueryExtractionResult(
@@ -71,10 +71,36 @@ def test_missing_time_defaults_to_rolling_30_days() -> None:
     query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
     contract = parser.build_execution_contract_from_ir(query_ir)
 
-    assert query_ir.time_range.start == date(2026, 5, 31)
+    assert query_ir.time_range.start == date(2026, 6, 1)
+    assert query_ir.time_range.end == today
+    assert query_ir.time_range.granularity == "month"
+    assert contract.time_start == date(2026, 6, 1)
+    assert contract.time_end == today
+
+
+@pytest.mark.parametrize("include_unspecified_time", [False, True])
+def test_default_time_stays_rolling_30_days_during_first_week(include_unspecified_time: bool) -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 6, 5)
+    if include_unspecified_time:
+        extraction = QueryExtractionResult(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+            raw_query="show my transactions",
+        )
+    else:
+        extraction = QueryExtractionResult(
+            intent=QueryIntent.TRANSACTION_LIST,
+            raw_query="show my transactions",
+        )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.time_range.start == date(2026, 5, 7)
     assert query_ir.time_range.end == today
     assert query_ir.time_range.granularity == "day"
-    assert contract.time_start == date(2026, 5, 31)
+    assert contract.time_start == date(2026, 5, 7)
     assert contract.time_end == today
 
 

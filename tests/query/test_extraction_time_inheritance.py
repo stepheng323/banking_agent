@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from typing import Any
 
 import pytest
+from langchain_core.runnables import Runnable
 
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
@@ -39,9 +40,9 @@ from banking.transactions.query.presentation.surface_builder import build_surfac
 from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: Any) -> QueryIR:
     fallback_day = date(2026, 3, 4)
-    defaults: dict[str, object] = {
+    defaults: dict[str, Any] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
@@ -55,7 +56,10 @@ class _DummyStructured:
         return QueryExtractionResult(raw_query="fallback")
 
 
-class _DummyLLM:
+class _DummyLLM(Runnable[Any, Any]):
+    def invoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
+        return ""
+
     def with_structured_output(self, schema: object) -> _DummyStructured:
         del schema
         return _DummyStructured()
@@ -1736,8 +1740,7 @@ def test_coverage_discriminator_uses_typed_semantics_with_structural_legacy_defa
         == "ambiguous"
     )
     assert (
-        _resolve_coverage_intent(QuerySemanticDecision(decision="continuation"), list_contract)
-        == "result_completeness"
+        _resolve_coverage_intent(QuerySemanticDecision(decision="continuation"), list_contract) == "result_completeness"
     )
 
 
@@ -2225,6 +2228,78 @@ async def test_show_them_after_count_summary_recovers_from_fresh_query_label() -
     assert query_contract.aggregation is None
     assert query_contract.time_start == yesterday
     assert query_contract.time_end == yesterday
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("as_refinement", [False, True], ids=["fresh-query-recovery", "refine-existing"])
+async def test_show_them_after_top_beneficiary_lists_only_that_beneficiary_transactions(
+    as_refinement: bool,
+) -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 7, 13)
+    session_query = _query_ir(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        filters=Filters(transaction_type="debit"),
+        time_range=TimeRange(start=date(2026, 7, 1), end=today, granularity="month"),
+        aggregation=Aggregation(type="sum", sort_by="amount", limit=1),
+        result_limit=1,
+    )
+    session_contract = _contract(session_query)
+    query_result = QueryResult(
+        summary_text="You sent Cowrywise the most this month, with ₦150,000 across 3 transfers.",
+        items=[
+            QueryResultItem(
+                id="beneficiary-cowrywise",
+                description="Cowrywise",
+                amount=150000,
+                date=today,
+                metadata={"count": 3, "recipient_name": "Cowrywise"},
+            )
+        ],
+        query_contract=session_contract,
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
+    )
+    query_result.surface_view = build_surface_view(query_result)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        if as_refinement:
+            return QuerySemanticDecision(
+                decision="continuation",
+                continuation_type="show_more",
+                followup_intent="refine_existing",
+                confidence=0.96,
+                reason="show_underlying_beneficiary_transactions",
+            )
+        return QuerySemanticDecision(
+            decision="fresh_query",
+            continuation_type="unclear",
+            confidence=0.42,
+            reason="llm_mislabeled_beneficiary_evidence_request_as_fresh_query",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Show them", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": query_result.model_dump(mode="json"),
+            "current_page": 0,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.aggregation is None
+    assert query_contract.time_start == date(2026, 7, 1)
+    assert query_contract.time_end == today
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.filters.counterparty == ["Cowrywise"]
     assert updates["current_page"] == 0
     assert updates["show_expanded"] is False
 

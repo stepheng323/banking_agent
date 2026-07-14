@@ -114,6 +114,67 @@ async def resolve_result_continuation_updates(
                     )
                 updates["current_page"] = current_page + 1
         elif followup_intent == "refine_existing":
+            selection_payload = None
+            if surface_view is not None and len(surface_view.items) == 1:
+                selection_payload = find_selection_payload(surface_view, index=0)
+
+            if selection_payload is not None and (
+                selection_payload.selection_kind in {"group_bucket", "summary_scope"}
+                or bool(selection_payload.filters_patch)
+                or selection_payload.time_patch is not None
+            ):
+                query_contract = apply_selection_payload_to_query(
+                    session_query_contract,
+                    selection_payload,
+                    continuation_type=cont_type,
+                    continuation_delta_type=continuation_delta_type,
+                )
+                query_contract.conversational_prefix = decision.response_text
+                updates["query_contract"] = query_contract
+            else:
+                updates["query_contract"] = rebuild_query_contract(
+                    session_query_contract,
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    aggregation=None,
+                    result_limit=None,
+                    result_reference=None,
+                    answer_fact_field=None,
+                    continuation_type=cont_type,
+                    continuation_delta_type=continuation_delta_type,
+                    conversational_prefix=decision.response_text,
+                )
+            updates["current_page"] = 0
+            updates["show_expanded"] = False
+        else:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+
+    elif cont_type == "show_evidence":
+        if session_query_contract is None or session_query_contract.intent not in {
+            QueryIntent.ANALYTICS_SUMMARY,
+            QueryIntent.CASH_FLOW_SUMMARY,
+            QueryIntent.TIME_COMPARISON,
+            QueryIntent.BENEFICIARY_SUMMARY,
+        }:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+
+        selection_payload = None
+        if surface_view is not None and len(surface_view.items) == 1:
+            selection_payload = find_selection_payload(surface_view, index=0)
+
+        if selection_payload is not None and (
+            selection_payload.selection_kind in {"group_bucket", "summary_scope"}
+            or bool(selection_payload.filters_patch)
+            or selection_payload.time_patch is not None
+        ):
+            query_contract = apply_selection_payload_to_query(
+                session_query_contract,
+                selection_payload,
+                continuation_type=cont_type,
+                continuation_delta_type=continuation_delta_type,
+            )
+            query_contract.conversational_prefix = decision.response_text
+            updates["query_contract"] = query_contract
+        else:
             updates["query_contract"] = rebuild_query_contract(
                 session_query_contract,
                 intent=QueryIntent.TRANSACTION_LIST,
@@ -125,29 +186,6 @@ async def resolve_result_continuation_updates(
                 continuation_delta_type=continuation_delta_type,
                 conversational_prefix=decision.response_text,
             )
-            updates["current_page"] = 0
-            updates["show_expanded"] = False
-        else:
-            return step._ambiguous_followup_updates(locale=locale, session=session)
-
-    elif cont_type == "show_evidence":
-        if session_query_contract is None or session_query_contract.intent not in {
-            QueryIntent.ANALYTICS_SUMMARY,
-            QueryIntent.CASH_FLOW_SUMMARY,
-            QueryIntent.TIME_COMPARISON,
-        }:
-            return step._ambiguous_followup_updates(locale=locale, session=session)
-        updates["query_contract"] = rebuild_query_contract(
-            session_query_contract,
-            intent=QueryIntent.TRANSACTION_LIST,
-            aggregation=None,
-            result_limit=None,
-            result_reference=None,
-            answer_fact_field=None,
-            continuation_type=cont_type,
-            continuation_delta_type=continuation_delta_type,
-            conversational_prefix=decision.response_text,
-        )
         updates["current_page"] = 0
         updates["show_expanded"] = False
 

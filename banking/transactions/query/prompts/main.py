@@ -239,9 +239,9 @@ Return only these fields: intent, filters, time_range, comparison, aggregation, 
 If the user is vague, express that through the semantic fields:
 - vague time → reference_type=vague and estimate days_back when possible
 - missing/unclear fields → leave the field null instead of fabricating values
-- For singular grouped recipient/ranking asks such as "who sent me the most", "who paid me the highest",
-  or "who did I send to most", set `intent=beneficiary_summary`, `request_shape=grouped_summary`,
-  `aggregation.sort_by=amount`, `aggregation.limit=1`, and `result_limit=1`.
+- For ANY singular grouped recipient/ranking asks such as "who sent me the most", "who paid me the highest",
+  "my top recipient", or "who did I send to most", YOU MUST set `intent=beneficiary_summary`,
+  `request_shape=grouped_summary`, `aggregation.sort_by=amount`, `aggregation.limit=1`, and `result_limit=1`.
 - For plain grouped sender/recipient asks such as "who sent me money", "who paid me", or "who did I send money to",
   set `intent=beneficiary_summary`, `request_shape=grouped_summary`, `aggregation.sort_by=amount`, and leave `result_limit` unset.
 - Do not answer plain grouped sender/recipient asks as a winner. They are lists unless the semantic meaning is a single winner.
@@ -266,6 +266,7 @@ EXAMPLES
 "who sent me money this month" → beneficiary_summary, grouped_summary, sum, explicit this_month, credit, sort_by=amount
 "who sent me the most money this month" → beneficiary_summary, grouped_summary, sum, explicit this_month, credit, sort_by=amount, aggregation.limit=1, result_limit=1
 "who sent me money most often this month" → beneficiary_summary, grouped_summary, sum, explicit this_month, credit, sort_by=count, aggregation.limit=1, result_limit=1
+"who did I send money to the most" → beneficiary_summary, grouped_summary, sum, debit, sort_by=amount, aggregation.limit=1, result_limit=1
 "where did my money go this month" → analytics_summary, breakdown, category, explicit this_month, debit
 "did I spend more than I earned this month" → cash_flow_summary, explicit this_month
 "cashflow this month" → cash_flow_summary, explicit this_month
