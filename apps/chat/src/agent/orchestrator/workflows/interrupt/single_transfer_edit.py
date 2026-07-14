@@ -1,0 +1,116 @@
+"""Low-latency extraction path for amendments to one pending transfer."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from apps.chat.src.agent.orchestrator.models.domain import TaskStage
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import context_surface
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
+from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
+from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_continue import _continue_flow_updates
+from apps.chat.src.agent.orchestrator.workflows.interrupt.runtime import InterruptRuntime
+from banking.runtime.results import TransactionOutcome
+
+_TRANSFER_EDIT_EVIDENCE = frozenset(
+    {
+        "amount",
+        "transfer_all",
+        "transfer_percentage",
+        "recipient_name",
+        "recipient_account",
+        "recipient_bank_name",
+        "source_bank_name",
+        "source_account_index",
+        "source_accounts",
+        "use_dual_accounts",
+        "explicit_split",
+        "narration",
+        "authored_narration",
+        "user_note",
+    }
+)
+
+
+def _single_pending_transfer_task(state: OrchestratorState, runtime: InterruptRuntime) -> tuple[str, Any] | None:
+    if getattr(runtime.interrupt, "kind", None) != "confirmation":
+        return None
+    task_ids = runtime.state_view.active_task_ids_for_interrupt(runtime.interrupt)
+    if len(task_ids) != 1:
+        return None
+    task_id = task_ids[0]
+    task = runtime.state_view.task(task_id)
+    if task is None or task.type != "transfer" or task.stage != TaskStage.AWAITING_CONFIRMATION:
+        return None
+    return task_id, task
+
+
+def _transfer_edit_context(state: OrchestratorState, runtime: InterruptRuntime) -> dict[str, Any]:
+    context = loaded_context(state)
+    surface = context_surface(state)
+    return {
+        "phone_number": state.phone_number,
+        "channel": state.channel,
+        "channel_identity": state.channel_identity,
+        "user_id": context.user_id,
+        "accounts": context.transaction_accounts_or_accounts,
+        "all_accounts": context.accounts,
+        "beneficiaries": context.beneficiaries,
+        "referent_memory": surface.referent_memory_payload(),
+        "language": runtime.state_view.current_locale,
+        "required_fields": [],
+        "previous_response": getattr(runtime.interrupt, "prompt", None),
+        "confirmation_task_count": 1,
+    }
+
+
+async def resolve_single_transfer_confirmation_edit_updates(
+    *,
+    state: OrchestratorState,
+    runtime: InterruptRuntime,
+) -> dict[str, Any] | None:
+    """Apply a supported one-transfer amendment without broad interrupt routing.
+
+    The transfer worker supplies typed extraction evidence. A no-match stays on
+    the normal pending-action/router path, so this shortcut cannot claim an
+    arbitrary free-form message merely because a transfer is pending.
+    """
+    candidate = _single_pending_transfer_task(state, runtime)
+    if candidate is None:
+        return None
+    task_id, task = candidate
+    interpreter = getattr(runtime.services.transfer, "interpret_pending_confirmation_edit", None)
+    if not callable(interpreter):
+        return None
+
+    logger.info("single_transfer_edit_fast_path", outcome="attempted")
+    result = await interpreter(
+        payload=dict(task.payload),
+        context=_transfer_edit_context(state, runtime),
+        user_message=runtime.text,
+    )
+    patch = result.patch if getattr(result, "outcome", None) == TransactionOutcome.OK else {}
+    if not isinstance(patch, dict) or not _TRANSFER_EDIT_EVIDENCE.intersection(patch):
+        logger.info("single_transfer_edit_fast_path", outcome="not_applicable")
+        return None
+
+    # The extraction result has already supplied the amendment. The later
+    # transfer pipeline should validate, fund, and reconfirm it, not call the
+    # extractor a second time for this same turn.
+    payload_override = dict(patch)
+    payload_override["skip_extraction"] = True
+    logger.info(
+        "single_transfer_edit_fast_path",
+        outcome="applied",
+        patched_fields=sorted(_TRANSFER_EDIT_EVIDENCE.intersection(patch)),
+        pending_action_llm_avoided=True,
+    )
+    return _continue_flow_updates(
+        state,
+        runtime.interrupt,
+        precomputed_payload_overrides={task_id: payload_override},
+    )
+
+
+__all__ = ["resolve_single_transfer_confirmation_edit_updates"]

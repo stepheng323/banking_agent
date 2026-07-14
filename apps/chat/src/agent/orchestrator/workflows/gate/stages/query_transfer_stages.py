@@ -2,6 +2,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import is_contextual_casual_followup_turn
+from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
     _is_query_domain_request,
     _is_structural_query_domain_request,
@@ -14,7 +15,11 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _obvious_mixed_transaction_executors,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, hint_only, task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import (
+    direct_response,
+    planner_handoff,
+    task_dispatch,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
 from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit import _build_query_session_exit_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import _build_direct_domain_task
@@ -25,8 +30,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.router_context import
 from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
-
-
 
 
 def _has_query_session_stack(ctx: GateContext) -> bool:
@@ -44,11 +47,7 @@ def _can_consider_query_domain(ctx: GateContext, *, has_active_query_session: bo
 
 
 def _can_consider_structural_query_domain(ctx: GateContext) -> bool:
-    return (
-        not ctx.live_pending_interrupt
-        and not ctx.state_view.has_quote
-        and ctx.phrase_heavy_fastpath_allowed
-    )
+    return not ctx.live_pending_interrupt and not ctx.state_view.has_quote and ctx.phrase_heavy_fastpath_allowed
 
 
 def _can_consider_contextual_casual_followup(ctx: GateContext, *, has_active_query_session: bool) -> bool:
@@ -68,7 +67,7 @@ async def _maybe_contextual_casual_followup(
     ctx: GateContext,
     *,
     has_active_query_session: bool,
-) -> dict[str, Any] | None:
+) -> RouteResolution | None:
     if _can_consider_contextual_casual_followup(ctx, has_active_query_session=has_active_query_session):
         responder_reply = await _build_bounded_conversational_reply(
             ctx,
@@ -82,13 +81,13 @@ async def _maybe_contextual_casual_followup(
                 response=responder_reply,
                 owner="guardrail",
                 decision="contextual_casual_followup",
-                semantic_path_shape="contextual_casual_followup",
+                path_shape="contextual_casual_followup",
                 extra_updates=ctx.summary_updates,
             )
     return None
 
 
-def _maybe_direct_context_recap(ctx: GateContext) -> dict[str, Any] | None:
+def _maybe_direct_context_recap(ctx: GateContext) -> RouteResolution | None:
     if ctx.turn_summary is None:
         return None
     if (
@@ -108,14 +107,14 @@ def _maybe_direct_context_recap(ctx: GateContext) -> dict[str, Any] | None:
                 response=response,
                 owner="guardrail",
                 decision="direct_context_recap",
-                semantic_path_shape="direct_context_recap",
+                path_shape="direct_context_recap",
                 extra_updates=ctx.summary_updates,
             )
         logger.info("gate_direct_context_recap_miss", reason="no_active_context")
     return None
 
 
-async def _maybe_query_followup_bypass(ctx: GateContext) -> dict[str, Any] | None:
+async def _maybe_query_followup_bypass(ctx: GateContext) -> RouteResolution | None:
     if not ctx.live_pending_interrupt and not ctx.state_view.has_quote:
         bypass_reason, bypass_detail = _query_followup_bypass_reason(
             message_text=ctx.message_text,
@@ -123,8 +122,7 @@ async def _maybe_query_followup_bypass(ctx: GateContext) -> dict[str, Any] | Non
             has_active_query_session=await ctx.has_active_query_session(),
             has_context_frames=ctx.state_view.has_context_frames,
             is_pending_clarification=bool(
-                isinstance(ctx.query_session_snapshot, dict)
-                and ctx.query_session_snapshot.get("pending_clarification")
+                isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("pending_clarification")
             ),
         )
         if bypass_reason is not None:
@@ -141,7 +139,7 @@ async def _maybe_query_followup_bypass(ctx: GateContext) -> dict[str, Any] | Non
                 waves=[[task_id]],
                 owner="query_session",
                 decision="query_followup_bypass",
-                semantic_path_shape="query_followup_bypass",
+                path_shape="query_followup_bypass",
                 extra_updates=ctx.summary_updates,
                 target_domain="query",
                 mode="continuation",
@@ -149,8 +147,9 @@ async def _maybe_query_followup_bypass(ctx: GateContext) -> dict[str, Any] | Non
     return None
 
 
-
-def _maybe_structural_query_domain(ctx: GateContext, *, can_consider_query_domain: bool) -> dict[str, Any] | None:
+def _maybe_structural_query_domain(
+    ctx: GateContext, *, can_consider_query_domain: bool
+) -> RouteResolution | None:
     if not can_consider_query_domain or not _is_structural_query_domain_request(ctx.message_text):
         return None
     semantic_router_available = ctx.task_planner is not None
@@ -167,11 +166,11 @@ def _maybe_structural_query_domain(ctx: GateContext, *, can_consider_query_domai
         waves=[[task_id]],
         owner="guardrail",
         decision="deterministic_query_domain",
-        semantic_path_shape="deterministic_query_domain",
+        path_shape="deterministic_query_domain",
         extra_updates=ctx.summary_updates,
         target_domain="query",
         mode="new",
-        route_source="query_domain_guard",
+        source="query_domain_guard",
         heuristic_type="guardrail_shortcut",
         heuristic_name="structural_query_domain",
     )
@@ -189,8 +188,6 @@ def _attach_query_domain_hint_if_needed(ctx: GateContext, *, can_consider_query_
     return False
 
 
-
-
 async def _query_session_exit_updates_if_needed(ctx: GateContext) -> dict[str, Any]:
     if not await ctx.has_active_query_session():
         return {}
@@ -199,7 +196,7 @@ async def _query_session_exit_updates_if_needed(ctx: GateContext) -> dict[str, A
     )
 
 
-async def _maybe_transfer_route(ctx: GateContext) -> dict[str, Any] | None:
+async def _maybe_transfer_route(ctx: GateContext) -> RouteResolution | None:
     if not ctx.live_pending_interrupt and not ctx.state_view.has_quote:
         transfer_request_reason = (
             _classify_obvious_transfer_request(ctx.message_text) if ctx.phrase_heavy_fastpath_allowed else None
@@ -226,11 +223,11 @@ async def _maybe_transfer_route(ctx: GateContext) -> dict[str, Any] | None:
                 waves=[[task_id]],
                 owner="guardrail",
                 decision=transfer_request_reason,
-                semantic_path_shape="deterministic_transfer_domain",
+                path_shape="deterministic_transfer_domain",
                 extra_updates={**(ctx.summary_updates or {}), **transfer_updates},
                 target_domain="transfer",
                 mode="new",
-                route_source="transfer_domain_guard",
+                source="transfer_domain_guard",
                 heuristic_type="slot_parser",
                 heuristic_name=transfer_request_reason,
             )
@@ -245,14 +242,15 @@ async def _maybe_transfer_route(ctx: GateContext) -> dict[str, Any] | None:
                 skipped_semantic_router=True,
                 target_domain="transfer",
             )
-            return hint_only(
+            return planner_handoff(
                 ctx,
                 owner="guardrail",
                 decision=transfer_request_reason,
                 extra_updates={**(ctx.summary_updates or {}), **transfer_updates},
                 target_domain="transfer",
                 mode="new",
-                route_source="transfer_domain_guard",
+                source="transfer_domain_guard",
+                path_shape="transfer_planner_handoff",
                 heuristic_type="slot_parser",
                 heuristic_name=transfer_request_reason,
             )
@@ -260,7 +258,7 @@ async def _maybe_transfer_route(ctx: GateContext) -> dict[str, Any] | None:
     return None
 
 
-async def _maybe_mixed_transaction_planner_handoff(ctx: GateContext) -> dict[str, Any] | None:
+async def _maybe_mixed_transaction_planner_handoff(ctx: GateContext) -> RouteResolution | None:
     if ctx.live_pending_interrupt or ctx.state_view.has_quote or not ctx.phrase_heavy_fastpath_allowed:
         return None
 
@@ -277,19 +275,20 @@ async def _maybe_mixed_transaction_planner_handoff(ctx: GateContext) -> dict[str
         expected_executors=expected_executors,
         skipped_semantic_router=True,
     )
-    return hint_only(
+    return planner_handoff(
         ctx,
-        owner="planner",
+        owner="guardrail",
         decision="planner_mixed",
         extra_updates={**(ctx.summary_updates or {}), **transfer_updates},
         mode="new",
-        route_source="mixed_transaction_guard",
+        source="mixed_transaction_guard",
+        path_shape="mixed_transaction_planner_handoff",
         heuristic_type="slot_parser",
         heuristic_name="mixed_transaction_command",
     )
 
 
-async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str, Any] | None:
+async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> RouteResolution | None:
     """Context recap, casual followup, query followup, query domain, and transfer direct."""
     await ctx.ensure_turn_summary()
     assert ctx.turn_summary is not None  # noqa: S101 – ensured by ensure_turn_summary

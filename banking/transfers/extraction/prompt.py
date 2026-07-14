@@ -60,6 +60,13 @@ Detect but don't process:
 ## CORRECTIONS
 When user corrects mid-flow ("I meant 50k"):
 - Set correction.field="amount", correction.new_value=50000
+- For an amount correction, set correction.amount_mutation={basis:"current_pending_amount",steps:[...]}.
+  Each step is {operation:"set"|"add"|"subtract",amount:number} or {operation:"multiply",factor:number}.
+  Use set for a new total ("make it 50k"), add/subtract for a naira delta, and multiply for transformations
+  of the current amount ("double it" -> factor=2, "halve it" -> factor=0.5, "increase by 10%" -> factor=1.1).
+  Keep compound steps in the user’s order. The runtime, not this extractor, applies the arithmetic.
+  Do not use this correction for balance-derived requests such as "send half of what I have"; those are
+  transfer percentage/all intent.
 - If context contains ActiveConfirmationTasks and the user corrects one task in a batch,
   set `recipient_name` to the task recipient the user is correcting.
 - If the user gives a relative correction using another active task as reference,
@@ -126,6 +133,8 @@ When user corrects mid-flow ("I meant 50k"):
 | "send 20k 70/30 btw mum and gaines" | amount=20000, recipient_allocations=[{"recipient_name":"mum","amount":14000},{"recipient_name":"gaines","amount":6000}] |
 | "same as last time" | references.use_recent_transfer=true |
 | "I meant 50k" | amount=50000, correction.field="amount", correction.new_value=50000 |
+| "add another 5k" (current amount is 10k) | correction.field="amount", correction.amount_mutation={basis:"current_pending_amount",steps:[{operation:"add",amount:5000}]} |
+| "double it" (current amount is 10k) | correction.field="amount", correction.amount_mutation={basis:"current_pending_amount",steps:[{operation:"multiply",factor:2}]} |
 | "send all" or "just send what I have" | transfer_all=true |
 | "abeg make am dey go every month" | requested_features=["RECURRING"] |
 | "fi 5k si mama" (Yoruba) | amount=5000, recipient_name="mama" |

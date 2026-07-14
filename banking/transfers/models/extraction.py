@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from banking.transfers.models.entities import TransferEntities
+from shared.types.amount_mutation import AmountMutation
 
 SCHEMA_VERSION = 1
 
@@ -50,6 +51,10 @@ class Correction(BaseModel):
 
     field: CorrectionField | None = Field(default=None, description="Field being corrected")
     new_value: str | float | int | None = Field(default=None, description="New corrected value")
+    amount_mutation: AmountMutation | None = Field(
+        default=None,
+        description="For amount corrections, the authoritative bounded mutation of the pending amount",
+    )
 
 
 class Ambiguity(BaseModel):

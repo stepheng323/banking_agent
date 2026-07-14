@@ -1472,6 +1472,97 @@ async def test_amount_update_does_not_clear_recipient_binding_when_name_matches_
     assert "beneficiary_id" not in result.patch
 
 
+async def test_relative_amount_correction_applies_to_the_pending_transfer_amount() -> None:
+    class _IncrementAmountExtractor:
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            del text, smart_context
+            return TransferExtractionResult(
+                correction=Correction(
+                    field=CorrectionField.AMOUNT,
+                    amount_mutation={"steps": [{"operation": "add", "amount": 5000}]},
+                ),
+                acknowledgment="Added 5k.",
+            )
+
+    step = ExtractionStep(user_message="Add 5k")
+    payload = TransferPayload(
+        amount=10000,
+        recipient_name="Adebayo",
+        recipient_resolved_name="Tolu Adebayo",
+        recipient_account="2010000001",
+        recipient_bank_name="Access Bank",
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=_IncrementAmountExtractor(),
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 15000
+    assert result.patch["transition_acknowledgment"] == "Added 5k."
+
+
+async def test_relative_amount_correction_rejects_non_positive_result() -> None:
+    class _DecrementAmountExtractor:
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            del text, smart_context
+            return TransferExtractionResult(
+                correction=Correction(
+                    field=CorrectionField.AMOUNT,
+                    amount_mutation={"steps": [{"operation": "subtract", "amount": 10000}]},
+                ),
+            )
+
+    step = ExtractionStep(user_message="Take off 10k")
+    payload = TransferPayload(amount=10000, recipient_name="Adebayo")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=_DecrementAmountExtractor(),
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert "amount" not in result.patch
+
+
+async def test_compound_amount_mutation_applies_in_user_order() -> None:
+    class _CompoundAmountExtractor:
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            del text, smart_context
+            return TransferExtractionResult(
+                correction=Correction(
+                    field=CorrectionField.AMOUNT,
+                    amount_mutation={
+                        "steps": [
+                            {"operation": "multiply", "factor": 2},
+                            {"operation": "add", "amount": 5000},
+                        ]
+                    },
+                )
+            )
+
+    step = ExtractionStep(user_message="Double it then add 5k")
+    payload = TransferPayload(amount=10000, recipient_name="Adebayo")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=_CompoundAmountExtractor(),
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 25000
+
+
 async def test_fanout_bound_confirmation_edit_keeps_recipient_binding_on_narration_update() -> None:
     class _FanoutNarrationExtractor:
         async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:

@@ -18,6 +18,7 @@ from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transfers.worker import TransferWorker
 from shared.config.settings import settings
 from shared.types.planner import ContextFrameFollowupDecision
+from tests.orchestrator.routing_fixtures import execution_test_directive, finalize_test_directive
 
 
 class _MockNonTransferNeedsInputWorker:
@@ -251,6 +252,7 @@ def _build_state(
     last_message_text: str | None = None,
 ) -> OrchestratorState:
     return OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_prompt_progress",
         phone_number="2348000000100",
         channel="whatsapp",
@@ -355,6 +357,7 @@ async def test_prompt_only_bank_when_account_number_already_provided() -> None:
 async def test_data_known_network_missing_phone_prompt_is_natural() -> None:
     worker = _MockNonTransferNeedsInputWorker(["target_phone"], "Which line should I buy data for?")
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_data_prompt_network",
         phone_number="2348000000100",
         channel="whatsapp",
@@ -392,6 +395,7 @@ async def test_data_known_network_missing_phone_prompt_is_natural() -> None:
 async def test_data_known_phone_missing_network_prompt_is_natural() -> None:
     worker = _MockNonTransferNeedsInputWorker(["network"], "Which network is it on?")
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_data_prompt_phone",
         phone_number="2348000000100",
         channel="whatsapp",
@@ -429,6 +433,7 @@ async def test_data_known_phone_missing_network_prompt_is_natural() -> None:
 async def test_airtime_known_amount_missing_phone_prompt_is_natural() -> None:
     worker = _MockNonTransferNeedsInputWorker(["recipient_phone"], "Please provide the phone number.")
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_airtime_prompt_amount",
         phone_number="2348000000100",
         channel="whatsapp",
@@ -466,6 +471,7 @@ async def test_airtime_known_amount_missing_phone_prompt_is_natural() -> None:
 async def test_airtime_known_phone_missing_amount_prompt_is_natural() -> None:
     worker = _MockNonTransferNeedsInputWorker(["amount"], "Please provide the amount.")
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_airtime_prompt_phone",
         phone_number="2348000000100",
         channel="whatsapp",
@@ -503,6 +509,7 @@ async def test_airtime_known_phone_missing_amount_prompt_is_natural() -> None:
 async def test_airtime_known_phone_missing_network_prompt_is_natural() -> None:
     worker = _MockNonTransferNeedsInputWorker(["network"], "Which network is it on?")
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_airtime_prompt_network",
         phone_number="2348000000100",
         channel="whatsapp",
@@ -542,6 +549,7 @@ async def test_airtime_bare_purchase_missing_phone_and_amount_prompt_is_natural(
         ["recipient_phone", "amount"], "Please provide the phone number and amount."
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_airtime_prompt_bare",
         phone_number="2348000000100",
         channel="whatsapp",
@@ -661,6 +669,7 @@ async def test_account_bank_follow_up_preserves_raw_reply_when_source_already_se
 async def test_multi_transfer_prompt_shows_alias_then_resolved_name_in_parentheses() -> None:
     worker = _MockTransferResolveThenPromptWorker()
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_multi_names",
         phone_number="2348000000112",
         channel="whatsapp",
@@ -934,6 +943,7 @@ async def test_ambiguous_beneficiary_referent_blocks_confirmation() -> None:
         transaction_repo=None,
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_prompt_referent_ambiguity",
         phone_number="2348000000100",
         channel="whatsapp",
@@ -1035,6 +1045,7 @@ async def test_non_transfer_task_uses_contextual_airtime_prompt_not_transfer_for
     airtime_prompt = "What phone number should I send airtime to?"
     worker = _MockNonTransferNeedsInputWorker(["recipient_phone"], airtime_prompt)
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_airtime",
         phone_number="2348000000100",
         channel="whatsapp",
@@ -1073,6 +1084,7 @@ async def test_non_transfer_task_uses_contextual_airtime_prompt_not_transfer_for
 async def test_multi_transfer_input_turn_executes_only_focused_interrupt_task() -> None:
     worker = _MockTransferNeedsInputWorker(["recipient_account", "recipient_bank_name"])
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_multi_focus",
         phone_number="2348000000111",
         channel="whatsapp",
@@ -1124,6 +1136,7 @@ async def test_multi_transfer_input_turn_executes_only_focused_interrupt_task() 
 async def test_multi_transfer_confirmation_preserves_existing_waiting_task() -> None:
     worker = _MockTransferMixedConfirmWorker()
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_multi_confirm_set",
         phone_number="2348000000113",
         channel="whatsapp",
@@ -1200,6 +1213,7 @@ async def test_multi_transfer_confirmation_preserves_existing_waiting_task() -> 
 async def test_multi_transfer_fanout_task_ids_keep_all_recipients_in_confirmation() -> None:
     worker = _MockTransferMixedConfirmWorker()
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_multi_confirm_fanout",
         phone_number="2348000000114",
         channel="whatsapp",
@@ -1272,6 +1286,7 @@ async def test_multi_transfer_fanout_task_ids_keep_all_recipients_in_confirmatio
 async def test_batch_confirmation_strips_name_mismatch_warning_line() -> None:
     warning = "You asked to send to Tolu, but the account resolved as TOLU ADEDAYO."
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_multi_confirm_warning_strip",
         phone_number="2348000000115",
         channel="whatsapp",
@@ -1346,6 +1361,7 @@ async def test_batch_confirmation_strips_name_mismatch_warning_line() -> None:
 
 async def test_finalize_multi_transfer_summary_uses_alias_resolved_with_title_case() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_finalize_multi_case",
         phone_number="2348000000116",
         channel="whatsapp",
@@ -1396,6 +1412,7 @@ async def test_finalize_multi_transfer_summary_uses_alias_resolved_with_title_ca
 async def test_schedule_management_task_bypasses_transfer_mandate_gate() -> None:
     worker = _MockScheduleCountWorker()
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_schedule_count",
         phone_number="2348000000117",
         channel="telegram",
@@ -1464,6 +1481,7 @@ def test_schedule_context_frame_followup_can_show_count_items() -> None:
         created_at_ts=int(time.time()),
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_schedule_show",
         phone_number="2348000000119",
         context_frames=[frame],
@@ -1488,6 +1506,7 @@ def test_schedule_context_frame_followup_can_show_count_items() -> None:
 
 async def test_advance_wave_fails_stalled_schedule_task_instead_of_self_looping() -> None:
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_schedule_stall",
         phone_number="2348000000118",
         channel="telegram",

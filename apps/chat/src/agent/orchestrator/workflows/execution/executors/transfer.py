@@ -471,16 +471,8 @@ def _should_suppress_single_leg_batch_blocker(
 
 
 def _strip_single_leg_funding_artifacts(result: TransactionResult) -> TransactionResult:
-    patch = {
-        key: value
-        for key, value in result.patch.items()
-        if key not in _FUNDING_ARTIFACT_PATCH_KEYS
-    }
-    required_fields = [
-        field
-        for field in result.required_fields
-        if field not in _FUNDING_ADJUSTMENT_FIELDS
-    ]
+    patch = {key: value for key, value in result.patch.items() if key not in _FUNDING_ARTIFACT_PATCH_KEYS}
+    required_fields = [field for field in result.required_fields if field not in _FUNDING_ADJUSTMENT_FIELDS]
     return result.model_copy(
         update={
             "patch": patch,
@@ -711,11 +703,16 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
             default_error=None,
         )
 
-    if result.outcome in (
-        TransactionOutcome.NEEDS_INPUT,
-        TransactionOutcome.NEEDS_AUTH,
-        TransactionOutcome.NEEDS_CONFIRMATION,
-    ) and not defer_confirmation_for_recipient_review and not suppress_single_leg_batch_blocker:
+    if (
+        result.outcome
+        in (
+            TransactionOutcome.NEEDS_INPUT,
+            TransactionOutcome.NEEDS_AUTH,
+            TransactionOutcome.NEEDS_CONFIRMATION,
+        )
+        and not defer_confirmation_for_recipient_review
+        and not suppress_single_leg_batch_blocker
+    ):
         state_map: dict[TransactionOutcome, SessionState] = {
             TransactionOutcome.NEEDS_INPUT: "WAITING_FOR_INPUT",
             TransactionOutcome.NEEDS_AUTH: "WAITING_FOR_AUTH",

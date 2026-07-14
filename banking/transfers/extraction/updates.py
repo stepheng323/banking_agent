@@ -10,9 +10,31 @@ from banking.transfers.extraction.parsers import (
     strip_recipient_schedule_suffix,
 )
 from banking.transfers.models.types import TransferPayload
+from shared.money import to_naira
+from shared.money_mutations import AmountMutationEvaluationError, evaluate_amount_mutation
+from shared.types.amount_mutation import set_amount_mutation
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _resolved_amount_correction(current_payload: TransferPayload, correction: Any) -> object | None:
+    """Return a safe absolute amount for a typed amount correction.
+
+    The extractor identifies the user's semantic operation; arithmetic remains
+    deterministic and is performed only against the amount already held in the
+    pending transfer state.
+    """
+    mutation = getattr(correction, "amount_mutation", None)
+    if mutation is None:
+        legacy_amount = to_naira(correction.new_value)
+        if legacy_amount is None:
+            return None
+        mutation = set_amount_mutation(legacy_amount)
+    try:
+        return float(evaluate_amount_mutation(current_payload.amount, mutation))
+    except AmountMutationEvaluationError:
+        return None
 
 
 async def extract_transfer_update(
@@ -34,10 +56,29 @@ async def extract_transfer_update(
             value = extraction.correction.new_value
             if field == "bank_name":
                 extracted_data["recipient_bank_name"] = value
+            elif field == "amount":
+                resolved_amount = _resolved_amount_correction(current_payload, extraction.correction)
+                extracted_data.pop("amount", None)
+                if resolved_amount is not None:
+                    extracted_data["amount"] = resolved_amount
+                    logger.info(
+                        "transfer_extraction_amount_correction_applied",
+                        mutation_steps=[step.operation for step in extraction.correction.amount_mutation.steps]
+                        if extraction.correction.amount_mutation
+                        else ["set"],
+                    )
+                else:
+                    logger.warning(
+                        "transfer_extraction_amount_correction_rejected",
+                        mutation_steps=[step.operation for step in extraction.correction.amount_mutation.steps]
+                        if extraction.correction.amount_mutation
+                        else ["set"],
+                    )
             else:
                 extracted_data[field] = value
 
-            logger.info("transfer_extraction_correction_applied", field=field)
+            if field != "amount":
+                logger.info("transfer_extraction_correction_applied", field=field)
 
         caption_narration = extract_media_caption_narration(user_message)
         if caption_narration and "narration" not in extracted_data:

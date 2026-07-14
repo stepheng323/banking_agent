@@ -25,6 +25,7 @@ from banking.transfers.models.types import (
     TransferGates,
     TransferPayload,
 )
+from banking.transfers.nodes.extraction import ExtractionStep
 from banking.transfers.pipeline_factory import build_transfer_pipeline
 from banking.transfers.scheduling import SCHEDULING_ACTIONS, TransferSchedulingHandler
 from banking.transfers.validation.service import ValidationService
@@ -129,6 +130,35 @@ class TransferWorker:
             previous_response=previous_response if isinstance(previous_response, str) else None,
             confirmation_task_count=confirmation_task_count if isinstance(confirmation_task_count, int) else None,
             progress_tracker=context.get("progress_tracker"),
+        )
+
+    async def interpret_pending_confirmation_edit(
+        self,
+        *,
+        payload: dict[str, Any],
+        context: dict[str, Any],
+        user_message: str,
+    ) -> TransactionResult:
+        """Interpret one pending transfer amendment without running the full pipeline.
+
+        This is deliberately extraction-only: callers must still apply the
+        resulting patch through the normal reset, funding, and confirmation
+        path. It lets the interrupt workflow reuse the transfer extractor
+        before it pays for broader batch-routing inference.
+        """
+        pending_payload = dict(payload)
+        confirmation = pending_payload.get("confirmation")
+        snapshot = confirmation.get("snapshot") if isinstance(confirmation, dict) else None
+        if isinstance(snapshot, dict) and snapshot:
+            pending_payload["previous_confirmation_snapshot"] = dict(snapshot)
+
+        data = self._ensure_idempotency_key(TransferPayload(**pending_payload))
+        worker_context = self._build_worker_context(context)
+        return await ExtractionStep(user_message).execute(
+            data,
+            self._build_context(context),
+            self._build_gates(data, pin_verified=False),
+            worker_context,
         )
 
     @staticmethod
