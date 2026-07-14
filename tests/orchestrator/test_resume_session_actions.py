@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.executors.session impo
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from tests.orchestrator.routing_fixtures import execution_test_directive
 
 
 def _resume_frame() -> ContextFrame:
@@ -158,6 +159,7 @@ async def test_resume_session_restores_stash_without_replaying_outbox() -> None:
     )
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_resume_action_1",
         phone_number="2348000000021",
         channel="whatsapp",
@@ -200,6 +202,7 @@ async def test_resume_session_clears_matching_stashed_referents() -> None:
         payload={"action": "resume_session"},
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_resume_action_clear",
         phone_number="2348000000021",
         channel="whatsapp",
@@ -245,6 +248,7 @@ async def test_dismiss_resume_session_clears_matching_stashed_referents() -> Non
         payload={"action": "dismiss_resume_session"},
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_resume_action_dismiss_clear",
         phone_number="2348000000021",
         channel="whatsapp",
@@ -315,6 +319,7 @@ async def test_resume_session_reruns_worker_and_regenerates_confirmation_prompt(
         payload={"action": "resume_session"},
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_resume_action_2",
         phone_number="2348000000022",
         channel="whatsapp",
@@ -385,6 +390,7 @@ async def test_resume_session_reruns_worker_and_regenerates_auth_prompt() -> Non
         payload={"action": "resume_session"},
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_resume_action_3",
         phone_number="2348000000023",
         channel="whatsapp",
@@ -444,6 +450,7 @@ async def test_resume_session_reruns_worker_and_regenerates_input_prompt() -> No
         payload={"action": "resume_session"},
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_resume_action_4",
         phone_number="2348000000024",
         channel="whatsapp",
@@ -488,6 +495,7 @@ async def test_resume_session_reruns_worker_and_regenerates_input_prompt() -> No
 
 async def test_confirmation_source_line_without_cached_balance_uses_default_template() -> None:
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_resume_action_5",
         phone_number="2348000000025",
         channel="whatsapp",
@@ -537,6 +545,7 @@ async def test_confirmation_source_line_without_cached_balance_uses_default_temp
 
 async def test_confirmation_source_line_uses_loaded_account_last4_when_full_number_is_encrypted() -> None:
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_resume_action_5b",
         phone_number="2348000000026",
         channel="whatsapp",
@@ -589,6 +598,7 @@ async def test_dismiss_resume_session_clears_stash_and_acknowledges() -> None:
         payload={"action": "dismiss_resume_session"},
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_resume_action_6",
         phone_number="2348000000026",
         channel="whatsapp",
@@ -623,6 +633,7 @@ async def test_dismiss_resume_session_without_stash_is_safe() -> None:
         payload={"action": "dismiss_resume_session"},
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_resume_action_7",
         phone_number="2348000000027",
         channel="whatsapp",
@@ -641,6 +652,7 @@ async def test_dismiss_resume_session_without_stash_is_safe() -> None:
 
 def test_context_manager_summary_includes_resume_prompt_context() -> None:
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_resume_action_8",
         phone_number="2348000000028",
         channel="whatsapp",

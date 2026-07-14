@@ -33,22 +33,29 @@ def test_unavailable_and_failure_outcomes_use_planner_route_metadata() -> None:
     failed = failure_response()
 
     assert unavailable["final_response"]
-    assert unavailable["routing_owner"] == "planner"
-    assert unavailable["routing_decision"] == "planner_unavailable"
+    assert unavailable["turn_directive"].owner == "planner"
+    assert unavailable["turn_directive"].decision == "planner_unavailable"
     assert unavailable["planner_used"] is True
-    assert failed["routing_decision"] == "planner_failed"
+    assert failed["turn_directive"].decision == "planner_failed"
     assert failed["planner_used"] is True
 
 
 def test_quoted_replay_and_context_read_outcomes_preserve_payloads() -> None:
-    quoted = quoted_replay_dispatch({"tasks": {"quoted": object()}})
+    quoted = quoted_replay_dispatch(
+        {
+            "tasks": {"quoted": object()},
+            "waves": [["quoted"]],
+            "current_wave_index": 0,
+        }
+    )
     context_read = context_read_shortcut({"final_response": "Here you go."})
 
     assert quoted["tasks"]
-    assert quoted["routing_decision"] == "quoted_replay"
+    assert quoted["turn_directive"].decision == "quoted_replay"
     assert context_read["final_response"] == "Here you go."
-    assert context_read["semantic_path_shape"] == "planner"
-    assert context_read["routing_decision"] == "planner_context_read"
+    assert context_read["turn_directive"].path_shape == "planner"
+    assert context_read["turn_directive"].decision == "planner_context_read"
+    assert context_read["turn_directive"].outcome_kind == "direct_response"
 
 
 def test_non_task_policy_and_batch_outcomes_include_standard_metadata() -> None:
@@ -67,13 +74,13 @@ def test_non_task_policy_and_batch_outcomes_include_standard_metadata() -> None:
         locale_updates={"loaded_context": {"language": "en"}},
     )
 
-    assert non_task["routing_decision"] == "support"
-    assert non_task["routing_target_domain"] == "support"
-    assert blocked["semantic_path_shape"] == "planner_capability_blocked"
-    assert blocked["routing_decision"] == "capability_blocked"
+    assert non_task["turn_directive"].decision == "support"
+    assert non_task["turn_directive"].target_domain == "support"
+    assert blocked["turn_directive"].path_shape == "planner_capability_blocked"
+    assert blocked["turn_directive"].decision == "capability_blocked"
     assert blocked["loaded_context"] == {"language": "en"}
-    assert limited["semantic_path_shape"] == "planner"
-    assert limited["routing_decision"] == "transaction_batch_limit"
+    assert limited["turn_directive"].path_shape == "planner"
+    assert limited["turn_directive"].decision == "transaction_batch_limit"
 
 
 def test_task_dispatch_outcome_sets_wave_state_and_preserves_pending_query_clarification() -> None:
@@ -101,5 +108,5 @@ def test_task_dispatch_outcome_sets_wave_state_and_preserves_pending_query_clari
     assert updates["waves"] == [["task_transfer"]]
     assert updates["current_wave_index"] == 0
     assert updates["pending_query_clarification"] == {"id": "existing"}
-    assert updates["routing_decision"] == "transfer"
-    assert updates["routing_target_domain"] == "transfer"
+    assert updates["turn_directive"].decision == "transfer"
+    assert updates["turn_directive"].target_domain == "transfer"

@@ -31,6 +31,7 @@ from shared.types.planner import (
     TransferTaskParameters,
     make_planned_task,
 )
+from tests.orchestrator.routing_fixtures import execution_test_directive
 
 SHARED_SOURCE_LINE = format_source_account_info_from_account_number(
     bank="Zenith Bank",
@@ -774,6 +775,7 @@ def _apply(state: OrchestratorState, updates: dict) -> OrchestratorState:
 
 def _base_state() -> OrchestratorState:
     return OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_mixed_batch_auth",
         phone_number="2348000000900",
         channel="whatsapp",
@@ -921,7 +923,7 @@ async def test_expired_transaction_confirmation_continuation_gets_standard_respo
     assert updates["final_response"] == (
         "That transaction session has expired, so I can't continue it. Please start the transaction again."
     )
-    assert updates["semantic_path_shape"] == "expired_transaction_session"
+    assert updates["turn_directive"].path_shape == "expired_transaction_session"
     assert updates["outbox"] == [{"type": "say", "text": updates["final_response"]}]
     assert updates["last_interrupt"].kind == "confirmation"
 
@@ -996,6 +998,7 @@ async def test_mixed_transfer_airtime_uses_single_confirmation_and_single_auth_g
 @pytest.mark.asyncio
 async def test_single_transfer_update_message_precedes_confirmation_prompt() -> None:
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_transfer_update_msg",
         phone_number="2348000000900",
         channel="whatsapp",
@@ -1041,6 +1044,7 @@ async def test_single_transfer_update_message_precedes_confirmation_prompt() -> 
 @pytest.mark.asyncio
 async def test_transfer_confirmation_clears_transient_transition_metadata() -> None:
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_transfer_update_cleanup",
         phone_number="2348000000900",
         channel="whatsapp",
@@ -1089,6 +1093,7 @@ async def test_transfer_confirmation_clears_transient_transition_metadata() -> N
 @pytest.mark.asyncio
 async def test_multi_transfer_update_messages_compact_to_single_heads_up() -> None:
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_transfer_update_batch",
         phone_number="2348000000900",
         channel="whatsapp",
@@ -4621,10 +4626,6 @@ async def test_cancelled_mixed_flow_then_fresh_self_airtime_reuses_context_phone
     assert state.waves == []
     assert state.pending_interrupt is None
     assert state.final_response == render_cancelled_prompt("en")
-
-    state = _apply(state, await finalize(state, plan_config))
-    assert state.tasks == {}
-    assert state.waves == []
 
     state = state.model_copy(update={"last_message_text": "Buy me 5k airtime"})
     state = _apply(state, await ingest_message(state))

@@ -16,8 +16,8 @@ class ConversationTurn:
     expect_response_contains: tuple[str, ...] = ()
     expect_response_not_contains: tuple[str, ...] = ()
     expect_path_shape: str | None = None
-    expect_routing_owner: str | None = None
-    expect_routing_decision: str | None = None
+    expect_turn_owner: str | None = None
+    expect_turn_decision: str | None = None
     expect_task_types: tuple[str, ...] | None = None
     expect_planner_route_calls_delta: int | None = None
     expect_state: dict[str, object] = field(default_factory=dict)
@@ -55,15 +55,7 @@ class ConversationScenarioResult:
 _PER_TURN_RESET: dict[str, Any] = {
     "final_response": None,
     "policy_notice": None,
-    "direct_path_triggered": False,
-    "semantic_path_shape": None,
-    "routing_owner": None,
-    "routing_decision": None,
-    "routing_target_domain": None,
-    "routing_mode": None,
-    "route_source": None,
-    "routing_heuristic_type": None,
-    "routing_heuristic_name": None,
+    "turn_directive": None,
     "planner_used": False,
     "suppress_empty_fallback": False,
 }
@@ -103,13 +95,15 @@ def _assert_turn_expectations(
         assert forbidden not in response_text, f"{label} expected response not to contain {forbidden!r}"
 
     if turn.expect_path_shape is not None:
-        assert result.state.semantic_path_shape == turn.expect_path_shape, label
+        assert result.state.turn_directive is not None, label
+        assert result.state.turn_directive.path_shape == turn.expect_path_shape, label
 
-    if turn.expect_routing_owner is not None:
-        assert result.state.routing_owner == turn.expect_routing_owner, label
-
-    if turn.expect_routing_decision is not None:
-        assert result.state.routing_decision == turn.expect_routing_decision, label
+    if turn.expect_turn_owner is not None:
+        assert result.state.turn_directive is not None, label
+        assert result.state.turn_directive.owner == turn.expect_turn_owner, label
+    if turn.expect_turn_decision is not None:
+        assert result.state.turn_directive is not None, label
+        assert result.state.turn_directive.decision == turn.expect_turn_decision, label
 
     if turn.expect_task_types is not None:
         task_types = tuple(task.type for task in result.state.tasks.values())

@@ -74,6 +74,6 @@ def test_conversation_topic_for_response_uses_structured_route_metadata() -> Non
         == "product_identity"
     )
     assert (
-        conversation_topic_for_response("I can't help with loans.", semantic_path_shape="capability_boundary_followup")
+        conversation_topic_for_response("I can't help with loans.", path_shape="capability_boundary_followup")
         == "unsupported_boundary"
     )

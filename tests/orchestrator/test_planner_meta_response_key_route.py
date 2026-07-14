@@ -64,7 +64,13 @@ class _FakeConversationResponder:
         user_ctx: dict[str, Any],
         mode: ConversationResponseMode,
     ) -> str:
-        self.calls.append({"text": text, "user_ctx": dict(user_ctx), "mode": mode,})
+        self.calls.append(
+            {
+                "text": text,
+                "user_ctx": dict(user_ctx),
+                "mode": mode,
+            }
+        )
         return self.reply
 
 

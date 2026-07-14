@@ -924,7 +924,7 @@ async def test_beneficiary_completeness_followup_answers_from_recent_frame() -> 
     updates = await plan_tasks(state, config)
 
     assert updates.get("final_response") == "Yes. Those are the 3 saved beneficiaries I found."
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "tasks" not in updates
 
 
@@ -994,7 +994,7 @@ async def test_beneficiary_count_preview_followup_explains_truncated_examples() 
     assert updates.get("final_response") == (
         "I showed 3 examples to keep it short. You have 4 saved beneficiaries in total."
     )
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "tasks" not in updates
 
 
@@ -1043,7 +1043,7 @@ async def test_account_completeness_followup_answers_from_recent_frame() -> None
     updates = await plan_tasks(state, config)
 
     assert updates.get("final_response") == "Yes. Those are the 2 linked accounts I found."
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "tasks" not in updates
 
 
@@ -1097,7 +1097,7 @@ async def test_beneficiary_lookup_followup_answers_no_match_from_recent_frame() 
     updates = await plan_tasks(state, config)
 
     assert updates.get("final_response") == "I don't see Gaines in the saved beneficiaries I showed."
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "tasks" not in updates
 
 
@@ -1165,7 +1165,7 @@ async def test_beneficiary_lookup_followup_returns_matching_entities_from_recent
     assert "I found 2 matches in the saved beneficiaries I showed." in response
     assert "Tolu Access" in response
     assert "Tolu GTB" in response
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "tasks" not in updates
 
 
@@ -1217,7 +1217,7 @@ async def test_multilingual_frame_followup_uses_semantic_decision_not_english_ph
 
     assert "Frame type: beneficiary_list" in (planner.last_context or "")
     assert updates.get("final_response") == "I don't see Gaines in the saved beneficiaries I showed."
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "tasks" not in updates
 
 

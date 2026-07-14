@@ -6,12 +6,14 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
+from tests.orchestrator.routing_fixtures import finalize_test_directive
 
 
 @pytest.mark.asyncio
 async def test_finalize_outputs_clean_message_for_capability_blocked_failure():
     """Capability-blocked failures should not be prefixed with 'Failed:'."""
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_1",
         phone_number="2348000000000",
         channel="whatsapp",

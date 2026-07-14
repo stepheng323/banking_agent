@@ -268,15 +268,7 @@ def _next_user_turn(state: OrchestratorState, text: str) -> OrchestratorState:
             "last_message_text": text,
             "final_response": None,
             "policy_notice": None,
-            "direct_path_triggered": False,
-            "semantic_path_shape": None,
-            "routing_owner": None,
-            "routing_decision": None,
-            "routing_target_domain": None,
-            "routing_mode": None,
-            "route_source": None,
-            "routing_heuristic_type": None,
-            "routing_heuristic_name": None,
+            "turn_directive": None,
             "planner_used": False,
             "suppress_empty_fallback": False,
         }
@@ -355,7 +347,7 @@ async def test_quality_audit_data_price_query_to_buy_it_reuses_catalog_plan_to_c
     )
 
     gate_updates = await session_gate_direct_path(state, config)
-    assert gate_updates["semantic_path_shape"] == "deterministic_data_plan_query"
+    assert gate_updates["turn_directive"].path_shape == "deterministic_data_plan_query"
     query_task = next(iter(gate_updates["tasks"].values()))
     assert query_task.payload["action"] == "data_plan_query"
 
@@ -368,7 +360,7 @@ async def test_quality_audit_data_price_query_to_buy_it_reuses_catalog_plan_to_c
 
     state = _next_user_turn(state, "Buy it")
     buy_gate_updates = await session_gate_direct_path(state, config)
-    assert buy_gate_updates["semantic_path_shape"] == "data_plan_reference_purchase"
+    assert buy_gate_updates["turn_directive"].path_shape == "data_plan_reference_purchase"
     buy_task = next(iter(buy_gate_updates["tasks"].values()))
     assert buy_task.type == "data"
     assert buy_task.payload["plan_code"] == "MD501"
@@ -406,7 +398,7 @@ async def test_quality_audit_explicit_airtel_data_does_not_reuse_mtn_self_line()
     )
 
     gate_updates = await session_gate_direct_path(state, config)
-    assert gate_updates["semantic_path_shape"] == "deterministic_data_domain"
+    assert gate_updates["turn_directive"].path_shape == "deterministic_data_domain"
     state = _apply_updates(state, gate_updates)
 
     input_updates = await advance_wave(state, config)
@@ -458,7 +450,7 @@ async def test_quality_audit_airtime_self_flow_collects_amount_naturally_then_co
     )
 
     gate_updates = await session_gate_direct_path(state, config)
-    assert gate_updates["semantic_path_shape"] == "deterministic_airtime_domain"
+    assert gate_updates["turn_directive"].path_shape == "deterministic_airtime_domain"
     state = _apply_updates(state, gate_updates)
 
     input_updates = await advance_wave(state, config)
@@ -502,7 +494,7 @@ async def test_quality_audit_airtime_composite_line_amount_prompt_accepts_amount
     )
 
     gate_updates = await session_gate_direct_path(state, config)
-    assert gate_updates["semantic_path_shape"] == "deterministic_airtime_domain"
+    assert gate_updates["turn_directive"].path_shape == "deterministic_airtime_domain"
     state = _apply_updates(state, gate_updates)
 
     input_updates = await advance_wave(state, config)
@@ -1203,8 +1195,8 @@ async def test_quality_audit_transfer_start_is_deterministic_and_bypasses_router
                 ConversationTurn(
                     user="send 5k to Ada",
                     expect_path_shape="deterministic_transfer_domain",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="fresh_transfer_command",
+                    expect_turn_owner="guardrail",
+                    expect_turn_decision="fresh_transfer_command",
                     expect_task_types=("transfer",),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -1213,7 +1205,9 @@ async def test_quality_audit_transfer_start_is_deterministic_and_bypasses_router
     )
 
     task = next(iter(result.final_state.tasks.values()))
-    assert result.final_state.routing_target_domain == "transfer"
+    assert (
+        result.final_state.turn_directive.target_domain if result.final_state.turn_directive else None
+    ) == "transfer"
     assert task.payload["message"] == "send 5k to Ada"
     assert task.payload["instruction"] == "send 5k to Ada"
     assert planner.route_calls == 0
@@ -1232,7 +1226,7 @@ async def test_quality_audit_data_start_is_deterministic_and_bypasses_router() -
                 ConversationTurn(
                     user="buy 1gb data for me",
                     expect_path_shape="deterministic_data_domain",
-                    expect_routing_owner="guardrail",
+                    expect_turn_owner="guardrail",
                     expect_task_types=("data",),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -1241,7 +1235,7 @@ async def test_quality_audit_data_start_is_deterministic_and_bypasses_router() -
     )
 
     task = next(iter(result.final_state.tasks.values()))
-    assert result.final_state.routing_target_domain == "data"
+    assert (result.final_state.turn_directive.target_domain if result.final_state.turn_directive else None) == "data"
     assert task.payload["message"] == "buy 1gb data for me"
     assert task.payload["instruction"] == "buy 1gb data for me"
     assert planner.route_calls == 0
@@ -1260,7 +1254,7 @@ async def test_quality_audit_bare_data_start_is_deterministic_and_bypasses_route
                 ConversationTurn(
                     user="I want to buy data",
                     expect_path_shape="deterministic_data_domain",
-                    expect_routing_owner="guardrail",
+                    expect_turn_owner="guardrail",
                     expect_task_types=("data",),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -1269,7 +1263,7 @@ async def test_quality_audit_bare_data_start_is_deterministic_and_bypasses_route
     )
 
     task = next(iter(result.final_state.tasks.values()))
-    assert result.final_state.routing_target_domain == "data"
+    assert (result.final_state.turn_directive.target_domain if result.final_state.turn_directive else None) == "data"
     assert task.payload["message"] == "I want to buy data"
     assert task.payload["instruction"] == "I want to buy data"
     assert planner.route_calls == 0
@@ -1288,7 +1282,7 @@ async def test_quality_audit_airtime_start_is_deterministic_and_bypasses_router(
                 ConversationTurn(
                     user="buy me 1k airtime",
                     expect_path_shape="deterministic_airtime_domain",
-                    expect_routing_owner="guardrail",
+                    expect_turn_owner="guardrail",
                     expect_task_types=("airtime",),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -1297,7 +1291,7 @@ async def test_quality_audit_airtime_start_is_deterministic_and_bypasses_router(
     )
 
     task = next(iter(result.final_state.tasks.values()))
-    assert result.final_state.routing_target_domain == "airtime"
+    assert (result.final_state.turn_directive.target_domain if result.final_state.turn_directive else None) == "airtime"
     assert task.payload["message"] == "buy me 1k airtime"
     assert task.payload["instruction"] == "buy me 1k airtime"
     assert planner.route_calls == 0
@@ -1316,8 +1310,8 @@ async def test_quality_audit_mixed_transfer_and_crypto_keeps_transfer_with_polic
                 ConversationTurn(
                     user="send 5k to Ada and buy bitcoin for me",
                     expect_path_shape="mixed_capability_supported_direct",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="mixed_supported_unsupported",
+                    expect_turn_owner="guardrail",
+                    expect_turn_decision="mixed_supported_unsupported",
                     expect_task_types=("transfer",),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -1326,7 +1320,9 @@ async def test_quality_audit_mixed_transfer_and_crypto_keeps_transfer_with_polic
     )
 
     task = next(iter(result.final_state.tasks.values()))
-    assert result.final_state.routing_target_domain == "transfer"
+    assert (
+        result.final_state.turn_directive.target_domain if result.final_state.turn_directive else None
+    ) == "transfer"
     assert result.final_state.policy_notice is not None
     assert "money transfer" in result.final_state.policy_notice
     assert "investments or crypto" in result.final_state.policy_notice
@@ -1360,8 +1356,8 @@ async def test_quality_audit_unsupported_followup_does_not_reuse_stale_transacti
                     expect_response_contains=("cannot assist with loans",),
                     expect_response_not_contains=("Tolu",),
                     expect_path_shape="meta_direct",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="meta_direct",
+                    expect_turn_owner="guardrail",
+                    expect_turn_decision="deterministic_unsupported_capability",
                     expect_task_types=(),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -1370,8 +1366,8 @@ async def test_quality_audit_unsupported_followup_does_not_reuse_stale_transacti
                     expect_response_contains=("cannot help with loans",),
                     expect_response_not_contains=("Tolu", "transfer to"),
                     expect_path_shape="capability_boundary_followup",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="unsupported_capability_followup",
+                    expect_turn_owner="guardrail",
+                    expect_turn_decision="unsupported_capability_followup",
                     expect_task_types=(),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -1402,7 +1398,7 @@ async def test_quality_audit_supported_data_request_clears_unsupported_boundary(
                 ConversationTurn(
                     user="buy 1gb data for me",
                     expect_path_shape="deterministic_data_domain",
-                    expect_routing_owner="guardrail",
+                    expect_turn_owner="guardrail",
                     expect_task_types=("data",),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -1411,7 +1407,7 @@ async def test_quality_audit_supported_data_request_clears_unsupported_boundary(
     )
 
     assert result.final_state.capability_boundary is None
-    assert result.final_state.routing_target_domain == "data"
+    assert (result.final_state.turn_directive.target_domain if result.final_state.turn_directive else None) == "data"
     assert planner.route_calls == 0
 
 
@@ -1440,11 +1436,10 @@ async def test_quality_audit_resume_prompt_accepts_polite_approval() -> None:
                 ConversationTurn(
                     user="Yes please",
                     expect_path_shape="resume_session_direct",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="resume_session_direct",
+                    expect_turn_owner="guardrail",
+                    expect_turn_decision="resume_session_direct",
                     expect_task_types=("orchestrator",),
                     expect_planner_route_calls_delta=0,
-                    expect_state={"direct_path_triggered": True},
                 ),
             ),
         )

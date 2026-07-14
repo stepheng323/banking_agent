@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_d
 from apps.chat.src.agent.orchestrator.workflows.interrupt.runtime import build_interrupt_runtime
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.clients.abstractions.direct_debit import BalanceResult
+from tests.orchestrator.routing_fixtures import execution_test_directive
 
 
 class _MockDirectDebitProvider:
@@ -261,6 +262,7 @@ async def test_batch_funding_injects_plans_before_transfer_worker() -> None:
     worker = _TransferWorkerWithDD(provider)
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_1",
         phone_number="2348000001001",
         channel="whatsapp",
@@ -321,6 +323,7 @@ async def test_batch_funding_infeasible_blocks_wave_with_input_interrupt() -> No
     worker = _TransferWorkerWithDD(provider)
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_2",
         phone_number="2348000001002",
         channel="whatsapp",
@@ -374,6 +377,7 @@ async def test_batch_funding_skips_when_transfer_worker_has_no_dd_provider() -> 
     worker = _TransferWorkerNoDD()
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_3",
         phone_number="2348000001003",
         channel="whatsapp",
@@ -428,6 +432,7 @@ async def test_batch_funding_shortfall_enters_funding_adjustment_before_confirma
     worker = _TransferWorkerWithDD(provider)
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_shortfall",
         phone_number="2348000001006",
         channel="whatsapp",
@@ -484,6 +489,7 @@ async def test_batch_funding_waits_for_recipient_details_before_review() -> None
     worker = _TransferNeedsRecipientDetailsWithDD(provider)
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_missing_recipients",
         phone_number="2348000001011",
         channel="whatsapp",
@@ -522,6 +528,7 @@ async def test_batch_suppresses_single_leg_funding_until_all_recipients_are_read
     worker = _TransferSingleLegFundingAdjustmentWithDD(provider)
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_partial_recipient_readiness",
         phone_number="2348000001014",
         channel="whatsapp",
@@ -576,6 +583,7 @@ async def test_batch_recipient_review_waits_until_new_sibling_details_are_resolv
     worker = _TransferResolvesByAliasThenNeedsConfirmation(provider)
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_recipient_review_waits",
         phone_number="2348000001015",
         channel="whatsapp",
@@ -638,6 +646,7 @@ async def test_batch_funding_waits_for_recipient_resolution_after_destination_de
     worker = _TransferNeedsRecipientDetailsWithDD(provider)
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_unresolved_recipients",
         phone_number="2348000001013",
         channel="whatsapp",
@@ -687,6 +696,7 @@ async def test_batch_auto_pooled_funding_prompts_for_approval_before_worker() ->
     worker = _TransferWorkerWithDD(provider)
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_suggestion",
         phone_number="2348000001007",
         channel="whatsapp",
@@ -764,6 +774,7 @@ async def test_accepting_suggested_batch_funding_promotes_plan() -> None:
         ],
     }
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_accept_suggestion",
         phone_number="2348000001008",
         channel="whatsapp",
@@ -820,6 +831,7 @@ async def test_accepting_suggested_batch_funding_rejects_missing_recipient_desti
         ],
     }
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_reject_stale_suggestion",
         phone_number="2348000001012",
         channel="whatsapp",
@@ -897,6 +909,7 @@ async def test_accepting_suggested_batch_funding_reaches_existing_confirmation_g
     provider = _MockDirectDebitProvider({"acc_access": 30000.0, "acc_gtb": 30000.0})
     worker = _TransferNeedsConfirmationNoFundingPatch(provider)
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_accept_to_confirmation",
         phone_number="2348000001010",
         channel="whatsapp",
@@ -976,6 +989,7 @@ async def test_batch_source_choice_defers_confirmation_until_recipient_review_is
     worker = _TransferResolvesRecipientThenNeedsConfirmation(provider)
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_recipient_review_1",
         phone_number="2348000001006",
         channel="whatsapp",
@@ -1038,6 +1052,7 @@ async def test_batch_funding_recoordinates_after_input_resume_before_confirmatio
     worker = _TransferNeedsConfirmationWithDD(provider, access)
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_resume_1",
         phone_number="2348000001004",
         channel="whatsapp",
@@ -1104,6 +1119,7 @@ async def test_batch_funding_continues_same_batch_sibling_after_recipient_input_
     worker = _TransferNeedsConfirmationWithDD(provider, access)
 
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_batch_resume_2",
         phone_number="2348000001005",
         channel="whatsapp",

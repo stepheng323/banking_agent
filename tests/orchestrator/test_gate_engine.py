@@ -1,19 +1,26 @@
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import Any
+
+import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.models.turn_directive import (
+    RouteResolution,
+    RoutingContractError,
+    TurnNextStep,
+    TurnOutcomeKind,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.contracts import (
     GateEligibilityResult,
     GateHandlerSpec,
     GateLayer,
-    GateOutcomeKind,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.engine import ordered_gate_handlers, run_gate_engine
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import (
     direct_response,
-    hint_only,
     planner_handoff,
     policy_block,
     task_dispatch,
@@ -31,6 +38,7 @@ _GATE_STAGE_NAMES = (
     "_stage_capability_boundary_followup",
     "_stage_deterministic_unsupported_capability",
     "_stage_semantic_unsupported_capability",
+    "_stage_pending_interrupt",
     "_stage_schedule_read_router",
     "_stage_resume_prompt_action",
     "_stage_data_plan_reference_purchase",
@@ -60,6 +68,7 @@ _GATE_SPECS_WITH_INTERNAL_ELIGIBILITY = {
     "cancel",
     "gibberish_filter",
     "expired_pin",
+    "pending_interrupt",
     "banking_ambiguity",
     "query_and_transfer_domain_guards",
 }
@@ -80,7 +89,7 @@ def _spec(
     handler_id: str,
     layer: GateLayer,
     priority: int,
-    handler: Callable[[GateContext], Awaitable[dict[str, Any] | None]],
+    handler: Callable[[GateContext], Awaitable[RouteResolution | None]],
     *,
     eligibility: Callable[[GateContext], GateEligibilityResult] | None = None,
 ) -> GateHandlerSpec:
@@ -89,8 +98,8 @@ def _spec(
         layer=layer,
         priority=priority,
         handler=handler,
-        owner="unit",
-        outcome_kind=GateOutcomeKind.CONTINUE_ONLY,
+        owner="guardrail",
+        outcome_kind=TurnOutcomeKind.PLANNER_HANDOFF,
         may_call_llm=False,
         description=f"Unit test handler {handler_id}",
         eligibility=eligibility,
@@ -123,7 +132,7 @@ def test_gate_registry_metadata_is_reviewable_and_deliberate() -> None:
         assert spec.owner.strip()
         assert spec.description.strip()
         assert isinstance(spec.layer, GateLayer)
-        assert isinstance(spec.outcome_kind, GateOutcomeKind)
+        assert spec.outcome_kind is None or isinstance(spec.outcome_kind, TurnOutcomeKind)
         assert isinstance(spec.priority, int)
         assert spec.priority > 0
         assert callable(spec.handler)
@@ -159,7 +168,7 @@ def test_ordered_gate_handlers_sorts_by_layer_then_priority() -> None:
     assert [spec.id for spec in ordered_gate_handlers(specs)] == ["hard-early", "hard-late", "semantic"]
 
 
-async def test_gate_engine_preserves_continue_only_updates_and_falls_back_to_planner() -> None:
+async def test_gate_engine_preserves_cleanup_updates_and_falls_back_to_planner() -> None:
     async def cleanup(ctx: GateContext) -> None:
         ctx.gate_updates["pending_interrupt"] = None
         return None
@@ -169,8 +178,9 @@ async def test_gate_engine_preserves_continue_only_updates_and_falls_back_to_pla
     assert result.matched_handler_id == "planner_fallback"
     assert result.matched_layer == GateLayer.PLANNER_FALLBACK
     assert result.updates["pending_interrupt"] is None
-    assert result.updates["routing_owner"] == "planner"
-    assert result.updates["routing_decision"] == "planner_handoff"
+    assert result.updates["turn_directive"].owner == "guardrail"
+    assert result.updates["turn_directive"].decision == "planner_handoff"
+    assert result.updates["turn_directive"].next_step == TurnNextStep.PLAN
     assert result.trace[0].handler_id == "cleanup"
     assert result.trace[0].executed is True
     assert result.trace[0].gate_updates_changed is True
@@ -186,17 +196,13 @@ async def test_gate_engine_short_circuits_on_first_match() -> None:
         calls.append("first")
         return None
 
-    async def second(_: GateContext) -> dict[str, Any]:
+    async def second(ctx: GateContext) -> RouteResolution:
         calls.append("second")
-        return {
-            "direct_path_triggered": True,
-            "routing_owner": "unit",
-            "routing_decision": "matched",
-        }
+        return planner_handoff(ctx, decision="matched", path_shape="unit_matched")
 
-    async def third(_: GateContext) -> dict[str, Any]:
+    async def third(ctx: GateContext) -> RouteResolution:
         calls.append("third")
-        return {"routing_owner": "unit", "routing_decision": "unexpected"}
+        return planner_handoff(ctx, decision="unexpected", path_shape="unit_unexpected")
 
     result = await run_gate_engine(
         _context(),
@@ -210,12 +216,13 @@ async def test_gate_engine_short_circuits_on_first_match() -> None:
     assert calls == ["first", "second"]
     assert result.matched_handler_id == "second"
     assert result.matched_layer == GateLayer.HARD_GUARDRAILS
-    assert result.updates["routing_decision"] == "matched"
+    assert result.updates["turn_directive"].decision == "matched"
     assert [entry.handler_id for entry in result.trace] == ["first", "second"]
     assert result.trace[-1].matched is True
     assert result.trace[-1].executed is True
-    assert result.trace[-1].routing_owner == "unit"
-    assert result.trace[-1].routing_decision == "matched"
+    assert result.trace[-1].turn_directive is not None
+    assert result.trace[-1].turn_directive.owner == "guardrail"
+    assert result.trace[-1].turn_directive.decision == "matched"
 
 
 async def test_gate_engine_skips_ineligible_handler_without_calling_it() -> None:
@@ -228,9 +235,9 @@ async def test_gate_engine_skips_ineligible_handler_without_calling_it() -> None
             details={"why": "not_now"},
         )
 
-    async def skipped(_: GateContext) -> dict[str, Any]:
+    async def skipped(ctx: GateContext) -> RouteResolution:
         calls.append("skipped")
-        return {"routing_owner": "unit", "routing_decision": "unexpected"}
+        return planner_handoff(ctx, decision="unexpected", path_shape="unit_unexpected")
 
     result = await run_gate_engine(
         _context(),
@@ -255,11 +262,11 @@ async def test_gate_trace_summary_captures_match_execution_and_skips() -> None:
             details={"why": "not_now"},
         )
 
-    async def skipped(_: GateContext) -> dict[str, Any]:
-        return {"routing_owner": "unit", "routing_decision": "unexpected"}
+    async def skipped(ctx: GateContext) -> RouteResolution:
+        return planner_handoff(ctx, decision="unexpected", path_shape="unit_unexpected")
 
-    async def matched(_: GateContext) -> dict[str, Any]:
-        return {"routing_owner": "unit", "routing_decision": "matched"}
+    async def matched(ctx: GateContext) -> RouteResolution:
+        return planner_handoff(ctx, decision="matched", path_shape="unit_matched")
 
     result = await run_gate_engine(
         _context(),
@@ -273,7 +280,7 @@ async def test_gate_trace_summary_captures_match_execution_and_skips() -> None:
 
     assert summary["matched_handler_id"] == "matched"
     assert summary["matched_layer"] == "hard_guardrails"
-    assert summary["routing_owner"] == "unit"
+    assert summary["routing_owner"] == "guardrail"
     assert summary["routing_decision"] == "matched"
     assert summary["executed_handler_ids"] == ["matched"]
     assert summary["skipped_handler_count"] == 1
@@ -314,9 +321,10 @@ def test_planner_handoff_outcome_matches_fallback_shape() -> None:
 
     assert updates["pending_interrupt"] is None
     assert updates["turn_context_summary"] == {"focus": "account"}
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_handoff"
-    assert updates["route_source"] == "planner"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "planner_handoff"
+    assert updates["turn_directive"].source == "planner_fallback"
+    assert updates["turn_directive"].next_step == TurnNextStep.PLAN
 
 
 def test_direct_response_outcome_sets_standard_routing_fields() -> None:
@@ -325,20 +333,20 @@ def test_direct_response_outcome_sets_standard_routing_fields() -> None:
         response="Done.",
         owner="guardrail",
         decision="unit_direct",
-        semantic_path_shape="unit_direct_shape",
+        path_shape="unit_direct_shape",
         target_domain="account",
         mode="new",
-        route_source="unit_guard",
+        source="unit_guard",
     )
 
-    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == "Done."
-    assert updates["semantic_path_shape"] == "unit_direct_shape"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "unit_direct"
-    assert updates["routing_target_domain"] == "account"
-    assert updates["routing_mode"] == "new"
-    assert updates["route_source"] == "unit_guard"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "unit_direct"
+    assert updates["turn_directive"].target_domain == "account"
+    assert updates["turn_directive"].mode == "new"
+    assert updates["turn_directive"].source == "unit_guard"
+    assert updates["turn_directive"].path_shape == "unit_direct_shape"
+    assert updates["turn_directive"].next_step == TurnNextStep.FINALIZE
 
 
 def test_task_dispatch_outcome_sets_task_wave_and_routing_fields() -> None:
@@ -355,7 +363,7 @@ def test_task_dispatch_outcome_sets_task_wave_and_routing_fields() -> None:
         waves=[["unit_task"]],
         owner="guardrail",
         decision="unit_task_dispatch",
-        semantic_path_shape="unit_task_shape",
+        path_shape="unit_task_shape",
         target_domain="account",
         mode="new",
     )
@@ -364,11 +372,12 @@ def test_task_dispatch_outcome_sets_task_wave_and_routing_fields() -> None:
     assert updates["waves"] == [["unit_task"]]
     assert updates["current_wave_index"] == 0
     assert updates["planner_output"] is None
-    assert updates["direct_path_triggered"] is True
-    assert updates["routing_decision"] == "unit_task_dispatch"
+    assert updates["turn_directive"].decision == "unit_task_dispatch"
+    assert updates["turn_directive"].path_shape == "unit_task_shape"
+    assert updates["turn_directive"].next_step == TurnNextStep.ADVANCE
 
 
-def test_task_dispatch_outcome_can_preserve_absent_semantic_path_shape() -> None:
+def test_task_dispatch_outcome_can_preserve_absent_path_shape() -> None:
     spec = TaskSpec(
         id="unit_task",
         type="beneficiary",
@@ -384,8 +393,7 @@ def test_task_dispatch_outcome_can_preserve_absent_semantic_path_shape() -> None
         decision="unit_task_dispatch",
     )
 
-    assert updates["direct_path_triggered"] is True
-    assert "semantic_path_shape" not in updates
+    assert updates["turn_directive"].path_shape == "unit_task_dispatch"
 
 
 def test_policy_block_outcome_sets_response_and_guardrail_routing() -> None:
@@ -393,29 +401,89 @@ def test_policy_block_outcome_sets_response_and_guardrail_routing() -> None:
         _context(),
         response="Not available.",
         decision="capability_blocked",
-        semantic_path_shape="unit_policy_block",
+        path_shape="unit_policy_block",
         target_domain="data",
     )
 
-    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == "Not available."
-    assert updates["semantic_path_shape"] == "unit_policy_block"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "capability_blocked"
-    assert updates["routing_target_domain"] == "data"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "capability_blocked"
+    assert updates["turn_directive"].target_domain == "data"
+    assert updates["turn_directive"].path_shape == "unit_policy_block"
+    assert updates["turn_directive"].next_step == TurnNextStep.FINALIZE
 
 
-def test_hint_only_outcome_does_not_force_direct_path() -> None:
-    updates = hint_only(
+def test_hint_replacement_is_an_explicit_planner_handoff() -> None:
+    updates = planner_handoff(
         _context(),
         owner="guardrail",
         decision="unit_hint",
         target_domain="support",
-        route_source="unit_hint_source",
+        source="unit_hint_source",
+        path_shape="unit_hint_handoff",
     )
 
-    assert "direct_path_triggered" not in updates
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "unit_hint"
-    assert updates["routing_target_domain"] == "support"
-    assert updates["route_source"] == "unit_hint_source"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "unit_hint"
+    assert updates["turn_directive"].target_domain == "support"
+    assert updates["turn_directive"].source == "unit_hint_source"
+    assert updates["turn_directive"].path_shape == "unit_hint_handoff"
+    assert updates["turn_directive"].outcome_kind == TurnOutcomeKind.PLANNER_HANDOFF
+    assert updates["turn_directive"].next_step == TurnNextStep.PLAN
+
+
+async def test_gate_engine_rejects_untyped_matched_stage_result() -> None:
+    async def invalid(_: GateContext) -> dict[str, Any]:
+        return {"final_response": "bypassed contract"}
+
+    spec = _spec(
+        "invalid",
+        GateLayer.HARD_GUARDRAILS,
+        10,
+        invalid,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(RoutingContractError, match="expected RouteResolution"):
+        await run_gate_engine(_context(), (spec,))
+
+
+async def test_gate_engine_rejects_owner_not_declared_by_stage() -> None:
+    async def invalid(ctx: GateContext) -> RouteResolution:
+        return planner_handoff(ctx, owner="semantic_router")
+
+    with pytest.raises(RoutingContractError, match="allowed owners"):
+        await run_gate_engine(
+            _context(),
+            (_spec("invalid_owner", GateLayer.HARD_GUARDRAILS, 10, invalid),),
+        )
+
+
+async def test_gate_engine_rejects_outcome_not_declared_by_stage() -> None:
+    async def invalid(ctx: GateContext) -> RouteResolution:
+        return direct_response(
+            ctx,
+            response="No.",
+            owner="guardrail",
+            decision="invalid_outcome",
+            path_shape="unit",
+        )
+
+    with pytest.raises(RoutingContractError, match="allowed outcomes"):
+        await run_gate_engine(
+            _context(),
+            (_spec("invalid_outcome", GateLayer.HARD_GUARDRAILS, 10, invalid),),
+        )
+
+
+async def test_gate_engine_rejects_next_step_not_declared_by_stage() -> None:
+    async def invalid(ctx: GateContext) -> RouteResolution:
+        return planner_handoff(ctx)
+
+    spec = _spec("invalid_step", GateLayer.HARD_GUARDRAILS, 10, invalid)
+    spec = replace(
+        spec,
+        allowed_next_steps=frozenset({TurnNextStep.FINALIZE}),
+    )
+
+    with pytest.raises(RoutingContractError, match="allowed next steps"):
+        await run_gate_engine(_context(), (spec,))

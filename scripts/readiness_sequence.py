@@ -61,6 +61,10 @@ async def run_readiness_sequence(
                 enforce_route_expectations=enforce_route_expectations,
                 mode=mode,
             )
+            budget = turn.expectation.llm_call_budget
+            budget_status, budget_violations = (
+                budget.evaluate(invocation.llm_calls, mode=mode) if budget else ("observed", ())
+            )
             result = ReadinessTurnResult(
                 scenario_id=scenario.id,
                 turn_index=index,
@@ -73,6 +77,9 @@ async def run_readiness_sequence(
                 task_types=invocation.task_types,
                 async_jobs=invocation.async_jobs,
                 llm_calls=invocation.llm_calls,
+                llm_budget=budget,
+                llm_budget_status=budget_status,
+                llm_budget_violations=budget_violations,
                 planner_clean=_planner_clean_from_metadata(invocation.route_metadata),
                 planner_dirty_reasons=_planner_dirty_reasons_from_metadata(invocation.route_metadata),
                 category=scenario.category,

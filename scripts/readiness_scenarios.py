@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from scripts.readiness_models import (
+    LLMCallBudget,
     ReadinessExpectation,
     ReadinessScenario,
     ReadinessScenarioName,
@@ -20,12 +21,45 @@ _PLANNER_SINGLE_CALL_EVENT_COUNTS: tuple[tuple[str, int], ...] = (
     ("airtime_extractor_llm_call", 0),
 )
 
+_DETERMINISTIC_ZERO_LLM_BUDGET = LLMCallBudget(
+    max_calls=0,
+    max_event_counts=(
+        ("planner_llm_call", 0),
+        ("semantic_router_llm_call", 0),
+        ("transfer_extractor_llm_call", 0),
+        ("airtime_extractor_llm_call", 0),
+        ("data_extractor_llm_call", 0),
+    ),
+    enforced_modes=("deterministic",),
+)
+
+_PLANNER_SINGLE_CALL_BUDGET = LLMCallBudget(
+    max_calls=1,
+    max_event_counts=(
+        ("planner_llm_call", 1),
+        ("semantic_router_llm_call", 0),
+        ("transfer_extractor_llm_call", 0),
+        ("airtime_extractor_llm_call", 0),
+        ("data_extractor_llm_call", 0),
+    ),
+    required_event_counts=(("planner_llm_call", 1),),
+)
+
+_ROUTING_DECISION_EVENT_MAX_ONE: tuple[tuple[str, int], ...] = (
+    ("batch_slot_patch_llm_call", 1),
+    ("confirmation_decision_llm_call", 1),
+    ("interrupt_router_llm_call", 1),
+    ("pending_action_edit_llm_call", 1),
+    ("semantic_router_llm_call", 1),
+)
+
 
 def _planner_clean_single_call_expectation() -> ReadinessExpectation:
     return ReadinessExpectation(
         expect_planner_clean=True,
         expect_llm_call_count=1,
         expect_llm_event_counts=_PLANNER_SINGLE_CALL_EVENT_COUNTS,
+        llm_call_budget=_PLANNER_SINGLE_CALL_BUDGET,
     )
 
 
@@ -42,6 +76,7 @@ def _source_aware_direct_transfer_expectation() -> ReadinessExpectation:
             ("transfer_extractor_llm_call", 0),
             ("airtime_extractor_llm_call", 0),
         ),
+        llm_call_budget=_DETERMINISTIC_ZERO_LLM_BUDGET,
     )
 
 
@@ -77,6 +112,7 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
                     ReadinessExpectation(
                         expect_path_shape="deterministic_transfer_domain",
                         expect_task_types=("transfer",),
+                        llm_call_budget=_DETERMINISTIC_ZERO_LLM_BUDGET,
                     ),
                 ),
                 ReadinessTurn(
@@ -100,6 +136,7 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
                     ReadinessExpectation(
                         expect_path_shape="deterministic_data_domain",
                         expect_task_types=("data",),
+                        llm_call_budget=_DETERMINISTIC_ZERO_LLM_BUDGET,
                     ),
                     modes=("deterministic",),
                 ),
@@ -137,6 +174,7 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
                     ReadinessExpectation(
                         expect_path_shape="deterministic_airtime_domain",
                         expect_task_types=("airtime",),
+                        llm_call_budget=_DETERMINISTIC_ZERO_LLM_BUDGET,
                     ),
                 ),
                 ReadinessTurn(
@@ -176,12 +214,23 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
             turns=(
                 ReadinessTurn(
                     "Can you borrow me money?",
-                    ReadinessExpectation(expect_any=("can't help with loans", "can't help with lending")),
+                    ReadinessExpectation(
+                        expect_any=(
+                            "can't help with loans",
+                            "can't help with lending",
+                            "cannot assist with loans",
+                        )
+                    ),
                 ),
                 ReadinessTurn(
                     "I will pay back",
                     ReadinessExpectation(
-                        expect_any=("can't help with loans", "can't help with lending", "can’t help with loans"),
+                        expect_any=(
+                            "can't help with loans",
+                            "can't help with lending",
+                            "can’t help with loans",
+                            "cannot assist with loans",
+                        ),
                         expect_none=("transfer to", "Amount:"),
                     ),
                 ),
@@ -608,7 +657,7 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                 turns=(
                     ReadinessTurn(
                         "Tell me one short saying about money and patience",
-                        ReadinessExpectation(),
+                        ReadinessExpectation(llm_call_budget=LLMCallBudget(observe=True)),
                         modes=("dry-run",),
                     ),
                 ),
@@ -619,12 +668,18 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                 turns=(
                     ReadinessTurn(
                         "Show my recent transactions",
-                        ReadinessExpectation(expect_any=("transaction", "showing", "sent", "received")),
+                        ReadinessExpectation(
+                            expect_any=("transaction", "showing", "sent", "received"),
+                            llm_call_budget=LLMCallBudget(observe=True),
+                        ),
                         modes=("dry-run",),
                     ),
                     ReadinessTurn(
                         "Which account did I spend from most this month?",
-                        ReadinessExpectation(expect_any=("account", "bank", "spent", "transaction", "category")),
+                        ReadinessExpectation(
+                            expect_any=("account", "bank", "spent", "transaction", "category"),
+                            llm_call_budget=LLMCallBudget(observe=True),
+                        ),
                         modes=("dry-run",),
                     ),
                 ),
@@ -646,12 +701,95 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                 turns=(
                     ReadinessTurn(
                         "Send 2k to Tolu Access",
-                        ReadinessExpectation(expect_any=("transfer", "tolu", "confirm", "review")),
+                        ReadinessExpectation(
+                            expect_any=("transfer", "tolu", "confirm", "review"),
+                            llm_call_budget=LLMCallBudget(observe=True),
+                        ),
+                        modes=("dry-run",),
+                    ),
+                ReadinessTurn(
+                    "Actually use First Bank and make it tomorrow morning",
+                    ReadinessExpectation(
+                        llm_call_budget=LLMCallBudget(
+                            max_calls=2,
+                            max_event_counts=_ROUTING_DECISION_EVENT_MAX_ONE,
+                        )
+                    ),
+                    modes=("dry-run",),
+                ),
+            ),
+        ),
+            ReadinessScenario(
+                id="llm-single-transfer-edit",
+                description="Single confirmation amendment must bypass pending and generic interrupt LLM routing.",
+                turns=(
+                    ReadinessTurn(
+                        "Send 10k to Tolu Access",
+                        ReadinessExpectation(
+                            expect_any=("transfer", "tolu", "confirm", "review"),
+                            llm_call_budget=LLMCallBudget(observe=True),
+                        ),
                         modes=("dry-run",),
                     ),
                     ReadinessTurn(
-                        "Actually use First Bank and make it tomorrow morning",
-                        ReadinessExpectation(),
+                        "Add 5k",
+                        ReadinessExpectation(
+                            llm_call_budget=LLMCallBudget(
+                                max_calls=1,
+                                max_event_counts=(
+                                    ("transfer_extractor_llm_call", 1),
+                                    ("pending_action_edit_llm_call", 0),
+                                    ("interrupt_router_llm_call", 0),
+                                ),
+                                required_event_counts=(("transfer_extractor_llm_call", 1),),
+                            )
+                        ),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+            ReadinessScenario(
+                id="llm-batch-edit",
+                description="Batch confirmation correction with a bounded two-call semantic budget.",
+                turns=(
+                    ReadinessTurn(
+                        "Send 2k to Tolu Access and 3k to Mum First Bank",
+                        ReadinessExpectation(
+                            expect_any=("transfer", "tolu", "mum", "confirm", "review"),
+                            llm_call_budget=LLMCallBudget(observe=True),
+                        ),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "Make Tolu 5k and Mum 4k",
+                        ReadinessExpectation(
+                            llm_call_budget=LLMCallBudget(
+                                max_calls=2,
+                                max_event_counts=_ROUTING_DECISION_EVENT_MAX_ONE,
+                            )
+                        ),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+            ReadinessScenario(
+                id="llm-context-display",
+                description="Context-frame display follow-up baseline without a speculative hard budget.",
+                turns=(
+                    ReadinessTurn(
+                        "Show my beneficiaries",
+                        ReadinessExpectation(
+                            expect_any=("beneficiar", "saved", "tolu"),
+                            llm_call_budget=LLMCallBudget(observe=True),
+                        ),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "Show the first one",
+                        ReadinessExpectation(
+                            expect_any=("beneficiar", "tolu", "account", "bank"),
+                            llm_call_budget=LLMCallBudget(observe=True),
+                        ),
                         modes=("dry-run",),
                     ),
                 ),
@@ -662,12 +800,15 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                 turns=(
                     ReadinessTurn(
                         "Can you help me invest in crypto?",
-                        ReadinessExpectation(expect_any=("crypto", "investment", "invest", "unsupported")),
+                        ReadinessExpectation(
+                            expect_any=("crypto", "investment", "invest", "unsupported"),
+                            llm_call_budget=LLMCallBudget(observe=True),
+                        ),
                         modes=("dry-run",),
                     ),
                     ReadinessTurn(
                         "What if it is just a tiny amount for learning?",
-                        ReadinessExpectation(),
+                        ReadinessExpectation(llm_call_budget=LLMCallBudget(observe=True)),
                         modes=("dry-run",),
                     ),
                 ),

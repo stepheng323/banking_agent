@@ -138,7 +138,7 @@ async def test_data_plan_query_routes_as_read_only_data_task() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "deterministic_data_plan_query"
+    assert updates["turn_directive"].path_shape == "deterministic_data_plan_query"
     task = next(iter(updates["tasks"].values()))
     assert task.type == "data"
     assert task.payload["action"] == "data_plan_query"
@@ -183,12 +183,15 @@ async def test_data_plan_query_preempts_stale_data_plan_context_frame() -> None:
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 0
-    assert updates["semantic_path_shape"] == "deterministic_data_plan_query"
+    assert updates["turn_directive"].path_shape == "deterministic_data_plan_query"
     task = next(iter(updates["tasks"].values()))
     assert task.payload["action"] == "data_plan_query"
     assert task.payload["network"] == "MTN"
@@ -233,14 +236,17 @@ async def test_account_balance_query_preempts_stale_account_list_context_frame()
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.frame_followup_calls == 0
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["route_source"] == "semantic_router"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].source == "semantic_router"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
     assert task.payload["message"] == "Show my first bank balance"
@@ -272,7 +278,7 @@ async def test_data_plan_buy_it_uses_data_plan_referent() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "data_plan_reference_purchase"
+    assert updates["turn_directive"].path_shape == "data_plan_reference_purchase"
     task = next(iter(updates["tasks"].values()))
     assert task.type == "data"
     assert task.payload["action"] == "buy_data"
@@ -314,7 +320,7 @@ async def test_data_plan_buy_it_uses_visible_plan_frame_when_memory_missing() ->
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "data_plan_reference_purchase"
+    assert updates["turn_directive"].path_shape == "data_plan_reference_purchase"
     task = next(iter(updates["tasks"].values()))
     assert task.type == "data"
     assert task.payload["action"] == "buy_data"
@@ -339,7 +345,7 @@ async def test_stale_pin_does_not_steal_greeting_and_clears_pin() -> None:
 
     assert updates["pin_verified"] is False
     assert updates["final_response"] == render_message("conversational.greeting", "en")
-    assert updates["routing_decision"] == "meta_direct"
+    assert updates["turn_directive"].decision == "meta_direct"
 
 
 @pytest.mark.asyncio
@@ -357,7 +363,7 @@ async def test_stale_pin_continuation_gets_expired_notice_and_clears_pin() -> No
 
     assert updates["pin_verified"] is False
     assert updates["final_response"] == render_message("orchestrator.session.transaction_expired", "en")
-    assert updates["routing_decision"] == "expired_pin_session"
+    assert updates["turn_directive"].decision == "expired_pin_session"
 
 
 @pytest.mark.asyncio
@@ -396,7 +402,7 @@ async def test_stale_pin_is_cleared_before_data_plan_reference_purchase() -> Non
     updates = await session_gate_direct_path(state, config)
 
     assert updates["pin_verified"] is False
-    assert updates["semantic_path_shape"] == "data_plan_reference_purchase"
+    assert updates["turn_directive"].path_shape == "data_plan_reference_purchase"
     assert "final_response" not in updates
     task = next(iter(updates["tasks"].values()))
     assert task.type == "data"
@@ -449,7 +455,7 @@ async def test_data_plan_buy_option_uses_numbered_query_result() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "data_plan_reference_purchase"
+    assert updates["turn_directive"].path_shape == "data_plan_reference_purchase"
     task = next(iter(updates["tasks"].values()))
     assert task.payload["plan_code"] == "MD108"
     assert task.payload["amount"] == 2000
@@ -501,7 +507,7 @@ async def test_data_plan_monthly_one_for_my_line_uses_validity_referent_and_self
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "data_plan_reference_purchase"
+    assert updates["turn_directive"].path_shape == "data_plan_reference_purchase"
     task = next(iter(updates["tasks"].values()))
     assert task.payload["plan_code"] == "MD_MONTH"
     assert task.payload["target_phone"] == "08162511023"
@@ -540,11 +546,11 @@ async def test_gate_handles_greeting_meta_deterministically() -> None:
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
 
     updates = await session_gate_direct_path(state, config)
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.greeting", "en")
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "meta_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "meta_direct"
 
 
 async def test_gate_personalizes_idle_greeting_with_profile_name() -> None:
@@ -606,7 +612,6 @@ def test_addressed_greeting_uses_current_brand_settings(monkeypatch: pytest.Monk
     monkeypatch.setattr(settings, "app_name_short", "Aurora")
     monkeypatch.setattr(settings, "app_name_aliases", ())
 
-
     _assert_meta_response("Hi Aurora", "conversational.greeting")
     _assert_meta_response("Hi, Aurora Pay", "conversational.greeting")
     _assert_meta_response(
@@ -617,7 +622,6 @@ def test_addressed_greeting_uses_current_brand_settings(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(settings, "app_name_aliases", (non_canonical_name,))
     _assert_meta_response(f"Hi {non_canonical_name}", "conversational.greeting")
-
 
 
 def test_addressed_greeting_distinguishes_generic_and_wrong_names() -> None:
@@ -667,7 +671,6 @@ def test_brand_origin_meaning_variants_use_brand_settings(monkeypatch: pytest.Mo
     monkeypatch.setattr(settings, "app_name", "Aurora Pay")
     monkeypatch.setattr(settings, "app_name_short", "Aurora")
     monkeypatch.setattr(settings, "app_name_aliases", ())
-
 
     _assert_meta_response("what is the meaning of Aurora", "conversational.brand_origin")
     _assert_meta_response("what is Aurora", "conversational.identity")
@@ -730,19 +733,22 @@ async def test_gate_wrong_addressed_name_uses_light_identity_correction_without_
         channel="whatsapp",
         last_message_text="Hi, xara",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message(
         "conversational.identity_correction",
         "en",
         {"addressed_name": "Xara"},
     )
-    assert updates["routing_owner"] == "guardrail"
+    assert updates["turn_directive"].owner == "guardrail"
 
 
 async def test_gate_brand_meaning_uses_brand_origin_without_semantic_router() -> None:
@@ -762,15 +768,18 @@ async def test_gate_brand_meaning_uses_brand_origin_without_semantic_router() ->
         channel="whatsapp",
         last_message_text=f"What is the meaning of {settings.app_name_short}",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.brand_origin", "en")
-    assert updates["routing_owner"] == "guardrail"
+    assert updates["turn_directive"].owner == "guardrail"
 
 
 async def test_gate_plain_brand_question_uses_product_identity_without_semantic_router() -> None:
@@ -790,15 +799,18 @@ async def test_gate_plain_brand_question_uses_product_identity_without_semantic_
         channel="whatsapp",
         last_message_text=f"What is {settings.app_name_short}",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.identity", "en")
-    assert updates["routing_owner"] == "guardrail"
+    assert updates["turn_directive"].owner == "guardrail"
 
 
 async def test_gate_lending_request_uses_capability_boundary_without_semantic_router() -> None:
@@ -818,13 +830,16 @@ async def test_gate_lending_request_uses_capability_boundary_without_semantic_ro
         channel="whatsapp",
         last_message_text="Can you borrow me money?",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable_lending",
         "en",
@@ -834,7 +849,7 @@ async def test_gate_lending_request_uses_capability_boundary_without_semantic_ro
     assert updates["capability_boundary"].key == "lending"
     assert updates["capability_boundary"].label == "loans or lending"
     assert updates["capability_boundary"].followup_count == 0
-    assert updates["routing_owner"] == "guardrail"
+    assert updates["turn_directive"].owner == "guardrail"
 
 
 async def test_gate_lending_request_skips_stale_context_frame_in_pidgin_locale() -> None:
@@ -871,14 +886,17 @@ async def test_gate_lending_request_skips_stale_context_frame_in_pidgin_locale()
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 0
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["capability_boundary"].key == "lending"
 
 
@@ -899,13 +917,16 @@ async def test_gate_investment_request_uses_capability_boundary_without_semantic
         channel="whatsapp",
         last_message_text="Buy bitcoin for me",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable",
         "en",
@@ -933,13 +954,16 @@ async def test_gate_localized_unsupported_request_uses_locale_params() -> None:
         last_message_text="ra bitcoin fun mi",
         loaded_context={"language": "yo"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable",
         "yo",
@@ -966,13 +990,16 @@ async def test_gate_semantic_unsupported_request_sets_capability_boundary_withou
         last_message_text="can you help my money yield better returns",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.unsupported_calls == 1
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "semantic_unsupported_capability"
+    assert updates["turn_directive"].path_shape == "semantic_unsupported_capability"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable",
         "en",
@@ -1004,13 +1031,16 @@ async def test_gate_low_confidence_semantic_unsupported_falls_through_to_router(
         last_message_text="can you help me grow my money somehow",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.unsupported_calls == 1
     assert planner.route_calls == 1
-    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert updates["turn_directive"].path_shape == "semantic_router_direct"
     assert updates["final_response"] == "semantic path"
     assert "capability_boundary" not in updates
 
@@ -1024,15 +1054,18 @@ async def test_gate_mixed_transfer_and_investment_routes_supported_transfer_with
         last_message_text="send 5k to Ada and buy bitcoin for me",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "mixed_capability_supported_direct"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "mixed_supported_unsupported"
-    assert updates["routing_target_domain"] == "transfer"
+    assert updates["turn_directive"].path_shape == "mixed_capability_supported_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "mixed_supported_unsupported"
+    assert updates["turn_directive"].target_domain == "transfer"
     assert updates["capability_boundary"] is None
     assert updates["policy_notice"] == render_message(
         "planner.mixed_supported_unsupported_notice",
@@ -1062,14 +1095,17 @@ async def test_gate_mixed_transfer_and_semantic_unsupported_routes_supported_tra
         last_message_text="send 5k to Ada and help my money yield better returns",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.unsupported_calls == 1
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "mixed_capability_supported_direct"
-    assert updates["routing_target_domain"] == "transfer"
+    assert updates["turn_directive"].path_shape == "mixed_capability_supported_direct"
+    assert updates["turn_directive"].target_domain == "transfer"
     assert updates["policy_notice"] == render_message(
         "planner.mixed_supported_unsupported_notice",
         "en",
@@ -1089,13 +1125,16 @@ async def test_gate_mixed_balance_and_investment_routes_supported_balance_with_p
         last_message_text="what is my access balance and buy bitcoin",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "mixed_capability_supported_direct"
-    assert updates["routing_target_domain"] == "account"
+    assert updates["turn_directive"].path_shape == "mixed_capability_supported_direct"
+    assert updates["turn_directive"].target_domain == "account"
     assert updates["policy_notice"] == render_message(
         "planner.mixed_supported_unsupported_notice",
         "en",
@@ -1116,13 +1155,16 @@ async def test_gate_mixed_data_and_pdf_export_routes_supported_data_with_policy_
         last_message_text="buy data for me and export my statement as PDF",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "mixed_capability_supported_direct"
-    assert updates["routing_target_domain"] == "data"
+    assert updates["turn_directive"].path_shape == "mixed_capability_supported_direct"
+    assert updates["turn_directive"].target_domain == "data"
     assert updates["policy_notice"] == render_message(
         "planner.mixed_supported_unsupported_notice",
         "en",
@@ -1142,13 +1184,16 @@ async def test_gate_mixed_multiple_supported_clauses_asks_for_clarification() ->
         last_message_text="send 5k to Ada and what is my balance and buy bitcoin",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "mixed_capability_clarify"
-    assert updates["routing_decision"] == "mixed_supported_unsupported_clarify"
+    assert updates["turn_directive"].path_shape == "mixed_capability_clarify"
+    assert updates["turn_directive"].decision == "mixed_supported_unsupported_clarify"
     assert "Which supported request" in updates["final_response"]
     assert "capability_boundary" in updates and updates["capability_boundary"] is None
 
@@ -1165,7 +1210,7 @@ async def test_gate_same_clause_unsupported_account_language_remains_unsupported
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable",
         "en",
@@ -1186,7 +1231,7 @@ async def test_gate_international_transfer_request_remains_unsupported_boundary(
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable",
         "en",
@@ -1240,8 +1285,8 @@ async def test_gate_lending_followup_uses_capability_boundary_before_context_fra
 
     assert planner.frame_followup_calls == 0
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "capability_boundary_followup"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "capability_boundary_followup"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable_followup_lending",
         "en",
@@ -1279,13 +1324,16 @@ async def test_gate_investment_followup_stays_in_capability_boundary() -> None:
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 0
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "capability_boundary_followup"
+    assert updates["turn_directive"].path_shape == "capability_boundary_followup"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable_followup",
         "en",
@@ -1308,7 +1356,7 @@ async def test_gate_lending_followup_gets_firm_redirect_after_two_followups() ->
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "capability_boundary_followup"
+    assert updates["turn_directive"].path_shape == "capability_boundary_followup"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable_firm_lending",
         "en",
@@ -1342,13 +1390,16 @@ async def test_gate_lending_payback_followup_stays_in_capability_boundary() -> N
         loaded_context={"language": "en"},
         capability_boundary=CapabilityBoundary(key="lending", label="loans or lending", followup_count=1),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.boundary_calls == 0
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "capability_boundary_followup"
+    assert updates["turn_directive"].path_shape == "capability_boundary_followup"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable_followup_lending",
         "en",
@@ -1392,12 +1443,15 @@ async def test_gate_lending_payback_followup_infers_recent_boundary_from_history
             },
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "capability_boundary_followup"
+    assert updates["turn_directive"].path_shape == "capability_boundary_followup"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable_followup_lending",
         "en",
@@ -1432,14 +1486,17 @@ async def test_gate_boundary_classifier_clears_for_unrelated_turn() -> None:
         loaded_context={"language": "en"},
         capability_boundary=CapabilityBoundary(key="lending", label="loans or lending", followup_count=1),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.boundary_calls == 1
     assert planner.route_calls == 1
     assert updates["capability_boundary"] is None
-    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert updates["turn_directive"].path_shape == "semantic_router_direct"
     assert updates["final_response"] == "semantic path"
 
 
@@ -1484,7 +1541,10 @@ async def test_gate_casual_turn_clears_unsupported_boundary_without_stale_contex
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
@@ -1492,7 +1552,7 @@ async def test_gate_casual_turn_clears_unsupported_boundary_without_stale_contex
     assert planner.frame_followup_calls == 0
     assert planner.route_calls == 0
     assert updates["capability_boundary"] is None
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.out_of_scope", "pcm")
 
 
@@ -1506,12 +1566,15 @@ async def test_gate_supported_transfer_clears_lending_boundary() -> None:
         loaded_context={"language": "en"},
         capability_boundary=CapabilityBoundary(key="lending", label="loans or lending", followup_count=1),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert updates["capability_boundary"] is None
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_transfer_domain"
     assert next(iter(updates["tasks"].values())).type == "transfer"
     assert planner.route_calls == 0
 
@@ -1530,7 +1593,7 @@ async def test_gate_supported_balance_clears_lending_boundary() -> None:
     updates = await session_gate_direct_path(state, config)
 
     assert updates["capability_boundary"] is None
-    assert updates["semantic_path_shape"] == "balance_direct"
+    assert updates["turn_directive"].path_shape == "balance_direct"
     task = next(iter(updates["tasks"].values()))
     assert task.type == "account"
     assert task.payload["action"] == "check_balance"
@@ -1561,10 +1624,10 @@ async def test_gate_handles_pidgin_social_greeting_deterministically() -> None:
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.greeting", "pcm")
-    assert updates["routing_owner"] == "guardrail"
+    assert updates["turn_directive"].owner == "guardrail"
 
 
 async def test_gate_handles_prefixed_pidgin_social_greeting_deterministically() -> None:
@@ -1592,10 +1655,10 @@ async def test_gate_handles_prefixed_pidgin_social_greeting_deterministically() 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.greeting", "pcm")
-    assert updates["routing_owner"] == "guardrail"
+    assert updates["turn_directive"].owner == "guardrail"
 
 
 async def test_gate_handles_presence_checkin_deterministically() -> None:
@@ -1623,10 +1686,10 @@ async def test_gate_handles_presence_checkin_deterministically() -> None:
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.checkin", "en")
-    assert updates["routing_owner"] == "guardrail"
+    assert updates["turn_directive"].owner == "guardrail"
 
 
 async def test_gate_handles_pidgin_presence_checkin_deterministically() -> None:
@@ -1654,10 +1717,10 @@ async def test_gate_handles_pidgin_presence_checkin_deterministically() -> None:
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.checkin", "pcm")
-    assert updates["routing_owner"] == "guardrail"
+    assert updates["turn_directive"].owner == "guardrail"
 
 
 async def test_gate_handles_prefixed_pidgin_presence_checkin_deterministically() -> None:
@@ -1685,10 +1748,10 @@ async def test_gate_handles_prefixed_pidgin_presence_checkin_deterministically()
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.checkin", "pcm")
-    assert updates["routing_owner"] == "guardrail"
+    assert updates["turn_directive"].owner == "guardrail"
 
 
 async def test_gate_filters_gibberish_without_semantic_router() -> None:
@@ -1716,11 +1779,11 @@ async def test_gate_filters_gibberish_without_semantic_router() -> None:
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "gibberish_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "gibberish_direct"
     assert updates["final_response"] == render_message("common.gibberish_prompt", "en")
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "gibberish_filtered"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "gibberish_filtered"
 
 
 async def test_gate_routes_recent_batch_receipt_followup_to_support_without_planner() -> None:
@@ -1780,16 +1843,21 @@ async def test_gate_routes_recent_batch_receipt_followup_to_support_without_plan
         last_message_text="Get me the receipt for the second transaction",
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "recent_batch_receipt_support"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "recent_batch_receipt_support"
     task = updates["tasks"]["direct_support"]
     assert task.type == "support"
     assert task.payload["intent"] == "receipt_request"
@@ -1843,19 +1911,24 @@ async def test_gate_routes_captioned_receipt_image_instruction_to_transfer_not_r
         ),
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "domain_transfer"
-    assert updates["route_source"] == "semantic_router"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "domain_transfer"
+    assert updates["turn_directive"].source == "semantic_router"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert "send 21k" in task.payload["message"]
@@ -1924,15 +1997,20 @@ async def test_gate_routes_active_receipt_thread_followup_to_support_without_rec
         loaded_context={"language": "en", "user_id": "u_gate_receipt_thread_1"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["routing_decision"] == "receipt_thread_support"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].decision == "receipt_thread_support"
     task = updates["tasks"]["direct_support"]
     assert task.type == "support"
     assert task.payload["intent"] == "receipt_request"
@@ -1997,17 +2075,22 @@ async def test_gate_active_receipt_thread_does_not_steal_fresh_mixed_transaction
         loaded_context={"language": "en", "user_id": "u_gate_receipt_thread_fresh_mixed"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates.get("direct_path_triggered") is None
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_handoff"
-    assert updates["route_source"] == "planner"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "planner_handoff"
+    assert updates["turn_directive"].source == "semantic_router_mixed_veto"
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
     assert "tasks" not in updates
 
@@ -2068,7 +2151,12 @@ async def test_gate_active_receipt_thread_does_not_steal_acknowledged_fresh_batc
         loaded_context={"language": "en", "user_id": "u_gate_receipt_thread_ack_batch"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
@@ -2076,12 +2164,12 @@ async def test_gate_active_receipt_thread_does_not_steal_acknowledged_fresh_batc
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_mixed"
-    assert updates["route_source"] == "planner"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "planner_mixed"
+    assert updates["turn_directive"].source == "semantic_router"
     saved_support_context = json.loads(redis_client.store["support_context:u_gate_receipt_thread_ack_batch"])
     assert saved_support_context["pending_reference"] is None
     assert saved_support_context["receipt_thread_state"] is None
@@ -2132,17 +2220,22 @@ async def test_gate_active_support_pending_reference_does_not_steal_fresh_transf
         loaded_context={"language": "en", "user_id": "u_gate_support_pending_fresh_transfer"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_decision"] == "domain_transfer"
-    assert updates["routing_target_domain"] == "transfer"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "domain_transfer"
+    assert updates["turn_directive"].target_domain == "transfer"
     assert "direct_transfer" in updates["tasks"]
     saved_support_context = json.loads(redis_client.store["support_context:u_gate_support_pending_fresh_transfer"])
     assert saved_support_context["pending_reference"] is None
@@ -2169,13 +2262,16 @@ async def test_gate_handles_capitalized_greeting_meta_before_query_routing() -> 
         channel="whatsapp",
         last_message_text="Hi",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.greeting", "en")
     assert "tasks" not in updates or "direct_query" not in updates["tasks"]
 
@@ -2200,13 +2296,16 @@ async def test_gate_handles_capability_question_meta_deterministically() -> None
         channel="whatsapp",
         last_message_text="what can you do",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.capability_question", "en")
 
 
@@ -2230,13 +2329,16 @@ async def test_gate_handles_transfer_capability_question_meta_deterministically(
         channel="whatsapp",
         last_message_text="Can you help me send funds?",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.capability_question", "en")
 
 
@@ -2260,13 +2362,16 @@ async def test_gate_handles_identity_question_meta_deterministically() -> None:
         channel="whatsapp",
         last_message_text="who are you",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.identity", "en")
 
 
@@ -2291,13 +2396,16 @@ async def test_gate_handles_pidgin_capability_question_deterministically() -> No
         last_message_text="wetin you fit do",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["loaded_context"]["language"] == "pcm"
     assert updates["final_response"] == render_message("conversational.capability_question", "pcm")
 
@@ -2323,12 +2431,15 @@ async def test_gate_handles_yoruba_greeting_deterministically() -> None:
         last_message_text="pele o",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["loaded_context"]["language"] == "yo"
     assert updates["final_response"] == render_message("conversational.greeting", "yo")
 
@@ -2354,12 +2465,15 @@ async def test_gate_handles_hausa_identity_deterministically() -> None:
         last_message_text="kai wa ne",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["loaded_context"]["language"] == "ha"
     assert updates["final_response"] == render_message("conversational.identity", "ha")
 
@@ -2385,12 +2499,15 @@ async def test_gate_handles_igbo_appreciation_deterministically() -> None:
         last_message_text="dalu",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["loaded_context"]["language"] == "ig"
     assert updates["final_response"] == render_message("conversational.appreciation", "ig")
 
@@ -2413,7 +2530,7 @@ async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately(
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
 
     updates = await session_gate_direct_path(state, config)
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == render_cancelled_prompt("en")
     assert updates["pending_interrupt"] is None
     assert updates["tasks"] == {}
@@ -2443,7 +2560,7 @@ async def test_gate_explicit_cancel_with_active_state_skips_query_session_lookup
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == render_cancelled_prompt("en")
     assert redis_client.query_session_gets == 0
     assert redis_client.deleted_keys == ["query:session:2348888888890"]
@@ -2470,9 +2587,9 @@ async def test_gate_explicit_cancel_dismisses_pending_mandate_notice() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == render_cancelled_prompt("en")
-    assert updates["routing_decision"] == "cancel_pending_mandate_notice"
+    assert updates["turn_directive"].decision == "cancel_pending_mandate_notice"
 
 
 async def test_gate_query_shortcut_followup_uses_semantic_router_without_pending_interrupt() -> None:
@@ -2503,18 +2620,21 @@ async def test_gate_query_shortcut_followup_uses_semantic_router_without_pending
         ],
         context_frames=[_active_query_context_frame(summary_text="Showing 1-5 of 8")],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
-    assert updates.get("direct_path_triggered") is True
+    assert "direct_path_triggered" not in updates
     assert planner.route_calls == 1
     assert planner.last_context is not None
     assert "candidate_domain=query" in planner.last_context
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_decision"] == "domain_query"
-    assert updates["routing_target_domain"] == "query"
-    assert updates["routing_mode"] == "continuation"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "domain_query"
+    assert updates["turn_directive"].target_domain == "query"
+    assert updates["turn_directive"].mode == "continuation"
     assert updates.get("waves") == [["direct_query"]]
 
 
@@ -2573,15 +2693,18 @@ async def test_gate_query_followup_preempts_stale_unsupported_boundary_llm() -> 
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.boundary_calls == 0
     assert planner.route_calls == 1
     assert updates.get("capability_boundary") is None
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_decision"] == "domain_query"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].decision == "domain_query"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What bank was that?"
@@ -2635,11 +2758,11 @@ async def test_gate_active_query_owns_direct_context_answer_followup() -> None:
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["semantic_path_shape"] == "query_followup_bypass"
-    assert updates["routing_owner"] == "query_session"
-    assert updates["routing_decision"] == "query_followup_bypass"
-    assert updates["routing_target_domain"] == "query"
-    assert updates["routing_mode"] == "continuation"
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
+    assert updates["turn_directive"].owner == "query_session"
+    assert updates["turn_directive"].decision == "query_followup_bypass"
+    assert updates["turn_directive"].target_domain == "query"
+    assert updates["turn_directive"].mode == "continuation"
     assert updates["waves"] == [["direct_query"]]
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
@@ -2670,16 +2793,19 @@ async def test_gate_time_rescope_followup_bypasses_planner_without_context_frame
         active_domain="query",
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.last_context is not None
     assert "candidate_domain=query" in planner.last_context
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_decision"] == "domain_query"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "domain_query"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What about yesterday"
@@ -2709,13 +2835,16 @@ async def test_gate_assertive_time_correction_bypasses_planner_without_context_f
         active_domain="query",
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_decision"] == "domain_query"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].decision == "domain_query"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "I said yesterday"
@@ -2754,16 +2883,19 @@ async def test_gate_multilingual_active_query_time_followups_use_semantic_router
         active_domain="query",
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.last_context is not None
     assert "candidate_domain=query" in planner.last_context
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_decision"] == "domain_query"
-    assert updates["routing_mode"] == "continuation"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].decision == "domain_query"
+    assert updates["turn_directive"].mode == "continuation"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == message_text
@@ -2795,7 +2927,12 @@ async def test_gate_active_query_fresh_transfer_uses_semantic_router_and_clears_
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
@@ -2804,9 +2941,9 @@ async def test_gate_active_query_fresh_transfer_uses_semantic_router_and_clears_
     assert planner.route_calls == 1
     assert planner.last_context is not None
     assert "candidate_domain=query" in planner.last_context
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_decision"] == "domain_transfer"
-    assert updates["routing_target_domain"] == "transfer"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].decision == "domain_transfer"
+    assert updates["turn_directive"].target_domain == "transfer"
     assert updates.get("active_domain") is None
     assert updates["session_stack"] == []
     task = updates["tasks"]["direct_transfer"]
@@ -2838,17 +2975,22 @@ async def test_gate_active_query_mixed_transaction_uses_semantic_router_and_clea
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_mixed"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "planner_mixed"
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
     assert updates.get("active_domain") is None
     assert updates["session_stack"] == []
@@ -2899,18 +3041,21 @@ async def test_gate_active_query_session_preempts_context_frame_followup() -> No
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 0
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_decision"] == "domain_query"
-    assert updates["routing_target_domain"] == "query"
-    assert updates["routing_mode"] == "continuation"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "domain_query"
+    assert updates["turn_directive"].target_domain == "query"
+    assert updates["turn_directive"].mode == "continuation"
     assert updates.get("waves") == [["direct_query"]]
 
 
@@ -2950,15 +3095,18 @@ async def test_gate_latest_fact_next_followup_stays_in_active_query_session() ->
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_decision"] == "domain_query"
-    assert updates["routing_mode"] == "continuation"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].decision == "domain_query"
+    assert updates["turn_directive"].mode == "continuation"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Then who next?"
@@ -2985,14 +3133,17 @@ async def test_gate_bypasses_planner_for_pure_query_detail_turn() -> None:
         last_message_text="Show my last transaction",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my last transaction"
@@ -3020,13 +3171,16 @@ async def test_gate_bypasses_planner_for_pure_query_analytics_turn() -> None:
         last_message_text="How much did I spend yesterday",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     assert planner.last_context is not None
     assert "candidate_domain=query" in planner.last_context
     task = updates["tasks"]["direct_query"]
@@ -3055,13 +3209,16 @@ async def test_gate_bypasses_planner_for_pure_query_sent_analytics_turn() -> Non
         last_message_text="How much have I sent to Mum this week",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     assert planner.last_context is not None
     assert "candidate_domain=query" in planner.last_context
     task = updates["tasks"]["direct_query"]
@@ -3090,16 +3247,19 @@ async def test_gate_keeps_structural_transaction_list_query_direct() -> None:
         last_message_text="Show my transactions",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_query_domain"
-    assert updates["route_source"] == "query_domain_guard"
-    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
-    assert updates["routing_heuristic_name"] == "structural_query_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
+    assert updates["turn_directive"].source == "query_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "guardrail_shortcut"
+    assert updates["turn_directive"].heuristic_name == "structural_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my transactions"
@@ -3127,13 +3287,16 @@ async def test_gate_keeps_bank_scoped_transaction_list_query_direct() -> None:
         last_message_text="Show my gtb transactions",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my gtb transactions"
@@ -3161,13 +3324,16 @@ async def test_gate_routes_affordability_probe_as_query_direct() -> None:
         last_message_text="Can I send 100k?",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Can I send 100k?"
@@ -3197,13 +3363,16 @@ async def test_gate_routes_affordability_probe_as_query_direct_with_active_query
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         active_domain="query",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Can I send 35k?"
@@ -3222,10 +3391,10 @@ async def test_gate_non_structural_query_phrase_falls_through_without_semantic_r
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_handoff"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "planner_handoff"
 
 
 async def test_gate_semantic_schedule_domain_hands_off_to_planner() -> None:
@@ -3247,17 +3416,20 @@ async def test_gate_semantic_schedule_domain_hands_off_to_planner() -> None:
         last_message_text="How many scheduled tramsaction is pending",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_schedule_read"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "deterministic_schedule_read"
-    assert updates["routing_target_domain"] == "schedule"
-    assert updates["route_source"] == "schedule_read_guard"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_schedule_read"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "deterministic_schedule_read"
+    assert updates["turn_directive"].target_domain == "schedule"
+    assert updates["turn_directive"].source == "schedule_read_guard"
     task = updates["tasks"]["direct_schedule"]
     assert task.type == "schedule"
     assert task.payload["action"] == "list_scheduled_transactions"
@@ -3285,16 +3457,19 @@ async def test_gate_semantic_schedule_target_vetoes_direct_context_answer() -> N
         last_message_text="scheduled transaction status",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "final_response" not in updates
-    assert updates["semantic_path_shape"] == "semantic_router_schedule_planner_handoff"
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_handoff"
-    assert updates["routing_target_domain"] == "schedule"
+    assert updates["turn_directive"].path_shape == "semantic_router_schedule_planner_handoff"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "planner_handoff"
+    assert updates["turn_directive"].target_domain == "schedule"
 
 
 async def test_gate_semantic_schedule_count_skips_planner() -> None:
@@ -3317,15 +3492,18 @@ async def test_gate_semantic_schedule_count_skips_planner() -> None:
         last_message_text="How many scheduled transaction is pending",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_schedule_read"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "schedule"
-    assert updates["route_source"] == "schedule_read_guard"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_schedule_read"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "schedule"
+    assert updates["turn_directive"].source == "schedule_read_guard"
     assert planner.plan_calls == 0
     assert planner.schedule_read_calls == 0
     task = updates["tasks"]["direct_schedule"]
@@ -3355,14 +3533,17 @@ async def test_gate_schedule_read_router_skips_broad_semantic_router() -> None:
         last_message_text="pending scheduled transaction status",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "schedule_read_router_direct"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["route_source"] == "schedule_read_router"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "schedule_read_router_direct"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].source == "schedule_read_router"
     assert planner.schedule_read_calls == 1
     assert planner.route_calls == 0
     task = updates["tasks"]["direct_schedule"]
@@ -3410,14 +3591,17 @@ async def test_gate_schedule_count_ignores_existing_schedule_frame() -> None:
         loaded_context={"language": "en"},
         context_frames=[frame],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_schedule_read"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["route_source"] == "schedule_read_guard"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_schedule_read"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].source == "schedule_read_guard"
     assert planner.frame_followup_calls == 0
     assert planner.schedule_read_calls == 0
     task = updates["tasks"]["direct_schedule"]
@@ -3470,14 +3654,17 @@ async def test_gate_schedule_terse_followup_uses_context_frame_before_router() -
         loaded_context={"language": "en"},
         context_frames=[frame],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "context_frame_followup"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "schedule"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].target_domain == "schedule"
     assert "Scheduled Transaction Details" in updates["final_response"]
     assert "FATIMA ZAHRA MUSA" in updates["final_response"]
     assert "Target:" not in updates["final_response"]
@@ -3532,13 +3719,16 @@ async def test_gate_schedule_edit_followup_uses_context_frame_task() -> None:
         loaded_context={"language": "en"},
         context_frames=[frame],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "context_frame_followup"
-    assert updates["routing_target_domain"] == "schedule"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
+    assert updates["turn_directive"].target_domain == "schedule"
     assert planner.frame_followup_calls == 1
     assert planner.route_calls == 0
     task = updates["tasks"]["context_schedule_management_1"]
@@ -3569,13 +3759,16 @@ async def test_gate_bypasses_planner_for_pure_query_have_i_sent_turn() -> None:
         last_message_text="Have I sent money today",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -3602,13 +3795,16 @@ async def test_gate_bypasses_planner_for_pure_query_beneficiary_ranking_turn() -
         last_message_text="Who did I send money to the most this week",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     assert planner.last_context is not None
     assert "candidate_domain=query" in planner.last_context
     task = updates["tasks"]["direct_query"]
@@ -3639,13 +3835,16 @@ async def test_gate_direct_query_bypass_forces_new_query_with_active_query_sessi
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         active_domain="query",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.payload["force_new_query"] is True
 
@@ -3669,17 +3868,20 @@ async def test_gate_mixed_query_and_transfer_turn_still_falls_through_to_planner
         last_message_text="Send 5k to Mum and show my last transaction",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
     assert "turn_context_summary" in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_mixed"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "planner_mixed"
 
 
 async def test_gate_transfer_fastpath_does_not_steal_active_transfer_correction() -> None:
@@ -3713,13 +3915,17 @@ async def test_gate_transfer_fastpath_does_not_steal_active_transfer_correction(
         session_stack=[ActiveSession(domain="transfer", state="WAITING_FOR_INPUT", interrupt_policy="BLOCK")],
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
-    assert updates.get("direct_path_triggered") is None
+    assert planner.route_calls == 0
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
+    assert updates["turn_directive"].next_step.value == "handle_interrupt"
 
 
 async def test_gate_transfer_fastpath_does_not_run_for_quoted_replay_turn() -> None:
@@ -3744,14 +3950,17 @@ async def test_gate_transfer_fastpath_does_not_run_for_quoted_replay_turn() -> N
         has_quote=True,
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
-    assert updates["routing_owner"] == "planner"
+    assert updates["turn_directive"].owner == "guardrail"
 
 
 async def test_gate_mixed_query_and_airtime_turn_still_falls_through_to_planner() -> None:
@@ -3773,12 +3982,15 @@ async def test_gate_mixed_query_and_airtime_turn_still_falls_through_to_planner(
         last_message_text="Buy airtime and how much did I spend today",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
     assert "turn_context_summary" in updates
     assert updates["preplanner_expected_transaction_executors"] == ["airtime"]
@@ -3805,14 +4017,17 @@ async def test_gate_semantic_router_routes_income_query_clarification_bypass_to_
         last_message_text="What's my income this month",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     assert planner.last_context is not None
     assert "candidate_domain=query" in planner.last_context
     task = updates["tasks"]["direct_query"]
@@ -3842,17 +4057,20 @@ async def test_gate_deterministic_account_list_bypasses_semantic_router() -> Non
         last_message_text="Show my linked accounts",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_account_domain"
-    assert updates["route_source"] == "account_domain_guard"
-    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
-    assert updates["routing_heuristic_name"] == "account_domain_request"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_account_domain"
+    assert updates["turn_directive"].source == "account_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "guardrail_shortcut"
+    assert updates["turn_directive"].heuristic_name == "account_domain_request"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
     assert task.payload["message"] == "Show my linked accounts"
@@ -3880,14 +4098,17 @@ async def test_gate_deterministic_account_count_preserves_response_shape() -> No
         last_message_text="How many accounts do I have?",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_account_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_account_domain"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
     assert task.payload["message"] == "How many accounts do I have?"
@@ -3915,16 +4136,19 @@ async def test_gate_deterministic_beneficiary_list_bypasses_semantic_router() ->
         last_message_text="Show my beneficiaries",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_beneficiary_domain"
-    assert updates["route_source"] == "beneficiary_domain_guard"
-    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
-    assert updates["routing_heuristic_name"] == "beneficiary_list_request"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_beneficiary_domain"
+    assert updates["turn_directive"].source == "beneficiary_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "guardrail_shortcut"
+    assert updates["turn_directive"].heuristic_name == "beneficiary_list_request"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["message"] == "Show my beneficiaries"
@@ -3955,13 +4179,16 @@ async def test_gate_deterministic_beneficiary_count_preserves_response_shape() -
         last_message_text="How many beneficiaries do I have?",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_beneficiary_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_beneficiary_domain"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["action"] == "list_beneficiaries"
@@ -3990,13 +4217,16 @@ async def test_gate_deterministic_beneficiary_count_allowed_in_pidgin_locale() -
         last_message_text="How many beneficiaries do I have?",
         loaded_context={"language": "pcm"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_beneficiary_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_beneficiary_domain"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["response_shape"] == "fact_count"
@@ -4057,14 +4287,17 @@ async def test_gate_context_frame_completeness_preempts_beneficiary_reroute() ->
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 1
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert updates["final_response"] == "Yes. Those are the 3 saved beneficiaries I found."
     assert "tasks" not in updates
 
@@ -4115,13 +4348,16 @@ async def test_gate_casual_joke_request_skips_context_frame_followup_llm() -> No
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 0
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.out_of_scope", "pcm")
     assert "Why did the banker bring a ladder?" not in updates["final_response"]
 
@@ -4175,15 +4411,18 @@ async def test_gate_context_frame_lookup_preempts_beneficiary_reroute() -> None:
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 1
     assert planner.route_calls == 0
     assert "Frame type: beneficiary_list" in (planner.last_frame_context or "")
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert updates["final_response"] == "I don't see Gaines in the saved beneficiaries I showed."
     assert "tasks" not in updates
 
@@ -4244,14 +4483,17 @@ async def test_gate_context_frame_expected_missing_entity_preempts_beneficiary_r
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 1
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert updates["final_response"] == "I don't see Gaines in the saved beneficiaries I showed."
     assert updates["context_frames"]
     assert "tasks" not in updates
@@ -4301,17 +4543,20 @@ async def test_gate_context_frame_start_new_task_falls_through_to_fresh_benefici
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 0
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_decision"] == "domain_beneficiary"
-    assert updates["route_source"] == "semantic_router"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "domain_beneficiary"
+    assert updates["turn_directive"].source == "semantic_router"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["action"] == "list_beneficiaries"
@@ -4366,18 +4611,21 @@ async def test_gate_context_frame_does_not_steal_fresh_transfer_request() -> Non
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 0
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "domain_transfer"
-    assert updates["route_source"] == "semantic_router"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "domain_transfer"
+    assert updates["turn_directive"].source == "semantic_router"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "Send 10k to tolu adebayo"
@@ -4422,13 +4670,16 @@ async def test_gate_context_frame_unclear_followup_returns_frame_specific_clarif
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 1
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert updates["final_response"] == "Are you asking about the saved beneficiaries I just showed?"
     assert "tasks" not in updates
 
@@ -4483,13 +4734,16 @@ async def test_gate_context_frame_filter_operation_preempts_account_reroute() ->
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 1
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "GTBank (...0002)" in updates["final_response"]
     assert "First Bank (...0001)" not in updates["final_response"]
     assert "tasks" not in updates
@@ -4540,13 +4794,16 @@ async def test_gate_context_frame_compare_operation_answers_from_frame() -> None
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 1
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Comparison" in updates["final_response"]
     assert "First Bank (...0001)" in updates["final_response"]
     assert "GTBank (...0002)" in updates["final_response"]
@@ -4575,16 +4832,19 @@ async def test_gate_deterministic_airtime_bypasses_semantic_router() -> None:
         last_message_text="Buy 2k airtime for 08031234567",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_airtime_domain"
-    assert updates["route_source"] == "airtime_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "obvious_airtime_request"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_airtime_domain"
+    assert updates["turn_directive"].source == "airtime_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "slot_parser"
+    assert updates["turn_directive"].heuristic_name == "obvious_airtime_request"
     task = updates["tasks"]["direct_airtime"]
     assert task.type == "airtime"
 
@@ -4610,14 +4870,17 @@ async def test_gate_self_airtime_with_amount_routes_instead_of_ambiguity_prompt(
         last_message_text="Buy me 1k airtime",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_airtime_domain"
-    assert updates["routing_decision"] == "deterministic_airtime_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_airtime_domain"
+    assert updates["turn_directive"].decision == "deterministic_airtime_domain"
     task = updates["tasks"]["direct_airtime"]
     assert task.type == "airtime"
     assert task.payload["message"] == "Buy me 1k airtime"
@@ -4644,14 +4907,17 @@ async def test_gate_self_airtime_without_amount_starts_airtime_slot_flow() -> No
         last_message_text="Buy airtime for me",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_airtime_domain"
-    assert updates["routing_decision"] == "deterministic_airtime_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_airtime_domain"
+    assert updates["turn_directive"].decision == "deterministic_airtime_domain"
     task = updates["tasks"]["direct_airtime"]
     assert task.type == "airtime"
     assert task.payload["message"] == "Buy airtime for me"
@@ -4678,13 +4944,16 @@ async def test_gate_explicit_send_airtime_to_phone_still_uses_direct_airtime() -
         last_message_text="Send 2k airtime to 08031234567",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_airtime_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_airtime_domain"
     task = updates["tasks"]["direct_airtime"]
     assert task.type == "airtime"
 
@@ -4710,15 +4979,18 @@ async def test_gate_phone_number_send_uses_semantic_router_not_direct_airtime_or
         last_message_text="Send 2k to 08031234567",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_target_domain"] == "airtime"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].target_domain == "airtime"
     task = updates["tasks"]["direct_airtime"]
     assert task.type == "airtime"
 
@@ -4744,16 +5016,19 @@ async def test_gate_deterministic_data_bypasses_semantic_router() -> None:
         last_message_text="Buy 1gb for me",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_data_domain"
-    assert updates["route_source"] == "data_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "obvious_data_request"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_data_domain"
+    assert updates["turn_directive"].source == "data_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "slot_parser"
+    assert updates["turn_directive"].heuristic_name == "obvious_data_request"
     task = updates["tasks"]["direct_data"]
     assert task.type == "data"
 
@@ -4779,13 +5054,16 @@ async def test_gate_get_sized_data_still_uses_direct_data_shortcut() -> None:
         last_message_text="Get 1gb data for me",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_data_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_data_domain"
     task = updates["tasks"]["direct_data"]
     assert task.type == "data"
 
@@ -4811,13 +5089,16 @@ async def test_gate_self_sized_data_request_uses_direct_data_shortcut() -> None:
         last_message_text="Buy me 5gb data",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_data_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_data_domain"
     task = updates["tasks"]["direct_data"]
     assert task.type == "data"
     assert task.payload["size_preference"] == "5GB"
@@ -4834,12 +5115,15 @@ async def test_gate_sized_data_budget_hint_does_not_parse_size_as_amount() -> No
         last_message_text="Buy 5gb MTN data for 1500",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "deterministic_data_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_data_domain"
     task = updates["tasks"]["direct_data"]
     assert task.payload["network"] == "MTN"
     assert task.payload["size_preference"] == "5GB"
@@ -4867,15 +5151,18 @@ async def test_gate_record_data_request_routes_as_query_not_direct_data() -> Non
         last_message_text="Get my transaction data",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_query_domain"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "query"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "query"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
 
@@ -4901,15 +5188,18 @@ async def test_gate_data_status_request_uses_semantic_router_not_direct_data() -
         last_message_text="Get data status",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_target_domain"] == "support"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].target_domain == "support"
     task = updates["tasks"]["direct_support"]
     assert task.type == "support"
     assert "intent" not in task.payload
@@ -4936,15 +5226,18 @@ async def test_gate_phone_only_get_does_not_use_direct_data_shortcut() -> None:
         last_message_text="Get 08031234567",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_target_domain"] == "data"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].target_domain == "data"
 
 
 async def test_gate_banking_coded_transfer_ambiguity_clarifies_before_casual_chat() -> None:
@@ -4968,17 +5261,22 @@ async def test_gate_banking_coded_transfer_ambiguity_clarifies_before_casual_cha
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "conversation_responder": responder},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "conversation_responder": responder,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "banking_coded_ambiguity_clarify"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "banking_coded_ambiguity_clarify"
     assert updates["final_response"] == "Do you want to send money? If yes, who is the recipient?"
-    assert updates["routing_decision"] == "banking_coded_ambiguity_transfer"
+    assert updates["turn_directive"].decision == "banking_coded_ambiguity_transfer"
     assert not responder.calls
 
 
@@ -5003,14 +5301,17 @@ async def test_gate_self_data_request_uses_direct_data_before_router() -> None:
         last_message_text="Buy me data",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_data_domain"
-    assert updates["routing_decision"] == "deterministic_data_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_data_domain"
+    assert updates["turn_directive"].decision == "deterministic_data_domain"
     task = updates["tasks"]["direct_data"]
     assert task.type == "data"
     assert task.payload["target_phone"] == "08162511023"
@@ -5038,19 +5339,24 @@ async def test_gate_banking_coded_support_ambiguity_clarifies_before_casual_chat
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "conversation_responder": responder},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "conversation_responder": responder,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "support_issue_direct"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "support_issue_direct"
-    assert updates["routing_target_domain"] == "support"
-    assert updates["route_source"] == "support_issue_guard"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "support_issue_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "support_issue_direct"
+    assert updates["turn_directive"].target_domain == "support"
+    assert updates["turn_directive"].source == "support_issue_guard"
     task = updates["tasks"]["direct_support"]
     assert task.type == "support"
     assert task.payload["intent"] == "reversal_refund"
@@ -5099,11 +5405,11 @@ async def test_gate_routes_recent_transaction_reversal_to_support_before_ambigui
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "recent_transaction_support_direct"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "recent_transaction_support"
-    assert updates["routing_target_domain"] == "support"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "recent_transaction_support_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "recent_transaction_support"
+    assert updates["turn_directive"].target_domain == "support"
     task = updates["tasks"]["direct_support"]
     assert task.type == "support"
     assert task.payload["intent"] == "reversal_refund"
@@ -5158,10 +5464,10 @@ async def test_gate_recent_transaction_reversal_from_list_clarifies_instead_of_g
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "banking_coded_ambiguity_clarify"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "banking_coded_ambiguity_clarify"
     assert updates["final_response"] == "Which transaction do you want me to check?"
-    assert updates["routing_decision"] == "banking_coded_ambiguity_support"
+    assert updates["turn_directive"].decision == "banking_coded_ambiguity_support"
     assert "tasks" not in updates
 
 
@@ -5184,15 +5490,18 @@ async def test_gate_receipt_request_ambiguity_uses_support_prompt_not_account_qu
         last_message_text="Send data receipt",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "banking_coded_ambiguity_clarify"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "banking_coded_ambiguity_clarify"
     assert updates["final_response"] == "Which transaction do you want me to check?"
-    assert updates["routing_decision"] == "banking_coded_ambiguity_support"
+    assert updates["turn_directive"].decision == "banking_coded_ambiguity_support"
 
 
 async def test_gate_routes_failed_last_transaction_to_support_through_semantic_router() -> None:
@@ -5215,18 +5524,21 @@ async def test_gate_routes_failed_last_transaction_to_support_through_semantic_r
         last_message_text="My last transaction failed",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.last_context is None
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "support_issue_direct"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "support"
-    assert updates["routing_decision"] == "support_issue_direct"
-    assert updates["route_source"] == "support_issue_guard"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "support_issue_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "support"
+    assert updates["turn_directive"].decision == "support_issue_direct"
+    assert updates["turn_directive"].source == "support_issue_guard"
     task = updates["tasks"]["direct_support"]
     assert task.type == "support"
     assert task.payload["intent"] == "failed_transfer"
@@ -5253,18 +5565,21 @@ async def test_gate_routes_debited_not_received_to_support_through_semantic_rout
         last_message_text="I was debited but they didn't receive it",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.last_context is None
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "support_issue_direct"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "support"
-    assert updates["routing_decision"] == "support_issue_direct"
-    assert updates["route_source"] == "support_issue_guard"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "support_issue_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "support"
+    assert updates["turn_directive"].decision == "support_issue_direct"
+    assert updates["turn_directive"].source == "support_issue_guard"
     task = updates["tasks"]["direct_support"]
     assert task.type == "support"
     assert task.payload["intent"] == "wrong_debit"
@@ -5282,12 +5597,12 @@ async def test_gate_support_issue_falls_through_to_planner_when_semantic_router_
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "support_issue_direct"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "support_issue_direct"
-    assert updates["routing_target_domain"] == "support"
-    assert updates["route_source"] == "support_issue_guard"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "support_issue_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "support_issue_direct"
+    assert updates["turn_directive"].target_domain == "support"
+    assert updates["turn_directive"].source == "support_issue_guard"
     task = updates["tasks"]["direct_support"]
     assert task.type == "support"
     assert task.payload["intent"] == "failed_transfer"
@@ -5313,18 +5628,21 @@ async def test_gate_support_issue_uses_router_hint() -> None:
         last_message_text="My last transaction failed",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.last_context is None
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "support_issue_direct"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "support"
-    assert updates["routing_decision"] == "support_issue_direct"
-    assert updates["route_source"] == "support_issue_guard"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "support_issue_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "support"
+    assert updates["turn_directive"].decision == "support_issue_direct"
+    assert updates["turn_directive"].source == "support_issue_guard"
     task = updates["tasks"]["direct_support"]
     assert task.type == "support"
 
@@ -5349,18 +5667,21 @@ async def test_gate_support_issue_bypasses_query_route() -> None:
         last_message_text="My last transaction failed",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "support_issue_direct"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "support_issue_direct"
-    assert updates["routing_target_domain"] == "support"
-    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
-    assert updates["routing_heuristic_name"] == "support_issue_phrase"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "support_issue_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "support_issue_direct"
+    assert updates["turn_directive"].target_domain == "support"
+    assert updates["turn_directive"].heuristic_type == "guardrail_shortcut"
+    assert updates["turn_directive"].heuristic_name == "support_issue_phrase"
     task = updates["tasks"]["direct_support"]
     assert task.type == "support"
 
@@ -5385,17 +5706,20 @@ async def test_gate_support_hint_preserves_explicit_transaction_list_query() -> 
         last_message_text="show refund transactions",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.last_context is not None
     assert "candidate_domain=support" not in planner.last_context
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_target_domain"] == "query"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].target_domain == "query"
     assert updates["tasks"]["direct_query"].type == "query"
 
 
@@ -5427,18 +5751,23 @@ async def test_gate_routes_support_reference_followup_before_query() -> None:
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "support_context_direct"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "support"
-    assert updates["routing_decision"] == "support_context_followup"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "support_context_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "support"
+    assert updates["turn_directive"].decision == "support_context_followup"
     assert updates["tasks"]["direct_support"].type == "support"
 
 
@@ -5471,17 +5800,22 @@ async def test_gate_routes_support_detail_followup_before_query() -> None:
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_decision"] == "domain_support"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "domain_support"
     assert updates["tasks"]["direct_support"].type == "support"
 
 
@@ -5524,17 +5858,23 @@ async def test_gate_routes_contextual_worker_acknowledgement_before_support_issu
         },
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis, "conversation_responder": responder},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis,
+            "conversation_responder": responder,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "contextual_worker_followup"
-    assert updates["routing_decision"] == "contextual_worker_followup"
-    assert updates["routing_heuristic_name"] == "worker_acknowledgement"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "contextual_worker_followup"
+    assert updates["turn_directive"].decision == "contextual_worker_followup"
+    assert updates["turn_directive"].heuristic_name == "worker_acknowledgement"
     assert updates["final_response"] == "No worries. That transfer was successful."
     assert "tasks" not in updates
     assert responder.calls[0]["mode"] == ConversationResponseMode.CONTEXTUAL_WORKER
@@ -5559,8 +5899,8 @@ async def test_gate_contextual_worker_acknowledgement_uses_fallback_without_resp
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "contextual_worker_followup"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "contextual_worker_followup"
     assert updates["final_response"] == "Got it."
 
 
@@ -5607,13 +5947,16 @@ async def test_gate_contextual_worker_acknowledgement_handles_multilingual_failu
             ],
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "contextual_worker_followup"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "contextual_worker_followup"
     assert updates["final_response"] == expected
     assert "tasks" not in updates
 
@@ -5647,17 +5990,22 @@ async def test_gate_support_retry_followup_still_routes_to_support_context() -> 
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_decision"] == "domain_support"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "domain_support"
     assert updates["tasks"]["direct_support"].type == "support"
 
 
@@ -5690,18 +6038,23 @@ async def test_gate_does_not_route_replay_modifier_to_support_context() -> None:
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "transaction_replay_modifier_transfer"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "transaction_replay_modifier_transfer"
-    assert updates["routing_target_domain"] == "transfer"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "transaction_replay_modifier_transfer"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "transaction_replay_modifier_transfer"
+    assert updates["turn_directive"].target_domain == "transfer"
     assert updates["tasks"]["direct_transfer"].type == "transfer"
 
 
@@ -5740,14 +6093,19 @@ async def test_gate_explicit_latest_status_query_not_stolen_by_contextual_ack_or
         },
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     assert updates["tasks"]["direct_query"].type == "query"
 
 
@@ -5773,8 +6131,8 @@ async def test_gate_exact_thanks_uses_social_meta_responder_with_context() -> No
     assert responder.calls
     assert responder.calls[0]["mode"] == ConversationResponseMode.SOCIAL_META
     assert responder.calls[0]["user_ctx"][SOCIAL_META_RESPONSE_KEY_CTX] == "conversational.appreciation"
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == responder.reply
 
 
@@ -5815,15 +6173,21 @@ async def test_gate_contextual_worker_acknowledgement_does_not_steal_active_inte
         },
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "conversation_responder": responder},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "conversation_responder": responder,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert responder.calls == []
-    assert updates.get("direct_path_triggered") is None
-    assert updates["routing_decision"] == "planner_handoff"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].decision == "interrupt_handoff"
+    assert updates["turn_directive"].next_step.value == "handle_interrupt"
 
 
 async def test_gate_contextual_meta_acknowledgement_uses_brand_grounding() -> None:
@@ -5844,8 +6208,8 @@ async def test_gate_contextual_meta_acknowledgement_uses_brand_grounding() -> No
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "contextual_meta_followup"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "contextual_meta_followup"
     assert updates["final_response"] == render_message("conversational.contextual_meta_followup.brand_origin", "en")
 
 
@@ -5866,15 +6230,20 @@ async def test_gate_contextual_meta_acknowledgement_uses_responder_when_availabl
         },
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "conversation_responder": responder},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "conversation_responder": responder,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "contextual_meta_followup"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "contextual_meta_followup"
     assert updates["final_response"] == responder.reply
     assert responder.calls[0]["mode"] == ConversationResponseMode.CONTEXTUAL_META
     assert responder.calls[0]["user_ctx"]["conversation_grounding"]["last_topic"] == "brand_origin"
@@ -5905,8 +6274,8 @@ async def test_gate_contextual_worker_acknowledgement_handles_cross_worker_histo
 
         updates = await session_gate_direct_path(state, config)
 
-        assert updates["direct_path_triggered"] is True
-        assert updates["semantic_path_shape"] == "contextual_worker_followup"
+        assert "direct_path_triggered" not in updates
+        assert updates["turn_directive"].path_shape == "contextual_worker_followup"
         assert updates["final_response"] == "Got it."
 
 
@@ -5931,20 +6300,23 @@ async def test_gate_deterministic_transfer_fastpath_bypasses_router_and_planner(
         last_message_text="Send 5k to Mum",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "fresh_transfer_command"
-    assert updates["route_source"] == "transfer_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "fresh_transfer_command"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_transfer_domain"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "fresh_transfer_command"
+    assert updates["turn_directive"].source == "transfer_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "slot_parser"
+    assert updates["turn_directive"].heuristic_name == "fresh_transfer_command"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "Send 5k to Mum"
@@ -5972,20 +6344,23 @@ async def test_gate_amount_only_transfer_fastpath_still_routes_to_transfer_worke
         last_message_text="Send 10k",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "fresh_transfer_missing_recipient_command"
-    assert updates["route_source"] == "transfer_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "fresh_transfer_missing_recipient_command"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_transfer_domain"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "fresh_transfer_missing_recipient_command"
+    assert updates["turn_directive"].source == "transfer_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "slot_parser"
+    assert updates["turn_directive"].heuristic_name == "fresh_transfer_missing_recipient_command"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "Send 10k"
@@ -6003,8 +6378,8 @@ async def test_gate_date_only_scheduled_transfer_fastpath_keeps_schedule_action_
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_transfer_domain"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["action"] == "schedule_transfer"
@@ -6024,10 +6399,10 @@ async def test_gate_account_number_transfer_command_is_not_bank_details_only() -
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "fresh_transfer_command"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_transfer_domain"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "fresh_transfer_command"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "Send 5k to 8162511023"
@@ -6054,18 +6429,21 @@ async def test_gate_bank_details_only_turn_routes_to_transfer_worker() -> None:
         last_message_text="0760505261, Opay",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "recipient_bank_details_only"
-    assert updates["routing_heuristic_name"] == "recipient_bank_details_only"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_transfer_domain"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "recipient_bank_details_only"
+    assert updates["turn_directive"].heuristic_name == "recipient_bank_details_only"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "0760505261, Opay"
@@ -6089,10 +6467,10 @@ async def test_gate_labeled_forwarded_bank_details_route_to_transfer_worker() ->
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "recipient_bank_details_only"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_transfer_domain"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "recipient_bank_details_only"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert "Account Number: 0760505261" in task.payload["message"]
@@ -6118,22 +6496,25 @@ async def test_gate_batch_transfer_turn_falls_through_to_planner() -> None:
         last_message_text="okay send 10k each to mum, tolu and doyin",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
     assert "turn_context_summary" in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "batch_transfer_command"
-    assert updates["route_source"] == "transfer_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "batch_transfer_command"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "batch_transfer_command"
+    assert updates["turn_directive"].source == "transfer_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "slot_parser"
+    assert updates["turn_directive"].heuristic_name == "batch_transfer_command"
 
 
 async def test_gate_split_transfer_turn_falls_through_to_planner() -> None:
@@ -6155,22 +6536,25 @@ async def test_gate_split_transfer_turn_falls_through_to_planner() -> None:
         last_message_text="split 20k 70/30 btw mum and gaines",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
     assert "turn_context_summary" in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "batch_transfer_command"
-    assert updates["route_source"] == "transfer_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "batch_transfer_command"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "batch_transfer_command"
+    assert updates["turn_directive"].source == "transfer_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "slot_parser"
+    assert updates["turn_directive"].heuristic_name == "batch_transfer_command"
 
 
 async def test_gate_split_transfer_turn_uses_transfer_guard_under_pidgin_locale() -> None:
@@ -6192,21 +6576,24 @@ async def test_gate_split_transfer_turn_uses_transfer_guard_under_pidgin_locale(
         last_message_text="Split 20k between Adebayo and Mum",
         loaded_context={"language": "pcm"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "batch_transfer_command"
-    assert updates["route_source"] == "transfer_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "batch_transfer_command"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "batch_transfer_command"
+    assert updates["turn_directive"].source == "transfer_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "slot_parser"
+    assert updates["turn_directive"].heuristic_name == "batch_transfer_command"
 
 
 async def test_gate_multi_amount_transfer_turn_falls_through_to_planner() -> None:
@@ -6228,21 +6615,24 @@ async def test_gate_multi_amount_transfer_turn_falls_through_to_planner() -> Non
         last_message_text="Send 12k to mum and 6k to gaines",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "batch_transfer_command"
-    assert updates["route_source"] == "transfer_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "batch_transfer_command"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "batch_transfer_command"
+    assert updates["turn_directive"].source == "transfer_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "slot_parser"
+    assert updates["turn_directive"].heuristic_name == "batch_transfer_command"
 
 
 async def test_gate_multi_recipient_transfer_turn_falls_through_to_planner() -> None:
@@ -6264,21 +6654,24 @@ async def test_gate_multi_recipient_transfer_turn_falls_through_to_planner() -> 
         last_message_text="Send 10k to tolu and mum",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "batch_transfer_command"
-    assert updates["route_source"] == "transfer_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "batch_transfer_command"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "batch_transfer_command"
+    assert updates["turn_directive"].source == "transfer_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "slot_parser"
+    assert updates["turn_directive"].heuristic_name == "batch_transfer_command"
 
 
 async def test_gate_account_aware_transfer_turn_falls_through_to_planner() -> None:
@@ -6300,22 +6693,25 @@ async def test_gate_account_aware_transfer_turn_falls_through_to_planner() -> No
         last_message_text="send half my zenith to mum",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
     assert "turn_context_summary" in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "account_aware_transfer_command"
-    assert updates["route_source"] == "transfer_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "account_aware_transfer_command"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "account_aware_transfer_command"
+    assert updates["turn_directive"].source == "transfer_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "slot_parser"
+    assert updates["turn_directive"].heuristic_name == "account_aware_transfer_command"
 
 
 async def test_gate_source_first_transfer_turn_falls_through_to_planner() -> None:
@@ -6339,32 +6735,37 @@ async def test_gate_source_first_transfer_turn_falls_through_to_planner() -> Non
         last_message_text="Use GTBank to send 5k to Tolu Access for lunch",
         loaded_context={"language": "pcm"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "account_aware_transfer_command"
-    assert updates["route_source"] == "transfer_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "account_aware_transfer_command"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "account_aware_transfer_command"
+    assert updates["turn_directive"].source == "transfer_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "slot_parser"
+    assert updates["turn_directive"].heuristic_name == "account_aware_transfer_command"
 
-
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates.get("direct_path_triggered") is None
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
-    assert updates["routing_decision"] == "account_aware_transfer_command"
+    assert updates["turn_directive"].decision == "account_aware_transfer_command"
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
 
 
@@ -6404,12 +6805,21 @@ async def test_gate_deterministic_transfer_fastpath_still_executes_through_trans
             ],
         },
     )
-    gate_config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    gate_config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     gate_updates = await session_gate_direct_path(state, gate_config)
     routed_state = _apply_updates(state, gate_updates)
     execution_config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "services": {"transfer": worker}, "redis_client": None},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "services": {"transfer": worker},
+            "redis_client": None,
+        },
         "recursion_limit": 50,
     }
 
@@ -6444,12 +6854,20 @@ async def test_gate_language_switch_question_runs_before_semantic_router_and_pla
         last_message_text="Can you switch to Pidgin?",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": None}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["loaded_context"]["language"] == "pcm"
     assert updates["loaded_context"]["detected_language"] == "pcm"
     assert updates["final_response"] == render_locale_switched("pcm")
@@ -6481,12 +6899,20 @@ async def test_gate_language_switch_question_runs_during_pending_interrupt_witho
         waves=[["t1"]],
         current_wave_index=0,
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": None}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["loaded_context"]["language"] == "yo"
     assert updates["loaded_context"]["detected_language"] == "yo"
     assert updates["final_response"] == render_locale_switched("yo")
@@ -6522,13 +6948,18 @@ async def test_gate_semantic_router_locale_switch_persists_language_in_redis(mon
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["loaded_context"]["language"] == "ha"
     assert updates["final_response"] == render_locale_switched("ha")
     assert redis_client.set_calls
@@ -6574,14 +7005,22 @@ async def test_gate_routes_recent_transactions_without_semantic_router() -> None
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": None}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
     assert planner.frame_followup_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my recent transactions"
@@ -6613,14 +7052,19 @@ async def test_gate_handles_explicit_language_switch_deterministically_before_se
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["loaded_context"]["language"] == "pcm"
     assert updates["final_response"] == render_locale_switched("pcm")
     assert redis_client.store["user:2348000000007:language"] == "pcm"
@@ -6651,14 +7095,19 @@ async def test_gate_handles_pidgin_language_switch_question_with_typo(monkeypatc
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["loaded_context"]["language"] == "pcm"
     assert updates["final_response"] == render_locale_switched("pcm")
     assert redis_client.store["user:2348000000009:language"] == "pcm"
@@ -6676,13 +7125,13 @@ async def test_gate_english_domain_fastpath_still_applies_with_non_english_local
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_account_domain"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "deterministic_account_domain"
-    assert updates["route_source"] == "account_domain_guard"
-    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
-    assert updates["routing_heuristic_name"] == "account_domain_request"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_account_domain"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "deterministic_account_domain"
+    assert updates["turn_directive"].source == "account_domain_guard"
+    assert updates["turn_directive"].heuristic_type == "guardrail_shortcut"
+    assert updates["turn_directive"].heuristic_name == "account_domain_request"
 
 
 async def test_gate_non_english_domain_phrase_falls_through_safely(monkeypatch) -> None:
@@ -6710,17 +7159,22 @@ async def test_gate_non_english_domain_phrase_falls_through_safely(monkeypatch) 
         loaded_context={"language": "yo"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert not updates.get("direct_path_triggered", False)
+    assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_handoff"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "planner_handoff"
 
 
 async def test_gate_semantic_router_direct_reply_does_not_override_explicit_locale(monkeypatch) -> None:
@@ -6750,13 +7204,18 @@ async def test_gate_semantic_router_direct_reply_does_not_override_explicit_loca
         loaded_context={"language": "pcm"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == render_message("conversational.greeting", "pcm")
     assert "loaded_context" not in updates or updates["loaded_context"]["language"] == "pcm"
 
@@ -6907,11 +7366,14 @@ async def test_gate_resume_prompt_accepts_terse_replies_without_semantic_router(
         context_frames=[_resume_prompt_frame()],
         stashed_sessions=[_stashed_transfer_session()],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "resume_session_direct"
+    assert updates["turn_directive"].path_shape == "resume_session_direct"
     assert planner.route_calls == 0
     task = next(iter(updates["tasks"].values()))
     assert task.type == "orchestrator"
@@ -6945,11 +7407,14 @@ async def test_gate_resume_prompt_accepts_localized_replies_without_semantic_rou
         context_frames=[_resume_prompt_frame()],
         stashed_sessions=[_stashed_transfer_session()],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "resume_session_direct"
+    assert updates["turn_directive"].path_shape == "resume_session_direct"
     assert planner.route_calls == 0
     task = next(iter(updates["tasks"].values()))
     assert task.type == "orchestrator"
@@ -6967,11 +7432,14 @@ async def test_gate_resume_prompt_dismisses_terse_replies_without_semantic_route
         context_frames=[_resume_prompt_frame()],
         stashed_sessions=[_stashed_transfer_session()],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "dismiss_resume_session_direct"
+    assert updates["turn_directive"].path_shape == "dismiss_resume_session_direct"
     assert planner.route_calls == 0
     task = next(iter(updates["tasks"].values()))
     assert task.payload["action"] == "dismiss_resume_session"
@@ -7000,11 +7468,14 @@ async def test_gate_resume_prompt_dismisses_localized_replies_without_semantic_r
         context_frames=[_resume_prompt_frame()],
         stashed_sessions=[_stashed_transfer_session()],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "dismiss_resume_session_direct"
+    assert updates["turn_directive"].path_shape == "dismiss_resume_session_direct"
     assert planner.route_calls == 0
     task = next(iter(updates["tasks"].values()))
     assert task.payload["action"] == "dismiss_resume_session"
@@ -7028,11 +7499,14 @@ async def test_gate_resume_prompt_uses_guarded_classifier_fallback_without_seman
         context_frames=[_resume_prompt_frame()],
         stashed_sessions=[_stashed_transfer_session()],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "resume_session_direct"
+    assert updates["turn_directive"].path_shape == "resume_session_direct"
     assert planner.confirmation_calls == 1
     assert planner.route_calls == 0
     task = next(iter(updates["tasks"].values()))
@@ -7058,11 +7532,14 @@ async def test_gate_resume_prompt_does_not_capture_fresh_transfer_request() -> N
         context_frames=[_resume_prompt_frame()],
         stashed_sessions=[_stashed_transfer_session()],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] != "resume_session_direct"
+    assert updates["turn_directive"].path_shape != "resume_session_direct"
     assert planner.route_calls == 1
     assert next(iter(updates["tasks"].values())).type == "transfer"
 
@@ -7191,8 +7668,8 @@ async def test_gate_deterministic_social_meta_uses_conversation_responder(
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == responder.reply
     assert responder.calls
     assert responder.calls[0]["mode"] == ConversationResponseMode.SOCIAL_META
@@ -7280,12 +7757,15 @@ async def test_gate_semantic_router_can_bypass_planner_with_direct_response() ->
         last_message_text="help me",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert isinstance(updates.get("final_response"), str)
     assert updates["loaded_context"]["language"] == "pcm"
 
@@ -7313,7 +7793,10 @@ async def test_gate_semantic_router_context_omits_account_and_beneficiary_previe
             "beneficiaries": [{"alias": "Mum", "bank_name": "Opay", "account_number": "8162511023"}],
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
@@ -7321,7 +7804,7 @@ async def test_gate_semantic_router_context_omits_account_and_beneficiary_previe
     assert planner.last_context is not None
     assert "ACCOUNTS:" not in planner.last_context
     assert "BENEFICIARIES:" not in planner.last_context
-    assert updates["routing_decision"] == "planner_handoff"
+    assert updates["turn_directive"].decision == "planner_handoff"
 
 
 async def test_gate_semantic_router_missing_reply_for_non_banking_turn_falls_back_to_redirect(
@@ -7355,13 +7838,16 @@ async def test_gate_semantic_router_missing_reply_for_non_banking_turn_falls_bac
         last_message_text="How do your limits work?",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_direct"
     assert updates["final_response"] == render_message("conversational.out_of_scope", "en")
     assert not any(event == "unexpected_turn_route_breadcrumb" for event, _ in events)
 
@@ -7389,14 +7875,19 @@ async def test_gate_semantic_router_missing_reply_uses_conversation_responder_fo
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "conversation_responder": responder},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "conversation_responder": responder,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_direct"
     assert updates["final_response"] == responder.reply
     assert responder.calls
     assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
@@ -7427,7 +7918,10 @@ async def test_gate_semantic_router_can_answer_grounded_account_follow_up_withou
             ],
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
@@ -7435,7 +7929,7 @@ async def test_gate_semantic_router_can_answer_grounded_account_follow_up_withou
     assert planner.plan_calls == 0
     assert "ACCOUNTS:" in (planner.last_context or "")
     assert "First Bank" in (planner.last_context or "")
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == "Your First Bank account is linked, but it is not ready for payments yet."
 
 
@@ -7469,13 +7963,16 @@ async def test_gate_no_longer_overrides_meta_router_reply_with_grounded_account_
             ],
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == render_message("conversational.identity", "en")
 
 
@@ -7503,13 +8000,16 @@ async def test_gate_semantic_router_can_answer_grounded_account_follow_up_with_t
             ],
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == "Your First Bank account is linked, but it is not ready for payments yet."
 
 
@@ -7542,7 +8042,10 @@ async def test_gate_semantic_router_can_answer_grounded_beneficiary_follow_up_wi
             ],
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
@@ -7550,7 +8053,7 @@ async def test_gate_semantic_router_can_answer_grounded_beneficiary_follow_up_wi
     assert planner.plan_calls == 0
     assert "BENEFICIARIES:" in (planner.last_context or "")
     assert "Mum" in (planner.last_context or "")
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == "Yes, you still have Mum saved on Opay ending in 1023."
 
 
@@ -7583,7 +8086,10 @@ async def test_gate_semantic_router_can_answer_grounded_beneficiary_preview_with
             ],
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
@@ -7591,7 +8097,7 @@ async def test_gate_semantic_router_can_answer_grounded_beneficiary_preview_with
     assert planner.plan_calls == 0
     assert "BENEFICIARIES:" in (planner.last_context or "")
     assert "Tolu" in (planner.last_context or "")
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == "You have Tolu Adedayo on First Bank ending in 5261."
 
 
@@ -7625,7 +8131,10 @@ async def test_gate_semantic_router_can_answer_grounded_default_account_follow_u
             ],
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
@@ -7633,7 +8142,7 @@ async def test_gate_semantic_router_can_answer_grounded_default_account_follow_u
     assert planner.plan_calls == 0
     assert "ACCOUNTS:" in (planner.last_context or "")
     assert "default" in (planner.last_context or "").lower()
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == "Your default account is Zenith Bank ending in 9384."
 
 
@@ -7664,15 +8173,20 @@ async def test_gate_semantic_router_can_answer_grounded_query_follow_up_without_
             return None
 
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": _RedisWithQuerySession()},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": _RedisWithQuerySession(),
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_direct"
     assert updates["final_response"] == "Yes. The transactions shown after that include more debits."
 
 
@@ -7705,13 +8219,16 @@ async def test_gate_semantic_router_can_answer_grounded_flow_recap_without_plann
         waves=[["t1"]],
         current_wave_index=0,
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "direct_context_recap"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "direct_context_recap"
     assert updates["final_response"] == "We are still in your transfer flow. Continue with that flow."
 
 
@@ -7734,11 +8251,14 @@ async def test_gate_semantic_router_out_of_scope_includes_empathy_and_redirect()
         last_message_text="I am very hungry",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == "I hear you.\n" + render_message("conversational.out_of_scope", "en")
 
 
@@ -7761,11 +8281,14 @@ async def test_gate_semantic_router_out_of_scope_without_empathy_uses_redirect_o
         last_message_text="book me a flight",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == render_message("conversational.out_of_scope", "en")
 
 
@@ -7792,16 +8315,21 @@ async def test_gate_joke_request_uses_casual_conversation_responder_before_seman
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "conversation_responder": responder},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "conversation_responder": responder,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "meta_direct"
     assert updates["final_response"] == responder.reply
     assert responder.calls
     assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
@@ -7831,16 +8359,21 @@ async def test_gate_joke_request_ignores_semantic_banking_refusal_and_uses_respo
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "conversation_responder": responder},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "conversation_responder": responder,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_decision"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "meta_direct"
     assert updates["final_response"] == responder.reply
     assert responder.calls
     assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
@@ -7884,15 +8417,20 @@ async def test_gate_contextual_casual_followup_bypasses_semantic_router_to_respo
         },
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "conversation_responder": responder},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "conversation_responder": responder,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "contextual_casual_followup"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "contextual_casual_followup"
     assert updates["final_response"] == responder.reply
     assert responder.calls
 
@@ -7949,7 +8487,12 @@ async def test_gate_contextual_fact_followup_skips_stale_transaction_frame() -> 
         ],
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "conversation_responder": responder},
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "conversation_responder": responder,
+        },
         "recursion_limit": 50,
     }
 
@@ -7957,8 +8500,8 @@ async def test_gate_contextual_fact_followup_skips_stale_transaction_frame() -> 
 
     assert planner.frame_followup_calls == 0
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "contextual_casual_followup"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "contextual_casual_followup"
     assert updates["final_response"] == responder.reply
     assert responder.calls
 
@@ -8005,11 +8548,14 @@ async def test_gate_show_details_still_uses_stale_transaction_frame() -> None:
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Transaction Details" in updates["final_response"]
     assert "₦10,000 transfer to Tolu Adebayo" in updates["final_response"]
 
@@ -8056,11 +8602,14 @@ async def test_gate_transfer_more_request_still_uses_transaction_frame() -> None
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Transaction Details" in updates["final_response"]
     assert "₦10,000 transfer to Tolu Adebayo" in updates["final_response"]
 
@@ -8084,15 +8633,18 @@ async def test_gate_obvious_mixed_transaction_sets_expected_executors_without_se
         last_message_text="send 10k and buy 5k airtime",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates.get("direct_path_triggered") is None
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_mixed"
-    assert updates["route_source"] == "mixed_transaction_guard"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "planner_mixed"
+    assert updates["turn_directive"].source == "mixed_transaction_guard"
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
 
 
@@ -8117,15 +8669,18 @@ async def test_gate_obvious_mixed_transfer_airtime_bypasses_semantic_router_and_
         last_message_text="send 10k to mum and buy me 2k airtime",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates.get("direct_path_triggered") is None
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_mixed"
-    assert updates["route_source"] == "mixed_transaction_guard"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "planner_mixed"
+    assert updates["turn_directive"].source == "mixed_transaction_guard"
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
     assert "tasks" not in updates
 
@@ -8149,14 +8704,17 @@ async def test_gate_mixed_transfer_airtime_with_source_suffix_stays_planner_mixe
         last_message_text="Send 10 to adebayo and buy me 2k airtime from my gtb",
         loaded_context={"language": "pcm"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_mixed"
-    assert updates["route_source"] == "mixed_transaction_guard"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "planner_mixed"
+    assert updates["turn_directive"].source == "mixed_transaction_guard"
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
     assert "tasks" not in updates
 
@@ -8182,15 +8740,18 @@ async def test_gate_obvious_mixed_transfer_data_bypasses_semantic_router_and_fal
         last_message_text="buy 1GB MTN data for me and send 2k to Mum",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates.get("direct_path_triggered") is None
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_mixed"
-    assert updates["route_source"] == "mixed_transaction_guard"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "planner_mixed"
+    assert updates["turn_directive"].source == "mixed_transaction_guard"
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "data"]
     assert "tasks" not in updates
 
@@ -8223,13 +8784,17 @@ async def test_gate_skips_semantic_router_for_live_pending_interrupt() -> None:
             )
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates.get("direct_path_triggered") is None
-    assert updates["routing_decision"] == "planner_handoff"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].decision == "interrupt_handoff"
+    assert updates["turn_directive"].next_step.value == "handle_interrupt"
 
 
 async def test_gate_skips_semantic_router_for_numeric_input_source_selection_interrupt() -> None:
@@ -8265,13 +8830,17 @@ async def test_gate_skips_semantic_router_for_numeric_input_source_selection_int
             )
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates.get("direct_path_triggered") is None
-    assert updates["routing_decision"] == "planner_handoff"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].decision == "interrupt_handoff"
+    assert updates["turn_directive"].next_step.value == "handle_interrupt"
 
 
 async def test_gate_active_query_balance_request_uses_semantic_router() -> None:
@@ -8297,15 +8866,18 @@ async def test_gate_active_query_balance_request_uses_semantic_router() -> None:
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         active_domain="query",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_decision"] == "domain_account"
-    assert updates["routing_target_domain"] == "account"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].decision == "domain_account"
+    assert updates["turn_directive"].target_domain == "account"
     assert updates["session_stack"] == []
     assert updates["active_domain"] is None
     task = updates["tasks"]["direct_account"]
@@ -8335,14 +8907,17 @@ async def test_gate_active_query_bank_specific_balance_request_uses_semantic_rou
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         active_domain="query",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_decision"] == "domain_account"
-    assert updates["routing_target_domain"] == "account"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].decision == "domain_account"
+    assert updates["turn_directive"].target_domain == "account"
     assert updates["session_stack"] == []
     assert updates["active_domain"] is None
     task = updates["tasks"]["direct_account"]
@@ -8372,13 +8947,16 @@ async def test_gate_query_session_does_not_swallow_full_query_restatement_as_fas
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         active_domain="query",
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my last transaction"
@@ -8406,13 +8984,16 @@ async def test_gate_routes_last_transaction_surface_to_structured_path() -> None
         last_message_text="Show my last transaction",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my last transaction"
@@ -8446,13 +9027,16 @@ async def test_gate_blocks_router_direct_text_for_linked_accounts_surface() -> N
             ],
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_account_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_account_domain"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
 
@@ -8470,7 +9054,7 @@ async def test_gate_balance_fastpath_does_not_swallow_mixed_transaction_and_bala
     updates = await session_gate_direct_path(state, config)
 
     assert "turn_context_summary" in updates
-    assert updates.get("semantic_path_shape") is None
+    assert "path_shape" not in updates
 
 
 async def test_gate_query_session_ignores_generic_checkin_direct_response_for_follow_up_question() -> None:
@@ -8497,13 +9081,16 @@ async def test_gate_query_session_ignores_generic_checkin_direct_response_for_fo
         active_domain="query",
         context_frames=[_active_query_context_frame(summary_text="No spend yesterday.")],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Really?"
@@ -8533,27 +9120,30 @@ async def test_gate_routes_show_me_active_query_followup_directly_to_query_worke
             _active_query_context_frame(
                 summary_text="You spent ₦60,000 on mum this week.",
                 query_contract={
-                "intent": "analytics_summary",
-                "time_start": "2026-03-16",
-                "time_end": "2026-03-19",
-                "timezone": "Africa/Lagos",
-                "normalized_query": {
                     "intent": "analytics_summary",
-                    "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
-                    "filters": {"transaction_type": "debit", "merchant": ["mum"]},
-                    "accounts_scope": "all",
-                },
+                    "time_start": "2026-03-16",
+                    "time_end": "2026-03-19",
+                    "timezone": "Africa/Lagos",
+                    "normalized_query": {
+                        "intent": "analytics_summary",
+                        "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
+                        "filters": {"transaction_type": "debit", "merchant": ["mum"]},
+                        "accounts_scope": "all",
+                    },
                 },
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "show me"
@@ -8584,27 +9174,30 @@ async def test_gate_routes_last_week_active_query_followup_directly_to_query_wor
             _active_query_context_frame(
                 summary_text="You spent ₦60,000 on mum this week.",
                 query_contract={
-                "intent": "analytics_summary",
-                "time_start": "2026-03-16",
-                "time_end": "2026-03-19",
-                "timezone": "Africa/Lagos",
-                "normalized_query": {
                     "intent": "analytics_summary",
-                    "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
-                    "filters": {"transaction_type": "debit", "merchant": ["mum"]},
-                    "accounts_scope": "all",
-                },
+                    "time_start": "2026-03-16",
+                    "time_end": "2026-03-19",
+                    "timezone": "Africa/Lagos",
+                    "normalized_query": {
+                        "intent": "analytics_summary",
+                        "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
+                        "filters": {"transaction_type": "debit", "merchant": ["mum"]},
+                        "accounts_scope": "all",
+                    },
                 },
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What about last week"
@@ -8634,27 +9227,30 @@ async def test_gate_routes_how_much_total_active_query_followup_directly_to_quer
             _active_query_context_frame(
                 summary_text="You showed 5 transactions to Mum this month.",
                 query_contract={
-                "intent": "transaction_list",
-                "time_start": "2026-03-01",
-                "time_end": "2026-03-19",
-                "timezone": "Africa/Lagos",
-                "normalized_query": {
                     "intent": "transaction_list",
-                    "time_range": {"start": "2026-03-01", "end": "2026-03-19", "granularity": "month"},
-                    "filters": {"transaction_type": "debit", "merchant": ["mum"]},
-                    "accounts_scope": "all",
-                },
+                    "time_start": "2026-03-01",
+                    "time_end": "2026-03-19",
+                    "timezone": "Africa/Lagos",
+                    "normalized_query": {
+                        "intent": "transaction_list",
+                        "time_range": {"start": "2026-03-01", "end": "2026-03-19", "granularity": "month"},
+                        "filters": {"transaction_type": "debit", "merchant": ["mum"]},
+                        "accounts_scope": "all",
+                    },
                 },
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "How much total"
@@ -8698,25 +9294,28 @@ async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monke
             _active_query_context_frame(
                 summary_text="You spent ₦60,000 on mum this week.",
                 query_contract={
-                "intent": "analytics_summary",
-                "time_start": "2026-03-16",
-                "time_end": "2026-03-19",
-                "timezone": "Africa/Lagos",
-                "normalized_query": {
                     "intent": "analytics_summary",
-                    "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
-                    "filters": {"transaction_type": "debit", "merchant": ["mum"]},
-                    "accounts_scope": "all",
-                },
+                    "time_start": "2026-03-16",
+                    "time_end": "2026-03-19",
+                    "timezone": "Africa/Lagos",
+                    "normalized_query": {
+                        "intent": "analytics_summary",
+                        "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
+                        "filters": {"transaction_type": "debit", "merchant": ["mum"]},
+                        "accounts_scope": "all",
+                    },
                 },
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     assert (
         "gate_semantic_router_domain_dispatch",
         {
@@ -8749,13 +9348,16 @@ async def test_gate_exits_active_query_session_on_greeting_direct_reply() -> Non
         active_domain="query",
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message("conversational.greeting", "en")
     assert updates.get("active_domain") is None
     assert updates["session_stack"] == []
@@ -8794,8 +9396,8 @@ async def test_gate_semantic_router_cancel_response_clears_query_state() -> None
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_direct"
     assert updates["final_response"] == render_cancelled_prompt("en")
     assert updates.get("active_domain") is None
     assert updates["session_stack"] == []
@@ -8813,8 +9415,9 @@ async def test_gate_explicit_cancel_without_active_state_returns_clarify() -> No
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == render_message("conversational.clarify", "en")
+
 
 async def test_gate_explicit_cancel_during_pending_query_clarification_uses_query_goodbye() -> None:
     state = OrchestratorState(
@@ -8830,7 +9433,7 @@ async def test_gate_explicit_cancel_during_pending_query_clarification_uses_quer
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["final_response"] == render_cancelled_prompt("en")
     assert updates.get("active_domain") is None
     assert updates["session_stack"] == []
@@ -8861,16 +9464,21 @@ async def test_gate_pending_query_clarification_time_reply_uses_semantic_router(
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"redis_client": redis_client, "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "configurable": {
+            "redis_client": redis_client,
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+        },
         "recursion_limit": 50,
     }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_decision"] == "domain_query"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].decision == "domain_query"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "last 3 days"
@@ -8907,14 +9515,17 @@ async def test_gate_stale_query_interrupt_is_cleared_before_fresh_query_routing(
             )
         },
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert updates["pending_interrupt"] is None
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     assert planner.last_context is not None
     assert "candidate_domain=query" in planner.last_context
     task = updates["tasks"]["direct_query"]
@@ -8940,11 +9551,11 @@ async def test_gate_direct_path_cancel_and_balance_cleans_query_and_runs_balance
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "balance_direct"
-    assert updates["route_source"] == "account_balance_guard"
-    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
-    assert updates["routing_heuristic_name"] == "balance_request"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "balance_direct"
+    assert updates["turn_directive"].source == "account_balance_guard"
+    assert updates["turn_directive"].heuristic_type == "guardrail_shortcut"
+    assert updates["turn_directive"].heuristic_name == "balance_request"
     assert updates["waves"] == [["direct_account_balance"]]
     task = updates["tasks"]["direct_account_balance"]
     assert task.type == "account"
@@ -8992,8 +9603,8 @@ async def test_gate_lending_request_blocks_even_with_stale_support_context() -> 
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable_lending",
         "en",
@@ -9016,8 +9627,8 @@ async def test_gate_melkor_easter_egg_deterministic() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "meta_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "meta_direct"
     assert "Nice try, Melkor." in updates["final_response"]
     assert "The music is not changing today." in updates["final_response"]
     assert "Back to banking: I can help with transfers" in updates["final_response"]
@@ -9055,13 +9666,14 @@ async def test_gate_melkor_easter_egg_semantic() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "semantic_router_direct"
     assert "Nice try, Melkor." in updates["final_response"]
     assert "The music is not changing today." in updates["final_response"]
     assert "Mu koma banking: Zan iya taimakawa" in updates["final_response"]
     assert "And thou Melkor shalt see" not in updates["final_response"]
 
     from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import conversation_topic_for_response
+
     topic = conversation_topic_for_response(updates["final_response"], response_key="meta.melkor_easter_egg")
     assert topic == "unsupported_boundary"

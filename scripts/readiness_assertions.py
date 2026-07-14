@@ -9,6 +9,13 @@ from scripts.readiness_models import ReadinessMode, ReadinessTurn
 from scripts.readiness_rendering import duplicate_visible_blocks
 
 
+def _directive_field(metadata: dict[str, Any], field: str) -> Any:
+    directive = metadata.get("turn_directive")
+    if isinstance(directive, dict):
+        return directive.get(field)
+    return getattr(directive, field, None)
+
+
 def assert_readiness_turn(
     turn: ReadinessTurn,
     response: str,
@@ -53,14 +60,22 @@ def assert_readiness_turn(
 
     route_metadata = route_metadata or {}
     if enforce_route_expectations:
-        route_expectations = {
-            "semantic_path_shape": expectation.expect_path_shape,
-            "routing_owner": expectation.expect_routing_owner,
-            "routing_decision": expectation.expect_routing_decision,
-        }
-        for key, expected in route_expectations.items():
-            if expected is not None and route_metadata.get(key) != expected:
-                errors.append(f"expected {key}={expected!r}; got {route_metadata.get(key)!r}")
+        route_expectations = (
+            (
+                "turn_directive.path_shape",
+                expectation.expect_path_shape,
+                _directive_field(route_metadata, "path_shape"),
+            ),
+            ("turn_directive.owner", expectation.expect_routing_owner, _directive_field(route_metadata, "owner")),
+            (
+                "turn_directive.decision",
+                expectation.expect_routing_decision,
+                _directive_field(route_metadata, "decision"),
+            ),
+        )
+        for key, expected, actual in route_expectations:
+            if expected is not None and actual != expected:
+                errors.append(f"expected {key}={expected!r}; got {actual!r}")
 
     if expectation.expect_task_types is not None and task_types != expectation.expect_task_types:
         errors.append(f"expected task types {expectation.expect_task_types}; got {task_types}")
@@ -126,6 +141,11 @@ def assert_readiness_turn(
             if actual_count != expected_count:
                 errors.append(f"expected {expected_count} {event_name} calls; got {actual_count}")
 
+    if expectation.llm_call_budget is not None:
+        budget_status, budget_violations = expectation.llm_call_budget.evaluate(llm_calls, mode=mode)
+        if budget_status == "exceeded":
+            errors.extend(f"LLM budget exceeded: {violation}" for violation in budget_violations)
+
     metadata_expectations = {
         "active_domain": expectation.expect_active_domain,
         "session_state": expectation.expect_session_state,
@@ -157,11 +177,11 @@ def task_types_from_response(response: dict[str, Any]) -> tuple[str, ...]:
     if isinstance(expected_raw, list):
         return tuple(str(item) for item in expected_raw)
 
-    route_domain = response.get("routing_target_domain")
+    route_domain = _directive_field(response, "target_domain")
     if isinstance(route_domain, str) and route_domain:
         return (route_domain,)
 
-    path_shape = response.get("semantic_path_shape")
+    path_shape = _directive_field(response, "path_shape")
     if not isinstance(path_shape, str):
         return ()
     if "transfer" in path_shape:

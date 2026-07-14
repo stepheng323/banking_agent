@@ -13,7 +13,6 @@ from pydantic import ValidationError
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_models import PlannerPromptSignals
-from shared.config.settings import settings
 from shared.types.planner import (
     AirtimeTaskParameters,
     DataTaskParameters,
@@ -105,10 +104,7 @@ def test_task_planner_falls_back_to_interrupt_model_for_semantic_router_when_not
     assert router.structured_schedule_read_router == "semantic:SemanticRouteDecision"
 
 
-async def test_task_planner_route_semantic_turn_uses_shared_structured_invocation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "llm_response_cache_enabled", False)
+async def test_task_planner_route_semantic_turn_uses_shared_structured_invocation() -> None:
     router_llm = _StructuredFakeLLM(
         {
             "SemanticRouteDecision": {
@@ -186,10 +182,7 @@ async def test_task_planner_quoted_replay_uses_shared_structured_invocation() ->
     assert "Quoted failed transfer receipt" in planner.structured_quoted_replay.last_messages[1]["content"]
 
 
-async def test_task_planner_uses_narrow_transfer_output_schema_for_transfer_only_prompt(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "llm_response_cache_enabled", False)
+async def test_task_planner_uses_narrow_transfer_output_schema_for_transfer_only_prompt() -> None:
     planner_llm = _StructuredFakeLLM(
         {
             "PlannerOutputTransferOnly": {

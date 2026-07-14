@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_interr
     INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL,
     PENDING_ACTION_EDIT_SYSTEM_PROMPT,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_atoms import PLANNER_RULE_ATOMS
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_models import (
     PlannerPromptBuildInput,
     PlannerPromptSignals,
@@ -120,6 +121,12 @@ def test_multilingual_safety_rules_present() -> None:
     """Prompt should state language-agnostic routing and disambiguation boundaries."""
     runtime_prompt, _, _ = _build_prompt("How far", "None")
     assert "R23_MULTILINGUAL_SAFETY" in runtime_prompt
+
+
+def test_ranked_query_response_shape_rule_covers_ranking_synonyms() -> None:
+    response_shape_rule = PLANNER_RULE_ATOMS["R28_RESPONSE_SHAPE"]
+
+    assert "last/latest/most/highest/top/biggest/largest=detail" in response_shape_rule
 
 
 def test_follow_up_referent_binding_rules_present() -> None:

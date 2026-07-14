@@ -145,5 +145,3 @@ def test_clause_repair_adds_missing_transfer_task_for_mixed_transfer_airtime() -
     assert transfer_task.parameters.amount == 10
     assert transfer_task.parameters.recipient_name == "adebayo"
     assert transfer_task.parameters.source_bank_name == "GTBank"
-
-

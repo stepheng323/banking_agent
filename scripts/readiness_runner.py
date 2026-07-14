@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -109,17 +110,25 @@ class DeterministicReadinessPlanner:
         )
 
 
+def _repeat_scenarios(scenarios: tuple[ReadinessScenario, ...], repeat: int) -> tuple[ReadinessScenario, ...]:
+    if repeat < 1:
+        raise ValueError("repeat must be at least 1")
+    if repeat == 1:
+        return scenarios
+    return tuple(
+        replace(scenario, id=f"{scenario.id}[run-{iteration}]")
+        for iteration in range(1, repeat + 1)
+        for scenario in scenarios
+    )
+
+
 def _route_metadata_from_state(state: OrchestratorState) -> dict[str, Any]:
     pending = state.pending_query_clarification if isinstance(state.pending_query_clarification, dict) else {}
     pending_payload = pending.get("pending_clarification")
     clarification = pending_payload if isinstance(pending_payload, dict) else pending
+    directive = state.turn_directive.model_dump(mode="json") if state.turn_directive else None
     return {
-        "semantic_path_shape": state.semantic_path_shape,
-        "routing_owner": state.routing_owner,
-        "routing_decision": state.routing_decision,
-        "routing_target_domain": state.routing_target_domain,
-        "routing_mode": state.routing_mode,
-        "route_source": state.route_source,
+        "turn_directive": directive,
         "planner_clean": state.planner_clean,
         "planner_dirty_reasons": list(state.planner_dirty_reasons),
         "active_domain": state.active_domain,
@@ -130,13 +139,14 @@ def _route_metadata_from_state(state: OrchestratorState) -> dict[str, Any]:
 
 
 def _base_deterministic_state(*, scenario_id: str) -> OrchestratorState:
+    base_scenario_id = scenario_id.split("[run-", 1)[0]
     state = OrchestratorState(
         user_id=f"readiness_{scenario_id}",
         phone_number="2348162511023",
         channel="whatsapp",
         loaded_context={"language": "en"},
     )
-    if scenario_id == "unsupported":
+    if base_scenario_id == "unsupported":
         state = state.model_copy(
             update={
                 "capability_boundary": None,
@@ -164,8 +174,9 @@ async def run_deterministic_readiness(
     *,
     scenario_name: ReadinessScenarioName,
     stop_on_fail: bool = False,
+    repeat: int = 1,
 ) -> ReadinessRunResult:
-    scenarios = resolve_scenarios(scenario_name)
+    scenarios = _repeat_scenarios(resolve_scenarios(scenario_name), repeat)
     planner = DeterministicReadinessPlanner()
     states = {scenario.id: _base_deterministic_state(scenario_id=scenario.id) for scenario in scenarios}
 
@@ -175,15 +186,7 @@ async def run_deterministic_readiness(
         per_turn_reset = {
             "final_response": None,
             "policy_notice": None,
-            "direct_path_triggered": False,
-            "semantic_path_shape": None,
-            "routing_owner": None,
-            "routing_decision": None,
-            "routing_target_domain": None,
-            "routing_mode": None,
-            "route_source": None,
-            "routing_heuristic_type": None,
-            "routing_heuristic_name": None,
+            "turn_directive": None,
             "planner_used": False,
             "suppress_empty_fallback": False,
         }
@@ -341,6 +344,7 @@ async def run_dry_run_readiness(
     seed: bool = False,
     reset_session: bool = False,
     stop_on_fail: bool = False,
+    repeat: int = 1,
 ) -> ReadinessRunResult:
     target_user = await _resolve_target_user(phone)
     if seed:
@@ -351,12 +355,12 @@ async def run_dry_run_readiness(
     if user is None:
         raise RuntimeError(f"Could not load user {target_user.phone_number}")
 
-    scenarios = resolve_scenarios(scenario_name)
+    scenarios = _repeat_scenarios(resolve_scenarios(scenario_name), repeat)
     run_id = uuid.uuid4().hex[:8]
     reset_scenarios: set[str] = set()
 
     async def before_scenario(scenario: ReadinessScenario) -> None:
-        if not reset_session or scenario.id in reset_scenarios:
+        if not (reset_session or repeat > 1) or scenario.id in reset_scenarios:
             return
         deleted = await reset_redis_session(
             redis_client=redis_client,
@@ -415,12 +419,7 @@ async def run_dry_run_readiness(
         route_metadata = {
             key: response.get(key)
             for key in (
-                "semantic_path_shape",
-                "routing_owner",
-                "routing_decision",
-                "routing_target_domain",
-                "routing_mode",
-                "route_source",
+                "turn_directive",
                 "planner_clean",
                 "planner_dirty_reasons",
             )
@@ -454,9 +453,10 @@ async def run_readiness(
     seed: bool = False,
     reset_session: bool = False,
     stop_on_fail: bool = False,
+    repeat: int = 1,
 ) -> ReadinessRunResult:
     if mode == "deterministic":
-        return await run_deterministic_readiness(scenario_name=scenario, stop_on_fail=stop_on_fail)
+        return await run_deterministic_readiness(scenario_name=scenario, stop_on_fail=stop_on_fail, repeat=repeat)
     if not phone:
         raise ValueError("--phone is required in dry-run mode")
     return await run_dry_run_readiness(
@@ -467,6 +467,7 @@ async def run_readiness(
         seed=seed,
         reset_session=reset_session,
         stop_on_fail=stop_on_fail,
+        repeat=repeat,
     )
 
 
@@ -480,6 +481,7 @@ def run_readiness_sync(
     seed: bool = False,
     reset_session: bool = False,
     stop_on_fail: bool = False,
+    repeat: int = 1,
     json_output: str | None = None,
     transcript_output: str | None = None,
 ) -> int:
@@ -493,6 +495,7 @@ def run_readiness_sync(
             seed=seed,
             reset_session=reset_session,
             stop_on_fail=stop_on_fail,
+            repeat=repeat,
         )
     )
     readiness_report.print_readiness_report(result)

@@ -93,6 +93,6 @@ async def test_planner_blocks_more_than_five_transaction_batch_tasks() -> None:
         f"You asked for {requested_count}. Please send the first {MAX_TRANSACTION_BATCH_TASKS} now, "
         "then I can help with the rest."
     )
-    assert updates["routing_decision"] == "transaction_batch_limit"
+    assert updates["turn_directive"].decision == "transaction_batch_limit"
     assert "tasks" not in updates
     assert "waves" not in updates

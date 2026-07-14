@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -19,6 +20,7 @@ ReadinessOutcome = Literal[
     "unsafe_execution",
     "unsupported_gracefully",
 ]
+LLMBudgetStatus = Literal["within_budget", "exceeded", "observed"]
 ReadinessScenarioName = Literal[
     "all",
     "core",
@@ -43,6 +45,62 @@ ReadinessScenarioName = Literal[
 ]
 
 
+def _turn_directive_metadata(route_metadata: dict[str, Any]) -> dict[str, Any] | None:
+    value = route_metadata.get("turn_directive")
+    return value if isinstance(value, dict) else None
+
+
+@dataclass(frozen=True)
+class LLMCallBudget:
+    """Per-turn LLM-call ceiling used by readiness checks."""
+
+    max_calls: int | None = None
+    max_event_counts: tuple[tuple[str, int], ...] = ()
+    required_event_counts: tuple[tuple[str, int], ...] = ()
+    observe: bool = False
+    enforced_modes: tuple[ReadinessMode, ...] = ("deterministic", "dry-run")
+
+    def __post_init__(self) -> None:
+        limits = (
+            self.max_calls,
+            *(limit for _, limit in self.max_event_counts),
+            *(limit for _, limit in self.required_event_counts),
+        )
+        if any(limit is not None and limit < 0 for limit in limits):
+            raise ValueError("LLM call budgets cannot be negative")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "max_calls": self.max_calls,
+            "max_event_counts": dict(self.max_event_counts),
+            "required_event_counts": dict(self.required_event_counts),
+            "observe": self.observe,
+            "enforced_modes": list(self.enforced_modes),
+        }
+
+    def evaluate(
+        self,
+        llm_calls: tuple[dict[str, Any], ...],
+        *,
+        mode: ReadinessMode | None = None,
+    ) -> tuple[LLMBudgetStatus, tuple[str, ...]]:
+        event_counts = Counter(str(call.get("event_name") or "unknown") for call in llm_calls)
+        violations: list[str] = []
+        if self.max_calls is not None and len(llm_calls) > self.max_calls:
+            violations.append(f"at most {self.max_calls} total calls; got {len(llm_calls)}")
+        for event_name, maximum in self.max_event_counts:
+            actual = event_counts[event_name]
+            if actual > maximum:
+                violations.append(f"at most {maximum} {event_name} calls; got {actual}")
+        for event_name, minimum in self.required_event_counts:
+            actual = event_counts[event_name]
+            if actual < minimum:
+                violations.append(f"at least {minimum} {event_name} calls; got {actual}")
+        if self.observe or (mode is not None and mode not in self.enforced_modes):
+            return "observed", tuple(violations)
+        return ("exceeded" if violations else "within_budget"), tuple(violations)
+
+
 @dataclass(frozen=True)
 class ReadinessExpectation:
     expect_any: tuple[str, ...] = ()
@@ -57,6 +115,7 @@ class ReadinessExpectation:
     expect_planner_clean: bool | None = None
     expect_llm_call_count: int | None = None
     expect_llm_event_counts: tuple[tuple[str, int], ...] = ()
+    llm_call_budget: LLMCallBudget | None = None
     allow_duplicate_blocks: bool = False
     expect_allowed_task_types: tuple[str, ...] | None = None
     expect_forbidden_task_types: tuple[str, ...] = ()
@@ -117,6 +176,9 @@ class ReadinessTurnResult:
     task_types: tuple[str, ...] = ()
     async_jobs: tuple[dict[str, Any], ...] = ()
     llm_calls: tuple[dict[str, Any], ...] = ()
+    llm_budget: LLMCallBudget | None = None
+    llm_budget_status: LLMBudgetStatus = "observed"
+    llm_budget_violations: tuple[str, ...] = ()
     planner_clean: bool | None = None
     planner_dirty_reasons: tuple[str, ...] = ()
     category: str = "uncategorized"
@@ -138,6 +200,11 @@ class ReadinessTurnResult:
             "async_jobs": list(self.async_jobs),
             "llm_calls": list(self.llm_calls),
             "llm_total_ms": round(_llm_call_total_ms(self.llm_calls), 2),
+            "llm_event_chain": list(_llm_event_chain(self.llm_calls)),
+            "route_signature": _route_signature(self.route_metadata),
+            "llm_budget": self.llm_budget.to_dict() if self.llm_budget else None,
+            "llm_budget_status": self.llm_budget_status,
+            "llm_budget_violations": list(self.llm_budget_violations),
             "planner_clean": self.planner_clean,
             "planner_dirty_reasons": list(self.planner_dirty_reasons),
             "category": self.category,
@@ -377,6 +444,72 @@ class ReadinessRunResult:
         }
 
     @property
+    def llm_audit_summary(self) -> list[dict[str, Any]]:
+        """Group call costs by route and ordered chain without user content."""
+        groups: dict[tuple[str, tuple[str, ...]], list[ReadinessTurnResult]] = {}
+        for turn in self.turns:
+            key = (_route_signature(turn.route_metadata), _llm_event_chain(turn.llm_calls))
+            groups.setdefault(key, []).append(turn)
+
+        summary: list[dict[str, Any]] = []
+        for (route_signature, event_chain), turns in groups.items():
+            totals = sorted(_llm_call_total_ms(turn.llm_calls) for turn in turns)
+            calls = [call for turn in turns for call in turn.llm_calls]
+            provider_input_tokens = sum(int(call.get("provider_input_tokens") or 0) for call in calls)
+            provider_cached_tokens = sum(int(call.get("provider_cached_tokens") or 0) for call in calls)
+            summary.append(
+                {
+                    "route_signature": route_signature,
+                    "event_chain": list(event_chain),
+                    "turn_count": len(turns),
+                    "call_count": len(calls),
+                    "llm_total_ms_p50": round(_percentile(totals, 0.50), 2) if totals else 0.0,
+                    "llm_total_ms_p95": round(_percentile(totals, 0.95), 2) if totals else 0.0,
+                    "llm_total_ms_max": round(max(totals, default=0.0), 2),
+                    "prompt_token_estimate": sum(int(call.get("prompt_token_estimate") or 0) for call in calls),
+                    "output_token_estimate": sum(int(call.get("output_token_estimate") or 0) for call in calls),
+                    "response_schema_token_estimate": sum(
+                        int(call.get("response_schema_token_estimate") or 0) for call in calls
+                    ),
+                    "provider_input_tokens": provider_input_tokens,
+                    "provider_cached_tokens": provider_cached_tokens,
+                    "provider_cache_hit_rate": round(provider_cached_tokens / provider_input_tokens, 4)
+                    if provider_input_tokens
+                    else None,
+                    "budget_statuses": dict(Counter(turn.llm_budget_status for turn in turns)),
+                }
+            )
+        return sorted(
+            summary,
+            key=lambda item: (float(item["llm_total_ms_p95"]), int(item["call_count"])),
+            reverse=True,
+        )
+
+    @property
+    def llm_audit_candidates(self) -> list[dict[str, Any]]:
+        """Return budget breaches and multi-call observed turns without user text."""
+        candidates = [
+            {
+                "scenario_id": turn.scenario_id,
+                "turn_index": turn.turn_index,
+                "route_signature": _route_signature(turn.route_metadata),
+                "event_chain": list(_llm_event_chain(turn.llm_calls)),
+                "llm_call_count": len(turn.llm_calls),
+                "llm_total_ms": round(_llm_call_total_ms(turn.llm_calls), 2),
+                "budget_status": turn.llm_budget_status,
+                "budget_violations": list(turn.llm_budget_violations),
+            }
+            for turn in self.turns
+            if turn.llm_budget_status == "exceeded"
+            or (turn.llm_budget_status == "observed" and len(turn.llm_calls) > 1)
+        ]
+        return sorted(
+            candidates,
+            key=lambda item: (item["budget_status"] == "exceeded", item["llm_call_count"], item["llm_total_ms"]),
+            reverse=True,
+        )
+
+    @property
     def slowest_llm_calls(self) -> list[dict[str, Any]]:
         flattened: list[dict[str, Any]] = []
         for turn in self.turns:
@@ -407,6 +540,8 @@ class ReadinessRunResult:
             "robustness_summary": self.robustness_summary,
             "llm_call_summary": self.llm_call_summary,
             "llm_health_summary": self.llm_health_summary,
+            "llm_audit_summary": self.llm_audit_summary,
+            "llm_audit_candidates": self.llm_audit_candidates,
             "slowest_llm_calls": self.slowest_llm_calls,
             "slowest_turns": [
                 {
@@ -415,9 +550,8 @@ class ReadinessRunResult:
                     "user_text": turn.user_text,
                     "latency_ms": round(turn.latency_ms, 2),
                     "llm_total_ms": round(_llm_call_total_ms(turn.llm_calls), 2),
-                    "semantic_path_shape": turn.route_metadata.get("semantic_path_shape"),
-                    "routing_owner": turn.route_metadata.get("routing_owner"),
-                    "routing_decision": turn.route_metadata.get("routing_decision"),
+                    "path_shape": (_turn_directive_metadata(turn.route_metadata) or {}).get("path_shape"),
+                    "turn_directive": _turn_directive_metadata(turn.route_metadata),
                     "planner_clean": turn.planner_clean,
                     "task_types": list(turn.task_types),
                 }
@@ -440,3 +574,14 @@ def _percentile(sorted_values: list[float], fraction: float) -> float:
 
 def _llm_call_total_ms(llm_calls: tuple[dict[str, Any], ...]) -> float:
     return sum(float(call.get("duration_ms") or 0.0) for call in llm_calls)
+
+
+def _llm_event_chain(llm_calls: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
+    return tuple(str(call.get("event_name") or "unknown") for call in llm_calls)
+
+
+def _route_signature(route_metadata: dict[str, Any]) -> str:
+    directive = _turn_directive_metadata(route_metadata) or {}
+    return "/".join(
+        str(directive.get(field) or "unknown") for field in ("path_shape", "owner", "decision")
+    )

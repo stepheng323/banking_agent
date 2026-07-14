@@ -47,6 +47,18 @@ def format_readiness_report(result: ReadinessRunResult) -> str:
                     )
                 )
             )
+        if turn.llm_budget is not None:
+            lines.append(
+                " ".join(
+                    (
+                        f"LLM budget: {turn.llm_budget_status}",
+                        f"route={turn.to_dict()['route_signature']}",
+                        f"chain={','.join(turn.to_dict()['llm_event_chain']) or 'none'}",
+                    )
+                )
+            )
+            for violation in turn.llm_budget_violations:
+                lines.append(f"- LLM budget detail: {violation}")
         if turn.errors:
             lines.append("Errors:")
             for error in turn.errors:
@@ -142,6 +154,38 @@ def format_readiness_report(result: ReadinessRunResult) -> str:
             if "output_default_overhead_chars" in call:
                 call_parts.append(f"default_overhead_chars={call.get('output_default_overhead_chars')}")
             lines.append(" ".join(call_parts))
+    if result.llm_audit_summary:
+        lines.append("LLM call-budget audit:")
+        for group in result.llm_audit_summary[:5]:
+            lines.append(
+                " ".join(
+                    (
+                        f"- route={group['route_signature']}",
+                        f"chain={','.join(group['event_chain']) or 'none'}",
+                        f"turns={group['turn_count']}",
+                        f"calls={group['call_count']}",
+                        f"p50_ms={group['llm_total_ms_p50']}",
+                        f"p95_ms={group['llm_total_ms_p95']}",
+                        f"provider_cache_hit_rate={group['provider_cache_hit_rate']}",
+                        f"budgets={group['budget_statuses']}",
+                    )
+                )
+            )
+    if result.llm_audit_candidates:
+        lines.append("LLM audit candidates:")
+        for candidate in result.llm_audit_candidates[:5]:
+            lines.append(
+                " ".join(
+                    (
+                        f"- scenario={candidate['scenario_id']}#{candidate['turn_index']}",
+                        f"route={candidate['route_signature']}",
+                        f"chain={','.join(candidate['event_chain']) or 'none'}",
+                        f"calls={candidate['llm_call_count']}",
+                        f"llm_total_ms={candidate['llm_total_ms']}",
+                        f"budget={candidate['budget_status']}",
+                    )
+                )
+            )
     if result.failed_turns:
         for turn in result.failed_turns:
             lines.append(f"- {turn.scenario_id} #{turn.turn_index} {turn.user_text!r}: {'; '.join(turn.errors)}")

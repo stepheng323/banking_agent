@@ -244,8 +244,8 @@ async def test_load_query_session_snapshot_logs_session_shape(monkeypatch: pytes
     assert source == "pending_clarification"
     assert snapshot is not None
     assert (
-            "planner_query_session_snapshot",
-            {
+        "planner_query_session_snapshot",
+        {
             "query_session_source": "pending_clarification",
             "session_active": True,
             "has_query_contract": True,
@@ -282,8 +282,8 @@ async def test_load_query_session_snapshot_logs_typed_surface_shape_without_lega
     assert source == "context_frame"
     assert snapshot is not None
     assert (
-            "planner_query_session_snapshot",
-            {
+        "planner_query_session_snapshot",
+        {
             "query_session_source": "context_frame",
             "session_active": True,
             "has_query_contract": True,

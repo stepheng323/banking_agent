@@ -129,7 +129,7 @@ async def test_gate_suggestion_save_alias_creates_beneficiary_task_without_plann
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["waves"] == [["direct_beneficiary_save"]]
     task = updates["tasks"]["direct_beneficiary_save"]
     assert task.type == "beneficiary"
@@ -160,7 +160,7 @@ async def test_gate_suggestion_affirmation_creates_default_save_task() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["waves"] == [["direct_beneficiary_save"]]
     task = updates["tasks"]["direct_beneficiary_save"]
     assert task.type == "beneficiary"
@@ -192,11 +192,11 @@ async def test_gate_suggestion_transaction_turn_dismisses_and_falls_through() ->
     updates = await session_gate_direct_path(state, config)
 
     assert "turn_context_summary" in updates
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
-    assert updates["routing_owner"] == "guardrail"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "fresh_transfer_command"
+    assert "direct_path_triggered" not in updates
+    assert updates["turn_directive"].path_shape == "deterministic_transfer_domain"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].target_domain == "transfer"
+    assert updates["turn_directive"].decision == "fresh_transfer_command"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "Send 10k to mum"
@@ -226,7 +226,7 @@ async def test_gate_suggestion_non_save_reply_dismisses_and_falls_through() -> N
     updates = await session_gate_direct_path(state, config)
 
     assert "turn_context_summary" in updates
-    assert updates.get("semantic_path_shape") is None
+    assert "path_shape" not in updates
     assert redis_client.deleted_keys == ["user:2348011112204:beneficiary_suggestion"]
 
 
@@ -269,7 +269,7 @@ async def test_gate_suggestion_bare_alias_creates_beneficiary_task_without_plann
     updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["direct_path_triggered"] is True
+    assert "direct_path_triggered" not in updates
     assert updates["waves"] == [["direct_beneficiary_save"]]
     task = updates["tasks"]["direct_beneficiary_save"]
     assert task.type == "beneficiary"

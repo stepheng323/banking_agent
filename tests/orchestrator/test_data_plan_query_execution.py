@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wa
 from apps.chat.src.agent.orchestrator.workflows.gate.core.node import session_gate_direct_path
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from tests.orchestrator.routing_fixtures import execution_test_directive
 
 
 def _apply_updates(state: OrchestratorState, updates: dict[str, Any]) -> OrchestratorState:
@@ -74,6 +75,7 @@ class _PinSensitiveDataWorker:
 @pytest.mark.asyncio
 async def test_data_plan_query_gate_marks_task_read_only_for_finalize() -> None:
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_data_query_gate",
         phone_number="2348000000000",
         channel="whatsapp",
@@ -92,6 +94,7 @@ async def test_data_plan_query_gate_marks_task_read_only_for_finalize() -> None:
 async def test_buy_it_with_stale_pin_stops_at_confirmation_not_processing() -> None:
     worker = _PinSensitiveDataWorker()
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_data_buy_stale_pin",
         phone_number="2348000000000",
         channel="whatsapp",
@@ -165,6 +168,7 @@ async def test_data_plan_query_execution_emits_single_catalog_response_without_p
         )
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_data_query_execution",
         phone_number="2348000000000",
         channel="whatsapp",
@@ -237,6 +241,7 @@ async def test_data_plan_purchase_candidates_seed_context_frame_and_memory() -> 
         )
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_data_purchase_candidates",
         phone_number="2348000000000",
         channel="whatsapp",
@@ -289,6 +294,7 @@ async def test_failed_data_plan_query_response_is_not_duplicated_by_finalize() -
         )
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_data_query_failure",
         phone_number="2348000000000",
         channel="whatsapp",

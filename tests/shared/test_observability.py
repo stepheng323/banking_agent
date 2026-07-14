@@ -8,7 +8,6 @@ from uuid import UUID
 
 import pytest
 
-import shared.cache.llm_response_cache as llm_response_cache_module
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_observability import invoke_structured_prompt
 from shared.config.settings import settings
 from shared.observability.events import emit_operational_event
@@ -22,7 +21,6 @@ from shared.observability.llm_provider_metadata import extract_provider_llm_meta
 from shared.observability.redaction import redacted_dict
 from shared.types.planner import (
     DataTaskParameters,
-    InterruptRouteDecision,
     PlannerOutput,
     SemanticRouteDecision,
     TransferTaskParameters,
@@ -72,24 +70,6 @@ class _FakeRawMessage:
 
 class _FakeModelLLM:
     model_name = "gpt-test"
-
-
-class _FakeRedis:
-    def __init__(self) -> None:
-        self.values: dict[str, str] = {}
-        self.setex_calls: list[tuple[str, int, str]] = []
-        self.deleted: list[str] = []
-
-    async def get(self, key: str) -> str | None:
-        return self.values.get(key)
-
-    async def setex(self, key: str, ttl: int, value: str) -> None:
-        self.values[key] = value
-        self.setex_calls.append((key, ttl, value))
-
-    async def delete(self, key: str) -> None:
-        self.deleted.append(key)
-        self.values.pop(key, None)
 
 
 class _Logger:
@@ -362,8 +342,7 @@ def test_extract_provider_llm_metadata_omits_missing_values() -> None:
 
 
 @pytest.mark.asyncio
-async def test_invoke_structured_prompt_records_turn_llm_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "llm_response_cache_enabled", False)
+async def test_invoke_structured_prompt_records_turn_llm_metrics() -> None:
     logger = _Logger()
     llm = _FakeStructuredLLM({"decision": "domain_query", "confidence": 0.9, "target_intent": "query"})
     token = start_llm_call_recording()
@@ -405,8 +384,7 @@ async def test_invoke_structured_prompt_records_turn_llm_metrics(monkeypatch: py
 
 
 @pytest.mark.asyncio
-async def test_invoke_structured_prompt_unwraps_raw_provider_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "llm_response_cache_enabled", False)
+async def test_invoke_structured_prompt_unwraps_raw_provider_metadata() -> None:
     logger = _Logger()
     raw = _FakeRawMessage(
         usage_metadata={
@@ -482,105 +460,3 @@ async def test_invoke_structured_prompt_raw_parsing_error_is_recorded() -> None:
 
     assert records[0]["error_type"] == "ValueError"
     assert records[0]["provider_input_tokens"] == 10
-
-
-@pytest.mark.asyncio
-async def test_structured_llm_cache_reuses_semantic_router_decision(monkeypatch: pytest.MonkeyPatch) -> None:
-    redis = _FakeRedis()
-    monkeypatch.setattr(settings, "llm_response_cache_enabled", True)
-    monkeypatch.setattr(settings, "llm_response_cache_ttl_seconds", 300)
-    monkeypatch.setattr(settings, "llm_response_cache_types", ("SemanticRouteDecision",))
-    monkeypatch.setattr(llm_response_cache_module.RedisClient, "get_client", staticmethod(lambda: redis))
-
-    logger = _Logger()
-    first_llm = _FakeStructuredLLM({"decision": "domain_query", "confidence": 0.9, "target_intent": "query"})
-    second_llm = _FakeStructuredLLM({"decision": "domain_account", "confidence": 0.9, "target_intent": "account"})
-
-    first = await invoke_structured_prompt(
-        first_llm,
-        SemanticRouteDecision,
-        system_prompt="system",
-        user_prompt="user",
-        logger=logger,
-        event_name="semantic_router_llm_call",
-        model_llm=_FakeModelLLM(),
-    )
-    second = await invoke_structured_prompt(
-        second_llm,
-        SemanticRouteDecision,
-        system_prompt="system",
-        user_prompt="user",
-        logger=logger,
-        event_name="semantic_router_llm_call",
-        model_llm=_FakeModelLLM(),
-    )
-
-    assert first.decision == "domain_query"
-    assert second.decision == "domain_query"
-    assert first_llm.calls == 1
-    assert second_llm.calls == 0
-    assert redis.setex_calls[0][1] == 300
-    hit_fields = _last_info_fields(logger, "semantic_router_llm_call")
-    assert hit_fields["cache_status"] == "hit"
-    assert hit_fields["output_json_chars"] == len(
-        second.model_dump_json(exclude_none=True, exclude_defaults=True, exclude_unset=True)
-    )
-    assert hit_fields["output_expanded_json_chars"] == len(second.model_dump_json())
-
-
-@pytest.mark.asyncio
-async def test_structured_llm_cache_skips_non_allowlisted_response_type(monkeypatch: pytest.MonkeyPatch) -> None:
-    redis = _FakeRedis()
-    monkeypatch.setattr(settings, "llm_response_cache_enabled", True)
-    monkeypatch.setattr(settings, "llm_response_cache_types", ("SemanticRouteDecision",))
-    monkeypatch.setattr(llm_response_cache_module.RedisClient, "get_client", staticmethod(lambda: redis))
-
-    llm = _FakeStructuredLLM({"decision": "continue_flow", "confidence": 0.8})
-
-    decision = await invoke_structured_prompt(
-        llm,
-        InterruptRouteDecision,
-        system_prompt="system",
-        user_prompt="user",
-        logger=_Logger(),
-        event_name="interrupt_router_llm_call",
-        model_llm=_FakeModelLLM(),
-    )
-
-    assert decision.decision == "continue_flow"
-    assert llm.calls == 1
-    assert redis.setex_calls == []
-
-
-@pytest.mark.asyncio
-async def test_structured_llm_cache_invalid_payload_deletes_and_falls_back(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    redis = _FakeRedis()
-    monkeypatch.setattr(settings, "llm_response_cache_enabled", True)
-    monkeypatch.setattr(settings, "llm_response_cache_types", ("SemanticRouteDecision",))
-    monkeypatch.setattr(llm_response_cache_module.RedisClient, "get_client", staticmethod(lambda: redis))
-
-    cache = llm_response_cache_module.StructuredLLMResponseCache()
-    cache_key = cache.key(
-        response_type=SemanticRouteDecision,
-        model="gpt-test",
-        system_prompt="system",
-        user_prompt="user",
-    )
-    redis.values[cache_key] = '{"decision": 123}'
-    llm = _FakeStructuredLLM({"decision": "domain_beneficiary", "confidence": 0.8, "target_intent": "beneficiary"})
-
-    decision = await invoke_structured_prompt(
-        llm,
-        SemanticRouteDecision,
-        system_prompt="system",
-        user_prompt="user",
-        logger=_Logger(),
-        event_name="semantic_router_llm_call",
-        model_llm=_FakeModelLLM(),
-    )
-
-    assert decision.decision == "domain_beneficiary"
-    assert llm.calls == 1
-    assert cache_key in redis.deleted

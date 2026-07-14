@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHand
 from apps.chat.src.agent.orchestrator.graph.progress import MAX_PROGRESS_MESSAGES, TurnProgressSnapshot
 from apps.chat.src.agent.orchestrator.graph.progress_delivery import OrchestratorProgressDelivery
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
+from apps.chat.src.agent.orchestrator.models.turn_directive import TurnOutcomeKind, build_turn_directive
 from banking.messaging.delivery.models import DeliveryAttemptResult
 from shared.config.settings import settings
 
@@ -245,8 +246,12 @@ async def test_graph_handler_logs_semantic_path_shape(monkeypatch: pytest.Monkey
                 "outbox": [{"type": "say", "text": "linked and pending"}],
                 "final_response": "linked and pending",
                 "loaded_context": {"language": "en"},
-                "semantic_path_shape": "semantic_router_direct",
-                "direct_path_triggered": True,
+                "turn_directive": build_turn_directive(
+                    owner="semantic_router",
+                    decision="direct_response",
+                    outcome_kind=TurnOutcomeKind.DIRECT_RESPONSE,
+                    path_shape="semantic_router_direct",
+                ),
             }
 
     graph = _SemanticGraphStub()
@@ -508,12 +513,14 @@ async def test_graph_handler_logs_route_metrics_summary(monkeypatch: pytest.Monk
                 "outbox": [],
                 "final_response": "checking",
                 "loaded_context": {"language": "en"},
-                "semantic_path_shape": "semantic_router_domain",
-                "direct_path_triggered": True,
-                "routing_owner": "semantic_router",
-                "routing_decision": "domain_query",
-                "routing_target_domain": "query",
-                "routing_mode": "continuation",
+                "turn_directive": build_turn_directive(
+                    owner="semantic_router",
+                    decision="domain_query",
+                    target_domain="query",
+                    mode="continuation",
+                    outcome_kind=TurnOutcomeKind.TASK_DISPATCH,
+                    path_shape="semantic_router_domain",
+                ),
                 "planner_used": False,
                 "preplanner_expected_transaction_executors": [],
             }

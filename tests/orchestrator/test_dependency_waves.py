@@ -17,6 +17,7 @@ from shared.types.planner import (
     TransferTaskParameters,
     make_planned_task,
 )
+from tests.orchestrator.routing_fixtures import execution_test_directive
 
 
 class _MockPlanner:
@@ -134,6 +135,7 @@ async def test_planner_builds_dependency_aware_waves_for_mixed_request() -> None
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_1",
         phone_number="2348111111101",
         channel="whatsapp",
@@ -167,6 +169,7 @@ async def test_planner_does_not_call_legacy_review_or_repair_paths() -> None:
     )
     planner = _PlannerWithLegacyRepairMethods(planner_output)
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_lowcall_1",
         phone_number="2348111111110",
         channel="whatsapp",
@@ -216,6 +219,7 @@ async def test_planner_uses_expected_executor_signals_in_single_call() -> None:
     )
     planner = _SignalAwarePlanner(planner_output)
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_retry_1",
         phone_number="2348111111111",
         channel="whatsapp",
@@ -267,6 +271,7 @@ async def test_planner_strips_transaction_depends_on_for_batch_auth_collection()
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_strip_1",
         phone_number="2348111111112",
         channel="whatsapp",
@@ -318,6 +323,7 @@ async def test_planner_keeps_non_transaction_dependencies_when_stripping_transac
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_strip_2",
         phone_number="2348111111113",
         channel="whatsapp",
@@ -352,6 +358,7 @@ async def test_planner_fans_out_single_transfer_when_text_has_multiple_recipient
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_fanout_1",
         phone_number="2348111111191",
         channel="whatsapp",
@@ -420,6 +427,7 @@ async def test_planner_repairs_missing_balance_task_from_clause_decomposition() 
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_clause_1",
         phone_number="2348111111193",
         channel="whatsapp",
@@ -470,6 +478,7 @@ async def test_planner_repairs_transfer_recipient_from_transfer_clause_when_read
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_clause_2",
         phone_number="2348111111194",
         channel="whatsapp",
@@ -522,6 +531,7 @@ async def test_planner_repairs_transfer_recipient_from_non_english_read_only_cla
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_clause_2b",
         phone_number="2348111111195",
         channel="whatsapp",
@@ -566,6 +576,7 @@ async def test_planner_fans_out_recipient_split_between_recipients() -> None:
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_fanout_split_1",
         phone_number="2348111111194",
         channel="whatsapp",
@@ -614,6 +625,7 @@ async def test_planner_fans_out_three_way_recipient_allocations_batch() -> None:
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_fanout_split_2",
         phone_number="2348111111196",
         channel="whatsapp",
@@ -657,6 +669,7 @@ async def test_planner_does_not_fanout_source_account_explicit_split_as_recipien
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_source_split_1",
         phone_number="2348111111195",
         channel="whatsapp",
@@ -700,6 +713,7 @@ async def test_planner_fanout_rewrites_downstream_dependencies() -> None:
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_fanout_2",
         phone_number="2348111111192",
         channel="whatsapp",
@@ -742,6 +756,7 @@ async def test_planner_does_not_fanout_when_planner_already_emits_multiple_trans
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_fanout_3",
         phone_number="2348111111193",
         channel="whatsapp",
@@ -793,6 +808,7 @@ async def test_planner_reconciles_obvious_multi_transfer_recipient_drift() -> No
         ],
     )
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_reconcile_1",
         phone_number="2348111111194",
         channel="whatsapp",
@@ -815,6 +831,7 @@ async def test_planner_reconciles_obvious_multi_transfer_recipient_drift() -> No
 @pytest.mark.asyncio
 async def test_dependent_task_cancelled_when_dependency_failed() -> None:
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_2",
         phone_number="2348111111102",
         channel="whatsapp",
@@ -845,6 +862,7 @@ async def test_dependent_task_cancelled_when_dependency_failed() -> None:
 @pytest.mark.asyncio
 async def test_dependent_task_runs_after_dependencies_completed() -> None:
     state = OrchestratorState(
+        turn_directive=execution_test_directive(),
         user_id="u_dep_3",
         phone_number="2348111111103",
         channel="whatsapp",

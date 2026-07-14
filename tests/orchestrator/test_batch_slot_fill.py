@@ -348,6 +348,40 @@ async def test_batch_slot_semantic_fallback_applies_validated_amount_update() ->
 
 
 @pytest.mark.asyncio
+async def test_batch_slot_semantic_mutation_doubles_only_the_target_task() -> None:
+    state = _batch_state(text="double the amount for ay")
+    planner = _BatchSlotPlanner(
+        BatchSlotPatchDecision(
+            confidence=0.94,
+            detected_language="English",
+            updates=[
+                BatchSlotPatchUpdate(
+                    target_texts=["ay"],
+                    amount_mutation={"steps": [{"operation": "multiply", "factor": 2}]},
+                )
+            ],
+            reason="semantic batch amount multiplier",
+        )
+    )
+
+    updates = await handle_pending_interrupt(
+        state,
+        {
+            "configurable": {
+                "task_planner": planner,
+                "semantic_router_llm": planner,
+                "capability_classifier_llm": planner,
+            },
+            "recursion_limit": 50,
+        },
+    )
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_mom"].payload["amount"] == 40000
+    assert updates["tasks"]["t_ay"].payload["amount"] == 60000
+
+
+@pytest.mark.asyncio
 async def test_batch_slot_semantic_patch_rejects_cross_clause_bank_text() -> None:
     state = _batch_state(text="change mum details")
     planner = _BatchSlotPlanner(

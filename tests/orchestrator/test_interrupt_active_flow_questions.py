@@ -156,7 +156,6 @@ async def test_active_flow_question_explains_transfer_bank_requirement() -> None
     assert "Send the recipient bank name to continue." in _say_text(updates)
 
 
-
 @pytest.mark.asyncio
 async def test_active_flow_question_blocks_future_reversal_claims() -> None:
     state = _state(

@@ -25,6 +25,7 @@ from shared.types.planner import (
     TransferTaskParameters,
     make_planned_task,
 )
+from tests.orchestrator.routing_fixtures import finalize_test_directive
 
 
 class _SurfaceFollowupPlanner:
@@ -275,7 +276,7 @@ async def test_transaction_surface_followup_selects_second_visible_item() -> Non
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Transaction Details" in updates["final_response"]
     assert "Transfer to Tolu" in updates["final_response"]
     assert "Access Bank" in updates["final_response"]
@@ -327,7 +328,7 @@ async def test_transaction_surface_selection_promotes_detail_frame_for_pronoun_f
     second_updates = await plan_tasks(second_state, _config(second_planner))
 
     assert second_planner.plan_calls == 0
-    assert second_updates.get("semantic_path_shape") == "context_frame_followup"
+    assert second_updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Bank: Access Bank" in second_updates["final_response"]
     assert "Amount:" not in second_updates["final_response"]
     assert "Credit from Ada" not in second_updates["final_response"]
@@ -419,7 +420,7 @@ async def test_transaction_surface_can_reference_older_list_after_detail_focus()
     assert second_planner.plan_calls == 0
     assert "Current focus:" in (second_planner.last_frame_context or "")
     assert "Earlier result 1:" in (second_planner.last_frame_context or "")
-    assert second_updates.get("semantic_path_shape") == "context_frame_followup"
+    assert second_updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Transfer to Dad" in second_updates["final_response"]
     assert "First Bank" in second_updates["final_response"]
     assert "tx-ref-3" in second_updates["final_response"]
@@ -447,7 +448,7 @@ async def test_transaction_surface_followup_selects_visible_amount_reference() -
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Transaction Details" in updates["final_response"]
     assert "Transfer from Bakare Femi" in updates["final_response"]
     assert "Amount: 20000" in updates["final_response"]
@@ -474,7 +475,7 @@ async def test_unclear_transaction_surface_followup_still_grounds_visible_amount
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Transaction Details" in updates["final_response"]
     assert "Transfer to Dad" not in updates["final_response"]
     assert "Adebayo James" in updates["final_response"]
@@ -501,7 +502,7 @@ async def test_unclear_transaction_surface_followup_reports_missing_visible_amou
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert updates["final_response"] == "I don't see ₦24,000 in the transactions or results I showed."
 
 
@@ -525,7 +526,7 @@ async def test_transaction_surface_followup_does_not_fallback_when_amount_is_mis
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert updates["final_response"] == "I don't see ₦20,000 in the transactions or results I showed."
     assert "Adebayo James" not in updates["final_response"]
 
@@ -552,7 +553,7 @@ async def test_transaction_surface_followup_answers_selected_field_only() -> Non
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Transfer to Tolu" in updates["final_response"]
     assert "Bank: Access Bank" in updates["final_response"]
     assert "Amount:" not in updates["final_response"]
@@ -581,7 +582,7 @@ async def test_transaction_surface_followup_answers_typed_selected_field_only() 
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Transfer to Tolu" in updates["final_response"]
     assert "Bank: Access Bank" in updates["final_response"]
     assert "Amount:" not in updates["final_response"]
@@ -609,7 +610,7 @@ async def test_transaction_surface_followup_selects_largest_result() -> None:
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Credit from Ada" in updates["final_response"]
     assert "Amount: 5000" in updates["final_response"]
     assert "Transfer to Tolu" not in updates["final_response"]
@@ -636,7 +637,7 @@ async def test_transaction_surface_followup_selects_typed_largest_result() -> No
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Credit from Ada" in updates["final_response"]
     assert "Amount: 5000" in updates["final_response"]
     assert "Transfer to Tolu" not in updates["final_response"]
@@ -683,7 +684,7 @@ async def test_grouped_surface_followup_filters_by_typed_transaction_type() -> N
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Credits" in updates["final_response"]
     assert "Amount: 25000" in updates["final_response"]
     assert "Debits" not in updates["final_response"]
@@ -730,7 +731,7 @@ async def test_account_surface_followup_filters_by_typed_bank() -> None:
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "GTBank account" in updates["final_response"]
     assert "Mandate Status: ready" in updates["final_response"]
     assert "First Bank account" not in updates["final_response"]
@@ -777,7 +778,7 @@ async def test_account_surface_followup_matches_bank_alias_from_target_text() ->
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "GTBank (...0002)" in updates["final_response"]
     assert "Account Number: 7000000002" in updates["final_response"]
     assert "First Bank (...0001)" not in updates["final_response"]
@@ -824,7 +825,7 @@ async def test_account_surface_followup_matches_spaced_gt_bank_alias() -> None:
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "GTBank (...0002)" in updates["final_response"]
     assert "First Bank (...0001)" not in updates["final_response"]
 
@@ -870,7 +871,7 @@ async def test_account_surface_followup_matches_pending_status_from_target_text(
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Zenith Bank (...9384)" in updates["final_response"]
     assert "Mandate Status: pending" in updates["final_response"]
     assert "I don't see" not in updates["final_response"]
@@ -918,7 +919,7 @@ async def test_account_surface_followup_explains_pending_account_status() -> Non
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Zenith Bank (...9384) is still pending" in updates["final_response"]
     assert "Mandate Status: pending" in updates["final_response"]
 
@@ -973,7 +974,7 @@ async def test_account_surface_followup_explains_how_to_complete_pending_mandate
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "transfer ₦50 from your Zenith Bank account ending in 9384" in updates["final_response"]
     assert "NIBSS Bank: 0001112223" in updates["final_response"]
     assert "Once the bank/NIBSS confirms it" in updates["final_response"]
@@ -1032,7 +1033,7 @@ async def test_account_surface_followup_explains_known_mandate_statuses(
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert expected in updates["final_response"]
     assert status in updates["final_response"]
     if instruction:
@@ -1079,7 +1080,7 @@ async def test_account_surface_followup_rescues_status_question_misclassified_as
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Zenith Bank (...9384) is still pending" in updates["final_response"]
     assert "Which transaction" not in updates["final_response"]
 
@@ -1126,9 +1127,9 @@ async def test_account_surface_fetch_again_refetches_account_list_without_semant
     assert planner.plan_calls == 0
     assert planner.last_frame_context is None
     assert updates is not None
-    assert updates.get("semantic_path_shape") == "read_only_refresh_followup"
-    assert updates["routing_decision"] == "read_only_refresh_followup"
-    assert updates["route_source"] == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "read_only_refresh_followup"
+    assert updates["turn_directive"].decision == "read_only_refresh_followup"
+    assert updates["turn_directive"].source == "context_frame_followup"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
     assert task.payload["action"] == "list_accounts"
@@ -1388,7 +1389,7 @@ async def test_data_plan_show_again_redisplays_options_without_new_data_task() -
     updates = await _run_context_frame_gate_stage(state, planner)
 
     assert updates is not None
-    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "tasks" not in updates
     assert "MTN 1.5 GB" in updates["final_response"]
     assert "MTN 3.5 GB" in updates["final_response"]
@@ -1425,12 +1426,13 @@ async def test_completed_transaction_do_again_still_uses_replay_interpreter_not_
 
     assert planner.last_frame_context is not None
     assert updates is not None
-    assert updates.get("semantic_path_shape") != "read_only_refresh_followup"
+    assert updates["turn_directive"].path_shape != "read_only_refresh_followup"
 
 
 @pytest.mark.asyncio
 async def test_completed_transfer_receipt_followup_answers_reference_from_frame() -> None:
     finalize_state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_surface_receipt_ref",
         phone_number="2348000000011",
         channel="telegram",
@@ -1468,7 +1470,7 @@ async def test_completed_transfer_receipt_followup_answers_reference_from_frame(
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Receipt Details" in updates["final_response"]
     assert "Reference: tx-final-123" in updates["final_response"]
     assert "Tolu Adeyemi" in updates["final_response"]
@@ -1477,6 +1479,7 @@ async def test_completed_transfer_receipt_followup_answers_reference_from_frame(
 @pytest.mark.asyncio
 async def test_completed_mixed_transaction_followup_answers_airtime_number_from_frame() -> None:
     finalize_state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_surface_mixed_airtime",
         phone_number="2348000000012",
         channel="telegram",
@@ -1529,7 +1532,7 @@ async def test_completed_mixed_transaction_followup_answers_airtime_number_from_
     updates = await plan_tasks(state, _config(planner))
 
     assert planner.plan_calls == 0
-    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Transaction Details" in updates["final_response"]
     assert "08162511023" in updates["final_response"]
     assert "MTN" in updates["final_response"]
@@ -1539,6 +1542,7 @@ async def test_completed_mixed_transaction_followup_answers_airtime_number_from_
 @pytest.mark.asyncio
 async def test_completed_mixed_transaction_replay_rebuilds_all_tasks_from_frame() -> None:
     finalize_state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_surface_mixed_replay",
         phone_number="2348000000014",
         channel="telegram",
@@ -1594,7 +1598,7 @@ async def test_completed_mixed_transaction_replay_rebuilds_all_tasks_from_frame(
 
     assert planner.plan_calls == 0
     assert "final_response" not in updates
-    assert updates.get("semantic_path_shape") == "context_frame_replay"
+    assert updates["turn_directive"].path_shape == "context_frame_replay"
     assert {task.type for task in updates["tasks"].values()} == {"transfer", "airtime"}
     assert updates["waves"] == [list(updates["tasks"].keys())]
     transfer_task = next(task for task in updates["tasks"].values() if task.type == "transfer")
@@ -1615,6 +1619,7 @@ async def test_completed_mixed_transaction_replay_rebuilds_all_tasks_from_frame(
 @pytest.mark.asyncio
 async def test_completed_transaction_replay_restores_source_account_number_from_loaded_accounts() -> None:
     finalize_state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_surface_replay_source",
         phone_number="2348000000016",
         channel="telegram",
@@ -1927,7 +1932,7 @@ async def test_completed_transfer_replay_blocks_unmatched_explicit_source() -> N
 
     assert "tasks" not in updates
     assert "could not find 'gtb'" in updates["final_response"]
-    assert updates["semantic_path_shape"] == "context_frame_replay_source_unmatched"
+    assert updates["turn_directive"].path_shape == "context_frame_replay_source_unmatched"
 
 
 @pytest.mark.asyncio

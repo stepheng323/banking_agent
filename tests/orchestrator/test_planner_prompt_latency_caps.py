@@ -11,6 +11,10 @@ from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameM
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.models.turn_directive import (
+    TurnOutcomeKind,
+    build_turn_directive,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.context.rendering.context_rendering_core import (
     PLANNER_CONTEXT_MAX_CHARS,
     _assemble_planner_context,
@@ -314,9 +318,13 @@ async def test_plan_tasks_marks_guardrail_transfer_handoff_for_transfer_only_pro
         phone_number="2348044444455",
         channel="whatsapp",
         last_message_text="okay send 10k each to mum, tolu and doyin",
-        routing_owner="guardrail",
-        routing_decision="batch_transfer_command",
-        routing_target_domain="transfer",
+        turn_directive=build_turn_directive(
+            owner="guardrail",
+            decision="batch_transfer_command",
+            target_domain="transfer",
+            source="guardrail",
+            outcome_kind=TurnOutcomeKind.PLANNER_HANDOFF,
+        ),
         preplanner_expected_transaction_executors=["transfer"],
     )
     config: RunnableConfig = {
@@ -359,9 +367,13 @@ async def test_plan_tasks_marks_narrow_transfer_interrupt_for_transfer_only_prom
         phone_number="2348044444466",
         channel="whatsapp",
         last_message_text="8967855634, First bank",
-        routing_owner="guardrail",
-        routing_decision="account_aware_transfer_command",
-        routing_target_domain="transfer",
+        turn_directive=build_turn_directive(
+            owner="guardrail",
+            decision="account_aware_transfer_command",
+            target_domain="transfer",
+            source="guardrail",
+            outcome_kind=TurnOutcomeKind.PLANNER_HANDOFF,
+        ),
         preplanner_expected_transaction_executors=["transfer"],
         pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"], fields_by_task={"t1": ["recipient_account"]}),
     )
@@ -466,8 +478,12 @@ async def test_plan_tasks_uses_compact_context_for_mixed_transaction_turns() -> 
         phone_number="2348044444468",
         channel="whatsapp",
         last_message_text="send 10k to mum and buy me 2k airtime",
-        routing_owner="semantic_router",
-        routing_decision="planner_mixed",
+        turn_directive=build_turn_directive(
+            owner="semantic_router",
+            decision="planner_mixed",
+            source="semantic_router",
+            outcome_kind=TurnOutcomeKind.PLANNER_HANDOFF,
+        ),
         preplanner_expected_transaction_executors=["transfer", "airtime"],
         loaded_context={
             "history": [{"role": "assistant", "content": "Earlier summary."}],

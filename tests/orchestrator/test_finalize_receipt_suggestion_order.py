@@ -7,6 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
+from tests.orchestrator.routing_fixtures import finalize_test_directive
 
 
 class _SuggestionServiceStub:
@@ -18,6 +19,7 @@ class _SuggestionServiceStub:
 async def test_finalize_shows_beneficiary_prompt_after_receipt_choice() -> None:
     queue = AsyncMock()
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_receipt_defer_1",
         phone_number="2348099999999",
         channel="whatsapp",
@@ -65,6 +67,7 @@ async def test_finalize_shows_beneficiary_prompt_after_receipt_choice() -> None:
 async def test_finalize_keeps_beneficiary_suggestion_when_stashed_session_exists_without_resume_prompt() -> None:
     queue = AsyncMock()
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_receipt_defer_2",
         phone_number="2348099999998",
         channel="whatsapp",
@@ -118,6 +121,7 @@ async def test_finalize_keeps_beneficiary_suggestion_when_stashed_session_exists
 async def test_finalize_emits_receipt_choice_with_graph_handler_config() -> None:
     queue = AsyncMock()
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_receipt_defer_3",
         phone_number="2348099999997",
         channel="telegram",
@@ -159,6 +163,7 @@ async def test_finalize_emits_receipt_choice_with_graph_handler_config() -> None
 @pytest.mark.asyncio
 async def test_finalize_defers_airtime_beneficiary_prompt_for_single_async_transaction() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_airtime_suggestion_1",
         phone_number="2348099999996",
         channel="whatsapp",
@@ -190,6 +195,7 @@ async def test_finalize_defers_airtime_beneficiary_prompt_for_single_async_trans
 @pytest.mark.asyncio
 async def test_finalize_defers_data_beneficiary_prompt_for_single_async_transaction() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_data_suggestion_1",
         phone_number="2348099999994",
         channel="whatsapp",
@@ -222,6 +228,7 @@ async def test_finalize_defers_data_beneficiary_prompt_for_single_async_transact
 @pytest.mark.asyncio
 async def test_finalize_does_not_suggest_for_transfer_batch() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_batch_suggestion_1",
         phone_number="2348099999995",
         channel="whatsapp",
@@ -258,6 +265,7 @@ async def test_finalize_does_not_suggest_for_transfer_batch() -> None:
 @pytest.mark.asyncio
 async def test_finalize_does_not_suggest_for_scheduled_single_transfer() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_scheduled_suggestion_1",
         phone_number="2348099999992",
         channel="whatsapp",
@@ -290,6 +298,7 @@ async def test_finalize_does_not_suggest_for_scheduled_single_transfer() -> None
 @pytest.mark.asyncio
 async def test_finalize_does_not_suggest_for_grouped_data_transaction() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_data_batch_suggestion_1",
         phone_number="2348099999993",
         channel="whatsapp",

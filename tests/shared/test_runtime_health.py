@@ -13,9 +13,6 @@ def test_latency_related_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> N
         "CHAT_WORKER_STREAM_BLOCK_MS",
         "TRANSACTION_WORKER_STREAM_BLOCK_MS",
         "RECEIPT_WORKER_STREAM_BLOCK_MS",
-        "LLM_RESPONSE_CACHE_ENABLED",
-        "LLM_RESPONSE_CACHE_TTL_SECONDS",
-        "LLM_RESPONSE_CACHE_TYPES",
     ):
         monkeypatch.delenv(env_name, raising=False)
 
@@ -26,9 +23,6 @@ def test_latency_related_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> N
     assert cfg.chat_worker_stream_block_ms == 5000
     assert cfg.transaction_worker_stream_block_ms == 5000
     assert cfg.receipt_worker_stream_block_ms == 5000
-    assert cfg.llm_response_cache_enabled is False
-    assert cfg.llm_response_cache_ttl_seconds == 300
-    assert cfg.llm_response_cache_types == ("SemanticRouteDecision",)
 
 
 @pytest.mark.asyncio

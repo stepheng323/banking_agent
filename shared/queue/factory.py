@@ -1,4 +1,3 @@
-
 from shared.queue.adapter import QueuePublisher
 from shared.queue.contracts import TopicType
 from shared.queue.redis_stream_publisher import RedisStreamPublisher

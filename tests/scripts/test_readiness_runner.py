@@ -10,6 +10,7 @@ from scripts.readiness_assertions import (
     task_types_from_response,
 )
 from scripts.readiness_models import (
+    LLMCallBudget,
     ReadinessExpectation,
     ReadinessInvocation,
     ReadinessScenario,
@@ -21,6 +22,7 @@ from scripts.readiness_rendering import (
     render_orchestrator_result,
 )
 from scripts.readiness_report import write_json_report, write_text_report
+from scripts.readiness_runner import _repeat_scenarios
 from scripts.readiness_scenarios import resolve_scenarios
 from scripts.readiness_sequence import (
     run_readiness_sequence,
@@ -66,9 +68,11 @@ def test_assert_readiness_turn_checks_substrings_route_tasks_jobs_and_duplicates
         turn,
         "Confirm\nAda",
         route_metadata={
-            "semantic_path_shape": "deterministic_transfer_domain",
-            "routing_owner": "guardrail",
-            "routing_decision": "fresh_transfer_command",
+            "turn_directive": {
+                "owner": "guardrail",
+                "decision": "fresh_transfer_command",
+                "path_shape": "deterministic_transfer_domain",
+            },
         },
         task_types=("transfer",),
         async_jobs=(),
@@ -81,9 +85,11 @@ def test_assert_readiness_turn_checks_substrings_route_tasks_jobs_and_duplicates
         turn,
         "Confirm\nAda\n\nConfirm\nAda",
         route_metadata={
-            "semantic_path_shape": "deterministic_transfer_domain",
-            "routing_owner": "guardrail",
-            "routing_decision": "fresh_transfer_command",
+            "turn_directive": {
+                "owner": "guardrail",
+                "decision": "fresh_transfer_command",
+                "path_shape": "deterministic_transfer_domain",
+            },
         },
         task_types=("transfer",),
         async_jobs=(),
@@ -91,6 +97,42 @@ def test_assert_readiness_turn_checks_substrings_route_tasks_jobs_and_duplicates
 
     assert not failed
     assert any("duplicate visible response block" in error for error in duplicate_errors)
+
+
+def test_llm_call_budget_enforces_ceiling_and_observe_mode() -> None:
+    calls = (
+        {"event_name": "pending_action_edit_llm_call", "duration_ms": 10.0},
+        {"event_name": "interrupt_router_llm_call", "duration_ms": 11.0},
+    )
+    enforced = ReadinessTurn(
+        "make it more",
+        ReadinessExpectation(
+            llm_call_budget=LLMCallBudget(
+                max_calls=1,
+                max_event_counts=(("pending_action_edit_llm_call", 1),),
+                required_event_counts=(("transfer_extractor_llm_call", 1),),
+            )
+        ),
+    )
+    passed, errors = assert_readiness_turn(enforced, "Please clarify.", llm_calls=calls)
+
+    assert not passed
+    assert "LLM budget exceeded: at most 1 total calls; got 2" in errors
+    assert "LLM budget exceeded: at least 1 transfer_extractor_llm_call calls; got 0" in errors
+
+    observed = LLMCallBudget(max_calls=1, observe=True)
+    status, violations = observed.evaluate(calls)
+
+    assert status == "observed"
+    assert violations == ("at most 1 total calls; got 2",)
+
+
+def test_repeat_scenarios_uses_fresh_scenario_identity_per_run() -> None:
+    scenarios = (ReadinessScenario(id="latency", turns=(ReadinessTurn("Hi"),)),)
+
+    repeated = _repeat_scenarios(scenarios, 3)
+
+    assert [scenario.id for scenario in repeated] == ["latency[run-1]", "latency[run-2]", "latency[run-3]"]
 
 
 def test_assert_readiness_turn_checks_planner_quality_and_llm_counts() -> None:
@@ -140,10 +182,14 @@ def test_duplicate_visible_blocks_returns_repeated_blocks() -> None:
 def test_task_types_from_response_falls_back_to_route_shape() -> None:
     assert task_types_from_response({"task_types": ["transfer"]}) == ("transfer",)
     assert task_types_from_response({"task_executors": ["data"]}) == ("data",)
-    assert task_types_from_response({"routing_target_domain": "airtime"}) == ("airtime",)
-    assert task_types_from_response({"semantic_path_shape": "deterministic_transfer_domain"}) == ("transfer",)
-    assert task_types_from_response({"semantic_path_shape": "schedule_read_router_direct"}) == ("schedule",)
-    assert task_types_from_response({"semantic_path_shape": "meta_direct"}) == ()
+    assert task_types_from_response({"turn_directive": {"target_domain": "airtime"}}) == ("airtime",)
+    assert task_types_from_response({"turn_directive": {"path_shape": "deterministic_transfer_domain"}}) == (
+        "transfer",
+    )
+    assert task_types_from_response({"turn_directive": {"path_shape": "schedule_read_router_direct"}}) == (
+        "schedule",
+    )
+    assert task_types_from_response({"turn_directive": {"path_shape": "meta_direct"}}) == ()
 
 
 @pytest.mark.asyncio
@@ -359,6 +405,10 @@ async def test_write_json_report_writes_serializable_result(tmp_path) -> None:
         "http_statuses": {},
         "degraded": False,
     }
+    assert payload["turns"][0]["llm_budget_status"] == "observed"
+    assert payload["turns"][0]["llm_event_chain"] == ["planner_llm_call"]
+    assert payload["llm_audit_summary"][0]["event_chain"] == ["planner_llm_call"]
+    assert payload["llm_audit_summary"][0]["provider_cache_hit_rate"] == 0.6667
     assert payload["slowest_llm_calls"][0]["scenario_id"] == "unit"
     assert payload["slowest_turns"][0]["user_text"] == "hi"
 
@@ -404,6 +454,7 @@ async def test_write_text_report_writes_transcript_and_latency_summary(tmp_path)
     assert "llm_health_degraded=False llm_error_calls=0" in payload
     assert "planner_clean_rate=1.0" in payload
     assert "latency_p95_ms=" in payload
+    assert "LLM call-budget audit:" in payload
 
 
 def test_latency_scenario_is_dry_run_live_probe() -> None:
@@ -461,6 +512,25 @@ def test_planner_scenario_is_dry_run_planner_probe_set() -> None:
     )
 
 
+def test_llm_latency_catalog_covers_bounded_and_observed_call_paths() -> None:
+    scenarios = resolve_scenarios("llm-latency")
+    by_id = {scenario.id: scenario for scenario in scenarios}
+
+    assert {"llm-single-transfer-edit", "llm-batch-edit", "llm-context-display"}.issubset(by_id)
+    single_edit_budget = by_id["llm-single-transfer-edit"].turns[1].expectation.llm_call_budget
+    batch_edit_budget = by_id["llm-batch-edit"].turns[1].expectation.llm_call_budget
+    context_budget = by_id["llm-context-display"].turns[1].expectation.llm_call_budget
+
+    assert single_edit_budget is not None
+    assert single_edit_budget.max_calls == 1
+    assert dict(single_edit_budget.max_event_counts)["pending_action_edit_llm_call"] == 0
+    assert batch_edit_budget is not None
+    assert batch_edit_budget.max_calls == 2
+    assert dict(batch_edit_budget.max_event_counts)["semantic_router_llm_call"] == 1
+    assert context_budget is not None
+    assert context_budget.observe is True
+
+
 def test_readiness_cli_parses_expected_flags() -> None:
     args = readiness.parse_args(
         [
@@ -474,6 +544,8 @@ def test_readiness_cli_parses_expected_flags() -> None:
             "whatsapp",
             "--seed",
             "--reset-session",
+            "--repeat",
+            "3",
             "--json-output",
             ".readiness/latest.json",
             "--transcript-output",
@@ -487,6 +559,7 @@ def test_readiness_cli_parses_expected_flags() -> None:
     assert args.channel == "whatsapp"
     assert args.seed is True
     assert args.reset_session is True
+    assert args.repeat == 3
     assert args.json_output == ".readiness/latest.json"
     assert args.transcript_output == ".readiness/latest.txt"
 
@@ -617,8 +690,18 @@ async def test_readiness_result_reports_provider_and_schema_health() -> None:
         return ReadinessInvocation(
             response={"text": "Hi"},
             llm_calls=(
-                {"event_name": "planner_llm_call", "duration_ms": 10.0, "error_type": "ValidationError", "client_http_status_code": 200},
-                {"event_name": "semantic_router_llm_call", "duration_ms": 20.0, "error_type": "RateLimitError", "client_http_status_code": 429},
+                {
+                    "event_name": "planner_llm_call",
+                    "duration_ms": 10.0,
+                    "error_type": "ValidationError",
+                    "client_http_status_code": 200,
+                },
+                {
+                    "event_name": "semantic_router_llm_call",
+                    "duration_ms": 20.0,
+                    "error_type": "RateLimitError",
+                    "client_http_status_code": 429,
+                },
             ),
         )
 

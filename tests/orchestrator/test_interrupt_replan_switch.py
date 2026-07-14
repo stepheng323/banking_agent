@@ -399,8 +399,8 @@ async def test_pending_schedule_confirmation_allows_read_only_schedule_view() ->
 
     assert planner.schedule_read_calls == 1
     assert updates["pending_interrupt"] == interrupt
-    assert updates["semantic_path_shape"] == "interrupt_schedule_read_context"
-    assert updates["routing_target_domain"] == "schedule"
+    assert updates["turn_directive"].path_shape == "interrupt_schedule_read_context"
+    assert updates["turn_directive"].target_domain == "schedule"
     response = updates["outbox"][0]["text"]
     assert "Scheduled Transaction Details" in response
     assert "2:00 PM Lagos time" in response
@@ -1195,10 +1195,6 @@ async def test_confirmation_continue_flow_resets_task_to_extracted() -> None:
     assert "idempotency_key" not in updates["tasks"]["t1"].payload
 
 
-
-
-
-
 @pytest.mark.asyncio
 async def test_confirmation_amount_shortcut_skips_interrupt_router() -> None:
     state = OrchestratorState(
@@ -1231,7 +1227,7 @@ async def test_confirmation_amount_shortcut_skips_interrupt_router() -> None:
                     confidence=0.95,
                     detected_language="English",
                     target_types=["transfer"],
-                    amount=20000,
+                    amount_mutation={"steps": [{"operation": "set", "amount": 20000}]},
                     reason="scoped multi-transfer edit",
                 )
             ),
@@ -2868,6 +2864,7 @@ async def test_confirmation_continue_flow_rerenders_multi_transfer_summary_from_
             "tasks": interrupt_updates["tasks"],
             "pending_interrupt": interrupt_updates["pending_interrupt"],
             "last_interrupt": interrupt_updates["last_interrupt"],
+            "turn_directive": interrupt_updates["turn_directive"],
         },
         deep=True,
     )
@@ -3083,8 +3080,6 @@ async def test_confirmation_balance_query_switches_to_account_without_router() -
     assert len(task_ids) == 1
     assert updates["tasks"][task_ids[0]].type == "account"
     assert updates["tasks"][task_ids[0]].payload["message"] == "Whats my access balance"
-
-
 
 
 @pytest.mark.asyncio

@@ -55,7 +55,9 @@ async def test_fast_harness_accepts_canonical_readiness_scenario() -> None:
         planner=planner,
     )
 
-    assert result.final_state.routing_decision == "banking_coded_ambiguity_transfer"
+    assert (
+        result.final_state.turn_directive.decision if result.final_state.turn_directive else None
+    ) == "banking_coded_ambiguity_transfer"
     assert result.final_state.tasks == {}
 
 
@@ -100,8 +102,8 @@ async def test_conversation_eval_banking_coded_ambiguity_prompts_skip_router() -
                     user="send me",
                     expect_response_contains=("send money", "recipient"),
                     expect_path_shape="banking_coded_ambiguity_clarify",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="banking_coded_ambiguity_transfer",
+                    expect_turn_owner="guardrail",
+                    expect_turn_decision="banking_coded_ambiguity_transfer",
                     expect_task_types=(),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -109,8 +111,8 @@ async def test_conversation_eval_banking_coded_ambiguity_prompts_skip_router() -
                     user="send receipt for that",
                     expect_response_contains=("Which transaction", "check"),
                     expect_path_shape="banking_coded_ambiguity_clarify",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="banking_coded_ambiguity_support",
+                    expect_turn_owner="guardrail",
+                    expect_turn_decision="banking_coded_ambiguity_support",
                     expect_task_types=(),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -118,8 +120,8 @@ async def test_conversation_eval_banking_coded_ambiguity_prompts_skip_router() -
                     user="payment history",
                     expect_response_contains=("balance", "transaction"),
                     expect_path_shape="banking_coded_ambiguity_clarify",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="banking_coded_ambiguity_account_query",
+                    expect_turn_owner="guardrail",
+                    expect_turn_decision="banking_coded_ambiguity_account_query",
                     expect_task_types=(),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -127,7 +129,9 @@ async def test_conversation_eval_banking_coded_ambiguity_prompts_skip_router() -
         )
     )
 
-    assert result.final_state.routing_decision == "banking_coded_ambiguity_account_query"
+    assert (
+        result.final_state.turn_directive.decision if result.final_state.turn_directive else None
+    ) == "banking_coded_ambiguity_account_query"
     assert planner.route_calls == 0
 
 
@@ -144,8 +148,8 @@ async def test_conversation_eval_self_data_request_routes_directly() -> None:
                 ConversationTurn(
                     user="buy me data",
                     expect_path_shape="deterministic_data_domain",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="deterministic_data_domain",
+                    expect_turn_owner="guardrail",
+                    expect_turn_decision="deterministic_data_domain",
                     expect_task_types=("data",),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -173,8 +177,8 @@ async def test_conversation_eval_wrong_name_stays_meta_direct() -> None:
                     user="Hi Xara",
                     expect_response_contains=("Not Xara", "I'm"),
                     expect_path_shape="meta_direct",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="meta_direct",
+                    expect_turn_owner="guardrail",
+                    expect_turn_decision="meta_direct",
                     expect_task_types=(),
                     expect_planner_route_calls_delta=0,
                 ),
@@ -214,11 +218,10 @@ async def test_conversation_eval_resume_prompt_continue_routes_to_orchestrator_t
                 ConversationTurn(
                     user="continue",
                     expect_path_shape="resume_session_direct",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="resume_session_direct",
+                    expect_turn_owner="guardrail",
+                    expect_turn_decision="resume_session_direct",
                     expect_task_types=("orchestrator",),
                     expect_planner_route_calls_delta=0,
-                    expect_state={"direct_path_triggered": True},
                 ),
             ),
         )

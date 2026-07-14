@@ -1,5 +1,6 @@
 from apps.chat.src.agent.orchestrator.graph.turn_trace import summarize_orchestrator_turn_trace
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.turn_directive import TurnOutcomeKind, build_turn_directive
 
 
 def test_orchestrator_turn_trace_summary_extracts_route_execution_and_interrupt_fields() -> None:
@@ -13,11 +14,14 @@ def test_orchestrator_turn_trace_summary_extracts_route_execution_and_interrupt_
 
     summary = summarize_orchestrator_turn_trace(
         final_state={
-            "routing_owner": "planner",
-            "routing_decision": "transfer",
-            "routing_target_domain": "transfer",
-            "routing_mode": "new",
-            "route_source": "planner",
+            "turn_directive": build_turn_directive(
+                owner="planner",
+                decision="transfer",
+                outcome_kind=TurnOutcomeKind.PLANNER_HANDOFF,
+                target_domain="transfer",
+                mode="new",
+                path_shape="planner",
+            ),
             "planner_used": True,
             "waves": [["task_transfer"]],
             "pending_interrupt": interrupt,

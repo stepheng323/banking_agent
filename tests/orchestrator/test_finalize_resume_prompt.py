@@ -19,6 +19,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
     format_details_response,
 )
 from banking.presentation.i18n.renderer import render_message
+from tests.orchestrator.routing_fixtures import finalize_test_directive
 
 
 def _config() -> RunnableConfig:
@@ -88,6 +89,7 @@ def test_format_details_response_empty_frames_use_natural_empty_copy(
 @pytest.mark.asyncio
 async def test_finalize_stashed_and_completed_appends_resume_prompt() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_1",
         phone_number="2348000000011",
         channel="whatsapp",
@@ -109,6 +111,7 @@ async def test_finalize_stashed_and_completed_appends_resume_prompt() -> None:
 @pytest.mark.asyncio
 async def test_finalize_stashed_with_missing_details_uses_generic_resume_prompt() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_1b",
         phone_number="2348000000011",
         channel="whatsapp",
@@ -124,6 +127,7 @@ async def test_finalize_stashed_with_missing_details_uses_generic_resume_prompt(
 @pytest.mark.asyncio
 async def test_finalize_stashed_and_failed_only_does_not_prompt_resume() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_2",
         phone_number="2348000000012",
         channel="whatsapp",
@@ -140,6 +144,7 @@ async def test_finalize_stashed_and_failed_only_does_not_prompt_resume() -> None
 @pytest.mark.asyncio
 async def test_finalize_stashed_and_cancelled_only_does_not_prompt_resume() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_3",
         phone_number="2348000000013",
         channel="whatsapp",
@@ -157,6 +162,7 @@ async def test_finalize_stashed_and_cancelled_only_does_not_prompt_resume() -> N
 @pytest.mark.asyncio
 async def test_finalize_multiple_cancelled_tasks_emits_single_cancel_message() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_6",
         phone_number="2348000000016",
         channel="whatsapp",
@@ -179,6 +185,7 @@ async def test_finalize_multiple_cancelled_tasks_emits_single_cancel_message() -
 @pytest.mark.asyncio
 async def test_finalize_stashed_with_no_terminal_tasks_does_not_prompt_resume() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_4",
         phone_number="2348000000014",
         channel="whatsapp",
@@ -195,6 +202,7 @@ async def test_finalize_stashed_with_no_terminal_tasks_does_not_prompt_resume() 
 @pytest.mark.asyncio
 async def test_finalize_stashed_and_completed_transfer_does_not_prompt_resume() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_5",
         phone_number="2348000000015",
         channel="whatsapp",
@@ -220,6 +228,7 @@ async def test_finalize_stashed_and_completed_transfer_does_not_prompt_resume() 
 @pytest.mark.asyncio
 async def test_finalize_single_async_transfer_defers_processing_copy_to_executor() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_6",
         phone_number="2348000000016",
         channel="whatsapp",
@@ -262,6 +271,7 @@ async def test_finalize_stale_stash_does_not_prompt_resume_and_cleans_stash() ->
         }
     ]
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_7",
         phone_number="2348000000017",
         channel="whatsapp",
@@ -303,6 +313,7 @@ async def test_finalize_does_not_repeat_resume_prompt_with_live_resume_frame() -
         ttl_seconds=300,
     )
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_8",
         phone_number="2348000000018",
         channel="whatsapp",
@@ -320,6 +331,7 @@ async def test_finalize_does_not_repeat_resume_prompt_with_live_resume_frame() -
 @pytest.mark.asyncio
 async def test_finalize_mixed_transaction_batch_emits_processing_only() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_9",
         phone_number="2348000000019",
         channel="telegram",
@@ -368,6 +380,7 @@ async def test_finalize_mixed_transaction_batch_emits_processing_only() -> None:
 @pytest.mark.asyncio
 async def test_finalize_queued_transfer_batch_does_not_emit_completed_summary() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_11",
         phone_number="2348000000021",
         channel="telegram",
@@ -410,6 +423,7 @@ async def test_finalize_queued_transfer_batch_does_not_emit_completed_summary() 
 @pytest.mark.asyncio
 async def test_finalize_completed_transaction_summary_carries_quote_replay_payload() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_12",
         phone_number="2348000000022",
         channel="telegram",
@@ -514,6 +528,7 @@ def test_completed_transaction_frame_preserves_decimal_amounts_for_details() -> 
 @pytest.mark.asyncio
 async def test_finalize_completed_transfer_clears_interrupt_state() -> None:
     state = OrchestratorState(
+        turn_directive=finalize_test_directive(),
         user_id="u_resume_10",
         phone_number="2348000000020",
         channel="telegram",
