@@ -60,12 +60,7 @@ async def _expired_transaction_interrupt_updates(
         **updates,
         "outbox": [{"type": "say", "text": response_text}],
         "final_response": response_text,
-        "direct_path_triggered": True,
-        "semantic_path_shape": "expired_transaction_session",
-        "routing_owner": "guardrail",
-        "routing_decision": "expired_transaction_session",
-        "routing_target_domain": None,
-        "routing_mode": "expired",
+        "path_shape": "expired_transaction_session",
     }
 
 

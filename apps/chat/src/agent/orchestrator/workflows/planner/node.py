@@ -3,6 +3,11 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.models.turn_directive import (
+    TurnNextStep,
+    TurnOutcomeKind,
+    route_resolution,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.context.flow.context_flow import _build_planner_context
 from apps.chat.src.agent.orchestrator.workflows.planner.execution_flow import _execute_planner_with_context
 from apps.chat.src.agent.orchestrator.workflows.planner.node_constants import QUOTED_REPLAY_MIN_CONFIDENCE
@@ -35,7 +40,18 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     """
     state_view = planner_state_view(state)
     if state_view.has_waves and not state_view.has_pending_interrupt and not _should_replan_active_wave(state):
-        return {}
+        previous = state.turn_directive
+        return route_resolution(
+            updates={"planner_used": False},
+            owner="planner",
+            decision="planner_existing_wave",
+            outcome_kind=TurnOutcomeKind.TASK_DISPATCH,
+            next_step=TurnNextStep.ADVANCE,
+            target_domain=previous.target_domain if previous else None,
+            mode=previous.mode if previous else None,
+            source="planner_pass_through",
+            path_shape="planner",
+        ).materialize(base_state=state)
 
     runtime = build_planner_runtime(state, config)
     state_view = runtime.state_view
@@ -46,7 +62,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     redis_client = dependencies.redis_client
     if task_planner is None:
         logger.error("task_planner_missing")
-        return _planner_unavailable_response(current_locale)
+        return _planner_unavailable_response(current_locale).materialize()
 
     locale_updates = _build_locale_update(state_view, current_locale)
 
@@ -60,7 +76,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         quoted_replay_min_confidence=QUOTED_REPLAY_MIN_CONFIDENCE,
     )
     if quoted_replay_updates is not None:
-        return _quoted_replay_route_response(quoted_replay_updates)
+        return _quoted_replay_route_response(quoted_replay_updates).materialize()
 
     context_result = await _build_planner_context(
         state=state,
@@ -70,7 +86,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         task_planner=task_planner,
     )
     if context_result.shortcut_updates is not None:
-        return _context_read_shortcut_response(context_result.shortcut_updates)
+        return _context_read_shortcut_response(context_result.shortcut_updates).materialize()
 
     planner_context = context_result.planner_context
     active_intent = context_result.active_intent
@@ -92,7 +108,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         )
     except Exception as e:
         logger.error("planner_failed", error=str(e))
-        return _planner_failed_response()
+        return _planner_failed_response(current_locale).materialize()
 
     planner_output = execution_result.planner_output
     planner_quality_report = execution_result.planner_quality_report
@@ -117,9 +133,11 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         conversation_responder=dependencies.conversation_responder,
     )
     if handled_response is not None:
-        updates = _non_task_route_response(handled_response=handled_response, planner_output=planner_output)
-        updates.update(planner_quality_report.to_state_updates())
-        return updates
+        resolution = _non_task_route_response(
+            handled_response=handled_response,
+            planner_output=planner_output,
+        ).with_updates(planner_quality_report.to_state_updates())
+        return resolution.materialize()
 
     if state_view.has_waves and active_intent:
         logger.info("planner_intent_switch_or_update", old=active_intent, new=planner_output.primary_intent)
@@ -133,7 +151,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         query_session_snapshot=query_session_snapshot,
     )
     planner_output = task_updates["planner_output"]
-    response_updates = _build_planner_task_response(
+    response_resolution = _build_planner_task_response(
         task_updates=task_updates,
         planner_output=planner_output,
         text=text,
@@ -141,8 +159,10 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         locale_updates=locale_updates,
         state_view=state_view,
     )
-    response_updates.update(task_updates["planner_quality_report"].to_state_updates())
-    return response_updates
+    response_resolution = response_resolution.with_updates(
+        task_updates["planner_quality_report"].to_state_updates()
+    )
+    return response_resolution.materialize()
 
 
 __all__ = ["plan_tasks"]

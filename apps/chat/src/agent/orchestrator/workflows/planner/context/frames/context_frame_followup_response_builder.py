@@ -55,7 +55,7 @@ def _build_replay_followup_response(
         return None
     return ContextFrameFollowupResponse(
         response=replay_result.response,
-        semantic_path_shape=replay_result.semantic_path_shape,
+        path_shape=replay_result.path_shape,
         recent_domain_focus=replay_result.recent_domain_focus,
         context_frames=refresh_context_frame_for_view(request.state_view, frame),
         tasks=replay_result.tasks,

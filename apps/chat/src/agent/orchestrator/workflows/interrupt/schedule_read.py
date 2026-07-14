@@ -100,11 +100,7 @@ async def _resolve_schedule_read_during_pending_confirmation(
         "context_frames": context_frames,
         "outbox": [{"type": "say", "text": response}],
         "final_response": response,
-        "semantic_path_shape": "interrupt_schedule_read_context",
-        "routing_owner": "interrupt",
-        "routing_decision": "domain_schedule",
-        "routing_target_domain": "schedule",
-        "route_source": "schedule_read_router",
+        "path_shape": "interrupt_schedule_read_context",
     }
 
 

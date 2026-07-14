@@ -1,11 +1,13 @@
-from typing import Any
-
 from apps.chat.src.agent.orchestrator.guardrails.cancellation import cancel_router_fallback_reason
 from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import (
     resolve_interrupt_shortcut_with_reason,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
+from apps.chat.src.agent.orchestrator.workflows.interrupt.outcome import (
+    InterruptResolution,
+    resolve_interrupt_updates,
+)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.route_decisions import _apply_interrupt_route_decision
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_core import (
     _route_interrupt,
@@ -18,7 +20,7 @@ async def _route_and_apply_interrupt_decision(
     *,
     state: OrchestratorState,
     runtime: InterruptRuntime,
-) -> dict[str, Any]:
+) -> InterruptResolution:
     interrupt = runtime.interrupt
     shortcut_locale = runtime.state_view.shortcut_locale
     shortcut_route, miss_reason = resolve_interrupt_shortcut_with_reason(
@@ -61,7 +63,7 @@ async def _route_and_apply_interrupt_decision(
             prompt=interrupt.prompt,
         )
 
-    return await _apply_interrupt_route_decision(
+    updates = await _apply_interrupt_route_decision(
         state=state,
         interrupt=interrupt,
         route=route,
@@ -71,6 +73,12 @@ async def _route_and_apply_interrupt_decision(
         active_type=runtime.active_type,
         services=runtime.services,
         redis_client=runtime.redis_client,
+    )
+    return resolve_interrupt_updates(
+        state,
+        updates,
+        decision=f"interrupt_{route.decision}",
+        source="interrupt_shortcut" if shortcut_route is not None else "interrupt_llm_router",
     )
 
 

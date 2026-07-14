@@ -24,7 +24,7 @@ from shared.types.planner import ContextFrameFollowupDecision, ContextFrameRepla
 @dataclass(frozen=True, slots=True)
 class ContextFrameReplayResult:
     response: str | None = None
-    semantic_path_shape: str = "context_frame_replay"
+    path_shape: str = "context_frame_replay"
     recent_domain_focus: str = "transaction"
     tasks: dict[str, TaskSpec] | None = None
     waves: list[list[str]] | None = None
@@ -72,7 +72,7 @@ def build_context_frame_replay_response_for_view(
                 f"I could not find {source_label!r} among your linked source accounts. "
                 "Choose one of your linked accounts and try again."
             ),
-            semantic_path_shape="context_frame_replay_source_unmatched",
+            path_shape="context_frame_replay_source_unmatched",
         )
 
     entities = replay_target_entities_for_view(

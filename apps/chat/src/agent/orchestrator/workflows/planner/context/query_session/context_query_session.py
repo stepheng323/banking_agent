@@ -1,4 +1,5 @@
 """Query surface snapshot helpers for planner context construction."""
+
 from typing import Any, Protocol
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame

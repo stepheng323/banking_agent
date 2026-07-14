@@ -64,8 +64,6 @@ async def _build_non_task_response(
         return cancellation_response
 
     if planner_output and getattr(planner_output, "unsupported_capability", None) is not None:
-
-
         unsupported_cap = planner_output.unsupported_capability
         capability = get_unsupported_capability(unsupported_cap)
         if capability is not None:

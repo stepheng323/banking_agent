@@ -22,7 +22,7 @@ async def _status_query_updates(
     interrupt: Any,
     route: InterruptRouteDecision,
     current_task_types: set[str],
-    semantic_path_shape: str,
+    path_shape: str,
     task_planner: Any,
     text: str,
     active_type: str,
@@ -62,7 +62,7 @@ async def _status_query_updates(
         "last_interrupt": interrupt,
         "tasks": state_view.tasks,
         "outbox": [{"type": "say", "text": response}],
-        "semantic_path_shape": semantic_path_shape,
+        "path_shape": path_shape,
     }
 
 

@@ -34,7 +34,7 @@ async def _deterministic_status_query_updates(
         interrupt=runtime.interrupt,
         route=route,
         current_task_types=runtime.current_task_types,
-        semantic_path_shape="interrupt_deterministic",
+        path_shape="interrupt_deterministic",
         task_planner=runtime.task_planner,
         text=runtime.text,
         active_type=runtime.active_type,

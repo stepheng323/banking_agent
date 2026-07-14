@@ -79,7 +79,7 @@ async def _handle_auth_interrupt(
             interrupt=interrupt,
             route=route,
             current_task_types=current_task_types,
-            semantic_path_shape="interrupt_router_only",
+            path_shape="interrupt_router_only",
         )
 
     if route.decision in {"cancel", "reject_flow"}:

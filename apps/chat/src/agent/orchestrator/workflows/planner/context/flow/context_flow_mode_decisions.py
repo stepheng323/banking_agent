@@ -1,5 +1,6 @@
 """Planner context mode selection heuristics."""
 
+from apps.chat.src.agent.orchestrator.models.turn_directive import TurnNextStep
 from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import TRANSACTION_EXECUTORS
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.types.planner import RouterDomainIntent, TransactionExecutor
@@ -49,7 +50,8 @@ def _is_narrow_transfer_replan(
         return False
     if active_intent != "transfer":
         active_interrupt_types = state_view.pending_interrupt_task_types
-        if active_interrupt_types != {"transfer"} and state_view.routing_target_domain != "transfer":
+        target_domain = state_view.turn_directive.target_domain if state_view.turn_directive else None
+        if active_interrupt_types != {"transfer"} and target_domain != "transfer":
             return False
     return expected_executors in {(), ("transfer",)}
 
@@ -72,15 +74,18 @@ def _forced_domain_owner(
         return None
     if state_view.has_quote:
         return None
-    if state_view.direct_path_triggered:
+    directive = state_view.turn_directive
+    if not directive:
         return None
-    if state_view.routing_owner != "guardrail":
+    if directive.next_step != TurnNextStep.PLAN:
         return None
-    if state_view.routing_target_domain != "transfer":
+    if directive.owner != "guardrail":
+        return None
+    if directive.target_domain != "transfer":
         return None
     if not state_view.has_transfer_only_preplanner_expectation:
         return None
-    if state_view.routing_decision not in {"batch_transfer_command", "account_aware_transfer_command"}:
+    if directive.decision not in {"batch_transfer_command", "account_aware_transfer_command"}:
         return None
     return "transfer"
 
@@ -109,7 +114,8 @@ def _should_use_compact_transaction_context(
         return False
     if active_intent in TRANSACTION_EXECUTORS:
         return True
-    return state_view.routing_target_domain in TRANSACTION_EXECUTORS
+    target_domain = state_view.turn_directive.target_domain if state_view.turn_directive else None
+    return target_domain in TRANSACTION_EXECUTORS
 
 
 __all__ = [

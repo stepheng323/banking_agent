@@ -102,7 +102,7 @@ def active_flow_question_updates(
     interrupt: PendingInterrupt,
     route: InterruptRouteDecision,
     current_task_types: set[str],
-    semantic_path_shape: str = "active_flow_question",
+    path_shape: str = "active_flow_question",
 ) -> dict[str, Any]:
     """Return a non-destructive answer for an active-flow question."""
 
@@ -126,11 +126,8 @@ def active_flow_question_updates(
         "last_interrupt": interrupt,
         "tasks": state_view.tasks,
         "outbox": [{"type": "say", "text": response}],
-        "semantic_path_shape": semantic_path_shape,
+        "path_shape": path_shape,
     }
-
-
-
 
 
 def _build_active_flow_question_response(
@@ -603,7 +600,6 @@ def _looks_like_question(normalized: str) -> bool:
         return True
 
     return False
-
 
 
 def _matches_any(normalized: str, patterns: tuple[str, ...]) -> bool:

@@ -16,7 +16,7 @@ from shared.types.planner import (
 @dataclass(frozen=True, slots=True)
 class ContextFrameFollowupResponse:
     response: str | None = None
-    semantic_path_shape: str = "context_frame_followup"
+    path_shape: str = "context_frame_followup"
     recent_domain_focus: str | None = None
     context_frames: list[ContextFrame] | None = None
     tasks: dict[str, TaskSpec] | None = None

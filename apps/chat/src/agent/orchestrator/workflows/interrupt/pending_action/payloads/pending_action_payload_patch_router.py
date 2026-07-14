@@ -39,11 +39,17 @@ def _pending_edit_patch_for_field(
     task: Any,
     field: Any,
     value: Any,
+    amount_mutation: Any = None,
 ) -> dict[str, Any] | None:
     if field == "narration" and task.type == "transfer":
         return _narration_patch(value)
     if field == "amount" and task.type in TRANSACTION_INTENTS:
-        return _typed_amount_patch(value, task_type=task.type)
+        return _typed_amount_patch(
+            amount_mutation,
+            task_type=task.type,
+            current_amount=task.payload.get("amount"),
+            legacy_amount=value,
+        )
     if field in {"recipient_name", "recipient_account", "recipient_bank_name"} and task.type == "transfer":
         return _recipient_patch(str(field), value)
     if field == "source_bank_name" and task.type in TRANSACTION_INTENTS:

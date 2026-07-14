@@ -39,7 +39,7 @@ async def _resolve_status_query_operation(
         interrupt=interrupt,
         route=route,
         current_task_types=current_task_types,
-        semantic_path_shape="pending_action_edit",
+        path_shape="pending_action_edit",
         task_planner=task_planner,
         text=text,
         active_type=active_type,

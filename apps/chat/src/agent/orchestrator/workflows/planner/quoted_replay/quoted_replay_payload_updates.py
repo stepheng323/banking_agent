@@ -65,7 +65,7 @@ def _build_quoted_replay_execution_updates(
                 "Choose one of your linked accounts and try again."
             ),
             "normalized_instruction": text,
-            "semantic_path_shape": "quoted_router",
+            "path_shape": "quoted_router",
             **locale_updates,
         }
 
@@ -110,7 +110,7 @@ def _build_quoted_replay_execution_updates(
             return {
                 "final_response": _format_missing_replay_fields(missing_fields),
                 "normalized_instruction": text,
-                "semantic_path_shape": "quoted_router",
+                "path_shape": "quoted_router",
                 **locale_updates,
             }
         return None
@@ -125,7 +125,7 @@ def _build_quoted_replay_execution_updates(
         "waves": [wave_ids],
         "current_wave_index": 0,
         "normalized_instruction": text,
-        "semantic_path_shape": "quoted_router",
+        "path_shape": "quoted_router",
         **locale_updates,
     }
 

@@ -58,7 +58,7 @@ async def _handle_quoted_replay_shortcut(
             return {
                 "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
                 "normalized_instruction": text,
-                "semantic_path_shape": "quoted_router",
+                "path_shape": "quoted_router",
                 **locale_updates,
             }
         if interpretation.decision == "execute":
@@ -72,7 +72,7 @@ async def _handle_quoted_replay_shortcut(
                 return {
                     "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
                     "normalized_instruction": text,
-                    "semantic_path_shape": "quoted_router",
+                    "path_shape": "quoted_router",
                     **locale_updates,
                 }
             if quoted_payload is None:
@@ -83,7 +83,7 @@ async def _handle_quoted_replay_shortcut(
                 return {
                     "final_response": render_message("conversational.clarify", current_locale),
                     "normalized_instruction": text,
-                    "semantic_path_shape": "quoted_router",
+                    "path_shape": "quoted_router",
                     **locale_updates,
                 }
             replay_modifier: ContextFrameReplayModifier | None = None
@@ -129,7 +129,7 @@ async def _handle_quoted_replay_shortcut(
             return {
                 "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
                 "normalized_instruction": text,
-                "semantic_path_shape": "quoted_router",
+                "path_shape": "quoted_router",
                 **locale_updates,
             }
         logger.info("quoted_replay_shortcut_miss", decision=interpretation.decision, reason=interpretation.reason)

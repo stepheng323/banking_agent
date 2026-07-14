@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.context.models import ContextFrame
 from apps.chat.src.agent.orchestrator.context.referents.models import ShortTermReferentMemory
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.models.turn_directive import TurnDirective
 from banking.presentation.i18n.locale import LocaleManager
 from shared.types.planner import PlannerOutput, TransactionExecutor
 
@@ -177,20 +178,8 @@ class PlannerStateView:
         return self.state.turn_context_summary
 
     @property
-    def direct_path_triggered(self) -> bool:
-        return self.state.direct_path_triggered
-
-    @property
-    def routing_owner(self) -> str | None:
-        return self.state.routing_owner
-
-    @property
-    def routing_decision(self) -> str | None:
-        return self.state.routing_decision
-
-    @property
-    def routing_target_domain(self) -> str | None:
-        return self.state.routing_target_domain
+    def turn_directive(self) -> TurnDirective | None:
+        return self.state.turn_directive
 
     @property
     def raw_expected_transaction_executors(self) -> tuple[str, ...]:

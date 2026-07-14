@@ -22,7 +22,32 @@ def _pending_edit_payload_overrides_from_fields(
 
     state_view = interrupt_state_view(state)
     overrides: dict[str, dict[str, Any]] = {}
+    amount_mutation = fields.get("amount_mutation")
+    amount_value = fields.get("amount")
+    if amount_mutation is not None or amount_value not in (None, ""):
+        target_ids = _pending_edit_target_task_ids(
+            state=state,
+            interrupt=interrupt,
+            decision=target,
+            field="amount",
+        )
+        for task_id in target_ids:
+            task = state_view.task(task_id)
+            if task is None:
+                continue
+            patch = _pending_edit_patch_for_field(
+                state=state,
+                task=task,
+                field="amount",
+                value=amount_value,
+                amount_mutation=amount_mutation,
+            )
+            if patch:
+                overrides[task_id] = {**overrides.get(task_id, {}), **patch}
+
     for field, value in fields.items():
+        if field in {"amount", "amount_mutation"}:
+            continue
         if value in (None, ""):
             continue
         target_ids = _pending_edit_target_task_ids(

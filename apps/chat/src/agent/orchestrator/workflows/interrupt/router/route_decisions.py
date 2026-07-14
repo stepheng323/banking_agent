@@ -44,7 +44,7 @@ async def _apply_interrupt_route_decision(
             interrupt=interrupt,
             route=route,
             current_task_types=current_task_types,
-            semantic_path_shape="interrupt_router_only",
+            path_shape="interrupt_router_only",
         )
 
     if route.decision == "status_query":
@@ -53,7 +53,7 @@ async def _apply_interrupt_route_decision(
             interrupt=interrupt,
             route=route,
             current_task_types=current_task_types,
-            semantic_path_shape="interrupt_router_only",
+            path_shape="interrupt_router_only",
             task_planner=task_planner,
             text=text,
             active_type=active_type,

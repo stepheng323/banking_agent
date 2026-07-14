@@ -3,6 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.workflows.planner.outcomes import (
+    PlannerResolution,
     batch_limit_response,
     policy_block,
     task_dispatch,
@@ -41,7 +42,7 @@ def _build_planner_task_response(
     current_locale: str,
     locale_updates: dict[str, Any],
     state_view: PlannerStateView,
-) -> dict[str, Any]:
+) -> PlannerResolution:
     if task_updates.get("capability_block_response"):
         return policy_block(
             response=task_updates["capability_block_response"],

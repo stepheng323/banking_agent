@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.reprompt.reprompt_inpu
     _build_compact_transfer_input_reprompt,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
+from banking.presentation.i18n.renderer import render_message
 
 
 def _reprompt_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
@@ -29,13 +30,25 @@ def _reprompt_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any
     elif interrupt.kind == "auth":
         outbox = _build_auth_reprompt_outbox(state, interrupt)
 
+    if not outbox:
+        prompt = str(getattr(interrupt, "prompt", "") or "").strip()
+        outbox = [
+            {
+                "type": "say",
+                "text": prompt
+                or render_message(
+                    "conversational.clarify",
+                    state_view.current_locale,
+                ),
+            }
+        ]
+
     updates: dict[str, Any] = {
         "pending_interrupt": interrupt,
         "last_interrupt": interrupt,
         "tasks": state_view.tasks,
     }
-    if outbox:
-        updates["outbox"] = outbox
+    updates["outbox"] = outbox
     return updates
 
 

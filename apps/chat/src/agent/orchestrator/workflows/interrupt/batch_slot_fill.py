@@ -17,6 +17,9 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_continue i
 from apps.chat.src.agent.orchestrator.workflows.interrupt.runtime import InterruptRuntime
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from banking.transfers.extraction.parsers import parse_amount_input
+from shared.money import to_naira
+from shared.money_mutations import AmountMutationEvaluationError, evaluate_amount_mutation
+from shared.types.amount_mutation import set_amount_mutation
 from shared.types.planner import BatchSlotPatchDecision, BatchSlotPatchUpdate
 from shared.utils.bank_aliases import display_bank_name, normalize_bank_name
 from shared.utils.sanitize import normalize_bank_account_number
@@ -392,10 +395,7 @@ def _deterministic_batch_slot_overrides(
 
     unsafe_or_incomplete = invalid_candidate_count > 0
     complete_confident = bool(
-        candidates
-        and invalid_candidate_count == 0
-        and unresolved == 0
-        and len(overrides) == len(candidates)
+        candidates and invalid_candidate_count == 0 and unresolved == 0 and len(overrides) == len(candidates)
     )
     return overrides, complete_confident, unsafe_or_incomplete
 
@@ -545,7 +545,22 @@ def _batch_source_choice_overrides(
     return {task_id: dict(patch) for task_id, _task in tasks}
 
 
-def _patch_from_semantic_update(update: BatchSlotPatchUpdate) -> dict[str, Any] | None:
+def _semantic_amount_patch(update: BatchSlotPatchUpdate, current_amount: Any) -> dict[str, Any] | None:
+    mutation = update.amount_mutation
+    if mutation is None and update.amount is not None:
+        legacy_amount = to_naira(update.amount)
+        if legacy_amount is None:
+            return None
+        mutation = set_amount_mutation(legacy_amount)
+    if mutation is None:
+        return None
+    try:
+        return _amount_patch(evaluate_amount_mutation(current_amount, mutation))
+    except AmountMutationEvaluationError:
+        return None
+
+
+def _patch_from_semantic_update(update: BatchSlotPatchUpdate, task: TaskSpec) -> dict[str, Any] | None:
     patch: dict[str, Any] = {}
     if update.recipient_account is not None:
         account = normalize_bank_account_number(str(update.recipient_account))
@@ -573,9 +588,11 @@ def _patch_from_semantic_update(update: BatchSlotPatchUpdate) -> dict[str, Any] 
             },
         )
 
-    amount_patch = _amount_patch(update.amount)
+    amount_patch = _semantic_amount_patch(update, task.payload.get("amount"))
     if amount_patch is not None:
         _merge_patch(patch, amount_patch)
+    elif update.amount is not None or update.amount_mutation is not None:
+        return None
 
     narration_patch = _narration_patch(update.narration)
     if narration_patch is not None:
@@ -606,7 +623,8 @@ def _semantic_overrides(
         if task_id is None:
             invalid_count += 1
             continue
-        patch = _patch_from_semantic_update(update)
+        task = next(task for candidate_id, task in tasks if candidate_id == task_id)
+        patch = _patch_from_semantic_update(update, task)
         if patch is None:
             invalid_count += 1
             continue

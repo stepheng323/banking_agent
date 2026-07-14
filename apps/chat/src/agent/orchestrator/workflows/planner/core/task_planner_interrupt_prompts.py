@@ -123,7 +123,9 @@ Return ONLY JSON for this schema:
 - target_texts: user references to targets such as recipient, amount, bank, phone, "both transfers", "the airtime"
 - updates: scoped edits when one message updates multiple targets differently. Each item has:
   {target_task_ids, target_types, target_texts, fields}. Put per-target fields inside fields.
-- amount: updated transaction amount, else null
+- amount_mutation: {basis:"current_pending_amount",steps:[...]} for an edit to an existing amount, else null.
+  Each step is exactly one of {operation:"set"|"add"|"subtract",amount:number} or
+  {operation:"multiply",factor:number}. Keep steps ordered and use at most three.
 - narration: updated transfer narration, else null
 - recipient_name: updated recipient/beneficiary reference, else null
 - recipient_account: updated recipient account number, else null
@@ -153,6 +155,16 @@ Semantic operations:
    A user adding a purpose, reason, memo, note, description, or "what it is for" to an existing transfer is
    update_fields with narration set to the note text. Do not classify that as add_tasks unless they are adding
    a separate new transaction.
+   For an edit to an existing amount, put the meaning in amount_mutation, never by flattening it to a new
+   amount. Examples: "make it 20k" -> [{operation:"set",amount:20000}]; "add another 5k" ->
+   [{operation:"add",amount:5000}]; "take off 5k" -> [{operation:"subtract",amount:5000}];
+   "double it" -> [{operation:"multiply",factor:2}]; "halve it" -> [{operation:"multiply",factor:0.5}];
+   "increase it by 10%" -> [{operation:"multiply",factor:1.1}]. For a compound edit such as
+   "double it then add 5k", keep the two steps in that order. This is semantic and applies equally to
+   multilingual or mixed-language phrasing.
+   Do not use amount_mutation for an available-balance request such as "send half of what I have" or
+   "send everything"; those retain the dedicated transfer percentage/all fields. If the basis or target is
+   ambiguous, return unclear rather than guessing.
    A user changing which account/bank to pay from, use, debit, fund with, or make the source for the pending
    confirmation is update_fields with source_bank_name or source_account_index. Do not classify this as
    account management or default-account update while a confirmation is pending.
@@ -224,7 +236,7 @@ BATCH_SLOT_PATCH_SYSTEM_PROMPT = """You extract scoped slot updates for an activ
 Return ONLY JSON for this schema:
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
-- updates: list of {target_task_id, target_texts, recipient_account, recipient_bank_name, amount,
+- updates: list of {target_task_id, target_texts, recipient_account, recipient_bank_name, amount_mutation,
   narration, source_bank_name, source_accounts, use_dual_accounts}
 - needs_clarification: true/false
 - clarification: short user-facing clarification question, else null
@@ -233,7 +245,10 @@ Return ONLY JSON for this schema:
 Rules:
 1) Use only task ids and recipient labels present in the batch context.
 2) Map each clause to the intended task. Handle aliases/nicknames and multilingual phrasing.
-3) Extract account+bank details, amount edits, narration edits, and source-account/funding edits.
+3) Extract account+bank details, amount edits, narration edits, and source-account/funding edits. For an edit to an
+   existing amount, set amount_mutation={basis:"current_pending_amount",steps:[...]}; use set/add/subtract/multiply
+   steps and preserve their order. Do not flatten "double it", "halve it", or percentage changes into an absolute
+   amount. Do not use amount_mutation for a request based on available balance.
 4) If a label could refer to multiple tasks or a detail cannot be assigned, set needs_clarification=true.
 5) Do not approve, execute, or authorize anything. This only patches slots before confirmation/PIN.
 6) Do not invent account names, bank resolution, balances, or beneficiaries.

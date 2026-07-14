@@ -36,9 +36,7 @@ def _target_task_ids_from_decision(
     removed: bool = False,
 ) -> list[str]:
     explicit_ids = [
-        str(task_id)
-        for task_id in (getattr(decision, "target_task_ids", []) or [])
-        if str(task_id) in task_ids
+        str(task_id) for task_id in (getattr(decision, "target_task_ids", []) or []) if str(task_id) in task_ids
     ]
     if explicit_ids:
         return list(dict.fromkeys(explicit_ids))

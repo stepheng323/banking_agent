@@ -122,7 +122,7 @@ async def try_context_frame_followup_shortcut(
             expected_transaction_executors=(),
         ),
         shortcut_updates={
-            "semantic_path_shape": frame_followup.semantic_path_shape,
+            "path_shape": frame_followup.path_shape,
             "context_frames": frame_followup.context_frames or state_view.context_frames,
             **({"final_response": frame_followup.response} if frame_followup.response else {}),
             **({"tasks": frame_followup.tasks} if frame_followup.tasks else {}),
