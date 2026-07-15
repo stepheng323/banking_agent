@@ -171,6 +171,7 @@ def test_runtime_bundle_factory_delegates_to_public_builder(monkeypatch: pytest.
         "llm": llm,
         "query_llm": query_llm,
         "semantic_router_llm": semantic_router_llm,
+        "conversation_llm": None,
         "interrupt_llm": interrupt_llm,
         "extractor_llm": extractor_llm,
     }

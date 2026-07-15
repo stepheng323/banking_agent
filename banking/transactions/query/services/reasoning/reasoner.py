@@ -10,6 +10,7 @@ from typing import Any, Literal, cast
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
 
+from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.continuations.classifier import ContinuationClassifier
 from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import (
@@ -20,12 +21,18 @@ from banking.transactions.query.models.domain import (
 from banking.transactions.query.models.extraction import QueryExtractionResult
 from banking.transactions.query.prompts.main import (
     QUERY_SEMANTIC_REASONER_CONTEXT,
-    QUERY_SEMANTIC_REASONER_SYSTEM,
 )
 from banking.transactions.query.services.reasoning import models as reasoner_models
+from banking.transactions.query.services.reasoning.prompt_compiler import compile_query_reasoner_prompt
 from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut
-from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
-from shared.observability.llm_call_metrics import record_llm_call, structured_output_metrics
+from shared.observability.llm import LLMCallDeadlineExceeded, ainvoke_with_config, build_llm_runnable_config
+from shared.observability.llm_call_metrics import record_llm_call, response_schema_metrics, structured_output_metrics
+from shared.observability.llm_http import start_llm_http_recording, stop_llm_http_recording, summarize_llm_http_records
+from shared.observability.llm_provider_metadata import extract_provider_llm_metadata
+from shared.observability.structured_output import (
+    unpack_observable_structured_output,
+    with_observable_structured_output,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -62,8 +69,25 @@ class QuerySemanticReasoner:
     def __init__(self, llm: Runnable):
         self._base_llm = llm
         typed_llm = cast(Any, llm)
-        self._active_structured_llm = typed_llm.with_structured_output(reasoner_models.ActiveContinuationDecision)
-        self._pending_structured_llm = typed_llm.with_structured_output(reasoner_models.PendingClarificationDecision)
+        self._active_structured_llms = {
+            "focused_item": with_observable_structured_output(
+                typed_llm, reasoner_models.FocusedItemDecision, method="function_calling"
+            ),
+            "transaction_list": with_observable_structured_output(
+                typed_llm, reasoner_models.TransactionListDecision, method="function_calling"
+            ),
+            "grouped_summary": with_observable_structured_output(
+                typed_llm, reasoner_models.GroupedSummaryDecision, method="function_calling"
+            ),
+            "historical_frames": with_observable_structured_output(
+                typed_llm, reasoner_models.HistoricalFrameDecision, method="function_calling"
+            ),
+        }
+        self._pending_structured_llm = with_observable_structured_output(
+            typed_llm,
+            reasoner_models.PendingClarificationDecision,
+            method="function_calling",
+        )
         self._continuation_classifier = ContinuationClassifier()
 
     @staticmethod
@@ -99,6 +123,7 @@ class QuerySemanticReasoner:
         context_bytes: int | None = None,
         llm_calls_used: int | None = None,
         single_llm_invariant: bool | None = None,
+        prompt_profile: str | None = None,
     ) -> None:
         logger.info(
             "query_trace",
@@ -117,6 +142,7 @@ class QuerySemanticReasoner:
             context_bytes=context_bytes,
             llm_calls_used=llm_calls_used,
             single_llm_invariant=single_llm_invariant,
+            prompt_profile=prompt_profile,
             outcome=outcome,
         )
 
@@ -151,6 +177,10 @@ class QuerySemanticReasoner:
         dynamic_context: str,
         output: Any | None = None,
         error_type: str | None = None,
+        provider_fields: dict[str, Any] | None = None,
+        system_prompt: str,
+        prompt_profile: str,
+        response_type: type[Any],
     ) -> None:
         output_metrics = structured_output_metrics(output) if output is not None else {}
         model = getattr(self._base_llm, "model_name", None) or getattr(self._base_llm, "model", None)
@@ -159,7 +189,7 @@ class QuerySemanticReasoner:
             duration_ms=duration_ms,
             model=model,
             response_type=type(output).__name__ if output is not None else None,
-            system_chars=len(QUERY_SEMANTIC_REASONER_SYSTEM),
+            system_chars=len(system_prompt),
             user_chars=len(dynamic_context),
             output_json_chars=output_metrics.get("output_json_chars"),
             output_token_estimate=output_metrics.get("output_token_estimate"),
@@ -171,6 +201,10 @@ class QuerySemanticReasoner:
                 "prompt_frame_count": prompt_frame_count,
                 "prompt_surface_type": prompt_surface_type,
                 "context_bytes": len(dynamic_context.encode("utf-8")),
+                "prompt_profile": prompt_profile,
+                "prompt_cache_key_version": "v2",
+                **response_schema_metrics(response_type),
+                **(provider_fields or {}),
             },
         )
 
@@ -457,17 +491,37 @@ class QuerySemanticReasoner:
         self,
         context: reasoner_models.SemanticReasonerContext,
     ) -> reasoner_models.QuerySemanticDecision:
-        items_section, prompt_item_count = self._serialize_items(context.items)
-        query_frames_section, prompt_frame_count = self._serialize_query_frames(context.query_frames)
         prompt_surface_type = self._surface_type_name(surface_view=context.surface_view)
-        stashed_sessions_section = self._serialize(context.stashed_sessions)
+        if context.session_mode == "pending_clarification":
+            prompt_profile: reasoner_models.ReasonerPromptProfileType = "pending_clarification"
+        elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.DIRECT_ANSWER:
+            prompt_profile = "focused_item"
+        elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.GROUPED_SUMMARY:
+            prompt_profile = "grouped_summary"
+        elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.TRANSACTION_LIST:
+            prompt_profile = "transaction_list"
+        else:
+            prompt_profile = "historical_frames"
+        compiled_prompt = compile_query_reasoner_prompt(prompt_profile)
+        items_section, prompt_item_count = self._serialize_items(
+            context.items if prompt_profile in {"focused_item", "transaction_list", "grouped_summary"} else None
+        )
+        query_frames_section, prompt_frame_count = self._serialize_query_frames(
+            context.query_frames if prompt_profile == "historical_frames" else None
+        )
+        stashed_sessions_section = (
+            self._serialize(context.stashed_sessions) if prompt_profile == "historical_frames" else "none"
+        )
+        pending_clarification_section = (
+            self._serialize(context.pending_clarification) if prompt_profile == "pending_clarification" else "none"
+        )
         dynamic_context = QUERY_SEMANTIC_REASONER_CONTEXT.format(
             today=context.today.isoformat(),
             language=context.language,
             session_mode=context.session_mode,
             message=context.message,
             current_query=self._serialize_query_anchor(context.query_contract),
-            pending_clarification=self._serialize(context.pending_clarification),
+            pending_clarification=pending_clarification_section,
             surface_type=prompt_surface_type,
             surface_context=self._serialize_surface_snapshot(surface_view=context.surface_view),
             items_section=items_section,
@@ -475,17 +529,25 @@ class QuerySemanticReasoner:
             query_frames_section=query_frames_section,
         )
         messages = [
-            SystemMessage(content=QUERY_SEMANTIC_REASONER_SYSTEM),
+            SystemMessage(content=compiled_prompt.system_prompt),
             HumanMessage(content=dynamic_context),
         ]
         prompt_context_bytes = len(dynamic_context.encode("utf-8"))
         if context.session_mode == "pending_clarification":
             structured_llm = self._pending_structured_llm
+            response_type: type[Any] = reasoner_models.PendingClarificationDecision
             reasoner_schema: reasoner_models.ReasonerSchemaType = "pending_clarification"
         else:
-            structured_llm = self._active_structured_llm
+            structured_llm = self._active_structured_llms[prompt_profile]
+            response_type = {
+                "focused_item": reasoner_models.FocusedItemDecision,
+                "transaction_list": reasoner_models.TransactionListDecision,
+                "grouped_summary": reasoner_models.GroupedSummaryDecision,
+                "historical_frames": reasoner_models.HistoricalFrameDecision,
+            }[prompt_profile]
             reasoner_schema = "active_continuation"
         started_at = perf_counter()
+        http_recording_token = start_llm_http_recording()
         try:
             raw_decision = await ainvoke_with_config(
                 structured_llm,
@@ -500,11 +562,15 @@ class QuerySemanticReasoner:
                         "reasoner_schema": reasoner_schema,
                         "prompt_item_count": prompt_item_count,
                         "prompt_frame_count": prompt_frame_count,
+                        "prompt_profile": prompt_profile,
                     },
                 )
                 or None,
+                invocation_kwargs={"prompt_cache_key": compiled_prompt.cache_key},
+                role="query_reasoner",
             )
-        except Exception:
+        except Exception as exc:
+            http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
             duration_ms = (perf_counter() - started_at) * 1000.0
             self._log_llm_call(
                 duration_ms=duration_ms,
@@ -521,7 +587,11 @@ class QuerySemanticReasoner:
                 prompt_frame_count=prompt_frame_count,
                 prompt_surface_type=prompt_surface_type,
                 dynamic_context=dynamic_context,
-                error_type="invoke_error",
+                error_type=type(exc).__name__,
+                provider_fields=http_metrics,
+                system_prompt=compiled_prompt.system_prompt,
+                prompt_profile=prompt_profile,
+                response_type=response_type,
             )
             self._log_query_trace(
                 context=context,
@@ -537,9 +607,14 @@ class QuerySemanticReasoner:
                 context_bytes=prompt_context_bytes,
                 llm_calls_used=1,
                 single_llm_invariant=True,
+                prompt_profile=prompt_profile,
             )
             raise
+        http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
         duration_ms = (perf_counter() - started_at) * 1000.0
+        raw_response, raw_decision, parsing_error = unpack_observable_structured_output(raw_decision)
+        if parsing_error is not None:
+            raise parsing_error
         self._log_llm_call(
             duration_ms=duration_ms,
             reasoner_schema=reasoner_schema,
@@ -556,6 +631,10 @@ class QuerySemanticReasoner:
             prompt_surface_type=prompt_surface_type,
             dynamic_context=dynamic_context,
             output=raw_decision,
+            provider_fields={**http_metrics, **extract_provider_llm_metadata(raw_response)},
+            system_prompt=compiled_prompt.system_prompt,
+            prompt_profile=prompt_profile,
+            response_type=response_type,
         )
         decision = raw_decision.to_public_decision() if hasattr(raw_decision, "to_public_decision") else raw_decision
         self._log_query_trace(
@@ -571,6 +650,7 @@ class QuerySemanticReasoner:
             context_bytes=prompt_context_bytes,
             llm_calls_used=1,
             single_llm_invariant=True,
+            prompt_profile=prompt_profile,
         )
         return decision
 
@@ -683,6 +763,27 @@ class QuerySemanticReasoner:
                 else "active_continuation",
             )
             return decision
+        except LLMCallDeadlineExceeded as exc:
+            logger.warning(
+                "query_semantic_reasoner_deadline_exceeded",
+                role=exc.role,
+                deadline_seconds=exc.deadline_seconds,
+            )
+            return await self._return_annotated_decision(
+                context=context,
+                decision=reasoner_models.QuerySemanticDecision(
+                    decision="continuation",
+                    confidence=0.0,
+                    reason="query_reasoner_timeout",
+                    continuation_type="unclear",
+                    followup_intent="none",
+                    response_text=render_message("orchestrator.fallback.query_timeout", context.language),
+                ),
+                llm_used=True,
+                reasoner_schema="pending_clarification"
+                if context.session_mode == "pending_clarification"
+                else "active_continuation",
+            )
         except Exception as exc:
             logger.error("query_semantic_reasoner_failed", error=str(exc))
             if context.session_mode == "none":

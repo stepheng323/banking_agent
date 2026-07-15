@@ -11,7 +11,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_regist
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
 from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import policy_block
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, policy_block
 from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
     _semantic_route_decision,
     _semantic_route_mode,
@@ -39,6 +39,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit im
     _build_query_session_exit_updates,
 )
 from banking.presentation.i18n.renderer import render_message
+from shared.observability.llm import LLMCallDeadlineExceeded
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -171,7 +172,23 @@ async def resolve_semantic_route(ctx: GateContext) -> RouteResolution | None:
     if not _semantic_router_can_run(ctx, skip_for_interrupt=skip_semantic_router_for_interrupt):
         return None
 
-    route = await _classify_semantic_route(ctx)
+    try:
+        route = await _classify_semantic_route(ctx)
+    except LLMCallDeadlineExceeded as exc:
+        logger.warning(
+            "gate_semantic_router_deadline_exceeded",
+            role=exc.role,
+            deadline_seconds=exc.deadline_seconds,
+        )
+        return direct_response(
+            ctx,
+            response=render_message("orchestrator.fallback.router_timeout", ctx.current_locale),
+            owner="semantic_router",
+            decision="semantic_router_timeout",
+            source="semantic_router",
+            path_shape="semantic_router_timeout",
+            extra_updates={**(ctx.summary_updates or {}), **ctx.gate_updates},
+        )
     if route is None:
         return None
     return await _handle_semantic_route(ctx, route)

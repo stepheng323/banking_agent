@@ -7,15 +7,28 @@ from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from banking.transactions.shared.models.smart_context import SmartContext
+from banking.transfers.extraction.amendment_prompt import TRANSFER_AMENDMENT_PROMPT
 from banking.transfers.extraction.prompt import (
     TRANSFER_EXTRACTION_PROMPT,
 )
+from banking.transfers.models.amendment import TransferAmendmentPatch
 from banking.transfers.models.extraction import TransferExtractionResult
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.observability.llm_call_metrics import (
     estimated_tokens_from_chars,
     record_llm_call,
+    response_schema_metrics,
     structured_output_metrics,
+)
+from shared.observability.llm_http import (
+    start_llm_http_recording,
+    stop_llm_http_recording,
+    summarize_llm_http_records,
+)
+from shared.observability.llm_provider_metadata import extract_provider_llm_metadata
+from shared.observability.structured_output import (
+    unpack_observable_structured_output,
+    with_observable_structured_output,
 )
 from shared.utils.logging import get_logger
 
@@ -30,7 +43,98 @@ class TransferEntityExtractor:
 
     def __init__(self, llm: BaseChatModel | None = None) -> None:
         self.llm = llm or ChatOpenAI(model="gpt-4o-mini", temperature=0, model_kwargs={"seed": 42})
-        self.structured = self.llm.with_structured_output(TransferExtractionResult)
+        self.structured = with_observable_structured_output(self.llm, TransferExtractionResult)
+        # Function calling permits omitted optional fields. JSON-schema strict
+        # mode forces a long list of nulls for this sparse patch and inflates
+        # both output tokens and latency.
+        self.structured_amendment = with_observable_structured_output(
+            self.llm,
+            TransferAmendmentPatch,
+            method="function_calling",
+        )
+
+    async def extract_amendment(
+        self,
+        text: str,
+        *,
+        smart_context: dict[str, Any] | None = None,
+    ) -> TransferAmendmentPatch:
+        """Interpret a single pending-transfer edit with a small schema and prompt."""
+        context_str = self._build_context_string(smart_context)
+        user_content = text.strip()
+        if context_str:
+            user_content = f"{user_content}\n\nPending transfer context:\n{context_str}"
+        started_at = time.perf_counter()
+        http_recording_token = start_llm_http_recording()
+        try:
+            result = await ainvoke_with_config(
+                self.structured_amendment,
+                [
+                    {"role": "system", "content": TRANSFER_AMENDMENT_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                config=build_llm_runnable_config(
+                    role="transfer_extractor",
+                    phone_number=(
+                        str(smart_context.get("phone_number") or "") if isinstance(smart_context, dict) else None
+                    ),
+                    locale=str(smart_context.get("language") or "") if isinstance(smart_context, dict) else None,
+                    task_domain="transfer",
+                    extra_metadata={"prompt_profile": "single_amendment_v1"},
+                )
+                or None,
+                invocation_kwargs={"prompt_cache_key": "transfer-amendment:v1"},
+                role="transfer_extractor",
+            )
+        except Exception as exc:
+            http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
+            record_llm_call(
+                event_name="transfer_amendment_llm_call",
+                duration_ms=(time.perf_counter() - started_at) * 1000,
+                model=getattr(self.llm, "model_name", None) or getattr(self.llm, "model", None),
+                response_type=TransferAmendmentPatch.__name__,
+                system_chars=len(TRANSFER_AMENDMENT_PROMPT),
+                user_chars=len(user_content),
+                extra_fields={
+                    **http_metrics,
+                    "prompt_profile": "single_amendment_v1",
+                    "prompt_cache_key_version": "v1",
+                    **response_schema_metrics(TransferAmendmentPatch),
+                },
+                error_type=type(exc).__name__,
+            )
+            raise
+        http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
+        duration_ms = (time.perf_counter() - started_at) * 1000
+        raw_response, parsed_result, parsing_error = unpack_observable_structured_output(result)
+        if parsing_error is not None:
+            raise parsing_error
+        validated = (
+            parsed_result
+            if isinstance(parsed_result, TransferAmendmentPatch)
+            else TransferAmendmentPatch.model_validate(parsed_result)
+        )
+        output_metrics = structured_output_metrics(validated)
+        model = getattr(self.llm, "model_name", None) or getattr(self.llm, "model", None)
+        provider_fields = {**http_metrics, **extract_provider_llm_metadata(raw_response)}
+        record_llm_call(
+            event_name="transfer_amendment_llm_call",
+            duration_ms=duration_ms,
+            model=model,
+            response_type=TransferAmendmentPatch.__name__,
+            system_chars=len(TRANSFER_AMENDMENT_PROMPT),
+            user_chars=len(user_content),
+            output_json_chars=output_metrics["output_json_chars"],
+            output_token_estimate=output_metrics["output_token_estimate"],
+            extra_fields={
+                **output_metrics,
+                **provider_fields,
+                "prompt_profile": "single_amendment_v1",
+                "prompt_cache_key_version": "v1",
+                **response_schema_metrics(TransferAmendmentPatch),
+            },
+        )
+        return validated
 
     @staticmethod
     def _context_mode(smart_context: dict[str, Any] | None) -> str:
@@ -182,27 +286,60 @@ class TransferEntityExtractor:
             user_message = {"role": "user", "content": user_content}
 
         start = time.perf_counter()
-        result = await ainvoke_with_config(
-            self.structured,
-            [
-                {"role": "system", "content": TRANSFER_EXTRACTION_PROMPT},
-                user_message,
-            ],
-            config=build_llm_runnable_config(
+        http_recording_token = start_llm_http_recording()
+        try:
+            result = await ainvoke_with_config(
+                self.structured,
+                [
+                    {"role": "system", "content": TRANSFER_EXTRACTION_PROMPT},
+                    user_message,
+                ],
+                config=build_llm_runnable_config(
+                    role="transfer_extractor",
+                    phone_number=(
+                        str(smart_context.get("phone_number") or "") if isinstance(smart_context, dict) else None
+                    ),
+                    locale=str(smart_context.get("language") or "") if isinstance(smart_context, dict) else None,
+                    task_domain="transfer",
+                    extra_metadata={"context_mode": context_mode, "has_image": bool(image_data)},
+                )
+                or None,
                 role="transfer_extractor",
-                phone_number=str(smart_context.get("phone_number") or "") if isinstance(smart_context, dict) else None,
-                locale=str(smart_context.get("language") or "") if isinstance(smart_context, dict) else None,
-                task_domain="transfer",
-                extra_metadata={"context_mode": context_mode, "has_image": bool(image_data)},
             )
-            or None,
-        )
+        except Exception as exc:
+            http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
+            record_llm_call(
+                event_name="transfer_extractor_llm_call",
+                duration_ms=(time.perf_counter() - start) * 1000,
+                model=getattr(self.llm, "model_name", None) or getattr(self.llm, "model", None),
+                response_type=TransferExtractionResult.__name__,
+                system_chars=len(TRANSFER_EXTRACTION_PROMPT),
+                user_chars=len(user_content),
+                extra_fields={
+                    **http_metrics,
+                    "context_chars": len(context_str),
+                    "context_mode": context_mode,
+                    "has_image": bool(image_data),
+                    "prompt_profile": "full_extraction_v1",
+                    "prompt_cache_key_version": "none",
+                    **response_schema_metrics(TransferExtractionResult),
+                },
+                error_type=type(exc).__name__,
+            )
+            raise
+        http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
         duration_ms = (time.perf_counter() - start) * 1000
+        raw_response, parsed_result, parsing_error = unpack_observable_structured_output(result)
+        if parsing_error is not None:
+            raise parsing_error
         validated = (
-            result if isinstance(result, TransferExtractionResult) else TransferExtractionResult.model_validate(result)
+            parsed_result
+            if isinstance(parsed_result, TransferExtractionResult)
+            else TransferExtractionResult.model_validate(parsed_result)
         )
         output_metrics = structured_output_metrics(validated)
         model = getattr(self.llm, "model_name", None) or getattr(self.llm, "model", None)
+        provider_fields = {**http_metrics, **extract_provider_llm_metadata(raw_response)}
         logger.info(
             "transfer_extractor_llm_call",
             duration_ms=round(duration_ms, 2),
@@ -213,6 +350,7 @@ class TransferEntityExtractor:
             **output_metrics,
             context_chars=len(context_str),
             context_mode=context_mode,
+            **provider_fields,
         )
         record_llm_call(
             event_name="transfer_extractor_llm_call",
@@ -227,6 +365,10 @@ class TransferEntityExtractor:
                 "context_chars": len(context_str),
                 "context_mode": context_mode,
                 "has_image": bool(image_data),
+                "prompt_profile": "full_extraction_v1",
+                "prompt_cache_key_version": "none",
+                **response_schema_metrics(TransferExtractionResult),
+                **provider_fields,
             },
         )
         return validated

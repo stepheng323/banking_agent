@@ -263,6 +263,7 @@ def parse_amount_input(user_message: str) -> float | None:
 def parse_simple_transfer_command(
     user_message: str,
     current_payload: TransferPayload,
+    beneficiaries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """Deterministically parse obvious single-recipient send commands."""
     if any(
@@ -336,6 +337,46 @@ def parse_simple_transfer_command(
 
     if any(c.isdigit() for c in target):
         return None
+
+    # A saved alias can legitimately contain a bank word (for example
+    # "Tolu Access").  Bind only an exact, unique alias before the generic
+    # bank-token guard below decides the phrase needs LLM interpretation.
+    normalized_target = normalize_name_token(target)
+    exact_alias_matches = [
+        beneficiary
+        for beneficiary in beneficiaries or []
+        if isinstance(beneficiary, dict)
+        and normalize_name_token(str(beneficiary.get("alias") or "")) == normalized_target
+    ]
+    if len(exact_alias_matches) == 1:
+        beneficiary = exact_alias_matches[0]
+        alias = str(beneficiary.get("alias") or "").strip()
+        beneficiary_id = str(beneficiary.get("id") or "").strip()
+        if alias and beneficiary_id:
+            account_number = str(beneficiary.get("account_number") or "").strip()
+            bank_name = str(beneficiary.get("bank_name") or "").strip()
+            bank_code = str(beneficiary.get("bank_code") or "").strip()
+            patch.update(
+                {
+                    "recipient_name": alias,
+                    "beneficiary_id": beneficiary_id,
+                    # Compact context intentionally carries aliases without
+                    # destination fields.  Mark it for safe executor-side
+                    # hydration rather than asking for an account number.
+                    "beneficiary_candidates": (
+                        []
+                        if account_number and (bank_name or bank_code)
+                        else [{"beneficiary_id": beneficiary_id, "recipient_name": alias}]
+                    ),
+                }
+            )
+            if account_number:
+                patch["recipient_account"] = account_number
+            if bank_name:
+                patch["recipient_bank_name"] = bank_name
+            if bank_code:
+                patch["recipient_bank_code"] = bank_code
+            return patch
 
     from shared.utils.bank_aliases import BANK_ALIASES, BANK_DISPLAY_NAMES
     target_lower = f" {target.lower()} "

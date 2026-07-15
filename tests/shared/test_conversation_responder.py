@@ -126,6 +126,8 @@ async def test_clarify_mode_includes_policy_approved_suggestions_in_prompt() -> 
     assert llm.messages is not None
     assert "ambiguous, unclear" in llm.messages[0]["content"]
     assert "make a transfer" in llm.messages[0]["content"]
+    assert "Ask exactly one natural, focused question" in llm.messages[0]["content"]
+    assert "Do not invent a missing amount, recipient, account, or prior transaction" in llm.messages[0]["content"]
 
 
 @pytest.mark.asyncio

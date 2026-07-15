@@ -672,7 +672,11 @@
   },
   "orchestrator": {
     "fallback": {
-      "processing_error": "Yi hakuri, ina samun matsala wajen sarrafa wannan yanzu."
+      "processing_error": "Yi hakuri, ina samun matsala wajen sarrafa wannan yanzu.",
+      "router_timeout": "Wannan ya dauki lokaci fiye da kima. Da fatan a sake aika bukatar; ban tura komai ba.",
+      "planner_timeout": "Ban iya kammala shirya bukatar nan a kan lokaci ba. Da fatan a sake gwadawa; ba a tura komai ba.",
+      "query_timeout": "Ban iya kammala fahimtar wannan karin tambaya a kan lokaci ba. Sakamakon ma'amalolinka suna nan, don haka a sake gwadawa.",
+      "transfer_timeout": "Ban iya aiwatar da canjin nan a kan lokaci ba. Bayanan canja wurin da ke jira ba su canza ba; a sake gwadawa."
     },
     "ambiguity": {
       "transfer_recipient": "Kana son aika kudi? Idan haka ne, wa zai karba?",
@@ -1528,6 +1532,24 @@
     "common": {
       "first_generic": "Let me handle that.",
       "followup_generic": "Still working on it."
+    },
+    "planner": {
+      "planning": {
+        "first_generic": "Ina tsara bukatarka.",
+        "first_scoped": "Ina tsara {scope_label} ɗinka.",
+        "followup_generic": "Har yanzu ina tsara bukatarka.",
+        "followup_scoped": "Har yanzu ina tsara {scope_label} ɗinka."
+      },
+      "scope": {
+        "transfer": "bukatarka ta tura kuɗi",
+        "airtime": "bukatarka ta airtime",
+        "data": "bukatarka ta data",
+        "query": "bukatarka ta ma'amaloli",
+        "account": "bukatarka ta asusu",
+        "beneficiary": "bukatarka ta beneficiary",
+        "schedule": "bukatarka ta tsara ma'amala",
+        "support": "bukatarka ta taimako"
+      }
     },
     "query": {
       "resolving_followup": {

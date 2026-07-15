@@ -1490,7 +1490,7 @@ async def test_reasoner_uses_llm_for_pending_clarification_time_reply(
 
 
 @pytest.mark.asyncio
-async def test_reasoner_bounds_prompt_items_and_frames() -> None:
+async def test_reasoner_bounds_surface_items_and_omits_unneeded_frames() -> None:
     llm = _TrackingLLM(
         QuerySemanticDecision(
             decision="continuation",
@@ -1550,6 +1550,54 @@ async def test_reasoner_bounds_prompt_items_and_frames() -> None:
     assert "Payment 0" in prompt_str
     assert "Payment 4" in prompt_str
     assert "Payment 5" not in prompt_str
+    assert "summary 4" not in prompt_str
+    assert "summary 2" not in prompt_str
+    assert "summary 1" not in prompt_str
+
+
+@pytest.mark.asyncio
+async def test_reasoner_bounds_frames_for_historical_profile() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.93,
+            reason="llm_historical_prompt",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+    query_frames = [
+        QueryFrame(
+            frame_id=f"qf_{index}",
+            turn_index=index + 1,
+            summary_text=f"summary {index}",
+            query_contract=_contract(
+                _query_ir(
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                )
+            ),
+        )
+        for index in range(5)
+    ]
+
+    await reasoner.reason(
+        SemanticReasonerContext(
+            message="compare that with the earlier result",
+            today=date(2026, 3, 19),
+            language="en",
+            query_contract=_contract(
+                _query_ir(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19)),
+                )
+            ),
+            query_frames=query_frames,
+        )
+    )
+
+    prompt_str = str(llm.structured.prompts[0])
     assert "summary 4" in prompt_str
     assert "summary 2" in prompt_str
     assert "summary 1" not in prompt_str

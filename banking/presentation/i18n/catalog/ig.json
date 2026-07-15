@@ -672,7 +672,11 @@
   },
   "orchestrator": {
     "fallback": {
-      "processing_error": "Ndo, enwere nsogbu n\u2019\u1ecbr\u1ee5 nke a ugbu a."
+      "processing_error": "Ndo, enwere nsogbu n\u2019\u1ecbr\u1ee5 nke a ugbu a.",
+      "router_timeout": "Nke a were oge kariri. Biko ziga aririo ahu ozo; ezigabeghi m ihe obula.",
+      "planner_timeout": "Enweghi m ike imecha kwadebe aririo ahu n'oge. Biko nwaa ozo; ezigaghi ihe obula.",
+      "query_timeout": "Enweghi m ike imecha ghota ajuju na-esote n'oge. Nsonaazu azumahia gi ka di, ya mere biko nwaa ozo.",
+      "transfer_timeout": "Enweghi m ike itinye mgbanwe ahu n'oge. Nkowa nnyefe na-eche agbanwebeghi; biko nwaa ozo."
     },
     "ambiguity": {
       "transfer_recipient": "Ichoro iziga ego? O buru ee, onye ka i na-ezigara?",
@@ -1528,6 +1532,24 @@
     "common": {
       "first_generic": "Let me handle that.",
       "followup_generic": "Still working on it."
+    },
+    "planner": {
+      "planning": {
+        "first_generic": "Ana m achịkọta arịrịọ gị.",
+        "first_scoped": "Ana m achịkọta {scope_label} gị.",
+        "followup_generic": "Ana m ka achịkọta arịrịọ gị.",
+        "followup_scoped": "Ana m ka achịkọta {scope_label} gị."
+      },
+      "scope": {
+        "transfer": "arịrịọ mbufe ego",
+        "airtime": "arịrịọ airtime",
+        "data": "arịrịọ data",
+        "query": "arịrịọ azụmahịa",
+        "account": "arịrịọ akaụntụ",
+        "beneficiary": "arịrịọ beneficiary",
+        "schedule": "arịrịọ nhazi azụmahịa",
+        "support": "arịrịọ enyemaka"
+      }
     },
     "query": {
       "resolving_followup": {

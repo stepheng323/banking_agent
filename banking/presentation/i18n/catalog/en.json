@@ -671,7 +671,11 @@
   },
   "orchestrator": {
     "fallback": {
-      "processing_error": "I'm sorry, I'm having trouble processing that right now."
+      "processing_error": "I'm sorry, I'm having trouble processing that right now.",
+      "router_timeout": "That took longer than expected. Please send your request again; I haven't submitted anything.",
+      "planner_timeout": "I couldn't finish preparing that request in time. Please try again; nothing was submitted.",
+      "query_timeout": "I couldn't finish interpreting that follow-up in time. Your transaction results are still available, so please try again.",
+      "transfer_timeout": "I couldn't apply that change in time. Your pending transfer details are unchanged, so please try again."
     },
     "ambiguity": {
       "transfer_recipient": "Do you want to send money? If yes, who is the recipient?",
@@ -1527,6 +1531,24 @@
     "common": {
       "first_generic": "Working on that.",
       "followup_generic": "Still working on that."
+    },
+    "planner": {
+      "planning": {
+        "first_generic": "I'm putting your request together.",
+        "first_scoped": "I'm putting together your {scope_label}.",
+        "followup_generic": "I'm still putting your request together.",
+        "followup_scoped": "I'm still putting together your {scope_label}."
+      },
+      "scope": {
+        "transfer": "transfer request",
+        "airtime": "airtime request",
+        "data": "data request",
+        "query": "transaction request",
+        "account": "account request",
+        "beneficiary": "beneficiary request",
+        "schedule": "scheduled transaction request",
+        "support": "support request"
+      }
     },
     "query": {
       "resolving_followup": {

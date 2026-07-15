@@ -132,7 +132,8 @@ async def _maybe_query_followup_bypass(ctx: GateContext) -> RouteResolution | No
                 detail=bypass_detail,
                 query_session_source=ctx.query_session_source,
             )
-            task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="query")
+            mode = "new" if bypass_reason == "replacement_query" else "continuation"
+            task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="query", mode=mode)
             return task_dispatch(
                 ctx,
                 tasks={task_id: spec},
@@ -142,7 +143,7 @@ async def _maybe_query_followup_bypass(ctx: GateContext) -> RouteResolution | No
                 path_shape="query_followup_bypass",
                 extra_updates=ctx.summary_updates,
                 target_domain="query",
-                mode="continuation",
+                mode=mode,
             )
     return None
 
@@ -313,6 +314,19 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> RouteReso
         can_consider_query_domain=_can_consider_structural_query_domain(ctx),
     ):
         return updates
+    # A new executable command takes precedence over the read-only query
+    # continuation.  These guards are deterministic and preserve the normal
+    # transfer/mixed-operation ownership without spending a router call.
+    if updates := await _maybe_mixed_transaction_planner_handoff(ctx):
+        return updates
+    if updates := await _maybe_transfer_route(ctx):
+        return updates
+    # An active query owns its read-only follow-ups.  Dispatch it before the
+    # broad semantic router so the query reasoner/parser is the one semantic
+    # interpretation call for this turn.  The bypass classifier explicitly
+    # yields to new transfer, airtime, and data commands.
+    if updates := await _maybe_query_followup_bypass(ctx):
+        return updates
     if has_active_query_session and ctx.task_planner is not None:
         ctx.add_routing_hint(
             domain="query",
@@ -324,14 +338,8 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> RouteReso
             query_session_source=ctx.query_session_source,
         )
         return None
-    if updates := await _maybe_query_followup_bypass(ctx):
-        return updates
-
     can_consider_query_domain = _can_consider_query_domain(ctx, has_active_query_session=has_active_query_session)
     if _attach_query_domain_hint_if_needed(ctx, can_consider_query_domain=can_consider_query_domain):
         return None
 
-    if updates := await _maybe_mixed_transaction_planner_handoff(ctx):
-        return updates
-
-    return await _maybe_transfer_route(ctx)
+    return None

@@ -672,7 +672,11 @@
   },
   "orchestrator": {
     "fallback": {
-      "processing_error": "Ma binu, i\u1e63oro wa nigba \u1e63i\u1e63e eyi bayi."
+      "processing_error": "Ma binu, i\u1e63oro wa nigba \u1e63i\u1e63e eyi bayi.",
+      "router_timeout": "Eyi gba akoko ju. Jowo fi ibeere naa ranse leekansi; mi o fi ohunkohun ranse.",
+      "planner_timeout": "Mi o le pari imurasile ibeere naa ni akoko. Jowo gbiyanju leekansi; a ko fi ohunkohun ranse.",
+      "query_timeout": "Mi o le pari oye ibeere-atele naa ni akoko. Awon esi idunadura re si wa, jowo gbiyanju leekansi.",
+      "transfer_timeout": "Mi o le lo ayipada naa ni akoko. Awon alaye gbigbe owo ti o wa ko yipada; jowo gbiyanju leekansi."
     },
     "ambiguity": {
       "transfer_recipient": "Se o fe fi owo ranse? Ti bee ni, ta ni recipient?",
@@ -1528,6 +1532,24 @@
     "common": {
       "first_generic": "Let me handle that.",
       "followup_generic": "Still working on it."
+    },
+    "planner": {
+      "planning": {
+        "first_generic": "Mo n ṣètò ìbéèrè rẹ.",
+        "first_scoped": "Mo n ṣètò {scope_label} rẹ.",
+        "followup_generic": "Mo ṣì n ṣètò ìbéèrè rẹ.",
+        "followup_scoped": "Mo ṣì n ṣètò {scope_label} rẹ."
+      },
+      "scope": {
+        "transfer": "ìbéèrè ìfìránṣẹ́ owó",
+        "airtime": "ìbéèrè airtime",
+        "data": "ìbéèrè data",
+        "query": "ìbéèrè ìdúnàdúrà ìṣúná",
+        "account": "ìbéèrè account",
+        "beneficiary": "ìbéèrè beneficiary",
+        "schedule": "ìbéèrè ìṣètò ìfìránṣẹ́ owó",
+        "support": "ìbéèrè ìrànlọ́wọ́"
+      }
     },
     "query": {
       "resolving_followup": {

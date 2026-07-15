@@ -536,6 +536,16 @@ async def resolve_result_continuation_updates(
             return _unresolved_selection_updates(locale=locale, session=session, visible_count=len(items))
 
     elif cont_type == "unclear":
+        if decision.reason == "query_reasoner_timeout" and decision.response_text:
+            return {
+                "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+                "response": decision.response_text,
+                "flow_state": "parsing",
+                "session_active": True,
+                "pending_clarification": session.get("pending_clarification"),
+                "show_expanded": bool(session.get("show_expanded", False)),
+                "current_page": session.get("current_page", 0),
+            }
         supported_query_updates = await maybe_recover_supported_followup_query(
             step,
             state=state,

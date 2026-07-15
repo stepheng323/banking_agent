@@ -35,6 +35,7 @@ from shared.types.planner import (
     copy_task_parameters,
 )
 from shared.utils.logging import get_logger
+from shared.utils.network_utils import resolve_network_from_phone
 
 logger = get_logger(__name__)
 
@@ -87,6 +88,26 @@ def _is_mechanical_phone_alias_patch(
     return False
 
 
+def _is_mechanical_network_inference_patch(
+    raw_params: BaseTaskParameters,
+    normalized_params: BaseTaskParameters,
+    field: str,
+) -> bool:
+    """A network inferred from the planner's own unambiguous phone is not drift."""
+    if field != "network":
+        return False
+    if not isinstance(raw_params, AirtimeTaskParameters | DataTaskParameters):
+        return False
+    if not isinstance(normalized_params, AirtimeTaskParameters | DataTaskParameters):
+        return False
+    if raw_params.network:
+        return False
+
+    supplied_phone = raw_params.recipient_phone or raw_params.phone
+    inferred_network = resolve_network_from_phone(supplied_phone or "")
+    return bool(inferred_network and getattr(normalized_params, "network", None) == inferred_network)
+
+
 def _quality_relevant_patched_fields(
     raw_params: BaseTaskParameters,
     normalized_params: BaseTaskParameters,
@@ -100,6 +121,8 @@ def _quality_relevant_patched_fields(
         ):
             continue
         if _is_mechanical_phone_alias_patch(raw_params, normalized_params, field):
+            continue
+        if _is_mechanical_network_inference_patch(raw_params, normalized_params, field):
             continue
         relevant_fields.append(field)
     return relevant_fields

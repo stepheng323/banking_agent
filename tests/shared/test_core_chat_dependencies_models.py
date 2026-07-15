@@ -59,3 +59,32 @@ def test_resolve_role_model_falls_back_to_planner(monkeypatch: pytest.MonkeyPatc
             },
         )
     ]
+
+
+def test_chat_role_models_use_dedicated_conversation_client_and_zero_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clients: list[dict[str, object]] = []
+
+    class _FakeChatOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            clients.append(kwargs)
+
+    monkeypatch.setattr(model_roles, "ChatOpenAI", _FakeChatOpenAI)
+    monkeypatch.setattr(model_roles, "build_llm_http_async_client", lambda: object())
+
+    roles = model_roles.build_chat_role_models(
+        planner_model="planner-model",
+        query_model="query-model",
+        semantic_router_model="semantic-model",
+        conversation_model="gpt-5.4-nano",
+        interrupt_router_model="interrupt-model",
+        extractor_model="extractor-model",
+        app_env="test",
+    )
+
+    assert roles.conversation_model == "gpt-5.4-nano"
+    assert clients[3]["model"] == "gpt-5.4-nano"
+    assert clients[3]["timeout"] == 10.0
+    assert all(client["max_retries"] == 0 for client in clients)
+    assert [client["timeout"] for client in clients] == [20.0, 15.0, 12.0, 10.0, 12.0, 15.0]

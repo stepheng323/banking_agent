@@ -1,5 +1,6 @@
 """Planner execution flow helpers."""
 
+import inspect
 from dataclasses import dataclass
 from typing import Any
 
@@ -55,9 +56,12 @@ async def _plan_tasks_with_optional_quality(
     *,
     planner_context: str,
     prompt_signals: PlannerPromptSignals,
+    progress_tracker: Any | None = None,
+    progress_metadata: dict[str, Any] | None = None,
 ) -> PlannerPlanResult:
     planner_with_quality = getattr(task_planner, "plan_tasks_with_quality", None)
     if callable(planner_with_quality):
+        await _mark_planner_progress(progress_tracker, progress_metadata)
         return await planner_with_quality(
             phone_number,
             text,
@@ -71,6 +75,7 @@ async def _plan_tasks_with_optional_quality(
         msg = "Task planner does not expose plan_tasks_with_quality or legacy plan_tasks"
         raise AttributeError(msg)
 
+    await _mark_planner_progress(progress_tracker, progress_metadata)
     planner_output = await legacy_plan_tasks(
         phone_number,
         text,
@@ -83,6 +88,23 @@ async def _plan_tasks_with_optional_quality(
         planner_output=planner_output,
         quality_report=PlannerQualityReport(),
     )
+
+
+async def _mark_planner_progress(
+    progress_tracker: Any | None,
+    progress_metadata: dict[str, Any] | None,
+) -> None:
+    """Announce only the duration of a real planner call, never a shortcut."""
+    set_stage = getattr(progress_tracker, "set_stage", None)
+    if not callable(set_stage):
+        return
+
+    try:
+        result = set_stage("planner.planning", stage_metadata=progress_metadata)
+        if inspect.isawaitable(result):
+            await result
+    except Exception as exc:  # Progress delivery must not affect banking work.
+        logger.warning("planner_progress_stage_failed", error=str(exc))
 
 
 def _summarize_planner_output(planner_output: PlannerOutput) -> dict[str, Any]:
@@ -129,6 +151,8 @@ async def _execute_planner_with_context(
     current_locale: str,
     redis_client: redis.Redis | None,
     state_view: PlannerStateView,
+    progress_tracker: Any | None = None,
+    progress_metadata: dict[str, Any] | None = None,
 ) -> PlannerExecutionResult:
     plan_result = await _plan_tasks_with_optional_quality(
         task_planner,
@@ -136,6 +160,8 @@ async def _execute_planner_with_context(
         text,
         planner_context=planner_context,
         prompt_signals=prompt_signals,
+        progress_tracker=progress_tracker,
+        progress_metadata=progress_metadata,
     )
     planner_output = plan_result.planner_output
     planner_quality_report = plan_result.quality_report

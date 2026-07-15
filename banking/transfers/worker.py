@@ -20,6 +20,7 @@ from banking.security.authorization_context import is_task_authorized_by_pin
 from banking.transactions.repositories.transaction_repository import (
     TransactionRepository,
 )
+from banking.transfers.extraction.updates import apply_transfer_amendment_update
 from banking.transfers.models.types import (
     TransferContext,
     TransferGates,
@@ -30,6 +31,7 @@ from banking.transfers.pipeline_factory import build_transfer_pipeline
 from banking.transfers.scheduling import SCHEDULING_ACTIONS, TransferSchedulingHandler
 from banking.transfers.validation.service import ValidationService
 from shared.config.settings import settings
+from shared.observability.llm import LLMCallDeadlineExceeded
 from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
@@ -154,6 +156,24 @@ class TransferWorker:
 
         data = self._ensure_idempotency_key(TransferPayload(**pending_payload))
         worker_context = self._build_worker_context(context)
+        amendment_interpreter = getattr(self.extractor, "extract_amendment", None)
+        if callable(amendment_interpreter):
+            amendment_context = {
+                **context,
+                "known_recipient": {
+                    "recipient_name": data.recipient_name,
+                    "recipient_resolved_name": data.recipient_resolved_name,
+                    "recipient_account": data.recipient_account,
+                    "recipient_bank_name": data.recipient_bank_name,
+                },
+            }
+            amendment = await amendment_interpreter(user_message, smart_context=amendment_context)
+            return await apply_transfer_amendment_update(
+                data,
+                amendment,
+                user_message=user_message,
+                context=context,
+            )
         return await ExtractionStep(user_message).execute(
             data,
             self._build_context(context),
@@ -227,6 +247,20 @@ class TransferWorker:
 
             pipeline = build_transfer_pipeline(user_message, include_execution=True)
             return await pipeline.run(data, ctx, gates, worker_context)
+        except LLMCallDeadlineExceeded as exc:
+            logger.warning(
+                "transfer_extractor_deadline_exceeded",
+                role=exc.role,
+                deadline_seconds=exc.deadline_seconds,
+            )
+            message = render_message("orchestrator.fallback.transfer_timeout", locale)
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
+                response=message,
+                prompt=message,
+                retryable=True,
+                patch={"idempotency_key": data.idempotency_key},
+            )
         except Exception as e:
             logger.error("transfer_pipeline_failed", error=str(e), exc_info=True)
             return TransactionResult(

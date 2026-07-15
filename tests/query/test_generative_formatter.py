@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from banking.runtime.results import TransactionOutcome
-from banking.transactions.query.models.domain import QueryResult
+from banking.transactions.query.models.domain import QueryAnswerStrategy, QueryResult
 from banking.transactions.query.nodes.generative_formatter import GenerativeFormattingStep
 
 
@@ -36,6 +36,7 @@ async def test_generative_formatter_accepts_fact_preserving_rewrite() -> None:
             "query_result": QueryResult(
                 summary_text="You spent ₦1,000 this month, across 2 transactions.",
                 items=[],
+                answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
             ),
         }
     )
@@ -55,6 +56,7 @@ async def test_generative_formatter_rejects_rewrite_that_changes_financial_facts
             "query_result": QueryResult(
                 summary_text="You spent ₦1,000 this month, across 2 transactions.",
                 items=[],
+                answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
             ),
         }
     )
@@ -74,6 +76,7 @@ async def test_generative_formatter_accepts_equivalent_date_day_formatting() -> 
             "query_result": QueryResult(
                 summary_text="You got money from Acme Corp on July 05, 2026.",
                 items=[],
+                answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
             ),
         }
     )
@@ -93,6 +96,7 @@ async def test_generative_formatter_rejects_rewrite_that_changes_reference_or_ma
             "query_result": QueryResult(
                 summary_text="The reference is txn_002, and it was from GTBank · ···0001.",
                 items=[],
+                answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
             ),
         }
     )
@@ -102,7 +106,26 @@ async def test_generative_formatter_rejects_rewrite_that_changes_reference_or_ma
 
 
 @pytest.mark.asyncio
-async def test_generative_formatter_rejects_rewrite_that_drops_structured_rows() -> None:
+async def test_generative_formatter_rejects_direct_answer_that_changes_named_entity() -> None:
+    step = _step_with_response("The bank was Access Bank.")
+    result = await step.run(
+        {
+            "flow_state": "complete",
+            "message": "What bank was that?",
+            "language": "en",
+            "query_result": QueryResult(
+                summary_text="The bank was GTBank.",
+                items=[],
+                answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
+            ),
+        }
+    )
+
+    assert result.response == "The bank was GTBank."
+
+
+@pytest.mark.asyncio
+async def test_generative_formatter_skips_structured_rows_without_calling_llm() -> None:
     system_response = (
         "Here is your Money came in by account this month:\n\n"
         "₦1,200,000 — GTBank (54%, 2 txns)\n"
@@ -123,4 +146,5 @@ async def test_generative_formatter_rejects_rewrite_that_drops_structured_rows()
     )
 
     assert result.outcome == TransactionOutcome.OK
-    assert result.response == system_response
+    assert result.response is None
+    assert step.chain.calls == []

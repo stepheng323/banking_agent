@@ -672,7 +672,11 @@
   },
   "orchestrator": {
     "fallback": {
-      "processing_error": "I dey get issue processing that one now."
+      "processing_error": "I dey get issue processing that one now.",
+      "router_timeout": "That one take too long. Abeg send the request again; I never submit anything.",
+      "planner_timeout": "I no fit finish prepare that request on time. Abeg try again; nothing submit.",
+      "query_timeout": "I no fit finish understand that follow-up on time. Your transaction results still dey, so abeg try again.",
+      "transfer_timeout": "I no fit apply that change on time. Your pending transfer details never change, so abeg try again."
     },
     "ambiguity": {
       "transfer_recipient": "You wan send money? If yes, who you wan send am to?",
@@ -1528,6 +1532,24 @@
     "common": {
       "first_generic": "Let me handle that.",
       "followup_generic": "Still working on it."
+    },
+    "planner": {
+      "planning": {
+        "first_generic": "I dey put your request together.",
+        "first_scoped": "I dey put your {scope_label} together.",
+        "followup_generic": "I still dey put your request together.",
+        "followup_scoped": "I still dey put your {scope_label} together."
+      },
+      "scope": {
+        "transfer": "transfer request",
+        "airtime": "airtime request",
+        "data": "data request",
+        "query": "transaction request",
+        "account": "account request",
+        "beneficiary": "beneficiary request",
+        "schedule": "scheduled transaction matter",
+        "support": "request for help"
+      }
     },
     "query": {
       "resolving_followup": {

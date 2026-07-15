@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import Mapping
 from typing import Any
@@ -9,6 +10,15 @@ from typing import Any
 from shared.config.settings import settings
 from shared.observability.redaction import redacted_dict
 from shared.utils.logging import log_fingerprint
+
+
+class LLMCallDeadlineExceeded(TimeoutError):  # noqa: N818 - public contract name
+    """Raised when an interactive LLM role exceeds its total turn deadline."""
+
+    def __init__(self, *, role: str, deadline_seconds: float) -> None:
+        self.role = role
+        self.deadline_seconds = deadline_seconds
+        super().__init__(f"{role} LLM call exceeded {deadline_seconds:g}s deadline")
 
 
 def _sampled(key: str | None) -> bool:
@@ -94,8 +104,45 @@ async def ainvoke_with_config(
     *,
     config: dict[str, Any] | None = None,
     invocation_kwargs: Mapping[str, Any] | None = None,
+    role: str | None = None,
+    deadline_seconds: float | None = None,
 ) -> Any:
     """Invoke a runnable with LangChain config, falling back for simple test doubles."""
+    resolved_role = role or _role_from_config(config) or "unknown"
+    resolved_deadline = deadline_seconds
+    if resolved_deadline is None:
+        resolved_deadline = settings.llm_deadline_seconds(resolved_role)
+    timeout_seconds = resolved_deadline or 0.0
+
+    try:
+        if timeout_seconds <= 0:
+            return await _ainvoke_compat(
+                runnable,
+                input_value,
+                config=config,
+                invocation_kwargs=invocation_kwargs,
+            )
+        async with asyncio.timeout(timeout_seconds):
+            return await _ainvoke_compat(
+                runnable,
+                input_value,
+                config=config,
+                invocation_kwargs=invocation_kwargs,
+            )
+    except TimeoutError as exc:
+        raise LLMCallDeadlineExceeded(
+            role=resolved_role,
+            deadline_seconds=timeout_seconds,
+        ) from exc
+
+
+async def _ainvoke_compat(
+    runnable: Any,
+    input_value: Any,
+    *,
+    config: dict[str, Any] | None,
+    invocation_kwargs: Mapping[str, Any] | None,
+) -> Any:
     kwargs = dict(invocation_kwargs or {})
     if not config and not kwargs:
         return await runnable.ainvoke(input_value)
@@ -115,6 +162,16 @@ async def ainvoke_with_config(
                 if not _is_unexpected_keyword_error(config_message):
                     raise
         return await runnable.ainvoke(input_value)
+
+
+def _role_from_config(config: Mapping[str, Any] | None) -> str | None:
+    if not isinstance(config, Mapping):
+        return None
+    metadata = config.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return None
+    role = metadata.get("llm_role")
+    return str(role) if isinstance(role, str) and role else None
 
 
 def _is_unexpected_keyword_error(message: str) -> bool:

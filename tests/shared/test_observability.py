@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import Enum
@@ -11,8 +12,9 @@ import pytest
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_observability import invoke_structured_prompt
 from shared.config.settings import settings
 from shared.observability.events import emit_operational_event
-from shared.observability.llm import build_llm_runnable_config
+from shared.observability.llm import LLMCallDeadlineExceeded, ainvoke_with_config, build_llm_runnable_config
 from shared.observability.llm_call_metrics import (
+    record_llm_call,
     start_llm_call_recording,
     stop_llm_call_recording,
     structured_output_metrics,
@@ -70,6 +72,26 @@ class _FakeRawMessage:
 
 class _FakeModelLLM:
     model_name = "gpt-test"
+
+
+class _SlowRunnable:
+    async def ainvoke(self, value: object) -> object:
+        await asyncio.sleep(0.05)
+        return value
+
+
+@pytest.mark.asyncio
+async def test_shared_llm_invocation_enforces_total_role_deadline() -> None:
+    with pytest.raises(LLMCallDeadlineExceeded) as caught:
+        await ainvoke_with_config(
+            _SlowRunnable(),
+            "value",
+            role="semantic_router",
+            deadline_seconds=0.001,
+        )
+
+    assert caught.value.role == "semantic_router"
+    assert caught.value.deadline_seconds == 0.001
 
 
 class _Logger:
@@ -341,6 +363,28 @@ def test_extract_provider_llm_metadata_omits_missing_values() -> None:
     assert extract_provider_llm_metadata(_FakeRawMessage()) == {}
 
 
+def test_nested_llm_recording_preserves_inner_snapshot_and_aggregates_parent() -> None:
+    parent_token = start_llm_call_recording()
+    try:
+        child_token = start_llm_call_recording()
+        try:
+            record_llm_call(
+                event_name="planner_llm_call",
+                duration_ms=12.5,
+                model="test-model",
+                response_type="PlannerOutput",
+                system_chars=10,
+                user_chars=5,
+            )
+        finally:
+            child_records = stop_llm_call_recording(child_token)
+    finally:
+        parent_records = stop_llm_call_recording(parent_token)
+
+    assert [record["event_name"] for record in child_records] == ["planner_llm_call"]
+    assert [record["event_name"] for record in parent_records] == ["planner_llm_call"]
+
+
 @pytest.mark.asyncio
 async def test_invoke_structured_prompt_records_turn_llm_metrics() -> None:
     logger = _Logger()
@@ -426,6 +470,7 @@ async def test_invoke_structured_prompt_unwraps_raw_provider_metadata() -> None:
     assert fields["provider_output_tokens"] == 50
     assert fields["provider_total_tokens"] == 950
     assert fields["provider_cached_tokens"] == 600
+    assert fields["provider_uncached_input_tokens"] == 300
     assert fields["provider_cache_hit_rate"] == 0.6667
     assert fields["provider_request_id"] == "req_raw"
     assert records[0]["provider_cached_tokens"] == 600

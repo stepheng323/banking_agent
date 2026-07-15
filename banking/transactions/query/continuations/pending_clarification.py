@@ -89,6 +89,16 @@ async def handle_pending_clarification(step: Any, state: dict[str, Any], session
         confidence=decision.confidence,
     )
 
+    if decision.reason == "query_reasoner_timeout" and decision.response_text:
+        return {
+            "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+            "response": decision.response_text,
+            "session_active": True,
+            "pending_clarification": pending,
+            "flow_state": "parsing",
+            **step._semantic_trace_updates(decision),
+        }
+
     if decision.decision == "end_session":
         return step._append_query_session_transition(
             {

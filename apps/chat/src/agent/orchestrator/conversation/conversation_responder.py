@@ -119,6 +119,8 @@ class ConversationResponder:
                 task_domain="conversation",
                 extra_metadata={
                     "mode": mode.value,
+                    "prompt_profile": mode.value,
+                    "prompt_cache_key_version": "none",
                     "casual_streak": casual_streak,
                     "allowed_suggestion_count": len(allowed_suggestions),
                 },
@@ -134,6 +136,7 @@ class ConversationResponder:
                 messages,
                 config=config,
                 invocation_kwargs={"temperature": 0.3},
+                role="conversation_responder",
             )
         except Exception as exc:
             duration_ms = (time.perf_counter() - start) * 1000
@@ -151,6 +154,8 @@ class ConversationResponder:
                 extra_fields={
                     **http_metrics,
                     "mode": mode.value,
+                    "prompt_profile": mode.value,
+                    "prompt_cache_key_version": "none",
                     "locale": locale,
                     "casual_streak": casual_streak,
                     "allowed_suggestion_count": len(allowed_suggestions),
@@ -210,6 +215,8 @@ class ConversationResponder:
             extra_fields={
                 **provider_fields,
                 "mode": mode.value,
+                "prompt_profile": mode.value,
+                "prompt_cache_key_version": "none",
                 "locale": locale,
                 "casual_streak": casual_streak,
                 "allowed_suggestion_count": len(allowed_suggestions),

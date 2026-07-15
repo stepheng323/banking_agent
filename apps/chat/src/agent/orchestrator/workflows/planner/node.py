@@ -27,9 +27,29 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.non_task_respon
 from apps.chat.src.agent.orchestrator.workflows.planner.runtime import build_planner_runtime
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
 from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_build import _build_planner_task_updates
+from banking.presentation.i18n.renderer import render_message
+from shared.observability.llm import LLMCallDeadlineExceeded
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _planner_progress_metadata(state: OrchestratorState) -> dict[str, str] | None:
+    """Expose only an already-routed domain to the progress copy layer."""
+    directive = state.turn_directive
+    target_domain = getattr(directive, "target_domain", None)
+    if target_domain in {
+        "transfer",
+        "airtime",
+        "data",
+        "query",
+        "account",
+        "beneficiary",
+        "schedule",
+        "support",
+    }:
+        return {"target_domain": target_domain}
+    return None
 
 
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -105,7 +125,24 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             current_locale=current_locale,
             redis_client=redis_client,
             state_view=state_view,
+            progress_tracker=dependencies.progress_tracker,
+            progress_metadata=_planner_progress_metadata(state),
         )
+    except LLMCallDeadlineExceeded as exc:
+        logger.warning(
+            "planner_deadline_exceeded",
+            role=exc.role,
+            deadline_seconds=exc.deadline_seconds,
+        )
+        return route_resolution(
+            updates={"final_response": render_message("orchestrator.fallback.planner_timeout", current_locale)},
+            owner="planner",
+            decision="planner_timeout",
+            outcome_kind=TurnOutcomeKind.DIRECT_RESPONSE,
+            next_step=TurnNextStep.FINALIZE,
+            source="planner_timeout",
+            path_shape="planner_timeout",
+        ).materialize(base_state=state)
     except Exception as e:
         logger.error("planner_failed", error=str(e))
         return _planner_failed_response(current_locale).materialize()

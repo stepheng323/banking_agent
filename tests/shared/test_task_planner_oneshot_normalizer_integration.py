@@ -37,7 +37,55 @@ class _FakeLLM:
         del method
         if isinstance(schema, type) and issubclass(schema, PlannerOutput):
             return _StructuredResponder(self._planner_output.model_dump(mode="python"))
-        return _StructuredResponder({})
+        # The production planner now requests a compact, executor-scoped LLM
+        # contract and adapts it back to PlannerOutput.  Keep this integration
+        # fixture representative of that provider boundary rather than relying
+        # on the retired broad PlannerOutput schema.
+        raw = self._planner_output.model_dump(mode="python", exclude_none=True, exclude_defaults=True)
+        include_executor = schema.__name__ in {
+            "PlannerKnownTransferAirtimePlan",
+            "PlannerKnownTransferDataPlan",
+            "PlannerKnownAirtimeDataPlan",
+            "PlannerKnownTransactionsPlan",
+        }
+        task_fields = {"task_id", "instruction", "source_clause_index", "action", "parameters"}
+        if include_executor:
+            task_fields.add("executor")
+        return _StructuredResponder(
+            {
+                "primary_intent": raw["primary_intent"],
+                "language": raw.get("detected_language"),
+                "normalized_instruction": raw.get("normalized_instruction", ""),
+                "clauses": [
+                    {"task_ids": clause.get("task_ids", [])}
+                    for clause in raw.get("clauses", [])
+                ],
+                "tasks": [
+                    {
+                        **{
+                            key: value
+                            for key, value in task.items()
+                            if key in task_fields
+                        },
+                        **(
+                            {
+                                "executor": (
+                                    "transfer"
+                                    if str(task.get("action", "")).endswith("transfer")
+                                    or task.get("action") == "send_money"
+                                    else "airtime"
+                                    if "airtime" in str(task.get("action", ""))
+                                    else "data"
+                                )
+                            }
+                            if include_executor
+                            else {}
+                        ),
+                    }
+                    for task in raw.get("tasks", [])
+                ],
+            }
+        )
 
 
 async def _plan(

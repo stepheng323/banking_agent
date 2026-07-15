@@ -33,6 +33,9 @@ from banking.transactions.query.models.extraction import (
 )
 from banking.transactions.query.prompts.main import QUERY_PARSER_PROMPT
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
+from shared.observability.llm_call_metrics import record_llm_call, structured_output_metrics
+from shared.observability.llm_http import start_llm_http_recording, stop_llm_http_recording, summarize_llm_http_records
+from shared.observability.llm_provider_metadata import extract_provider_llm_metadata
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -564,23 +567,47 @@ async def parse(parser: Any, question: str, today: Any, language: str = "en") ->
 
     try:
         started_at = perf_counter()
-        raw_extraction = await ainvoke_with_config(
-            structured_llm,
-            prompt,
-            config=build_llm_runnable_config(
-                role="query_parser",
-                task_domain="query",
-                locale=language,
-                extra_metadata={"prompt_chars": len(prompt)},
+        http_recording_token = start_llm_http_recording()
+        try:
+            raw_extraction = await ainvoke_with_config(
+                structured_llm,
+                prompt,
+                config=build_llm_runnable_config(
+                    role="query_parser",
+                    task_domain="query",
+                    locale=language,
+                    extra_metadata={"prompt_chars": len(prompt)},
+                )
+                or None,
             )
-            or None,
-        )
+        finally:
+            http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
         duration_ms = (perf_counter() - started_at) * 1000.0
         logger.info(
             "query_parser_llm_call",
             duration_ms=round(duration_ms, 2),
             prompt_chars=len(prompt),
             language=language,
+            **http_metrics,
+            **extract_provider_llm_metadata(raw_extraction),
+        )
+        model = getattr(parser.llm, "model_name", None) or getattr(parser.llm, "model", None)
+        output_metrics = structured_output_metrics(raw_extraction)
+        record_llm_call(
+            event_name="query_parser_llm_call",
+            duration_ms=duration_ms,
+            model=model,
+            response_type=ParserQueryExtraction.__name__,
+            system_chars=len(prompt),
+            user_chars=0,
+            output_json_chars=int(output_metrics["output_json_chars"]),
+            output_token_estimate=int(output_metrics["output_token_estimate"]),
+            extra_fields={
+                "language": language,
+                **output_metrics,
+                **http_metrics,
+                **extract_provider_llm_metadata(raw_extraction),
+            },
         )
         extraction = parser._inflate_parser_extraction(raw_extraction, question=question, language=language)
         return parser._finalize_extraction(extraction, today=today, language=language)

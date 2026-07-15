@@ -25,6 +25,7 @@ class PlannerDependencies:
     redis_client: redis.Redis | None
     conversation_responder: ConversationResponder | None
     actionable_message_repo: ActionableMessageRepository | None
+    progress_tracker: Any | None
 
     @classmethod
     def from_configurable(cls, configurable: Mapping[str, Any]) -> PlannerDependencies:
@@ -33,6 +34,7 @@ class PlannerDependencies:
             redis_client=configurable.get("redis_client"),
             conversation_responder=configurable.get("conversation_responder"),
             actionable_message_repo=configurable.get("actionable_message_repo"),
+            progress_tracker=configurable.get("progress_tracker"),
         )
 
 

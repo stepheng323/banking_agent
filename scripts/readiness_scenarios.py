@@ -653,11 +653,17 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
         return (
             ReadinessScenario(
                 id="llm-conversation-responder",
-                description="Intentional casual turn that should exercise semantic/conversation LLM paths.",
+                description="Casual turn must use the semantic router's final reply without a second responder call.",
                 turns=(
                     ReadinessTurn(
                         "Tell me one short saying about money and patience",
-                        ReadinessExpectation(llm_call_budget=LLMCallBudget(observe=True)),
+                        ReadinessExpectation(
+                            llm_call_budget=LLMCallBudget(
+                                max_calls=1,
+                                max_event_counts=(("conversation_responder_llm_call", 0),),
+                                required_event_counts=(("semantic_router_llm_call", 1),),
+                            )
+                        ),
                         modes=("dry-run",),
                     ),
                 ),
@@ -670,7 +676,7 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         "Show my recent transactions",
                         ReadinessExpectation(
                             expect_any=("transaction", "showing", "sent", "received"),
-                            llm_call_budget=LLMCallBudget(observe=True),
+                            llm_call_budget=LLMCallBudget(max_calls=0),
                         ),
                         modes=("dry-run",),
                     ),
@@ -678,7 +684,13 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         "Which account did I spend from most this month?",
                         ReadinessExpectation(
                             expect_any=("account", "bank", "spent", "transaction", "category"),
-                            llm_call_budget=LLMCallBudget(observe=True),
+                            llm_call_budget=LLMCallBudget(
+                                max_calls=1,
+                                max_event_counts=(
+                                    ("semantic_router_llm_call", 0),
+                                    ("query_direct_answer_llm_call", 0),
+                                ),
+                            ),
                         ),
                         modes=("dry-run",),
                     ),
@@ -703,7 +715,7 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         "Send 2k to Tolu Access",
                         ReadinessExpectation(
                             expect_any=("transfer", "tolu", "confirm", "review"),
-                            llm_call_budget=LLMCallBudget(observe=True),
+                            llm_call_budget=LLMCallBudget(max_calls=0),
                         ),
                         modes=("dry-run",),
                     ),
@@ -727,7 +739,7 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         "Send 10k to Tolu Access",
                         ReadinessExpectation(
                             expect_any=("transfer", "tolu", "confirm", "review"),
-                            llm_call_budget=LLMCallBudget(observe=True),
+                            llm_call_budget=LLMCallBudget(max_calls=0),
                         ),
                         modes=("dry-run",),
                     ),
@@ -737,11 +749,11 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                             llm_call_budget=LLMCallBudget(
                                 max_calls=1,
                                 max_event_counts=(
-                                    ("transfer_extractor_llm_call", 1),
+                                    ("transfer_amendment_llm_call", 1),
                                     ("pending_action_edit_llm_call", 0),
                                     ("interrupt_router_llm_call", 0),
                                 ),
-                                required_event_counts=(("transfer_extractor_llm_call", 1),),
+                                required_event_counts=(("transfer_amendment_llm_call", 1),),
                             )
                         ),
                         modes=("dry-run",),

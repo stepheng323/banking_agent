@@ -7,12 +7,17 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.router_context import
     _build_semantic_router_context,
     _should_invoke_semantic_router,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_prompt_compiler import (
+    SemanticRouterPromptSignals,
+)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     _could_be_schedule_interrupt_read_request,
 )
 from banking.intent.routing_signals import (
     looks_like_support_problem_statement,
 )
+from shared.observability.llm import LLMCallDeadlineExceeded
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -71,12 +76,16 @@ async def _classify_semantic_route(ctx: GateContext) -> Any | None:
             message_text=ctx.message_text,
         )
         route_context = append_routing_hints(route_context, ctx.routing_hints)
+        route_kwargs: dict[str, Any] = {"context": route_context, "path_label": "direct_path"}
+        if isinstance(router, SemanticRouterLLM):
+            route_kwargs["prompt_signals"] = SemanticRouterPromptSignals.from_summary(ctx.turn_summary)
         return await router.route_semantic_turn(
             ctx.state_view.phone_number,
             ctx.message_text,
-            context=route_context,
-            path_label="direct_path",
+            **route_kwargs,
         )
+    except LLMCallDeadlineExceeded:
+        raise
     except Exception as exc:
         logger.warning("gate_semantic_router_failed", error=str(exc))
         return None

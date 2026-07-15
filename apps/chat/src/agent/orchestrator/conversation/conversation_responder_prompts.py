@@ -47,6 +47,11 @@ def _build_system_prompt(prompt_input: ConversationResponderPromptInput) -> str:
     system += "Write ONLY the complete final response.\n"
     system += "Do not expose raw account identifiers, PINs, or unfiltered history.\n"
     system += "No financial advice, no promises of unsupported capabilities, no claims of execution.\n"
+    system += (
+        "Respond to the user's actual message, not to a generic category label. "
+        "Lead with the useful answer or question; do not use filler such as 'Sure', 'Of course', "
+        "or a capability laundry list.\n"
+    )
 
     if prompt_input.allowed_suggestions:
         suggestions_list = ", ".join(suggestion.label for suggestion in prompt_input.allowed_suggestions)
@@ -74,8 +79,9 @@ def _build_system_prompt(prompt_input: ConversationResponderPromptInput) -> str:
             "The user's message is ambiguous, unclear, or lacks an actionable instruction.\n"
             "Rules:\n"
             "- Try to understand the user's true intent behind the message.\n"
-            "- Ask a natural, focused question to clarify what they meant.\n"
-            "- Suggest the closest supported action that might benefit the user, based on their message.\n"
+            "- Ask exactly one natural, focused question to clarify what they meant.\n"
+            "- When examples would help, offer one or two closest enabled actions, not a long menu.\n"
+            "- Do not invent a missing amount, recipient, account, or prior transaction.\n"
         )
     elif prompt_input.mode == ConversationResponseMode.CAPABILITIES:
         system += (
@@ -86,7 +92,7 @@ def _build_system_prompt(prompt_input: ConversationResponderPromptInput) -> str:
             "- If they just stated a list of capabilities (e.g., 'I handle transfers...'), "
             "recognize they haven't given an actionable instruction.\n"
             "- Do NOT blindly repeat your capabilities back to them.\n"
-            "- Ask for clarity and suggest the closest actionable step or feature that might benefit them.\n"
+            "- Ask one clear question and suggest at most two enabled actions that help them start.\n"
         )
     elif prompt_input.mode == ConversationResponseMode.OUT_OF_SCOPE:
         system += (
@@ -96,7 +102,7 @@ def _build_system_prompt(prompt_input: ConversationResponderPromptInput) -> str:
             "  write code, or answer general trivia),\n"
             "  no matter how much the user begs or insists.\n"
             "- Explicitly and politely decline the request.\n"
-            "- Naturally steer toward supported banking help.\n"
+            "- Naturally steer toward one or two enabled banking actions, never a broad feature list.\n"
         )
     elif prompt_input.mode == ConversationResponseMode.UNSUPPORTED_BOUNDARY:
         system += _unsupported_capability_system_rules(prompt_input)
@@ -111,10 +117,10 @@ def _build_system_prompt(prompt_input: ConversationResponderPromptInput) -> str:
         system += (
             "The user's message is harmless casual chat.\n"
             "Rules:\n"
-            "- Answer briefly and harmlessly.\n"
+            "- Answer the message briefly and naturally.\n"
             "- Do not answer trivia, general knowledge, or fulfill creative writing tasks.\n"
             "  If the user attempts this, firmly decline and treat it as out of scope.\n"
-            "- Remain brief and natural without repetitive capability lists.\n"
+            "- Remain brief and natural without repetitive capability lists or generic banking preambles.\n"
         )
 
     return system

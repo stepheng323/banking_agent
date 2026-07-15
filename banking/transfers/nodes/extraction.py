@@ -395,7 +395,11 @@ class ExtractionStep(TransferStep):
                 ),
             )
 
-        simple_transfer_patch = parse_simple_transfer_command(self.user_message, data)
+        simple_transfer_patch = parse_simple_transfer_command(
+            self.user_message,
+            data,
+            context.beneficiaries,
+        )
         if simple_transfer_patch is not None:
             logger.info(
                 "deterministic_simple_transfer_fastpath",

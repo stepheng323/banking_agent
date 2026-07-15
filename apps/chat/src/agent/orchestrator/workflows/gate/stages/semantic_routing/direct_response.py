@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes 
     ConversationResponseMode,
     map_response_key_to_mode,
 )
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_validation import validate_and_fallback
 from apps.chat.src.agent.orchestrator.guardrails.banking_ambiguity import (
     render_banking_coded_ambiguity_prompt,
 )
@@ -24,9 +25,6 @@ from apps.chat.src.agent.orchestrator.presentation.conversational_style import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import (
-    _build_bounded_conversational_reply,
-)
 from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import (
     _effective_response_locale,
 )
@@ -36,11 +34,35 @@ from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit im
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
     _build_direct_domain_task,
 )
+from banking.policy.service import resolve_available_conversational_suggestions
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _validated_semantic_reply(
+    ctx: GateContext,
+    *,
+    raw_response: str | None,
+    mode: ConversationResponseMode,
+    locale: str,
+    extra_user_ctx: dict[str, object] | None = None,
+) -> str:
+    """Validate router-authored direct copy without paying for a second LLM."""
+    return validate_and_fallback(
+        raw_content=raw_response,
+        mode=mode,
+        text=ctx.message_text,
+        user_ctx={
+            **ctx.state_view.loaded_context_or_empty,
+            "language": locale,
+            **(extra_user_ctx or {}),
+        },
+        locale=locale,
+        allowed_suggestions=resolve_available_conversational_suggestions(locale=locale),
+    )
 
 
 async def _handle_semantic_direct_response(
@@ -114,7 +136,6 @@ async def _handle_semantic_direct_response(
                 text = clarify_message(ctx.state, locale)
         else:
             response_mode = map_response_key_to_mode(route.response_key)
-            responder_reply = None
             if response_mode is not None:
                 extra_user_ctx: dict[str, object] = {}
                 if route.response_key in SOCIAL_META_RESPONSE_KEYS:
@@ -122,28 +143,24 @@ async def _handle_semantic_direct_response(
                         SOCIAL_META_RESPONSE_KEY_CTX: route.response_key,
                         SOCIAL_META_RENDER_PARAMS_CTX: {},
                     }
-                responder_reply = await _build_bounded_conversational_reply(
+                text = _validated_semantic_reply(
                     ctx,
-                    locale,
+                    raw_response=route.response,
                     mode=response_mode,
+                    locale=locale,
                     extra_user_ctx=extra_user_ctx,
                 )
-            if responder_reply:
-                text = responder_reply
+                # A router may supply only an empathy preface.  The redirect
+                # remains mandatory for an out-of-scope turn, so retain that
+                # bounded prose and append the localized safe next step.
+                if route.response_key == "conversational.out_of_scope":
+                    text = format_out_of_scope_reply(locale, text)
             elif route.response_key == "conversational.out_of_scope":
                 text = format_out_of_scope_reply(locale, route.response)
             else:
                 text = render_message(route.response_key, locale)
     else:
         text = route.response or ""
-        if not text:
-            responder_reply = await _build_bounded_conversational_reply(
-                ctx,
-                locale,
-                mode=ConversationResponseMode.CASUAL,
-            )
-            if responder_reply:
-                text = responder_reply
         if not text:
             fallback_key: MessageKey = (
                 "conversational.out_of_scope" if canonical_decision == "direct_reply" else "conversational.clarify"

@@ -1,5 +1,6 @@
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_normalizer import (
     normalize_planner_transaction_output,
+    normalize_planner_transaction_output_with_quality,
 )
 from shared.types.planner import (
     AirtimeTaskParameters,
@@ -358,6 +359,28 @@ def test_airtime_one_shot_normalizer_patches_amount_phone_and_network() -> None:
     assert params.recipient_phone == "08031234567"
     assert params.phone == "08031234567"
     assert params.network == "MTN"
+
+
+def test_inferred_airtime_network_from_planner_phone_keeps_planner_quality_clean() -> None:
+    planner_output = _planner_output(
+        [
+            make_planned_task(
+                task_id="a1",
+                action="buy_airtime",
+                executor="airtime",
+                instruction="Buy 1k airtime for me",
+                parameters=AirtimeTaskParameters(amount=1000, recipient_phone="08162511023", is_self=True),
+                risk="MONEY_MOVE",
+            )
+        ]
+    )
+
+    normalized, quality = normalize_planner_transaction_output_with_quality(
+        planner_output, "Buy 1k airtime for me"
+    )
+
+    assert normalized.tasks[0].parameters.network == "MTN"
+    assert quality.clean
 
 
 def test_data_one_shot_normalizer_patches_phone_network_plan_and_amount_from_budget() -> None:

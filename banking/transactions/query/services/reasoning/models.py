@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from banking.transactions.query.contracts import SurfaceView
 from banking.transactions.query.models.domain import (
@@ -84,6 +84,32 @@ CoverageIntentType = Literal["result_completeness", "data_coverage", "ambiguous"
 SemanticContextModeType = Literal["none", "pending_clarification", "active_result"]
 
 ReasonerSchemaType = Literal["active_continuation", "pending_clarification"]
+ReasonerPromptProfileType = Literal[
+    "focused_item",
+    "transaction_list",
+    "grouped_summary",
+    "historical_frames",
+    "pending_clarification",
+]
+
+
+def _strip_llm_schema_annotations(schema: dict[str, Any]) -> None:
+    root_title = schema.get("title")
+
+    def strip(value: Any) -> None:
+        if isinstance(value, dict):
+            value.pop("title", None)
+            value.pop("description", None)
+            value.pop("default", None)
+            for child in value.values():
+                strip(child)
+        elif isinstance(value, list):
+            for child in value:
+                strip(child)
+
+    strip(schema)
+    if isinstance(root_title, str) and root_title:
+        schema["title"] = root_title
 
 
 class QuerySemanticDecision(BaseModel):
@@ -200,8 +226,99 @@ class ActiveContinuationDecision(BaseModel):
         )
 
 
+class _NarrowActiveDecision(BaseModel):
+    """Common fields retained by every surface-specific LLM contract."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_strip_llm_schema_annotations)
+
+    decision: Literal["continuation", "fresh_query", "reinterpret_query", "new_query", "end_session"]
+    confidence: float | None = None
+    reason: str | None = None
+    extraction: ReasonerQueryExtraction | None = None
+    continuation_type: ContinuationType | None = None
+    followup_intent: FollowupIntentType | None = None
+    time_period: str | None = None
+    response_text: str | None = None
+    end_session_response: str | None = None
+    end_session_kind: EndSessionKindType | None = None
+
+    @classmethod
+    def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        schema = super().model_json_schema(*args, **kwargs)
+        _strip_llm_schema_annotations(schema)
+        return schema
+
+    def to_public_decision(self) -> QuerySemanticDecision:
+        payload = self.model_dump(exclude_none=True)
+        extraction = self.extraction.to_query_extraction_result() if self.extraction is not None else None
+        payload["extraction"] = extraction
+        return QuerySemanticDecision.model_validate(payload)
+
+
+class FocusedItemDecision(_NarrowActiveDecision):
+    """Fact and drill-down decisions for one focused result."""
+
+    drill_down_index: int | None = None
+    drill_down_action: DrillDownActionType | None = None
+    fact_field: FactFieldType | None = None
+    requested_field: QueryTargetFieldType | None = None
+    target_text: str | None = None
+    answer_mode: AnswerModeType | None = None
+    delta_type: DeltaType | None = None
+    time_range: TimeRange | None = None
+    filters: Filters | None = None
+
+
+class TransactionListDecision(_NarrowActiveDecision):
+    """Selection, pagination, coverage, and refinement over a visible list."""
+
+    target_index: int | None = None
+    target_amount: float | None = None
+    target_text: str | None = None
+    requested_field: QueryTargetFieldType | None = None
+    rank: QueryRankType | None = None
+    page_direction: PageDirectionType | None = None
+    coverage_intent: CoverageIntentType | None = None
+    drill_down_index: int | None = None
+    drill_down_action: DrillDownActionType | None = None
+    fact_field: FactFieldType | None = None
+    delta_type: DeltaType | None = None
+    time_range: TimeRange | None = None
+    filters: Filters | None = None
+    result_limit: int | None = None
+    result_reference: ResultReferenceType | None = None
+
+
+class GroupedSummaryDecision(_NarrowActiveDecision):
+    """Aggregate and evidence refinements over a summary."""
+
+    answer_mode: AnswerModeType | None = None
+    delta_type: DeltaType | None = None
+    time_range: TimeRange | None = None
+    filters: Filters | None = None
+    result_limit: int | None = None
+    target_text: str | None = None
+    recipient_name: str | None = None
+    coverage_intent: CoverageIntentType | None = None
+    drill_down_index: int | None = None
+    drill_down_action: DrillDownActionType | None = None
+    fact_field: FactFieldType | None = None
+
+
+class HistoricalFrameDecision(_NarrowActiveDecision):
+    """Comparison or selection grounded in recent immutable query frames."""
+
+    answer_mode: AnswerModeType | None = None
+    referenced_frame_ids: list[str] | None = None
+    grounded_operation: GroundedOperationType | None = None
+    target_index: int | None = None
+    target_text: str | None = None
+
+
 class PendingClarificationDecision(BaseModel):
     """Structured output for pending-clarification turns."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_strip_llm_schema_annotations)
 
     decision: Literal["clarification_answer", "fresh_query", "reinterpret_query", "new_query", "end_session"]
     confidence: float | None = Field(default=None)
@@ -216,6 +333,12 @@ class PendingClarificationDecision(BaseModel):
     end_session_kind: EndSessionKindType | None = Field(default=None)
     response_text: str | None = Field(default=None)
     contextual_hint: str | None = Field(default=None)
+
+    @classmethod
+    def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        schema = super().model_json_schema(*args, **kwargs)
+        _strip_llm_schema_annotations(schema)
+        return schema
 
     def to_public_decision(self) -> QuerySemanticDecision:
         extraction = self.extraction.to_query_extraction_result() if self.extraction is not None else None

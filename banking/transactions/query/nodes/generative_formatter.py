@@ -1,11 +1,13 @@
-"""Generative formatting step for the query pipeline.
+"""Guarded prose polish for short, direct query answers.
 
-Rewrites the deterministic i18n query response using an LLM to
-provide a fluid, conversational answer to the user's raw query,
-while preserving data integrity.
+Structured query surfaces are already built from localized presentation plans.
+They must remain deterministic so rows, totals, and pagination never pay for
+an LLM rewrite or risk presentation drift.  This step is retained only for a
+single direct answer where a concise natural sentence adds user-visible value.
 """
 
 import re
+from time import perf_counter
 from typing import Any
 
 from langchain_core.output_parsers import StrOutputParser
@@ -17,6 +19,8 @@ from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.models.domain import QueryAnswerStrategy, QueryResult
 from banking.transactions.query.pipeline import QueryStep
 from banking.transactions.query.presentation.formatter import QueryFormatter
+from shared.observability.llm_call_metrics import record_llm_call
+from shared.observability.llm_http import start_llm_http_recording, stop_llm_http_recording, summarize_llm_http_records
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -31,7 +35,11 @@ _MONTH_DATE_RE = re.compile(
 _ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _REFERENCE_RE = re.compile(r"\b(?:txn|ref)[_-]?[A-Za-z0-9_-]+\b", re.I)
 _MASKED_ACCOUNT_RE = re.compile(r"(?:\*|·|•){2,}\d{3,4}\b")
+_NAMED_ENTITY_RE = re.compile(r"\b(?:[A-Z][A-Za-z]*|[A-Z]{2,})(?:\s+(?:[A-Z][A-Za-z]*|[A-Z]{2,})){0,3}\b")
 _STRUCTURED_ROW_MARKERS = ("₦", "—", "·")
+_GENERIC_ENTITY_WORDS = frozenset(
+    {"Amount", "Bank", "Category", "Date", "Description", "Details", "Ref", "Status", "The", "Transaction", "Type"}
+)
 
 PROMPT_TEMPLATE = """You are a helpful financial assistant for a banking application.
 
@@ -45,18 +53,15 @@ The system retrieved the data and generated the following deterministic response
 {system_response}
 </system_response>
 
-Your task is to re-write the system response so that it fluidly and naturally answers the user's query.
+Your task is to re-write this short direct answer so it fluidly and naturally answers the user's query.
 
 Constraints:
-1. If the system response contains a list of items or a structured summary (e.g. multiple lines with bullet points or
-    dashes), KEEP the list structure exactly as is, but rewrite the introductory sentence to be more natural and
-    directly address the user's specific query.
-2. If the system response is a direct fact (e.g. a date and an amount on separate lines), synthesize them into a
+1. The system response is a direct fact (e.g. a date and an amount on separate lines); synthesize it into a
     single fluid sentence that directly answers the user's question (e.g., "The last time you paid X was on date,
     and you sent them Y.").
-3. DO NOT change any numbers, dates, names, or financial facts.
-4. DO NOT add conversational fluff like "Hello!" or "I can help with that." Just output the final response text.
-5. Respond in the following language/locale: {locale}.
+2. DO NOT change any numbers, dates, names, or financial facts.
+3. DO NOT add conversational fluff like "Hello!" or "I can help with that." Just output the final response text.
+4. Respond in the following language/locale: {locale}.
 """
 
 
@@ -114,6 +119,19 @@ def _preserves_fact_tokens(*, source: str, candidate: str) -> bool:
     return source_tokens.issubset(candidate_tokens)
 
 
+def _named_entities(text: str) -> set[str]:
+    return {
+        " ".join(match.group(0).casefold().split())
+        for match in _NAMED_ENTITY_RE.finditer(text)
+        if match.group(0) not in _GENERIC_ENTITY_WORDS
+    }
+
+
+def _preserves_named_entities(*, source: str, candidate: str) -> bool:
+    """Keep direct-answer counterparties and bank labels immutable too."""
+    return _named_entities(source).issubset(_named_entities(candidate))
+
+
 def _normalize_structured_row(value: str) -> str:
     row = value.strip()
     row = re.sub(r"^[*_`~\s]*[•*-]\s*", "", row)
@@ -148,7 +166,7 @@ def _preserves_structured_rows(*, source: str, candidate: str, is_summary_list: 
 
 
 class GenerativeFormattingStep(QueryStep):
-    """Rewrites the deterministic query response to be more conversational."""
+    """Polish only a single, direct query answer."""
 
     def __init__(self, llm: Runnable) -> None:
         self.llm = llm
@@ -183,6 +201,12 @@ class GenerativeFormattingStep(QueryStep):
         else:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
+        # Lists, grouped summaries, clarification prompts, pagination and
+        # coverage responses are composed by the typed presentation planner.
+        # Do not make their final response depend on a generative rewrite.
+        if query_result.answer_strategy != QueryAnswerStrategy.DIRECT_ANSWER or len(query_result.items or []) > 1:
+            return TransactionResult(outcome=TransactionOutcome.OK, patch={})
+
         user_query = state.get("message", "").strip()
         if not user_query:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
@@ -203,12 +227,27 @@ class GenerativeFormattingStep(QueryStep):
             )
 
         try:
-            llm_response = await self.chain.ainvoke(
-                {
-                    "user_query": user_query,
-                    "system_response": system_response,
-                    "locale": locale,
-                }
+            started_at = perf_counter()
+            http_recording_token = start_llm_http_recording()
+            try:
+                llm_response = await self.chain.ainvoke(
+                    {
+                        "user_query": user_query,
+                        "system_response": system_response,
+                        "locale": locale,
+                    }
+                )
+            finally:
+                http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
+            record_llm_call(
+                event_name="query_direct_answer_llm_call",
+                duration_ms=(perf_counter() - started_at) * 1000,
+                model=None,
+                response_type="text",
+                system_chars=0,
+                user_chars=len(user_query) + len(system_response),
+                output_json_chars=len(str(llm_response)),
+                extra_fields=http_metrics,
             )
             llm_response = llm_response.strip()
             if not llm_response:
@@ -225,6 +264,14 @@ class GenerativeFormattingStep(QueryStep):
                     source_tokens=sorted(_extract_fact_tokens(system_response)),
                     candidate_tokens=sorted(_extract_fact_tokens(llm_response)),
                 )
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    response=system_response,
+                    patch={},
+                )
+
+            if not _preserves_named_entities(source=system_response, candidate=llm_response):
+                logger.warning("generative_formatting_rejected_entity_drift")
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
                     response=system_response,

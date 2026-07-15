@@ -35,6 +35,7 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
         planner_model=settings.planner_model,
         query_model=settings.query_model,
         semantic_router_model=settings.semantic_router_model,
+        conversation_model=settings.conversation_model,
         interrupt_router_model=settings.interrupt_router_model,
         extractor_model=settings.extractor_model,
         app_env=settings.runtime.app_env,
@@ -47,6 +48,7 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
         llm=role_models.planner_llm,
         query_llm=role_models.query_llm,
         semantic_router_llm=role_models.semantic_router_llm,
+        conversation_llm=role_models.conversation_llm,
         interrupt_llm=role_models.interrupt_llm,
         extractor_llm=role_models.extractor_llm,
     )

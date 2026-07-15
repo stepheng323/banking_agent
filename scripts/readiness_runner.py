@@ -217,7 +217,14 @@ async def run_deterministic_readiness(
     )
 
 
-async def reset_redis_session(*, redis_client: Any, phone: str, channel: str, user_id: str | None = None) -> int:
+async def reset_redis_session(
+    *,
+    redis_client: Any,
+    phone: str,
+    channel: str,
+    user_id: str | None = None,
+    checkpointer: Any | None = None,
+) -> int:
     patterns = [
         f"checkpoint:{channel}:{phone}:*",
         f"checkpoint_write:{channel}:{phone}:*",
@@ -235,6 +242,8 @@ async def reset_redis_session(*, redis_client: Any, phone: str, channel: str, us
         keys = [key async for key in redis_client.scan_iter(match=pattern)]
         if keys:
             deleted += int(await redis_client.delete(*keys))
+    if checkpointer is not None:
+        await checkpointer.adelete_thread(f"{channel}:{phone}")
     return deleted
 
 
@@ -367,6 +376,7 @@ async def run_dry_run_readiness(
             phone=target_user.phone_number,
             channel=channel,
             user_id=str(user.id),
+            checkpointer=agent.orchestrator_handler.checkpointer,
         )
         print(f"[setup] reset Redis session keys before {scenario.id}: {deleted}")
         reset_scenarios.add(scenario.id)

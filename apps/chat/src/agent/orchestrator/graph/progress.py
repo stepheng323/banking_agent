@@ -27,6 +27,7 @@ class ProgressStagePolicy:
 _DEFAULT_PROGRESS_STAGE_POLICY = ProgressStagePolicy(visible_to_user=False)
 
 _PROGRESS_STAGE_POLICIES: dict[str, ProgressStagePolicy] = {
+    "planner.planning": ProgressStagePolicy(visible_to_user=True),
     "query.resolving_followup": ProgressStagePolicy(visible_to_user=False),
     "query.fetching_transactions": ProgressStagePolicy(visible_to_user=True),
     "query.comparing_periods": ProgressStagePolicy(visible_to_user=True),
@@ -226,6 +227,10 @@ def render_progress_message(
     scope_label = _render_progress_scope_label(locale=locale, stage_metadata=stage_metadata)
     variant = "first" if progress_count <= 0 else "followup"
     generic_key_by_stage = {
+        "planner.planning": {
+            "first": "progress.planner.planning.first_generic",
+            "followup": "progress.planner.planning.followup_generic",
+        },
         "query.resolving_followup": {
             "first": "progress.query.resolving_followup.first_generic",
             "followup": "progress.query.resolving_followup.followup_generic",
@@ -255,6 +260,27 @@ def render_progress_message(
             "followup": "progress.transfer.processing_transfer.followup_generic",
         },
     }
+
+    if stage_key == "planner.planning":
+        target_domain = str((stage_metadata or {}).get("target_domain") or "")
+        scope_key_by_domain = {
+            "transfer": "progress.planner.scope.transfer",
+            "airtime": "progress.planner.scope.airtime",
+            "data": "progress.planner.scope.data",
+            "query": "progress.planner.scope.query",
+            "account": "progress.planner.scope.account",
+            "beneficiary": "progress.planner.scope.beneficiary",
+            "schedule": "progress.planner.scope.schedule",
+            "support": "progress.planner.scope.support",
+        }
+        scope_key = scope_key_by_domain.get(target_domain)
+        if scope_key:
+            scope_label = render_message(cast(MessageKey, scope_key), locale)
+            planner_scoped_key = {
+                "first": "progress.planner.planning.first_scoped",
+                "followup": "progress.planner.planning.followup_scoped",
+            }[variant]
+            return render_message(cast(MessageKey, planner_scoped_key), locale, {"scope_label": scope_label})
 
     if stage_key.startswith("query."):
         direction = copy_context.get("direction")
@@ -307,7 +333,7 @@ def render_progress_message(
                     locale,
                     {"counterparty_label": counterparty},
                 )
-        scoped_key = {
+        query_scoped_key: str | None = {
             "query.resolving_followup": {
                 "first": "progress.query.resolving_followup.first_scoped",
                 "followup": "progress.query.resolving_followup.followup_scoped",
@@ -321,8 +347,8 @@ def render_progress_message(
                 "followup": "progress.query.comparing_periods.followup_scoped",
             },
         }.get(stage_key, {}).get(variant)
-        if scoped_key and scope_label:
-            return render_message(cast(MessageKey, scoped_key), locale, {"scope_label": scope_label})
+        if query_scoped_key and scope_label:
+            return render_message(cast(MessageKey, query_scoped_key), locale, {"scope_label": scope_label})
 
     if stage_key.startswith("transfer."):
         transfer_variant_key = {
@@ -343,17 +369,17 @@ def render_progress_message(
                 "followup": "progress.transfer.processing_transfer.followup_scoped",
             },
         }
-        scoped_key = transfer_variant_key.get(stage_key, {}).get(variant)
-        if scoped_key:
+        transfer_scoped_key = transfer_variant_key.get(stage_key, {}).get(variant)
+        if transfer_scoped_key:
             if stage_key in {"transfer.authorizing_transfer", "transfer.processing_transfer"} and {
                 "amount",
                 "recipient_display",
             }.issubset(copy_context):
-                return render_message(cast(MessageKey, scoped_key), locale, copy_context)
+                return render_message(cast(MessageKey, transfer_scoped_key), locale, copy_context)
             if stage_key in {"transfer.resolving_recipient", "transfer.confirming_details"} and copy_context.get(
                 "recipient_display"
             ):
-                return render_message(cast(MessageKey, scoped_key), locale, copy_context)
+                return render_message(cast(MessageKey, transfer_scoped_key), locale, copy_context)
 
     generic_key = generic_key_by_stage.get(stage_key, {}).get(variant)
     if generic_key:

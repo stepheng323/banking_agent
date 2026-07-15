@@ -79,6 +79,30 @@ def test_transfer_only_processing_stage_is_user_visible() -> None:
     assert is_progress_stage_user_visible("transfer.processing_transfer") is True
 
 
+def test_planner_stage_is_visible_and_renders_routed_request_context() -> None:
+    assert is_progress_stage_user_visible("planner.planning") is True
+
+    text = render_progress_message(
+        stage_key="planner.planning",
+        progress_count=0,
+        locale="en",
+        stage_metadata={"target_domain": "transfer"},
+    )
+
+    assert text == "I'm putting together your transfer request."
+
+
+def test_planner_stage_uses_safe_generic_copy_without_a_routed_domain() -> None:
+    text = render_progress_message(
+        stage_key="planner.planning",
+        progress_count=1,
+        locale="en",
+        stage_metadata=None,
+    )
+
+    assert text == "I'm still putting your request together."
+
+
 def test_progress_renders_context_aware_query_followup_message() -> None:
     text = render_progress_message(
         stage_key="query.resolving_followup",

@@ -79,6 +79,18 @@ def structured_output_metrics(result: Any) -> dict[str, Any]:
     return metrics
 
 
+def response_schema_metrics(response_type: type[BaseModel]) -> dict[str, int]:
+    """Return compact schema-size metrics shared by non-planner LLM roles."""
+    try:
+        schema_json = json.dumps(response_type.model_json_schema(), separators=(",", ":"), sort_keys=True)
+    except (AttributeError, TypeError, ValueError):
+        return {}
+    return {
+        "response_schema_json_chars": len(schema_json),
+        "response_schema_token_estimate": estimated_tokens_from_chars(len(schema_json)),
+    }
+
+
 def _json_chars(value: Any) -> int:
     try:
         return len(json.dumps(to_json_safe(value), separators=(",", ":"), sort_keys=True))
@@ -193,6 +205,14 @@ def start_llm_call_recording() -> Token[list[LLMCallRecord] | None]:
 def stop_llm_call_recording(token: Token[list[LLMCallRecord] | None]) -> tuple[LLMCallRecord, ...]:
     records = tuple(_LLM_CALL_RECORDS.get() or ())
     _LLM_CALL_RECORDS.reset(token)
+    # Invocation scopes can be nested: the graph captures its own detailed
+    # per-turn calls while readiness wraps the full public invocation.  Keep
+    # the inner snapshot for the graph response, but also aggregate it into
+    # the parent scope so an outer diagnostic does not silently report zero
+    # calls.
+    parent_records = _LLM_CALL_RECORDS.get()
+    if parent_records is not None:
+        parent_records.extend(records)
     return records
 
 
@@ -246,6 +266,12 @@ def record_llm_call(
         "path_label": path_label,
         "latency_span": latency_span,
     }
+    from shared.config.settings import settings
+
+    deadline_seconds = settings.llm_deadline_seconds(role_from_event_name(event_name))
+    if deadline_seconds is not None:
+        record["deadline_seconds"] = deadline_seconds
+        record["deadline_outcome"] = "exceeded" if error_type == "LLMCallDeadlineExceeded" else "within"
     if error_type:
         record["error_type"] = error_type
     for key, value in (extra_fields or {}).items():

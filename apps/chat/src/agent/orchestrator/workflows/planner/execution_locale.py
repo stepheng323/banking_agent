@@ -19,7 +19,11 @@ async def _resolve_planner_detected_locale(
     if not detected_language:
         return current_locale
 
-    if redis_client:
+    # Some planner contexts intentionally provide a read-only cache adapter.
+    # Do not let its mere truthiness trigger LocaleManager's write path (and a
+    # separate global Redis connection); persist only with a write-capable
+    # client. The detected locale is still returned below for this turn.
+    if redis_client and callable(getattr(redis_client, "set", None)):
         signal = LanguageDetectionSignal(
             locale=LocaleManager.from_detection(detected_language),
             confidence=float(getattr(planner_output, "confidence", 1.0) or 0.0),

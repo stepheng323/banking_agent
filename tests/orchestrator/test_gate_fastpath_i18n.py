@@ -2592,7 +2592,7 @@ async def test_gate_explicit_cancel_dismisses_pending_mandate_notice() -> None:
     assert updates["turn_directive"].decision == "cancel_pending_mandate_notice"
 
 
-async def test_gate_query_shortcut_followup_uses_semantic_router_without_pending_interrupt() -> None:
+async def test_gate_query_shortcut_followup_bypasses_semantic_router_without_pending_interrupt() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_query",
@@ -2627,12 +2627,10 @@ async def test_gate_query_shortcut_followup_uses_semantic_router_without_pending
 
     updates = await session_gate_direct_path(state, config)
     assert "direct_path_triggered" not in updates
-    assert planner.route_calls == 1
-    assert planner.last_context is not None
-    assert "candidate_domain=query" in planner.last_context
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].owner == "semantic_router"
-    assert updates["turn_directive"].decision == "domain_query"
+    assert planner.route_calls == 0
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
+    assert updates["turn_directive"].owner == "query_session"
+    assert updates["turn_directive"].decision == "query_followup_bypass"
     assert updates["turn_directive"].target_domain == "query"
     assert updates["turn_directive"].mode == "continuation"
     assert updates.get("waves") == [["direct_query"]]
@@ -2701,10 +2699,10 @@ async def test_gate_query_followup_preempts_stale_unsupported_boundary_llm() -> 
     updates = await session_gate_direct_path(state, config)
 
     assert planner.boundary_calls == 0
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates.get("capability_boundary") is None
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].decision == "domain_query"
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
+    assert updates["turn_directive"].decision == "query_followup_bypass"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What bank was that?"
@@ -2757,7 +2755,7 @@ async def test_gate_active_query_owns_direct_context_answer_followup() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["turn_directive"].path_shape == "query_followup_bypass"
     assert updates["turn_directive"].owner == "query_session"
     assert updates["turn_directive"].decision == "query_followup_bypass"
@@ -2800,12 +2798,10 @@ async def test_gate_time_rescope_followup_bypasses_planner_without_context_frame
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
-    assert planner.last_context is not None
-    assert "candidate_domain=query" in planner.last_context
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].owner == "semantic_router"
-    assert updates["turn_directive"].decision == "domain_query"
+    assert planner.route_calls == 0
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
+    assert updates["turn_directive"].owner == "query_session"
+    assert updates["turn_directive"].decision == "query_followup_bypass"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What about yesterday"
@@ -2842,9 +2838,9 @@ async def test_gate_assertive_time_correction_bypasses_planner_without_context_f
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].decision == "domain_query"
+    assert planner.route_calls == 0
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
+    assert updates["turn_directive"].decision == "query_followup_bypass"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "I said yesterday"
@@ -2860,7 +2856,7 @@ async def test_gate_assertive_time_correction_bypasses_planner_without_context_f
         "hier alors",
     ],
 )
-async def test_gate_multilingual_active_query_time_followups_use_semantic_router(message_text: str) -> None:
+async def test_gate_multilingual_active_query_time_followups_bypass_semantic_router(message_text: str) -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_query",
@@ -2890,11 +2886,9 @@ async def test_gate_multilingual_active_query_time_followups_use_semantic_router
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
-    assert planner.last_context is not None
-    assert "candidate_domain=query" in planner.last_context
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].decision == "domain_query"
+    assert planner.route_calls == 0
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
+    assert updates["turn_directive"].decision == "query_followup_bypass"
     assert updates["turn_directive"].mode == "continuation"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
@@ -2902,7 +2896,7 @@ async def test_gate_multilingual_active_query_time_followups_use_semantic_router
     assert "force_new_query" not in task.payload
 
 
-async def test_gate_active_query_fresh_transfer_uses_semantic_router_and_clears_query_session() -> None:
+async def test_gate_active_query_fresh_transfer_uses_transfer_guard_and_clears_query_session() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_transfer",
@@ -2938,11 +2932,9 @@ async def test_gate_active_query_fresh_transfer_uses_semantic_router_and_clears_
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
-    assert planner.last_context is not None
-    assert "candidate_domain=query" in planner.last_context
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].decision == "domain_transfer"
+    assert planner.route_calls == 0
+    assert updates["turn_directive"].path_shape == "deterministic_transfer_domain"
+    assert updates["turn_directive"].decision == "fresh_transfer_command"
     assert updates["turn_directive"].target_domain == "transfer"
     assert updates.get("active_domain") is None
     assert updates["session_stack"] == []
@@ -2951,7 +2943,7 @@ async def test_gate_active_query_fresh_transfer_uses_semantic_router_and_clears_
     assert task.payload["message"] == "Send 5k to Adebayo"
 
 
-async def test_gate_active_query_mixed_transaction_uses_semantic_router_and_clears_query_session() -> None:
+async def test_gate_active_query_mixed_transaction_uses_planner_handoff_and_clears_query_session() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="planner_mixed",
@@ -2986,10 +2978,10 @@ async def test_gate_active_query_mixed_transaction_uses_semantic_router_and_clea
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
     assert "tasks" not in updates
-    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].owner == "guardrail"
     assert updates["turn_directive"].decision == "planner_mixed"
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
     assert updates.get("active_domain") is None
@@ -3049,11 +3041,11 @@ async def test_gate_active_query_session_preempts_context_frame_followup() -> No
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 0
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].owner == "semantic_router"
-    assert updates["turn_directive"].decision == "domain_query"
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
+    assert updates["turn_directive"].owner == "query_session"
+    assert updates["turn_directive"].decision == "query_followup_bypass"
     assert updates["turn_directive"].target_domain == "query"
     assert updates["turn_directive"].mode == "continuation"
     assert updates.get("waves") == [["direct_query"]]
@@ -3102,10 +3094,10 @@ async def test_gate_latest_fact_next_followup_stays_in_active_query_session() ->
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].decision == "domain_query"
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
+    assert updates["turn_directive"].decision == "query_followup_bypass"
     assert updates["turn_directive"].mode == "continuation"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
@@ -3140,10 +3132,10 @@ async def test_gate_bypasses_planner_for_pure_query_detail_turn() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my last transaction"
@@ -3842,9 +3834,9 @@ async def test_gate_direct_query_bypass_forces_new_query_with_active_query_sessi
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.payload["force_new_query"] is True
 
@@ -7852,7 +7844,7 @@ async def test_gate_semantic_router_missing_reply_for_non_banking_turn_falls_bac
     assert not any(event == "unexpected_turn_route_breadcrumb" for event, _ in events)
 
 
-async def test_gate_semantic_router_missing_reply_uses_conversation_responder_for_non_banking_turn() -> None:
+async def test_gate_semantic_router_missing_reply_uses_localized_fallback_without_second_llm() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="direct_reply",
@@ -7888,9 +7880,8 @@ async def test_gate_semantic_router_missing_reply_uses_conversation_responder_fo
 
     assert "direct_path_triggered" not in updates
     assert updates["turn_directive"].path_shape == "semantic_router_direct"
-    assert updates["final_response"] == responder.reply
-    assert responder.calls
-    assert responder.calls[0]["mode"] == ConversationResponseMode.CASUAL
+    assert updates["final_response"] == render_message("conversational.out_of_scope", "en")
+    assert responder.calls == []
 
 
 async def test_gate_semantic_router_can_answer_grounded_account_follow_up_without_planner() -> None:
@@ -8954,9 +8945,9 @@ async def test_gate_query_session_does_not_swallow_full_query_restatement_as_fas
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my last transaction"
@@ -8991,9 +8982,9 @@ async def test_gate_routes_last_transaction_surface_to_structured_path() -> None
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my last transaction"
@@ -9088,9 +9079,9 @@ async def test_gate_query_session_ignores_generic_checkin_direct_response_for_fo
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Really?"
@@ -9141,9 +9132,9 @@ async def test_gate_routes_show_me_active_query_followup_directly_to_query_worke
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "show me"
@@ -9195,9 +9186,9 @@ async def test_gate_routes_last_week_active_query_followup_directly_to_query_wor
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What about last week"
@@ -9248,9 +9239,9 @@ async def test_gate_routes_how_much_total_active_query_followup_directly_to_quer
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "How much total"
@@ -9315,16 +9306,8 @@ async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monke
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert (
-        "gate_semantic_router_domain_dispatch",
-        {
-            "decision": "domain_query",
-            "domain": "query",
-            "mode": "continuation",
-            "task_id": "direct_query",
-        },
-    ) in events
+    assert updates["turn_directive"].path_shape == "query_followup_bypass"
+    assert not any(event == "gate_semantic_router_domain_dispatch" for event, _ in events)
 
 
 async def test_gate_exits_active_query_session_on_greeting_direct_reply() -> None:

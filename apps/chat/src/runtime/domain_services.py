@@ -60,6 +60,7 @@ def build_chat_domain_services(
     messaging_clients: dict[str, MessagingClient],
     shared_redis: redis.Redis,
     llm: ChatOpenAI,
+    conversation_llm: ChatOpenAI,
     query_llm: ChatOpenAI,
     extractor_llm: ChatOpenAI,
     session_factory: Callable[[], AsyncSession],
@@ -101,7 +102,7 @@ def build_chat_domain_services(
     )
 
     task_state_service = TaskStateService()
-    conversation_responder = ConversationResponder(llm)
+    conversation_responder = ConversationResponder(conversation_llm)
     bank_cache_service = BankCacheService(
         redis_client=shared_redis, provider_name=providers.resolver_provider.provider_name
     )

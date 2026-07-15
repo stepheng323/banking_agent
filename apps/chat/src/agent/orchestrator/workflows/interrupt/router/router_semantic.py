@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.rendering.contex
 from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_summary import (
     get_or_build_turn_context_summary,
 )
+from shared.observability.llm import LLMCallDeadlineExceeded
 from shared.types.planner import SemanticRouteDecision
 
 
@@ -51,6 +52,8 @@ async def _route_interrupt_semantic_turn(
                 path_label="interrupt_path",
             ),
         )
+    except LLMCallDeadlineExceeded:
+        raise
     except Exception as exc:
         logger.warning("interrupt_semantic_router_failed", error=str(exc))
         return None

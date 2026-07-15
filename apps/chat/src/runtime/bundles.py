@@ -28,6 +28,7 @@ def build_orchestrator_runtime_bundle(
     llm: ChatOpenAI,
     query_llm: ChatOpenAI,
     semantic_router_llm: ChatOpenAI | None = None,
+    conversation_llm: ChatOpenAI | None = None,
     interrupt_llm: ChatOpenAI | None = None,
     extractor_llm: ChatOpenAI | None = None,
 ) -> ChatRuntimeBundle:
@@ -42,6 +43,7 @@ def build_orchestrator_runtime_bundle(
         messaging_clients=messaging_clients,
         shared_redis=shared_redis,
         llm=llm,
+        conversation_llm=conversation_llm or semantic_router_llm or llm,
         query_llm=query_llm,
         extractor_llm=extractor_llm or llm,
         session_factory=session_factory,
@@ -84,6 +86,7 @@ def build_runtime_bundle_factory(
     llm: ChatOpenAI,
     query_llm: ChatOpenAI,
     semantic_router_llm: ChatOpenAI | None = None,
+    conversation_llm: ChatOpenAI | None = None,
     interrupt_llm: ChatOpenAI | None = None,
     extractor_llm: ChatOpenAI | None = None,
 ) -> ChatRuntimeBundleFactory:
@@ -97,6 +100,7 @@ def build_runtime_bundle_factory(
             llm=llm,
             query_llm=query_llm,
             semantic_router_llm=semantic_router_llm,
+            conversation_llm=conversation_llm,
             interrupt_llm=interrupt_llm,
             extractor_llm=extractor_llm,
         )

@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.context import (
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
+from shared.observability.llm import LLMCallDeadlineExceeded
 from shared.types.planner import InterruptRouteDecision
 
 
@@ -123,6 +124,8 @@ async def _route_interrupt(
             task_count=len(task_ids),
         )
         return route
+    except LLMCallDeadlineExceeded:
+        raise
     except Exception as exc:
         logger.warning("interrupt_router_failed", kind=kind, error=str(exc))
         return _route_fallback("router_failed")

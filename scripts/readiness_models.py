@@ -51,12 +51,96 @@ def _turn_directive_metadata(route_metadata: dict[str, Any]) -> dict[str, Any] |
 
 
 @dataclass(frozen=True)
+class LLMTokenBudget:
+    """Per-call token ceilings for one measured LLM role/profile."""
+
+    event_name: str
+    response_type_prefix: str | None = None
+    max_prompt_tokens: int | None = None
+    max_schema_tokens: int | None = None
+    max_provider_input_tokens: int | None = None
+    max_output_tokens: int | None = None
+
+    def matches(self, call: dict[str, Any]) -> bool:
+        if call.get("event_name") != self.event_name:
+            return False
+        if self.response_type_prefix is None:
+            return True
+        return str(call.get("response_type") or "").startswith(self.response_type_prefix)
+
+    def violations(self, call: dict[str, Any]) -> tuple[str, ...]:
+        checks = (
+            ("prompt tokens", self.max_prompt_tokens, call.get("prompt_token_estimate")),
+            ("schema tokens", self.max_schema_tokens, call.get("response_schema_token_estimate")),
+            ("provider input tokens", self.max_provider_input_tokens, call.get("provider_input_tokens")),
+            (
+                "output tokens",
+                self.max_output_tokens,
+                call.get("provider_output_tokens", call.get("output_token_estimate")),
+            ),
+        )
+        violations: list[str] = []
+        for label, maximum, actual in checks:
+            if maximum is not None and isinstance(actual, int | float) and actual > maximum:
+                violations.append(f"{self.event_name} {label} <= {maximum}; got {int(actual)}")
+        return tuple(violations)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "event_name": self.event_name,
+            "response_type_prefix": self.response_type_prefix,
+            "max_prompt_tokens": self.max_prompt_tokens,
+            "max_schema_tokens": self.max_schema_tokens,
+            "max_provider_input_tokens": self.max_provider_input_tokens,
+            "max_output_tokens": self.max_output_tokens,
+        }
+
+
+DEFAULT_LLM_TOKEN_BUDGETS: tuple[LLMTokenBudget, ...] = (
+    LLMTokenBudget(
+        "conversation_responder_llm_call",
+        max_prompt_tokens=700,
+        max_provider_input_tokens=900,
+        max_output_tokens=80,
+    ),
+    LLMTokenBudget(
+        "semantic_router_llm_call",
+        max_prompt_tokens=1600,
+        max_schema_tokens=750,
+        max_provider_input_tokens=2500,
+    ),
+    LLMTokenBudget(
+        "planner_llm_call",
+        response_type_prefix="PlannerKnown",
+        max_prompt_tokens=1000,
+        max_schema_tokens=1000,
+        max_provider_input_tokens=2200,
+        max_output_tokens=180,
+    ),
+    LLMTokenBudget(
+        "query_reasoner_llm_call",
+        max_prompt_tokens=1800,
+        max_provider_input_tokens=3000,
+        max_output_tokens=180,
+    ),
+    LLMTokenBudget(
+        "transfer_amendment_llm_call",
+        max_prompt_tokens=1200,
+        max_schema_tokens=700,
+        max_provider_input_tokens=2200,
+        max_output_tokens=100,
+    ),
+)
+
+
+@dataclass(frozen=True)
 class LLMCallBudget:
     """Per-turn LLM-call ceiling used by readiness checks."""
 
     max_calls: int | None = None
     max_event_counts: tuple[tuple[str, int], ...] = ()
     required_event_counts: tuple[tuple[str, int], ...] = ()
+    token_budgets: tuple[LLMTokenBudget, ...] = DEFAULT_LLM_TOKEN_BUDGETS
     observe: bool = False
     enforced_modes: tuple[ReadinessMode, ...] = ("deterministic", "dry-run")
 
@@ -74,6 +158,7 @@ class LLMCallBudget:
             "max_calls": self.max_calls,
             "max_event_counts": dict(self.max_event_counts),
             "required_event_counts": dict(self.required_event_counts),
+            "token_budgets": [budget.to_dict() for budget in self.token_budgets],
             "observe": self.observe,
             "enforced_modes": list(self.enforced_modes),
         }
@@ -96,6 +181,10 @@ class LLMCallBudget:
             actual = event_counts[event_name]
             if actual < minimum:
                 violations.append(f"at least {minimum} {event_name} calls; got {actual}")
+        for call in llm_calls:
+            for token_budget in self.token_budgets:
+                if token_budget.matches(call):
+                    violations.extend(token_budget.violations(call))
         if self.observe or (mode is not None and mode not in self.enforced_modes):
             return "observed", tuple(violations)
         return ("exceeded" if violations else "within_budget"), tuple(violations)
@@ -313,9 +402,12 @@ class ReadinessRunResult:
                     "provider_output_tokens": 0,
                     "provider_total_tokens": 0,
                     "provider_cached_tokens": 0,
+                    "provider_uncached_input_tokens": 0,
                     "provider_reasoning_tokens": 0,
                     "client_http_request_count": 0,
+                    "client_http_retry_count": 0,
                     "client_http_response_headers_ms": 0.0,
+                    "client_http_body_processing_ms": 0.0,
                     "client_http_total_ms": 0.0,
                 },
             )
@@ -372,6 +464,9 @@ class ReadinessRunResult:
             event_summary["provider_cached_tokens"] = int(event_summary["provider_cached_tokens"]) + int(
                 call.get("provider_cached_tokens") or 0
             )
+            event_summary["provider_uncached_input_tokens"] = int(
+                event_summary["provider_uncached_input_tokens"]
+            ) + int(call.get("provider_uncached_input_tokens") or 0)
             event_summary["provider_reasoning_tokens"] = int(event_summary["provider_reasoning_tokens"]) + int(
                 call.get("provider_reasoning_tokens") or 0
             )
@@ -382,6 +477,9 @@ class ReadinessRunResult:
                 )
             event_summary["client_http_request_count"] = int(event_summary["client_http_request_count"]) + int(
                 call.get("client_http_request_count") or 0
+            )
+            event_summary["client_http_retry_count"] = int(event_summary["client_http_retry_count"]) + int(
+                call.get("client_http_retry_count") or 0
             )
             event_summary["client_http_response_headers_ms"] = round(
                 max(
@@ -394,6 +492,13 @@ class ReadinessRunResult:
                 max(
                     float(event_summary["client_http_total_ms"]),
                     float(call.get("client_http_total_ms") or 0.0),
+                ),
+                2,
+            )
+            event_summary["client_http_body_processing_ms"] = round(
+                max(
+                    float(event_summary["client_http_body_processing_ms"]),
+                    float(call.get("client_http_body_processing_ms") or 0.0),
                 ),
                 2,
             )
@@ -473,6 +578,9 @@ class ReadinessRunResult:
                     ),
                     "provider_input_tokens": provider_input_tokens,
                     "provider_cached_tokens": provider_cached_tokens,
+                    "provider_uncached_input_tokens": sum(
+                        int(call.get("provider_uncached_input_tokens") or 0) for call in calls
+                    ),
                     "provider_cache_hit_rate": round(provider_cached_tokens / provider_input_tokens, 4)
                     if provider_input_tokens
                     else None,

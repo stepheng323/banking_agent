@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
     build_surface_answer_response as build_context_frame_followup_response,
 )
 from banking.presentation.i18n.renderer import render_message
+from shared.observability.llm import LLMCallDeadlineExceeded
 from shared.types.planner import ContextFrameFollowupDecision
 
 
@@ -44,6 +45,10 @@ async def _resolve_schedule_read_during_pending_confirmation(
             text,
             path_label="interrupt_path",
         )
+    except LLMCallDeadlineExceeded:
+        # Let the interrupt node produce the localized timeout response while
+        # preserving the pending confirmation as the active authority.
+        raise
     except Exception as exc:
         logger.warning("interrupt_schedule_read_router_failed", error=str(exc))
         return None

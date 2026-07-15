@@ -3,8 +3,10 @@
 import re
 import time
 from decimal import Decimal
+from typing import cast
 
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
 
 from apps.chat.src.agent.orchestrator.task_state.service import TaskStateService
 from apps.chat.src.agent.orchestrator.workflows.planner.core import (
@@ -18,6 +20,17 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core import (
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core import (
     task_planner_quoted_replay_prompts as quoted_replay_prompts,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_llm_models import (
+    PlannerAmbiguousPlan,
+    PlannerKnownAirtimeDataPlan,
+    PlannerKnownAirtimePlan,
+    PlannerKnownDataPlan,
+    PlannerKnownTransactionsPlan,
+    PlannerKnownTransferAirtimePlan,
+    PlannerKnownTransferDataPlan,
+    PlannerKnownTransferPlan,
+    adapt_planner_llm_output,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_model_wiring import (
     build_task_planner_structured_outputs,
@@ -55,7 +68,6 @@ from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,
     PlannerOutput,
-    planner_output_model_for_transaction_executors,
 )
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
@@ -250,36 +262,51 @@ def _augment_context_with_clean_transfer_hint(
     return f"{context}\n{hint_text}"
 
 
+def _known_planner_model(executors: frozenset[str]) -> type[BaseModel]:
+    return cast(
+        type[BaseModel],
+        {
+        frozenset({"transfer"}): PlannerKnownTransferPlan,
+        frozenset({"airtime"}): PlannerKnownAirtimePlan,
+        frozenset({"data"}): PlannerKnownDataPlan,
+        frozenset({"transfer", "airtime"}): PlannerKnownTransferAirtimePlan,
+        frozenset({"transfer", "data"}): PlannerKnownTransferDataPlan,
+        frozenset({"airtime", "data"}): PlannerKnownAirtimeDataPlan,
+        }.get(executors, PlannerKnownTransactionsPlan),
+    )
+
+
 def _planner_response_model_for_prompt(
     prompt_signals: prompt_models.PlannerPromptSignals,
     prompt_result: prompt_models.PlannerPromptBuildResult,
-) -> type[PlannerOutput]:
+) -> type[BaseModel]:
     bundles = set(prompt_result.selected_bundle_ids)
     if "transfer_only" in bundles:
-        return planner_output_model_for_transaction_executors(("transfer",))
+        return PlannerKnownTransferPlan
     if "mixed_tx" in bundles:
-        return planner_output_model_for_transaction_executors(prompt_signals.expected_transaction_executors)
+        return _known_planner_model(frozenset(prompt_signals.expected_transaction_executors))
     if "money_move" in bundles:
         if prompt_signals.expected_transaction_executors:
-            return planner_output_model_for_transaction_executors(prompt_signals.expected_transaction_executors)
+            return _known_planner_model(frozenset(prompt_signals.expected_transaction_executors))
         if prompt_signals.active_flow_type in _TRANSACTION_EXECUTOR_VALUES:
-            return planner_output_model_for_transaction_executors((prompt_signals.active_flow_type,))
+            return _known_planner_model(frozenset({str(prompt_signals.active_flow_type)}))
         if prompt_signals.forced_domain_owner == "transfer":
-            return planner_output_model_for_transaction_executors(("transfer",))
-        return planner_output_model_for_transaction_executors(_TRANSACTION_EXECUTOR_VALUES)
-    return PlannerOutput
+            return PlannerKnownTransferPlan
+        return PlannerKnownTransactionsPlan
+    return PlannerAmbiguousPlan
 
 
-def _planner_prompt_cache_key(response_type: type[PlannerOutput]) -> str:
+def _planner_prompt_cache_key(response_type: type[BaseModel]) -> str:
     response_type_name = response_type.__name__
     suffix_by_response_type = {
-        "PlannerOutputTransferOnly": "transfer_only",
-        "PlannerOutputAirtimeOnly": "airtime_only",
-        "PlannerOutputDataOnly": "data_only",
-        "PlannerOutputTransferAirtime": "transfer_airtime",
-        "PlannerOutputTransferData": "transfer_data",
-        "PlannerOutputAirtimeData": "airtime_data",
-        "PlannerOutputTransactionsOnly": "transactions_only",
+        "PlannerKnownTransferPlan": "transfer_only_v2",
+        "PlannerKnownAirtimePlan": "airtime_only_v2",
+        "PlannerKnownDataPlan": "data_only_v2",
+        "PlannerKnownTransferAirtimePlan": "transfer_airtime_v2",
+        "PlannerKnownTransferDataPlan": "transfer_data_v2",
+        "PlannerKnownAirtimeDataPlan": "airtime_data_v2",
+        "PlannerKnownTransactionsPlan": "transactions_only_v2",
+        "PlannerAmbiguousPlan": "ambiguous_v2",
     }
     return f"planner:{suffix_by_response_type.get(response_type_name, 'full')}"
 
@@ -307,7 +334,7 @@ class TaskPlanner:
             interrupt_llm=self.interrupt_llm,
         )
         self.structured_planner = structured_outputs.planner
-        self._structured_planner_by_response_type: dict[type[PlannerOutput], object] = {
+        self._structured_planner_by_response_type: dict[type[BaseModel], object] = {
             PlannerOutput: self.structured_planner
         }
 
@@ -325,7 +352,7 @@ class TaskPlanner:
         if not self.uses_dedicated_semantic_router_model:
             logger.warning("semantic_router_model_not_dedicated", mode="interrupt_or_planner_fallback")
 
-    def _structured_planner_for_response_type(self, response_type: type[PlannerOutput]) -> object:
+    def _structured_planner_for_response_type(self, response_type: type[BaseModel]) -> object:
         structured_planner = self._structured_planner_by_response_type.get(response_type)
         if structured_planner is None:
             structured_planner = with_structured_output(
@@ -389,7 +416,7 @@ class TaskPlanner:
             ),
             prompt_cache_key=_planner_prompt_cache_key(response_type),
         )
-        raw_output = PlannerOutput.model_validate(raw_model_output.model_dump())
+        raw_output = adapt_planner_llm_output(raw_model_output, original_text=text)
         normalized_output, quality_report = normalize_planner_transaction_output_with_quality(
             raw_output.model_copy(deep=True),
             text,

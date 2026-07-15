@@ -67,6 +67,7 @@ def summarize_llm_http_records(records: tuple[LLMHttpRecord, ...]) -> dict[str, 
     ]
     fields: dict[str, Any] = {
         "client_http_request_count": len(records),
+        "client_http_retry_count": max(len(records) - 1, 0),
     }
     last = records[-1]
     for key in ("client_http_method", "client_http_host", "client_http_path", "client_http_status_code"):
@@ -76,6 +77,14 @@ def summarize_llm_http_records(records: tuple[LLMHttpRecord, ...]) -> dict[str, 
         fields["client_http_response_headers_ms"] = round(max(response_header_latencies), 2)
     if total_latencies:
         fields["client_http_total_ms"] = round(max(total_latencies), 2)
+    body_processing_latencies = [
+        max(float(record["client_http_total_ms"]) - float(record["client_http_response_headers_ms"]), 0.0)
+        for record in records
+        if isinstance(record.get("client_http_total_ms"), int | float)
+        and isinstance(record.get("client_http_response_headers_ms"), int | float)
+    ]
+    if body_processing_latencies:
+        fields["client_http_body_processing_ms"] = round(max(body_processing_latencies), 2)
     request_id = next(
         (record.get("provider_request_id") for record in reversed(records) if record.get("provider_request_id")),
         None,

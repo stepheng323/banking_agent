@@ -9,13 +9,77 @@ from banking.transfers.extraction.parsers import (
     recipient_name_matches_existing_binding,
     strip_recipient_schedule_suffix,
 )
+from banking.transfers.models.amendment import TransferAmendmentPatch
+from banking.transfers.models.entities import TransferEntities
+from banking.transfers.models.extraction import Correction, CorrectionField, TransferExtractionResult
 from banking.transfers.models.types import TransferPayload
 from shared.money import to_naira
 from shared.money_mutations import AmountMutationEvaluationError, evaluate_amount_mutation
+from shared.observability.llm import LLMCallDeadlineExceeded
 from shared.types.amount_mutation import set_amount_mutation
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+async def apply_transfer_amendment_update(
+    current_payload: TransferPayload,
+    amendment: TransferAmendmentPatch,
+    *,
+    user_message: str,
+    context: dict[str, Any],
+) -> TransactionResult:
+    """Adapt the small amendment result into the existing deterministic merge path."""
+    if amendment.operation != "update" or amendment.requires_broad_interpretation:
+        return TransactionResult(outcome=TransactionOutcome.OK)
+
+    entity_payload = amendment.model_dump(
+        include={
+            "recipient_name",
+            "recipient_account",
+            "source_bank_name",
+            "source_account_index",
+            "transfer_percentage",
+            "transfer_all",
+            "source_accounts",
+            "use_dual_accounts",
+            "explicit_split",
+            "narration",
+        },
+        exclude_none=True,
+    )
+    explicit_split = entity_payload.get("explicit_split")
+    if isinstance(explicit_split, list):
+        entity_payload["explicit_split"] = {
+            str(item.get("source")): item.get("amount")
+            for item in explicit_split
+            if isinstance(item, dict) and item.get("source") and item.get("amount") is not None
+        }
+    if amendment.recipient_bank_name:
+        entity_payload["bank_name"] = amendment.recipient_bank_name
+    correction = None
+    if amendment.amount_mutation is not None:
+        correction = Correction(
+            field=CorrectionField.AMOUNT,
+            amount_mutation=amendment.amount_mutation,
+        )
+    extraction = TransferExtractionResult(
+        entities=TransferEntities.model_validate(entity_payload) if entity_payload else None,
+        correction=correction,
+        acknowledgment=amendment.acknowledgment,
+        confirmation_intent="update",
+    )
+
+    class _BoundAmendmentExtractor:
+        async def extract(self, *_args: Any, **_kwargs: Any) -> TransferExtractionResult:
+            return extraction
+
+    return await extract_transfer_update(
+        current_payload,
+        _BoundAmendmentExtractor(),
+        user_message,
+        context,
+    )
 
 
 def _resolved_amount_correction(current_payload: TransferPayload, correction: Any) -> object | None:
@@ -237,6 +301,11 @@ async def extract_transfer_update(
 
         return TransactionResult(outcome=TransactionOutcome.OK, patch=extracted_data)
 
+    except LLMCallDeadlineExceeded:
+        # A timeout is a recoverable control-flow outcome. The worker must
+        # return localized, state-preserving recovery instead of treating it
+        # as an empty extraction.
+        raise
     except Exception as error:
         logger.error("extraction_node_failed", error=str(error))
         return TransactionResult(outcome=TransactionOutcome.OK)

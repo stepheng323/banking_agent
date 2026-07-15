@@ -54,8 +54,41 @@ def _beneficiary_cache_contains_recipient(beneficiaries: list[dict[str, Any]], r
     return False
 
 
+def _message_mentions_compact_saved_alias(message: str | None, beneficiaries: list[dict[str, Any]]) -> bool:
+    """Whether extraction needs a full saved-beneficiary record for an exact alias.
+
+    Compact turn context intentionally carries aliases without bank-account details.
+    When a new transfer names one of those aliases exactly, refresh the record before
+    extraction so the worker can resolve the destination in the same turn.  This is
+    a data-hydration decision, not an intent classifier: it never picks a recipient
+    or changes the transfer payload.
+    """
+
+    normalized_message = _normalize_beneficiary_match_text(message)
+    if not normalized_message:
+        return False
+
+    padded_message = f" {normalized_message} "
+    for beneficiary in beneficiaries:
+        alias = _normalize_beneficiary_match_text(beneficiary.get("alias"))
+        if not alias or f" {alias} " not in padded_message:
+            continue
+
+        account = beneficiary.get("recipient_account") or beneficiary.get("account_number")
+        bank = (
+            beneficiary.get("recipient_bank_name")
+            or beneficiary.get("bank_name")
+            or beneficiary.get("recipient_bank_code")
+            or beneficiary.get("bank_code")
+        )
+        if not account or not bank:
+            return True
+    return False
+
+
 __all__ = [
     "_beneficiary_cache_contains_recipient",
+    "_message_mentions_compact_saved_alias",
     "_normalize_beneficiary_rows",
     "_recipient_supports_targeted_beneficiary_lookup",
 ]

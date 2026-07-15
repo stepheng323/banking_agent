@@ -185,15 +185,13 @@ async def test_task_planner_quoted_replay_uses_shared_structured_invocation() ->
 async def test_task_planner_uses_narrow_transfer_output_schema_for_transfer_only_prompt() -> None:
     planner_llm = _StructuredFakeLLM(
         {
-            "PlannerOutputTransferOnly": {
+            "PlannerKnownTransferPlan": {
                 "primary_intent": "transfer",
-                "confidence": 0.96,
                 "tasks": [
                     {
                         "task_id": "t1",
                         "action": "send_money",
                         "instruction": "Send money",
-                        "risk": "MONEY_MOVE",
                         "parameters": {"amount": "2000", "recipient_name": "Mum"},
                     }
                 ],
@@ -214,7 +212,54 @@ async def test_task_planner_uses_narrow_transfer_output_schema_for_transfer_only
 
     assert result.raw_output.tasks[0].action == "send_money"
     assert result.raw_output.tasks[0].executor == "transfer"
-    assert "PlannerOutputTransferOnly" in planner_llm.schema_names
+    assert "PlannerKnownTransferPlan" in planner_llm.schema_names
+
+
+async def test_mixed_narrow_schema_drops_sibling_executor_defaults() -> None:
+    planner_llm = _StructuredFakeLLM(
+        {
+            "PlannerKnownTransferAirtimePlan": {
+                "primary_intent": "mixed",
+                "normalized_instruction": "Send 10k to Tolu and buy 1k airtime for me",
+                "clauses": [
+                    {"task_ids": ["t1"]},
+                    {"task_ids": ["a1"]},
+                ],
+                "tasks": [
+                    {
+                        "task_id": "t1",
+                        "executor": "transfer",
+                        "action": "send_money",
+                        "instruction": "Send 10k to Tolu",
+                        "parameters": {"amount": "10000", "recipient_name": "Tolu"},
+                    },
+                    {
+                        "task_id": "a1",
+                        "executor": "airtime",
+                        "action": "buy_airtime",
+                        "instruction": "Buy 1k airtime for me",
+                        "parameters": {"amount": "1000", "is_self": True},
+                    },
+                ],
+            }
+        }
+    )
+    planner = TaskPlanner(planner_llm=planner_llm)
+
+    result = await planner.plan_tasks_with_quality(
+        "2348000000014",
+        "Send 10k to Tolu and buy 1k airtime for me",
+        prompt_signals=PlannerPromptSignals(
+            expected_transaction_executors=("transfer", "airtime"),
+            compact_context=True,
+        ),
+    )
+
+    assert result.raw_output.tasks[0].executor == "transfer"
+    assert result.raw_output.tasks[0].parameters.recipient_name == "Tolu"
+    assert result.raw_output.tasks[1].executor == "airtime"
+    assert result.raw_output.tasks[1].parameters.is_self is True
+    assert result.raw_output.clauses[0].text == "Send 10k to Tolu"
 
 
 def test_planner_task_parameters_are_coerced_by_executor_and_action() -> None:

@@ -170,6 +170,8 @@ async def invoke_structured_prompt(
     total_prompt_chars = len(system_prompt) + len(user_prompt)
     prompt_cache_fields = _provider_prompt_cache_fields(prompt_cache_key)
     prompt_cache_invocation_kwargs = _prompt_cache_invocation_kwargs(prompt_cache_key)
+    llm_role = _role_from_event_name(event_name)
+    deadline_seconds = settings.llm_deadline_seconds(llm_role)
     http_recording_token = start_llm_http_recording()
     try:
         result = await ainvoke_with_config(
@@ -180,6 +182,7 @@ async def invoke_structured_prompt(
             ],
             config=dict(config or {}) or None,
             invocation_kwargs=prompt_cache_invocation_kwargs,
+            role=llm_role,
         )
     except Exception as exc:
         duration_ms = (time.perf_counter() - start) * 1000
@@ -193,7 +196,14 @@ async def invoke_structured_prompt(
             user_chars=len(user_prompt),
             path_label=path_label,
             latency_span=latency_span,
-            extra_fields={**schema_metrics, **prompt_cache_fields, **http_metrics, **dict(log_fields or {})},
+            extra_fields={
+                **schema_metrics,
+                **prompt_cache_fields,
+                **http_metrics,
+                "deadline_seconds": deadline_seconds,
+                "deadline_outcome": "exceeded" if type(exc).__name__ == "LLMCallDeadlineExceeded" else "error",
+                **dict(log_fields or {}),
+            },
             error_type=type(exc).__name__,
         )
         emit_operational_event(
@@ -217,6 +227,7 @@ async def invoke_structured_prompt(
     raw_response, parsed_result, parsing_error = _split_raw_structured_result(result)
     provider_metadata = extract_provider_llm_metadata(raw_response) if raw_response is not None else {}
     provider_fields = {**prompt_cache_fields, **http_metrics, **provider_metadata}
+    provider_fields.update({"deadline_seconds": deadline_seconds, "deadline_outcome": "within"})
     if parsing_error is not None:
         record_llm_call(
             event_name=event_name,
@@ -316,7 +327,7 @@ async def invoke_structured_prompt(
             "event_name": event_name,
             "duration_ms": round(duration_ms, 2),
             "model": llm_model_name,
-            "llm_role": _role_from_event_name(event_name),
+            "llm_role": llm_role,
             "response_type": response_type_name,
             "prompt_chars": total_prompt_chars,
             "prompt_token_estimate": estimated_tokens_from_chars(total_prompt_chars),

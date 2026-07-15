@@ -3,6 +3,10 @@
 
 from langchain_openai import ChatOpenAI
 
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_prompt_compiler import (
+    SemanticRouterPromptSignals,
+    compile_semantic_router_prompt,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_model_wiring import with_structured_output
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_observability import invoke_structured_prompt
 from shared.observability.llm import build_llm_runnable_config
@@ -64,6 +68,14 @@ Rules:
 1) This router is authoritative for first-pass semantic routing. Use planner only for explicit mixed asks,
    genuine ambiguity, or orchestration-heavy requests.
 2) Use decision=direct_reply only for obvious conversational/meta responses.
+   For every direct_reply with res_key conversational.greeting, conversational.appreciation,
+   conversational.checkin, conversational.capability_question, conversational.casual_chat,
+   conversational.out_of_scope, or conversational.clarify, res is REQUIRED: write the complete
+   safe final reply in one or two short sentences. Do not leave res empty and do not promise an action.
+   Make res specific to the user's message: lead with the useful answer or one focused question,
+   never a generic 'I handle ...' capability list or filler such as 'Sure'/'Of course'. For clarify,
+   ask exactly one question and, only when helpful, name up to two likely banking actions. Never
+   invent a missing amount, recipient, account, prior result, or completed action.
    - Social openers like "hi", "how far", "my g, how far" are conversational.greeting.
    - Presence/state asks like "how are you", "are you there", "you dey" are conversational.checkin.
 2a) If user asks to switch language (for example, "Can you switch to Pidgin?", "speak Yoruba now"), set:
@@ -279,6 +291,7 @@ class SemanticRouterLLM:
         context: str = "None",
         *,
         path_label: str = "direct_path",
+        prompt_signals: SemanticRouterPromptSignals | None = None,
     ) -> SemanticRouteDecision:
         """Top-level semantic routing before planner-owned dispatch."""
         user_prompt = SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE.format(
@@ -286,7 +299,8 @@ class SemanticRouterLLM:
             user_message=text,
             context=context,
         )
-        system_prompt = SEMANTIC_ROUTER_SYSTEM_PROMPT
+        compiled_prompt = compile_semantic_router_prompt(prompt_signals)
+        system_prompt = compiled_prompt.system_prompt
         return await invoke_structured_prompt(
             self.structured_semantic_router,
             SemanticRouteDecision,
@@ -300,6 +314,8 @@ class SemanticRouterLLM:
             log_fields={
                 "context_chars": len(context),
                 "context_mode": "compact" if context == "None" else "full",
+                "prompt_profile": compiled_prompt.profile,
+                "prompt_cache_key_version": "v2",
             },
             config=build_llm_runnable_config(
                 role="semantic_router",
@@ -307,6 +323,7 @@ class SemanticRouterLLM:
                 path_label=path_label,
                 task_domain="orchestrator",
             ),
+            prompt_cache_key=compiled_prompt.cache_key,
         )
 
     async def route_schedule_read_turn(

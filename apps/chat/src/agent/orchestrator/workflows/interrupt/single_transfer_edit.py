@@ -10,8 +10,16 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_continue import _continue_flow_updates
+from apps.chat.src.agent.orchestrator.workflows.interrupt.reprompt.reprompt_flow import _reprompt_updates
 from apps.chat.src.agent.orchestrator.workflows.interrupt.runtime import InterruptRuntime
+from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
+from banking.transactions.shared.scheduling import (
+    parse_schedule_date,
+    parse_schedule_recurrence_patch,
+    parse_schedule_time_local,
+)
+from shared.observability.llm import LLMCallDeadlineExceeded
 
 _TRANSFER_EDIT_EVIDENCE = frozenset(
     {
@@ -84,12 +92,39 @@ async def resolve_single_transfer_confirmation_edit_updates(
     if not callable(interpreter):
         return None
 
+    # Scheduling is deliberately outside the narrow amendment contract. Use
+    # the existing deterministic schedule parser as typed routing evidence so
+    # we enter the broad path directly instead of paying for a narrow call
+    # that can only say "requires broad interpretation".
+    if (
+        parse_schedule_date(runtime.text) is not None
+        or parse_schedule_time_local(runtime.text) is not None
+        or bool(parse_schedule_recurrence_patch(runtime.text))
+    ):
+        logger.info("single_transfer_edit_fast_path", outcome="skipped_scheduling_scope")
+        return None
+
     logger.info("single_transfer_edit_fast_path", outcome="attempted")
-    result = await interpreter(
-        payload=dict(task.payload),
-        context=_transfer_edit_context(state, runtime),
-        user_message=runtime.text,
-    )
+    try:
+        result = await interpreter(
+            payload=dict(task.payload),
+            context=_transfer_edit_context(state, runtime),
+            user_message=runtime.text,
+        )
+    except LLMCallDeadlineExceeded as exc:
+        logger.warning(
+            "single_transfer_edit_deadline_exceeded",
+            role=exc.role,
+            deadline_seconds=exc.deadline_seconds,
+        )
+        updates = _reprompt_updates(state, runtime.interrupt)
+        updates["outbox"] = [
+            {
+                "type": "say",
+                "text": render_message("orchestrator.fallback.transfer_timeout", runtime.state_view.current_locale),
+            }
+        ]
+        return updates
     patch = result.patch if getattr(result, "outcome", None) == TransactionOutcome.OK else {}
     if not isinstance(patch, dict) or not _TRANSFER_EDIT_EVIDENCE.intersection(patch):
         logger.info("single_transfer_edit_fast_path", outcome="not_applicable")

@@ -127,6 +127,24 @@ def test_llm_call_budget_enforces_ceiling_and_observe_mode() -> None:
     assert violations == ("at most 1 total calls; got 2",)
 
 
+def test_llm_call_budget_enforces_role_token_ceilings() -> None:
+    budget = LLMCallBudget(max_calls=1)
+    status, violations = budget.evaluate(
+        (
+            {
+                "event_name": "semantic_router_llm_call",
+                "prompt_token_estimate": 1601,
+                "response_schema_token_estimate": 751,
+                "provider_input_tokens": 2501,
+            },
+        )
+    )
+
+    assert status == "exceeded"
+    assert len(violations) == 3
+    assert any("prompt tokens <= 1600" in violation for violation in violations)
+
+
 def test_repeat_scenarios_uses_fresh_scenario_identity_per_run() -> None:
     scenarios = (ReadinessScenario(id="latency", turns=(ReadinessTurn("Hi"),)),)
 

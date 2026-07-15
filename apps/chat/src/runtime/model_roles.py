@@ -17,10 +17,12 @@ class ChatRoleModels:
     planner_llm: ChatOpenAI
     query_llm: ChatOpenAI
     semantic_router_llm: ChatOpenAI
+    conversation_llm: ChatOpenAI
     interrupt_llm: ChatOpenAI
     extractor_llm: ChatOpenAI
     query_model: str
     semantic_router_model: str
+    conversation_model: str
     interrupt_router_model: str
     extractor_model: str
 
@@ -44,6 +46,7 @@ def build_chat_role_models(
     planner_model: str,
     query_model: str,
     semantic_router_model: str,
+    conversation_model: str,
     interrupt_router_model: str,
     extractor_model: str,
     app_env: str,
@@ -69,6 +72,12 @@ def build_chat_role_models(
         planner_model=planner_model,
         app_env=app_env,
     )
+    resolved_conversation_model = resolve_role_model(
+        role="conversation",
+        configured_model=conversation_model,
+        planner_model=planner_model,
+        app_env=app_env,
+    )
     resolved_extractor_model = resolve_role_model(
         role="extractor",
         configured_model=extractor_model,
@@ -81,6 +90,7 @@ def build_chat_role_models(
         planner_model=planner_model,
         query_model=resolved_query_model,
         semantic_router_model=resolved_semantic_router_model,
+        conversation_model=resolved_conversation_model,
         interrupt_router_model=resolved_interrupt_router_model,
         extractor_model=resolved_extractor_model,
     )
@@ -90,45 +100,54 @@ def build_chat_role_models(
         planner_llm=ChatOpenAI(
             model=planner_model,
             temperature=0,
-            timeout=30.0,
-            max_retries=1,
+            timeout=20.0,
+            max_retries=0,
             http_async_client=http_async_client,
             include_response_headers=True,
         ),
         query_llm=ChatOpenAI(
             model=resolved_query_model,
             temperature=0,
-            timeout=30.0,
-            max_retries=1,
+            timeout=15.0,
+            max_retries=0,
             http_async_client=http_async_client,
             include_response_headers=True,
         ),
         semantic_router_llm=ChatOpenAI(
             model=resolved_semantic_router_model,
             temperature=0,
-            timeout=15.0,
-            max_retries=1,
+            timeout=12.0,
+            max_retries=0,
+            http_async_client=http_async_client,
+            include_response_headers=True,
+        ),
+        conversation_llm=ChatOpenAI(
+            model=resolved_conversation_model,
+            temperature=0.3,
+            timeout=10.0,
+            max_retries=0,
             http_async_client=http_async_client,
             include_response_headers=True,
         ),
         interrupt_llm=ChatOpenAI(
             model=resolved_interrupt_router_model,
             temperature=0,
-            timeout=15.0,
-            max_retries=1,
+            timeout=12.0,
+            max_retries=0,
             http_async_client=http_async_client,
             include_response_headers=True,
         ),
         extractor_llm=ChatOpenAI(
             model=resolved_extractor_model,
             temperature=0,
-            timeout=20.0,
-            max_retries=1,
+            timeout=15.0,
+            max_retries=0,
             http_async_client=http_async_client,
             include_response_headers=True,
         ),
         query_model=resolved_query_model,
         semantic_router_model=resolved_semantic_router_model,
+        conversation_model=resolved_conversation_model,
         interrupt_router_model=resolved_interrupt_router_model,
         extractor_model=resolved_extractor_model,
     )

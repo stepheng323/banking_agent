@@ -52,6 +52,8 @@ def extract_provider_llm_metadata(raw_response: Any) -> dict[str, Any]:
         fields["provider_total_tokens"] = total_tokens
     if cached_tokens is not None:
         fields["provider_cached_tokens"] = cached_tokens
+    if input_tokens is not None:
+        fields["provider_uncached_input_tokens"] = max(input_tokens - (cached_tokens or 0), 0)
     if input_tokens and cached_tokens is not None:
         fields["provider_cache_hit_rate"] = round(cached_tokens / input_tokens, 4)
     if reasoning_tokens is not None:

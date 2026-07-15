@@ -5,6 +5,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.async_grouping import _stamp_async_group_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.beneficiary_resolution import (
     _beneficiary_cache_contains_recipient,
+    _message_mentions_compact_saved_alias,
     _normalize_beneficiary_rows,
     _recipient_supports_targeted_beneficiary_lookup,
 )
@@ -545,12 +546,14 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
     user_id = context.user_id
     beneficiary_context_mode = context.beneficiary_context_mode
     hydrate_beneficiary_candidates = _beneficiary_candidates_need_hydration(task.payload)
+    hydrate_compact_alias = _message_mentions_compact_saved_alias(user_msg, beneficiaries)
     if (
         beneficiary_repo
         and user_id
         and (
             not beneficiaries
             or hydrate_beneficiary_candidates
+            or hydrate_compact_alias
             or (
                 has_recipient_hint
                 and beneficiary_context_mode == "cache_only"
@@ -582,6 +585,8 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
                     reload_mode = "targeted_fallback_full"
                 elif hydrate_beneficiary_candidates:
                     reload_mode = "candidate_selection_hydration"
+                elif hydrate_compact_alias:
+                    reload_mode = "compact_alias_hydration"
                 elif beneficiary_context_mode == "cache_only" and not has_recipient_hint:
                     reload_mode = "full_no_recipient_hint"
                 else:

@@ -137,7 +137,18 @@ class Settings:
         self.query_model: str = os.getenv("QUERY_MODEL", self.planner_model).strip()
         self.interrupt_router_model: str = os.getenv("INTERRUPT_ROUTER_MODEL", "gpt-5.4-nano").strip()
         self.semantic_router_model: str = os.getenv("SEMANTIC_ROUTER_MODEL", "gpt-5.4-nano").strip()
+        self.conversation_model: str = os.getenv("CONVERSATION_MODEL", "gpt-5.4-nano").strip()
         self.extractor_model: str = os.getenv("EXTRACTOR_MODEL", "gpt-5.4-mini").strip()
+        self.conversation_llm_timeout_seconds: float = float(os.getenv("CONVERSATION_LLM_TIMEOUT_SECONDS", "10"))
+        self.semantic_router_llm_timeout_seconds: float = float(
+            os.getenv("SEMANTIC_ROUTER_LLM_TIMEOUT_SECONDS", "12")
+        )
+        self.interrupt_router_llm_timeout_seconds: float = float(
+            os.getenv("INTERRUPT_ROUTER_LLM_TIMEOUT_SECONDS", "12")
+        )
+        self.query_llm_timeout_seconds: float = float(os.getenv("QUERY_LLM_TIMEOUT_SECONDS", "15"))
+        self.extractor_llm_timeout_seconds: float = float(os.getenv("EXTRACTOR_LLM_TIMEOUT_SECONDS", "15"))
+        self.planner_llm_timeout_seconds: float = float(os.getenv("PLANNER_LLM_TIMEOUT_SECONDS", "20"))
         self.media_image_model: str = os.getenv("MEDIA_IMAGE_MODEL", "gpt-5.4-mini").strip()
         self.audio_transcription_model: str = os.getenv("AUDIO_TRANSCRIPTION_MODEL", "whisper-1").strip()
         self.media_image_max_bytes: int = int(os.getenv("MEDIA_IMAGE_MAX_BYTES", "5000000"))
@@ -196,6 +207,7 @@ class Settings:
         self.ledger_reconciliation_batch_size: int = int(os.getenv("LEDGER_RECONCILIATION_BATCH_SIZE", "100"))
         self.ledger_exposure_min_age_seconds: int = int(os.getenv("LEDGER_EXPOSURE_MIN_AGE_SECONDS", "300"))
         self.ledger_stuck_refunding_seconds: int = int(os.getenv("LEDGER_STUCK_REFUNDING_SECONDS", "3600"))
+
         self.funding_stuck_seconds: int = int(os.getenv("FUNDING_STUCK_SECONDS", "900"))
         self.transaction_debit_stuck_seconds: int = int(os.getenv("TRANSACTION_DEBIT_STUCK_SECONDS", "900"))
         self.direct_transfer_stuck_seconds: int = int(os.getenv("DIRECT_TRANSFER_STUCK_SECONDS", "900"))
@@ -316,6 +328,29 @@ class Settings:
 
         self._validate_critical_runtime_config()
         self._validate_whatsapp_config()
+
+    def llm_deadline_seconds(self, role: str | None) -> float | None:
+        """Return the total interactive deadline for a normalized LLM role."""
+        normalized = (role or "").strip().lower()
+        if normalized in {"conversation", "conversation_responder", "meta_reply"}:
+            return self.conversation_llm_timeout_seconds
+        if normalized in {"semantic_router", "schedule_read_router", "capability_classifier"}:
+            return self.semantic_router_llm_timeout_seconds
+        if normalized in {"interrupt", "interrupt_router", "pending_action_edit", "confirmation_decision"}:
+            return self.interrupt_router_llm_timeout_seconds
+        if normalized in {"query", "query_parser", "query_reasoner", "query_direct_answer"}:
+            return self.query_llm_timeout_seconds
+        if normalized in {
+            "extractor",
+            "transfer_extractor",
+            "transfer_amendment",
+            "airtime_extractor",
+            "data_extractor",
+        }:
+            return self.extractor_llm_timeout_seconds
+        if normalized in {"planner", "quoted_replay"}:
+            return self.planner_llm_timeout_seconds
+        return None
 
     @staticmethod
     def _parse_csv(raw: str | None) -> tuple[str, ...]:

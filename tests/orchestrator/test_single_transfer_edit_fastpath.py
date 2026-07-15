@@ -4,6 +4,7 @@ from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, Tas
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from shared.observability.llm import LLMCallDeadlineExceeded
 from shared.types.planner import PendingActionEditDecision
 
 
@@ -15,6 +16,14 @@ class _TransferEditWorker:
     async def interpret_pending_confirmation_edit(self, **_: object) -> TransactionResult:
         self.calls += 1
         return self.result
+
+
+class _TimedOutTransferEditWorker:
+    calls = 0
+
+    async def interpret_pending_confirmation_edit(self, **_: object) -> TransactionResult:
+        self.calls += 1
+        raise LLMCallDeadlineExceeded(role="transfer_extractor", deadline_seconds=15)
 
 
 class _PendingEditPlanner:
@@ -135,3 +144,41 @@ async def test_batch_confirmation_does_not_attempt_single_transfer_edit_fast_pat
 
     assert worker.calls == 0
     assert planner.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_scheduling_edit_enters_broad_path_without_wasting_amendment_call() -> None:
+    state = _state()
+    state.last_message_text = "Actually use First Bank and make it tomorrow morning"
+    worker = _TransferEditWorker(TransactionResult(outcome=TransactionOutcome.OK, patch={"amount": 15000}))
+    planner = _PendingEditPlanner()
+
+    await handle_pending_interrupt(
+        state,
+        {
+            "configurable": {
+                "services": {"transfer": worker},
+                "task_planner": planner,
+            }
+        },
+    )
+
+    assert worker.calls == 0
+    assert planner.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_single_transfer_edit_timeout_preserves_pending_state_without_router_fallback() -> None:
+    worker = _TimedOutTransferEditWorker()
+    planner = _PendingEditPlanner()
+
+    updates = await handle_pending_interrupt(
+        _state(),
+        {"configurable": {"services": {"transfer": worker}, "task_planner": planner}},
+    )
+
+    assert worker.calls == 1
+    assert planner.calls == 0
+    assert updates["pending_interrupt"].task_ids == ["transfer_1"]
+    assert updates["tasks"]["transfer_1"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert "unchanged" in updates["outbox"][0]["text"]
