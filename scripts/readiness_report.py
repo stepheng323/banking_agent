@@ -171,6 +171,22 @@ def format_readiness_report(result: ReadinessRunResult) -> str:
                     )
                 )
             )
+    if result.route_latency_summary:
+        lines.append("Route latency measurement:")
+        for route in result.route_latency_summary[:10]:
+            lines.append(
+                " ".join(
+                    (
+                        f"- route={route['route_signature']}",
+                        f"turns={route['turn_count']}",
+                        f"first_visible_p95_ms={route['first_visible_ms_p95']}",
+                        f"final_ready_p95_ms={route['final_ready_ms_p95']}",
+                        f"completion_p95_ms={route['completion_ms_p95']}",
+                        f"outside_graph_p95_ms={route['outside_graph_ms_p95']}",
+                        f"heartbeat_turns={route['heartbeat_turn_count']}",
+                    )
+                )
+            )
     if result.llm_audit_candidates:
         lines.append("LLM audit candidates:")
         for candidate in result.llm_audit_candidates[:5]:

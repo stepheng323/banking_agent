@@ -183,6 +183,32 @@ class GraphInvocationRunner:
                 typing_visibility_delay_ms=typing_visibility_delay_ms(context.channel),
             )
             total_duration = (time.perf_counter() - turn_start) * 1000
+            llm_total_ms = float(final_state.get("llm_total_ms") or 0.0)
+            heartbeat_first_visible_ms = (
+                (progress_snapshot.last_progress_sent_at - turn_start) * 1000
+                if progress_snapshot.last_progress_sent_at is not None
+                else None
+            )
+            final_response_ready_ms = h_duration + g_duration
+            result["turn_timing"] = {
+                "turn_total_ms": round(total_duration, 2),
+                "context_hydration_ms": round(h_duration, 2),
+                "graph_execution_ms": round(g_duration, 2),
+                "llm_total_ms": round(llm_total_ms, 2),
+                "graph_non_llm_ms": round(max(0.0, g_duration - llm_total_ms), 2),
+                "final_response_ready_ms": round(final_response_ready_ms, 2),
+                "first_visible_output_ms": round(
+                    min(heartbeat_first_visible_ms, final_response_ready_ms)
+                    if heartbeat_first_visible_ms is not None
+                    else final_response_ready_ms,
+                    2,
+                ),
+                "heartbeat_sent": progress_snapshot.progress_count > 0,
+                "heartbeat_first_visible_ms": round(heartbeat_first_visible_ms, 2)
+                if heartbeat_first_visible_ms is not None
+                else None,
+                "heartbeat_count": progress_snapshot.progress_count,
+            }
             log_latency_span(
                 self.logger,
                 span="orchestrator_turn_total",

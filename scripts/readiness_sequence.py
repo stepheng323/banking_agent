@@ -49,6 +49,23 @@ async def run_readiness_sequence(
             started = time.perf_counter()
             invocation = await invoke_turn(scenario, turn, index)
             elapsed_ms = (time.perf_counter() - started) * 1000
+            turn_timing = dict(invocation.turn_timing)
+            graph_total_ms = float(turn_timing.get("turn_total_ms") or 0.0)
+            outer_overhead_ms = max(0.0, elapsed_ms - graph_total_ms)
+            turn_timing.update(
+                {
+                    "end_to_end_ms": round(elapsed_ms, 2),
+                    "outside_graph_ms": round(outer_overhead_ms, 2),
+                    "end_to_end_final_ready_ms": round(
+                        outer_overhead_ms + float(turn_timing.get("final_response_ready_ms") or graph_total_ms),
+                        2,
+                    ),
+                    "end_to_end_first_visible_ms": round(
+                        outer_overhead_ms + float(turn_timing.get("first_visible_output_ms") or graph_total_ms),
+                        2,
+                    ),
+                }
+            )
             rendered = render_orchestrator_result(invocation.response)
             captured_async_jobs += len(invocation.async_jobs)
             passed, errors = assert_readiness_turn(
@@ -77,6 +94,7 @@ async def run_readiness_sequence(
                 task_types=invocation.task_types,
                 async_jobs=invocation.async_jobs,
                 llm_calls=invocation.llm_calls,
+                turn_timing=turn_timing,
                 llm_budget=budget,
                 llm_budget_status=budget_status,
                 llm_budget_violations=budget_violations,

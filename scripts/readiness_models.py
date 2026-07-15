@@ -250,6 +250,7 @@ class ReadinessInvocation:
     task_types: tuple[str, ...] = ()
     async_jobs: tuple[dict[str, Any], ...] = ()
     llm_calls: tuple[dict[str, Any], ...] = ()
+    turn_timing: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -265,6 +266,7 @@ class ReadinessTurnResult:
     task_types: tuple[str, ...] = ()
     async_jobs: tuple[dict[str, Any], ...] = ()
     llm_calls: tuple[dict[str, Any], ...] = ()
+    turn_timing: dict[str, Any] = field(default_factory=dict)
     llm_budget: LLMCallBudget | None = None
     llm_budget_status: LLMBudgetStatus = "observed"
     llm_budget_violations: tuple[str, ...] = ()
@@ -288,6 +290,7 @@ class ReadinessTurnResult:
             "task_types": list(self.task_types),
             "async_jobs": list(self.async_jobs),
             "llm_calls": list(self.llm_calls),
+            "turn_timing": self.turn_timing,
             "llm_total_ms": round(_llm_call_total_ms(self.llm_calls), 2),
             "llm_event_chain": list(_llm_event_chain(self.llm_calls)),
             "route_signature": _route_signature(self.route_metadata),
@@ -594,6 +597,42 @@ class ReadinessRunResult:
         )
 
     @property
+    def route_latency_summary(self) -> list[dict[str, Any]]:
+        """Aggregate user-visible and completion timing by canonical route."""
+        groups: dict[str, list[ReadinessTurnResult]] = {}
+        for turn in self.turns:
+            groups.setdefault(_route_signature(turn.route_metadata), []).append(turn)
+
+        summary: list[dict[str, Any]] = []
+        for route_signature, turns in groups.items():
+            completion = sorted(
+                float(turn.turn_timing.get("end_to_end_ms") or turn.latency_ms) for turn in turns
+            )
+            final_ready = sorted(
+                float(turn.turn_timing.get("end_to_end_final_ready_ms") or turn.latency_ms) for turn in turns
+            )
+            first_visible = sorted(
+                float(turn.turn_timing.get("end_to_end_first_visible_ms") or turn.latency_ms) for turn in turns
+            )
+            outer_overhead = sorted(float(turn.turn_timing.get("outside_graph_ms") or 0.0) for turn in turns)
+            heartbeat_sent = sum(bool(turn.turn_timing.get("heartbeat_sent")) for turn in turns)
+            summary.append(
+                {
+                    "route_signature": route_signature,
+                    "turn_count": len(turns),
+                    "completion_ms_p50": round(_percentile(completion, 0.50), 2),
+                    "completion_ms_p95": round(_percentile(completion, 0.95), 2),
+                    "final_ready_ms_p50": round(_percentile(final_ready, 0.50), 2),
+                    "final_ready_ms_p95": round(_percentile(final_ready, 0.95), 2),
+                    "first_visible_ms_p50": round(_percentile(first_visible, 0.50), 2),
+                    "first_visible_ms_p95": round(_percentile(first_visible, 0.95), 2),
+                    "outside_graph_ms_p95": round(_percentile(outer_overhead, 0.95), 2),
+                    "heartbeat_turn_count": heartbeat_sent,
+                }
+            )
+        return sorted(summary, key=lambda item: float(item["completion_ms_p95"]), reverse=True)
+
+    @property
     def llm_audit_candidates(self) -> list[dict[str, Any]]:
         """Return budget breaches and multi-call observed turns without user text."""
         candidates = [
@@ -649,6 +688,7 @@ class ReadinessRunResult:
             "llm_call_summary": self.llm_call_summary,
             "llm_health_summary": self.llm_health_summary,
             "llm_audit_summary": self.llm_audit_summary,
+            "route_latency_summary": self.route_latency_summary,
             "llm_audit_candidates": self.llm_audit_candidates,
             "slowest_llm_calls": self.slowest_llm_calls,
             "slowest_turns": [

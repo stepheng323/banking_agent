@@ -723,6 +723,17 @@ def _clarification_updates(state: OrchestratorState, interrupt: PendingInterrupt
     }
 
 
+def _mark_batch_overrides_extracted(
+    overrides: dict[str, dict[str, Any]],
+    tasks: list[tuple[str, TaskSpec]],
+) -> dict[str, dict[str, Any]]:
+    """Prevent per-transfer re-extraction after one authoritative batch patch."""
+    extracted = {task_id: dict(patch) for task_id, patch in overrides.items()}
+    for task_id, _task in tasks:
+        extracted.setdefault(task_id, {})["skip_extraction"] = True
+    return extracted
+
+
 async def _resolve_batch_slot_fill_updates(
     *,
     state: OrchestratorState,
@@ -749,7 +760,11 @@ async def _resolve_batch_slot_fill_updates(
             "batch_source_choice_fastpath_applied",
             task_ids=sorted(source_choice_overrides.keys()),
         )
-        return _continue_flow_updates(state, interrupt, precomputed_payload_overrides=source_choice_overrides)
+        return _continue_flow_updates(
+            state,
+            interrupt,
+            precomputed_payload_overrides=_mark_batch_overrides_extracted(source_choice_overrides, tasks),
+        )
 
     if not _looks_like_batch_slot_text(runtime.text):
         return None
@@ -765,7 +780,11 @@ async def _resolve_batch_slot_fill_updates(
             task_ids=sorted(deterministic_overrides.keys()),
             slot_count=sum(len(patch) for patch in deterministic_overrides.values()),
         )
-        return _continue_flow_updates(state, interrupt, precomputed_payload_overrides=deterministic_overrides)
+        return _continue_flow_updates(
+            state,
+            interrupt,
+            precomputed_payload_overrides=_mark_batch_overrides_extracted(deterministic_overrides, tasks),
+        )
 
     semantic_overrides, clarification = await _semantic_batch_slot_overrides(state=state, runtime=runtime, tasks=tasks)
     if semantic_overrides:
@@ -774,7 +793,11 @@ async def _resolve_batch_slot_fill_updates(
             task_ids=sorted(semantic_overrides.keys()),
             slot_count=sum(len(patch) for patch in semantic_overrides.values()),
         )
-        return _continue_flow_updates(state, interrupt, precomputed_payload_overrides=semantic_overrides)
+        return _continue_flow_updates(
+            state,
+            interrupt,
+            precomputed_payload_overrides=_mark_batch_overrides_extracted(semantic_overrides, tasks),
+        )
     if clarification:
         logger.info("batch_slot_semantic_clarification", task_ids=[task_id for task_id, _ in tasks])
         return _clarification_updates(state, interrupt, clarification)

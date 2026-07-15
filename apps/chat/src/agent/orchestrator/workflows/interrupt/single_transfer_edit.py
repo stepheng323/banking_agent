@@ -6,6 +6,10 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import (
+    derive_transfer_schedule_fields,
+    infer_schedule_action_from_text,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import context_surface
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
@@ -14,11 +18,6 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.reprompt.reprompt_flow
 from apps.chat.src.agent.orchestrator.workflows.interrupt.runtime import InterruptRuntime
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
-from banking.transactions.shared.scheduling import (
-    parse_schedule_date,
-    parse_schedule_recurrence_patch,
-    parse_schedule_time_local,
-)
 from shared.observability.llm import LLMCallDeadlineExceeded
 
 _TRANSFER_EDIT_EVIDENCE = frozenset(
@@ -37,6 +36,14 @@ _TRANSFER_EDIT_EVIDENCE = frozenset(
         "narration",
         "authored_narration",
         "user_note",
+        "action",
+        "schedule_mode",
+        "recurrence_type",
+        "schedule_timezone",
+        "schedule_start_date",
+        "schedule_time_local",
+        "schedule_day_of_week",
+        "schedule_day_of_month",
     }
 )
 
@@ -92,17 +99,19 @@ async def resolve_single_transfer_confirmation_edit_updates(
     if not callable(interpreter):
         return None
 
-    # Scheduling is deliberately outside the narrow amendment contract. Use
-    # the existing deterministic schedule parser as typed routing evidence so
-    # we enter the broad path directly instead of paying for a narrow call
-    # that can only say "requires broad interpretation".
-    if (
-        parse_schedule_date(runtime.text) is not None
-        or parse_schedule_time_local(runtime.text) is not None
-        or bool(parse_schedule_recurrence_patch(runtime.text))
-    ):
-        logger.info("single_transfer_edit_fast_path", outcome="skipped_scheduling_scope")
-        return None
+    schedule_action = infer_schedule_action_from_text(runtime.text)
+    schedule_patch: dict[str, Any] = {}
+    if schedule_action is not None:
+        schedule_patch = {
+            "action": schedule_action,
+            **derive_transfer_schedule_fields(
+                runtime.text,
+                schedule_text=None,
+                scheduled_text=None,
+                recurring_flag=schedule_action == "recurring_transfer",
+            ),
+            "confirmation": {"confirmed": False},
+        }
 
     logger.info("single_transfer_edit_fast_path", outcome="attempted")
     try:
@@ -126,19 +135,22 @@ async def resolve_single_transfer_confirmation_edit_updates(
         ]
         return updates
     patch = result.patch if getattr(result, "outcome", None) == TransactionOutcome.OK else {}
-    if not isinstance(patch, dict) or not _TRANSFER_EDIT_EVIDENCE.intersection(patch):
+    if not isinstance(patch, dict):
+        patch = {}
+    combined_patch = {**patch, **schedule_patch}
+    if not _TRANSFER_EDIT_EVIDENCE.intersection(combined_patch):
         logger.info("single_transfer_edit_fast_path", outcome="not_applicable")
         return None
 
     # The extraction result has already supplied the amendment. The later
     # transfer pipeline should validate, fund, and reconfirm it, not call the
     # extractor a second time for this same turn.
-    payload_override = dict(patch)
+    payload_override = dict(combined_patch)
     payload_override["skip_extraction"] = True
     logger.info(
         "single_transfer_edit_fast_path",
         outcome="applied",
-        patched_fields=sorted(_TRANSFER_EDIT_EVIDENCE.intersection(patch)),
+        patched_fields=sorted(_TRANSFER_EDIT_EVIDENCE.intersection(combined_patch)),
         pending_action_llm_avoided=True,
     )
     return _continue_flow_updates(

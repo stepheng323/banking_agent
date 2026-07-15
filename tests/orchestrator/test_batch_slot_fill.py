@@ -345,6 +345,8 @@ async def test_batch_slot_semantic_fallback_applies_validated_amount_update() ->
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t_ay"].payload["amount"] == 20000
     assert updates["tasks"]["t_ay"].payload["funding_plan"] is None
+    assert updates["tasks"]["t_ay"].payload["skip_extraction"] is True
+    assert updates["tasks"]["t_mom"].payload["skip_extraction"] is True
 
 
 @pytest.mark.asyncio
@@ -379,6 +381,8 @@ async def test_batch_slot_semantic_mutation_doubles_only_the_target_task() -> No
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t_mom"].payload["amount"] == 40000
     assert updates["tasks"]["t_ay"].payload["amount"] == 60000
+    assert updates["tasks"]["t_mom"].payload["skip_extraction"] is True
+    assert updates["tasks"]["t_ay"].payload["skip_extraction"] is True
 
 
 @pytest.mark.asyncio

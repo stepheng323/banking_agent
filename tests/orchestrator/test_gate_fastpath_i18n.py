@@ -1493,7 +1493,7 @@ async def test_gate_boundary_classifier_clears_for_unrelated_turn() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.boundary_calls == 1
+    assert planner.boundary_calls == 0
     assert planner.route_calls == 1
     assert updates["capability_boundary"] is None
     assert updates["turn_directive"].path_shape == "semantic_router_direct"

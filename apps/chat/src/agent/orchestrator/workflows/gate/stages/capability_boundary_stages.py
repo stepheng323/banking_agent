@@ -3,7 +3,6 @@ from typing import cast
 
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
-    UnsupportedBoundaryTurnOutput,
     UnsupportedCapability,
 )
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
@@ -32,7 +31,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.unsupported_capabilit
     is_supported_banking_request,
     looks_like_boundary_followup,
     recent_unsupported_boundary,
-    semantic_boundary_turn,
     semantic_unsupported_capability,
 )
 from banking.presentation.i18n.message_keys import MessageKey
@@ -191,30 +189,21 @@ async def _stage_capability_boundary_followup(ctx: GateContext) -> RouteResoluti
         ctx.gate_updates["capability_boundary"] = None
         return None
 
-    boundary_decision: UnsupportedBoundaryTurnOutput | None = None
     if detected_capability is None and not looks_like_followup:
-        boundary_decision = await semantic_boundary_turn(ctx, boundary=boundary, capability=capability)
-        if boundary_decision is not None:
-            if boundary_decision.action == "same_unsupported":
-                looks_like_followup = True
-            elif boundary_decision.action in {"new_unsupported", "supported_banking", "unrelated"}:
-                ctx.gate_updates["capability_boundary"] = None
-                return None
-
-    if (
-        detected_capability is None
-        and boundary_decision is None
-        and not looks_like_followup
-        and is_supported_banking_request(ctx.message_text)
-    ):
+        # The canonical semantic router already receives the active context
+        # and can distinguish a new supported request, a fresh unsupported
+        # request, or unrelated conversation while authoring the final reply.
+        # Calling a boundary classifier first creates a redundant sequential
+        # interpretation and can leave stale boundaries influencing new work.
         ctx.gate_updates["capability_boundary"] = None
+        logger.info(
+            "gate_unsupported_boundary_deferred_to_semantic_router",
+            capability_key=capability.key,
+        )
         return None
 
     if detected_capability is None:
-        semantic_capability = await semantic_unsupported_capability(ctx, ctx.message_text)
-        if semantic_capability is not None and semantic_capability.key != capability.key:
-            ctx.gate_updates["capability_boundary"] = None
-            return None
+        semantic_capability = capability if looks_like_followup else None
 
     if semantic_capability is None and not looks_like_followup:
         ctx.gate_updates["capability_boundary"] = None

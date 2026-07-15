@@ -207,6 +207,20 @@ class GenerativeFormattingStep(QueryStep):
         if query_result.answer_strategy != QueryAnswerStrategy.DIRECT_ANSWER or len(query_result.items or []) > 1:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
+        # The semantic reasoner already interpreted this turn.  A second LLM
+        # must not rewrite the same query decision; deterministic formatting
+        # is the authoritative presentation fallback for reasoned answers.
+        reasoner_calls = state.get("_query_llm_calls_used")
+        if state.get("_query_semantic_llm_used") is True or (
+            isinstance(reasoner_calls, int) and reasoner_calls > 0
+        ):
+            logger.info(
+                "query_direct_answer_formatting_skipped",
+                reason="semantic_reasoner_already_used",
+                reasoner_calls=reasoner_calls,
+            )
+            return TransactionResult(outcome=TransactionOutcome.OK, patch={})
+
         user_query = state.get("message", "").strip()
         if not user_query:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})

@@ -719,18 +719,24 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         ),
                         modes=("dry-run",),
                     ),
-                ReadinessTurn(
-                    "Actually use First Bank and make it tomorrow morning",
-                    ReadinessExpectation(
-                        llm_call_budget=LLMCallBudget(
-                            max_calls=2,
-                            max_event_counts=_ROUTING_DECISION_EVENT_MAX_ONE,
-                        )
+                    ReadinessTurn(
+                        "Actually use First Bank and make it tomorrow morning",
+                        ReadinessExpectation(
+                            expect_any=("what time", "schedule time"),
+                            llm_call_budget=LLMCallBudget(
+                                max_calls=1,
+                                max_event_counts=(
+                                    ("transfer_amendment_llm_call", 1),
+                                    ("pending_action_edit_llm_call", 0),
+                                    ("interrupt_router_llm_call", 0),
+                                ),
+                                required_event_counts=(("transfer_amendment_llm_call", 1),),
+                            ),
+                        ),
+                        modes=("dry-run",),
                     ),
-                    modes=("dry-run",),
                 ),
             ),
-        ),
             ReadinessScenario(
                 id="llm-single-transfer-edit",
                 description="Single confirmation amendment must bypass pending and generic interrupt LLM routing.",

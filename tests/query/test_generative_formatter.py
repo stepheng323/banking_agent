@@ -148,3 +148,27 @@ async def test_generative_formatter_skips_structured_rows_without_calling_llm() 
     assert result.outcome == TransactionOutcome.OK
     assert result.response is None
     assert step.chain.calls == []
+
+
+@pytest.mark.asyncio
+async def test_generative_formatter_does_not_reinterpret_semantic_reasoner_answer() -> None:
+    step = _step_with_response("This second LLM response must not be used.")
+
+    result = await step.run(
+        {
+            "flow_state": "complete",
+            "message": "Which account did I spend from most this month?",
+            "language": "en",
+            "_query_semantic_llm_used": True,
+            "_query_llm_calls_used": 1,
+            "query_result": QueryResult(
+                summary_text="You spent the most from GTBank this month.",
+                items=[],
+                answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
+            ),
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.response is None
+    assert step.chain.calls == []

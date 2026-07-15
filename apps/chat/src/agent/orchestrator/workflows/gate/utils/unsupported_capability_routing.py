@@ -25,6 +25,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _classify_obvious_transfer_request,
     _is_obvious_airtime_request,
     _is_obvious_data_request,
+    _obvious_mixed_transaction_executors,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from shared.utils.logging import get_logger
@@ -105,6 +106,8 @@ def is_supported_banking_request(text: str) -> bool:
 
 
 def is_explicit_supported_banking_request(text: str) -> bool:
+    if _obvious_mixed_transaction_executors(text):
+        return True
     if _classify_obvious_transfer_request(text) is not None:
         return True
     if _is_obvious_airtime_request(text) or _is_obvious_data_request(text):

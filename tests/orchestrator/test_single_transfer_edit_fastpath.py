@@ -147,13 +147,13 @@ async def test_batch_confirmation_does_not_attempt_single_transfer_edit_fast_pat
 
 
 @pytest.mark.asyncio
-async def test_scheduling_edit_enters_broad_path_without_wasting_amendment_call() -> None:
+async def test_scheduling_edit_uses_one_amendment_call_and_deterministic_schedule_patch() -> None:
     state = _state()
     state.last_message_text = "Actually use First Bank and make it tomorrow morning"
     worker = _TransferEditWorker(TransactionResult(outcome=TransactionOutcome.OK, patch={"amount": 15000}))
     planner = _PendingEditPlanner()
 
-    await handle_pending_interrupt(
+    updates = await handle_pending_interrupt(
         state,
         {
             "configurable": {
@@ -163,8 +163,15 @@ async def test_scheduling_edit_enters_broad_path_without_wasting_amendment_call(
         },
     )
 
-    assert worker.calls == 0
-    assert planner.calls == 1
+    assert worker.calls == 1
+    assert planner.calls == 0
+    payload = updates["tasks"]["transfer_1"].payload
+    assert payload["action"] == "schedule_transfer"
+    assert payload["schedule_mode"] == "one_time"
+    assert payload["recurrence_type"] == "one_time"
+    assert payload["schedule_start_date"] is not None
+    assert "schedule_time_local" not in payload
+    assert payload["skip_extraction"] is True
 
 
 @pytest.mark.asyncio

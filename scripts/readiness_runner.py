@@ -441,6 +441,7 @@ async def run_dry_run_readiness(
             task_types=readiness_assertions.task_types_from_response(response),
             async_jobs=async_jobs,
             llm_calls=llm_calls,
+            turn_timing=dict(response.get("turn_timing") or {}),
         )
 
     return await readiness_sequence.run_readiness_sequence(
