@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from banking.presentation.i18n.renderer import render_message
 from shared.messaging.body_blocks import MessageDocument, render_body_blocks_text
 
 
@@ -11,20 +12,41 @@ class BeneficiaryFormatter:
     """Format beneficiary surfaces for chat presentation."""
 
     @staticmethod
-    def format_beneficiary_list(beneficiaries: list[Any], *, locale: str = "en") -> str:
+    def format_beneficiary_list(
+        beneficiaries: list[Any],
+        *,
+        locale: str = "en",
+        name_filter: str | None = None,
+        has_next: bool = False,
+    ) -> str:
         """Format saved beneficiaries as fallback text."""
         return render_body_blocks_text(
-            BeneficiaryFormatter.format_beneficiary_list_blocks(beneficiaries, locale=locale)
+            BeneficiaryFormatter.format_beneficiary_list_blocks(
+                beneficiaries,
+                locale=locale,
+                name_filter=name_filter,
+                has_next=has_next,
+            )
         )
 
     @staticmethod
-    def format_beneficiary_list_blocks(beneficiaries: list[Any], *, locale: str = "en") -> MessageDocument | None:
+    def format_beneficiary_list_blocks(
+        beneficiaries: list[Any],
+        *,
+        locale: str = "en",
+        name_filter: str | None = None,
+        has_next: bool = False,
+    ) -> MessageDocument | None:
         """Format saved beneficiaries as mobile-friendly message blocks."""
-        del locale
         if not beneficiaries:
             return None
 
-        blocks: MessageDocument = [{"type": "heading", "text": "Saved beneficiaries"}]
+        heading = (
+            render_message("beneficiary.list.filtered_header", locale, {"filter": name_filter})
+            if name_filter
+            else render_message("beneficiary.list.header", locale).strip("*")
+        )
+        blocks: MessageDocument = [{"type": "heading", "text": heading}]
         for index, beneficiary in enumerate(beneficiaries, 1):
             alias = _beneficiary_value(beneficiary, "alias")
             account_name = _beneficiary_value(beneficiary, "account_name", "name")
@@ -47,6 +69,9 @@ class BeneficiaryFormatter:
 
             blocks.append({"type": "text", "text": "\n".join(lines)})
 
+        if has_next:
+            blocks.append({"type": "text", "text": render_message("common.pagination.more", locale)})
+
         return blocks
 
     @staticmethod
@@ -64,7 +89,7 @@ class BeneficiaryFormatter:
             locale=locale,
         )
         if preview:
-            blocks.append({"type": "heading", "text": "Examples"})
+            blocks.append({"type": "heading", "text": render_message("beneficiary.list.preview_header", locale)})
             blocks.extend(preview[1:])
         return blocks
 

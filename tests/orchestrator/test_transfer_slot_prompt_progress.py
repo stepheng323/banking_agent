@@ -1424,7 +1424,7 @@ async def test_schedule_management_task_bypasses_transfer_mandate_gate() -> None
                 stage=TaskStage.DRAFT,
                 payload={
                     "action": "list_scheduled_transactions",
-                    "schedule_response_mode": "count",
+                    "read_request": {"subject": "schedule", "response_shape": "fact_count"},
                     "instruction": "How many scheduled transaction is pending",
                 },
             )
@@ -1449,7 +1449,8 @@ async def test_schedule_management_task_bypasses_transfer_mandate_gate() -> None
     updates = await advance_wave(state, config)
 
     assert worker.call_count == 1
-    assert worker.last_payload and worker.last_payload["schedule_response_mode"] == "count"
+    assert worker.last_payload
+    assert worker.last_payload["read_request"]["response_shape"] == "fact_count"
     assert updates["tasks"]["schedule_count"].stage == TaskStage.COMPLETED
     assert updates["current_wave_index"] == 1
     assert updates["outbox"] == [{"type": "say", "text": "Pending scheduled transactions: 2."}]
@@ -1518,7 +1519,7 @@ async def test_advance_wave_fails_stalled_schedule_task_instead_of_self_looping(
                 stage=TaskStage.DRAFT,
                 payload={
                     "action": "list_scheduled_transactions",
-                    "schedule_response_mode": "count",
+                    "read_request": {"subject": "schedule", "response_shape": "fact_count"},
                 },
             )
         },

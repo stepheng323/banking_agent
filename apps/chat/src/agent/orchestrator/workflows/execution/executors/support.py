@@ -2,6 +2,7 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import push_read_result_frame
 from apps.chat.src.agent.orchestrator.workflows.execution.executors.transfer import TransferTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
@@ -22,6 +23,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _
 from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import FAQOutcome, FAQResult, SupportOutcome, SupportResult
+from shared.types.read import ReadResult, normalize_read_request
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -135,6 +137,16 @@ async def _execute_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
             user_message=user_msg,
         ),
     )
+
+    read_request = normalize_read_request(task.payload)
+    if result.read_result is None and read_request is not None and result.outcome == SupportOutcome.OK:
+        result.read_result = ReadResult(
+            request=read_request,
+            total_count=1 if result.response or result.receipt_jobs else 0,
+            returned_count=0 if read_request.response_shape.startswith("fact_") else 1,
+        )
+    if result.read_result is not None and result.outcome == SupportOutcome.OK:
+        push_read_result_frame(ctx, result.read_result)
 
     if result.outcome == SupportOutcome.OK:
         complete_task(task)

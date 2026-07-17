@@ -26,8 +26,10 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     _is_input_interrupt_greeting,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
+from banking.transactions.shared.account_selection.reference import match_source_account_reference
 from banking.transactions.shared.confirmation.classifier import classify_confirmation_reply_sync
 from banking.transactions.shared.confirmation.models import ConfirmationPromptKind
+from shared.money import to_naira
 
 
 def _has_transfer_destination(payload: dict[str, Any]) -> bool:
@@ -204,6 +206,102 @@ async def _suggested_funding_acceptance_updates(
     return _continue_flow_updates(state, interrupt, precomputed_payload_overrides=payload_overrides)
 
 
+def _single_funding_source_choice_updates(
+    *,
+    state: OrchestratorState,
+    runtime: InterruptRuntime,
+) -> dict[str, Any] | None:
+    interrupt = runtime.interrupt
+    if getattr(interrupt, "kind", None) != "input":
+        return None
+    task_ids = [str(task_id) for task_id in getattr(interrupt, "task_ids", []) or []]
+    if len(task_ids) != 1:
+        return None
+    task_id = task_ids[0]
+    fields_by_task = getattr(interrupt, "fields_by_task", {}) or {}
+    if set(fields_by_task.get(task_id) or []) != {"source_accounts", "explicit_split"}:
+        return None
+
+    metadata = getattr(interrupt, "metadata", {}) or {}
+    if metadata.get("intent") != "single_funding_source_choice":
+        return None
+    candidate_ids = [str(value) for value in metadata.get("candidate_source_ids", []) if str(value).strip()]
+    anchor_ids = [str(value) for value in metadata.get("anchor_source_ids", []) if str(value).strip()]
+    if not candidate_ids or len(anchor_ids) != 1:
+        return None
+
+    state_view = interrupt_state_view(state)
+    task = state_view.task(task_id)
+    if task is None or task.type != "transfer":
+        return None
+    loaded = state_view.loaded_context_or_empty
+    raw_accounts = loaded.get("transaction_accounts") or loaded.get("accounts") or loaded.get("all_accounts")
+    accounts = [account for account in raw_accounts or [] if isinstance(account, dict)]
+    by_id = {
+        str(account.get("id") or account.get("account_id")): account
+        for account in accounts
+        if account.get("id") or account.get("account_id")
+    }
+    anchor = by_id.get(anchor_ids[0])
+    candidates = [by_id[candidate_id] for candidate_id in candidate_ids if candidate_id in by_id]
+    if anchor is None or not candidates:
+        return None
+
+    stripped = runtime.text.strip()
+    selected: dict[str, Any] | None = None
+    if stripped.isdigit():
+        index = int(stripped)
+        if 1 <= index <= len(candidates):
+            selected = candidates[index - 1]
+    else:
+        selected = match_source_account_reference(runtime.text, candidates)
+    if selected is None:
+        return None
+
+    anchor_bank = str(anchor.get("bank_name") or anchor.get("bank") or "").strip()
+    selected_bank = str(selected.get("bank_name") or selected.get("bank") or "").strip()
+    primary_contribution = to_naira(metadata.get("primary_contribution"))
+    remaining_amount = to_naira(metadata.get("remaining_amount"))
+    if (
+        not anchor_bank
+        or not selected_bank
+        or primary_contribution is None
+        or remaining_amount is None
+        or primary_contribution <= 0
+        or remaining_amount <= 0
+    ):
+        return None
+
+    payload_override = {
+        "source_accounts": [anchor_bank, selected_bank],
+        "use_dual_accounts": True,
+        "explicit_split": {
+            anchor_bank: float(primary_contribution),
+            selected_bank: float(remaining_amount),
+        },
+        "source_account_id": None,
+        "source_account_name": None,
+        "source_account_number": None,
+        "source_bank_name": None,
+        "source_account_index": None,
+        "source_affinity_mode": "explicit",
+        "funding_plan": None,
+        "suggested_funding_plan": None,
+        "confirmation": {"confirmed": False},
+        "skip_extraction": True,
+    }
+    logger.info(
+        "single_funding_source_choice_applied",
+        candidate_count=len(candidates),
+        selection_mode="index" if stripped.isdigit() else "account_reference",
+    )
+    return _continue_flow_updates(
+        state,
+        interrupt,
+        precomputed_payload_overrides={task_id: payload_override},
+    )
+
+
 async def _input_shortcut_updates(
     *,
     state: OrchestratorState,
@@ -217,6 +315,10 @@ async def _input_shortcut_updates(
     suggested_funding_updates = await _suggested_funding_acceptance_updates(state=state, runtime=runtime)
     if suggested_funding_updates is not None:
         return suggested_funding_updates
+
+    single_funding_updates = _single_funding_source_choice_updates(state=state, runtime=runtime)
+    if single_funding_updates is not None:
+        return single_funding_updates
 
     for route in (
         _resolve_deterministic_input_selection_route(state=state, interrupt=interrupt, text=runtime.text),

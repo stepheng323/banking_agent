@@ -1,6 +1,6 @@
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.mixed_capabilities import (
     MixedCapabilityMatch,
@@ -16,9 +16,11 @@ from apps.chat.src.agent.orchestrator.workflows.gate.state.state_view import Gat
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
     _build_direct_domain_task,
     _direct_domain_capability_block_message,
-    _next_direct_account_task_id,
 )
 from banking.presentation.i18n.renderer import render_message
+from shared.types.balance import BalanceQueryContract
+from shared.types.conversation_sets import ScheduleQueryContract
+from shared.types.read import ReadRequest
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -26,25 +28,22 @@ logger = get_logger(__name__)
 
 def _build_supported_task(state_view: GateStateView, supported: SupportedClause) -> tuple[str, TaskSpec]:
     if supported.domain == "account" and supported.heuristic_name == "balance_request":
-        task_id = _next_direct_account_task_id(state_view.tasks)
-        spec = TaskSpec(
-            id=task_id,
-            type="account",
-            stage=TaskStage.DRAFT,
-            payload={
-                "action": "check_balance",
-                "message": supported.text,
-                "instruction": supported.text,
-            },
+        return _build_direct_domain_task(
+            state_view=state_view,
+            domain="account",
+            mode="new",
+            message_text=supported.text,
+            read_request=ReadRequest(subject="balance", response_shape="fact_value"),
+            balance_contract=BalanceQueryContract(),
         )
-        return task_id, spec
     if supported.domain == "schedule":
         return _build_direct_domain_task(
             state_view=state_view,
             domain="schedule",
             mode="new",
-            schedule_response_mode="list",
             message_text=supported.text,
+            read_request=ReadRequest(subject="schedule", response_shape="surface_list"),
+            schedule_contract=ScheduleQueryContract(),
         )
     return _build_direct_domain_task(
         state_view=state_view,

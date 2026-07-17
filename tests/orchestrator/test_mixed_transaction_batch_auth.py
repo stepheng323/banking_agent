@@ -1088,6 +1088,8 @@ async def test_transfer_confirmation_clears_transient_transition_metadata() -> N
     transfer_payload = updates["tasks"]["t_transfer"].payload
     assert "transition_acknowledgment" not in transfer_payload
     assert "previous_confirmation_snapshot" not in transfer_payload
+    assert "update_message" not in transfer_payload["confirmation"]
+    assert "previous_snapshot" not in transfer_payload["confirmation"]
 
 
 @pytest.mark.asyncio
@@ -2261,11 +2263,10 @@ async def test_pending_account_switch_with_bank_reference_updates_confirmation_s
         "configurable": {
             "task_planner": _PendingActionEditPlanner(
                 PendingActionEditDecision(
-                    operation="switch_intent",
+                    operation="update_fields",
                     confidence=0.9,
                     detected_language="English",
-                    target_intent="account",
-                    target_texts=["First Bank"],
+                    source_bank_name="First Bank",
                     reason="user wants to use First Bank for the pending confirmation",
                 )
             ),

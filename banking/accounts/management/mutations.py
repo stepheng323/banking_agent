@@ -1,7 +1,6 @@
 """Account mutation operations."""
 
 import asyncio
-from typing import Any
 
 from banking.accounts.management.serialization import find_account_by_bank_name
 from banking.accounts.repositories.account_repository import AccountRepository
@@ -41,7 +40,14 @@ async def set_default_account(
         if 1 <= account_index <= len(accounts):
             selected_account = accounts[account_index - 1]
     except ValueError:
-        selected_account = find_account_by_bank_name(accounts, account_identifier)
+        selected_account = next(
+            (
+                account
+                for account in accounts
+                if str(getattr(account, "account_id", "") or getattr(account, "id", "")) == account_identifier
+            ),
+            None,
+        ) or find_account_by_bank_name(accounts, account_identifier)
 
     if not selected_account:
         return render_message(
@@ -74,68 +80,3 @@ async def set_default_account(
     except Exception as exc:
         logger.error(f"set_default_error: {exc}")
         return render_message("account.error.default_update_failed", locale)
-
-
-async def unlink_account(
-    *,
-    account_repo: Any,
-    direct_debit_provider: Any,
-    user_id: str,
-    account_identifier: str,
-    locale: str = "en",
-) -> str:
-    """Unlink an account."""
-    accounts = await account_repo.get_by_user(user_id)
-    if not accounts:
-        return render_message("account.no_linked_accounts", locale)
-    if len(accounts) == 1:
-        return render_message("account.unlink.only_account", locale)
-
-    selected_account = None
-    try:
-        account_index = int(account_identifier)
-        if 1 <= account_index <= len(accounts):
-            selected_account = accounts[account_index - 1]
-    except ValueError:
-        selected_account = find_account_by_bank_name(accounts, account_identifier)
-
-    if not selected_account:
-        return render_message(
-            "account.account_not_found",
-            locale,
-            {"identifier": account_identifier},
-        )
-
-    try:
-        if getattr(selected_account, "mandate_id", None):
-            try:
-                await direct_debit_provider.cancel_mandate(selected_account.mandate_id)
-            except Exception:
-                pass
-
-        async with UnitOfWork() as uow:
-            success = await uow.accounts.delete_account(str(selected_account.account_id), user_id)
-            await uow.commit()
-        if success:
-            try:
-                async with UnitOfWork() as uow:
-                    if uow.users:
-                        user = await uow.users.get_by_id(user_id)
-                        if user:
-                            asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
-            except Exception:
-                pass
-
-            masked = f"***{selected_account.account_number[-4:]}"
-            return render_message(
-                "account.unlink.success",
-                locale,
-                {
-                    "bank_name": selected_account.bank_name,
-                    "masked": masked,
-                },
-            )
-        return render_message("account.error.unlink_failed", locale)
-    except Exception as exc:
-        logger.error(f"unlink_error: {exc}")
-        return render_message("account.error.unlink_failed", locale)

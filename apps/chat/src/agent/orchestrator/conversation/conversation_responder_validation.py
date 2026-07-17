@@ -74,10 +74,15 @@ def validate_and_fallback(
         or unsupported_responder.UNSUPPORTED_CAPABILITY_PROMISE_RE.search(content)
     ):
         fallback_reason = "unsupported_promise"
-    elif mode == ConversationResponseMode.SOCIAL_META and contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(
-        content
-    ):
-        fallback_reason = "social_action_promise"
+    elif mode == ConversationResponseMode.SOCIAL_META:
+        if contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(content):
+            fallback_reason = "social_action_promise"
+        elif responder_text.is_banking_refusal_reply(
+            content,
+            locale=locale,
+            allow_positive_banking_anchor=True,
+        ):
+            fallback_reason = "social_stale_refusal"
 
     if fallback_reason is None:
         logger.info(

@@ -16,7 +16,10 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import
     build_conversation_grounding,
     conversation_display_name,
 )
-from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import ConversationResponseMode
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import (
+    SOCIAL_META_RESPONSE_KEY_CTX,
+    ConversationResponseMode,
+)
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_validation import validate_and_fallback
 from banking.policy.service import resolve_available_conversational_suggestions
 from banking.presentation.i18n.locale import LocaleManager
@@ -93,6 +96,15 @@ class ConversationResponder:
             if grounded_reply:
                 return grounded_reply
 
+        prompt_grounding: dict[str, Any] | None = grounding if isinstance(grounding, dict) else None
+        if mode == ConversationResponseMode.SOCIAL_META and user_ctx.get(SOCIAL_META_RESPONSE_KEY_CTX) in {
+            "conversational.greeting",
+            "conversational.greeting_named",
+            "conversational.checkin",
+        }:
+            prompt_grounding = None
+            logger.info("conversation_social_context_reset", reason="fresh_social_opener")
+
         prompt_input = responder_prompts.ConversationResponderPromptInput(
             text=text,
             user_ctx=user_ctx,
@@ -100,7 +112,7 @@ class ConversationResponder:
             language=language,
             name=name,
             history=history,
-            grounding=grounding if isinstance(grounding, dict) else None,
+            grounding=prompt_grounding,
             now=now,
             casual_streak=casual_streak,
             prefers_banking_humor=prefers_banking_humor,

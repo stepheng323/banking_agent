@@ -7,9 +7,6 @@ from typing import Any
 import redis.asyncio as redis
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_frames import (
-    _build_beneficiary_context_read_updates,
-)
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_models import PlannerPromptSignals
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import (
@@ -18,9 +15,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_qualit
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.execution_cleanup import (
     _clear_stale_beneficiary_suggestion,
-)
-from apps.chat.src.agent.orchestrator.workflows.planner.execution_context_read import (
-    _apply_context_read_planner_shape,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.execution_locale import (
     _resolve_planner_detected_locale,
@@ -128,7 +122,6 @@ def _summarize_planner_output(planner_output: PlannerOutput) -> dict[str, Any]:
         "is_cancellation": getattr(planner_output, "is_cancellation", None),
         "is_confirmation": getattr(planner_output, "is_confirmation", None),
         "detected_language": getattr(planner_output, "detected_language", None),
-        "context_read_subtype": getattr(planner_output, "context_read_subtype", None),
         "beneficiary_route": getattr(planner_output, "beneficiary_route", None),
         "account_action_hint": getattr(planner_output, "account_action_hint", None),
         "response_key": getattr(planner_output, "response_key", None),
@@ -194,12 +187,6 @@ async def _execute_planner_with_context(
         current_locale=current_locale,
         redis_client=redis_client,
     )
-    context_read_subtype = _apply_context_read_planner_shape(
-        state_view=state_view,
-        planner_output=planner_output,
-        text=text,
-        current_locale=current_locale,
-    )
     await _clear_stale_beneficiary_suggestion(
         state_view=state_view,
         planner_context=planner_context,
@@ -207,16 +194,11 @@ async def _execute_planner_with_context(
         redis_client=redis_client,
     )
 
-    context_read_updates = _build_beneficiary_context_read_updates(
-        state_view,
-        planner_output,
-        context_read_subtype,
-    )
     return PlannerExecutionResult(
         planner_output=planner_output,
         planner_quality_report=planner_quality_report,
         current_locale=current_locale,
-        context_read_updates=context_read_updates,
+        context_read_updates={},
     )
 
 

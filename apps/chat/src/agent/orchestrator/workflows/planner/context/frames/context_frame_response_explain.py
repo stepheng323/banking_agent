@@ -10,7 +10,10 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
     decision_target_text,
     frame_domain,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_detail_fields import frame_noun
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_detail_fields import (
+    CONTEXT_READ_LIST_LIMIT,
+    frame_noun,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_detail_responses import (
     format_entity_details,
     format_field_response,
@@ -26,9 +29,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_text import (
     amount_reference_values,
     format_currency_amount,
-)
-from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import (
-    CONTEXT_READ_LIST_LIMIT,
 )
 from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import ContextFrameFollowupDecision

@@ -38,6 +38,46 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _transaction_direction_delta(decision: Any) -> Literal["credit", "debit", "both"] | None:
+    explicit = getattr(decision, "transaction_direction_delta", None)
+    if explicit in {"credit", "debit", "both"}:
+        return cast(Literal["credit", "debit", "both"], explicit)
+    return None
+
+
+def _direction_refinement_contract(
+    query_contract: Any,
+    direction: Literal["credit", "debit", "both"],
+    *,
+    continuation_delta_type: str | None,
+) -> Any:
+    filters = query_contract.filters.model_copy(deep=True) if query_contract.filters is not None else Filters()
+    if direction == "both":
+        filters.transaction_type = None
+        return rebuild_query_contract(
+            query_contract,
+            filters=filters,
+            merge_filters=False,
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            aggregation=Aggregation(type="breakdown", group_by="transaction_type"),
+            result_limit=None,
+            result_reference=None,
+            answer_fact_field=None,
+            continuation_type="aggregate",
+            continuation_delta_type=continuation_delta_type,
+            conversational_prefix=None,
+        )
+    filters.transaction_type = direction
+    return rebuild_query_contract(
+        query_contract,
+        filters=filters,
+        merge_filters=False,
+        continuation_type="filter_delta",
+        continuation_delta_type="filter",
+        conversational_prefix=None,
+    )
+
+
 async def resolve_result_continuation_updates(
     step: Any,
     *,
@@ -63,6 +103,22 @@ async def resolve_result_continuation_updates(
         "resolver_message": None,
         **step._semantic_trace_updates(decision),
     }
+
+    direction_delta = _transaction_direction_delta(decision)
+    if session_query_contract is not None and direction_delta is not None:
+        updates["query_contract"] = _direction_refinement_contract(
+            session_query_contract,
+            direction_delta,
+            continuation_delta_type=continuation_delta_type,
+        )
+        updates["current_page"] = 0
+        updates["show_expanded"] = False
+        logger.info(
+            "query_direction_refinement_normalized",
+            direction=direction_delta,
+            source="typed_semantic_decision",
+        )
+        return updates
 
     if session_query_contract and step._is_income_vs_spending_followup(
         message=state.get("message", ""),
@@ -172,7 +228,7 @@ async def resolve_result_continuation_updates(
                 continuation_type=cont_type,
                 continuation_delta_type=continuation_delta_type,
             )
-            query_contract.conversational_prefix = decision.response_text
+            query_contract.conversational_prefix = None
             updates["query_contract"] = query_contract
         else:
             updates["query_contract"] = rebuild_query_contract(
@@ -184,7 +240,7 @@ async def resolve_result_continuation_updates(
                 answer_fact_field=None,
                 continuation_type=cont_type,
                 continuation_delta_type=continuation_delta_type,
-                conversational_prefix=decision.response_text,
+                conversational_prefix=None,
             )
         updates["current_page"] = 0
         updates["show_expanded"] = False

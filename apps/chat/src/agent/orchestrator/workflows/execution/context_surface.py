@@ -48,6 +48,7 @@ def push_context_frame(ctx: ExecutionTurnContext, frame: ContextFrame) -> None:
 
 
 def replace_context_frames(ctx: ExecutionTurnContext, frames: list[ContextFrame]) -> None:
+    ctx.state.context_frames = frames
     ctx.accumulator.set_context_frames(frames)
 
 

@@ -20,10 +20,6 @@ def _derive_recent_answer_focus(state_view: PlannerStateView) -> str | None:
         if frame.frame_type == ContextFrameType.RECEIPT:
             return "receipt"
 
-    planner_output = state_view.planner_output
-    if planner_output and getattr(planner_output, "context_read_subtype", None):
-        return str(planner_output.context_read_subtype)
-
     return None
 
 

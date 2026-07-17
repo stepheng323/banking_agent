@@ -310,7 +310,7 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
         allowed_outcomes=frozenset({TurnOutcomeKind.DIRECT_RESPONSE, TurnOutcomeKind.TASK_DISPATCH}),
         may_call_llm=True,
         description="Ground follow-ups against displayed context frames.",
-        eligibility=all_of(no_live_pending_interrupt, no_gate_blocking_state, task_planner_available),
+        eligibility=all_of(no_live_pending_interrupt, no_gate_blocking_state),
     ),
     GateHandlerSpec(
         id="receipt_thread_followup",

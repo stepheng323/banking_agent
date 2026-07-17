@@ -16,11 +16,11 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
     ContextFrameFollowupResponse,
     SurfaceAnswerRequest,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_schedule import (
-    build_schedule_management_result_for_view,
-)
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_semantic_response import (
     format_semantic_decision_response,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_set_mutations import (
+    build_set_mutation_result_for_view,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_state_view import (
     ContextFrameStateView,
@@ -63,21 +63,28 @@ def _build_replay_followup_response(
     )
 
 
-def _build_schedule_followup_response(
+def _build_set_mutation_followup_response(
     request: SurfaceAnswerRequest,
     decision: ContextFrameFollowupDecision,
 ) -> ContextFrameFollowupResponse | None:
     frame = select_frame_for_decision_from_view(request.state_view, decision)
     if frame is None or not frame.items:
         return None
-    schedule_result = build_schedule_management_result_for_view(request.state_view, frame, decision, request.text)
-    if schedule_result is None:
+    result = build_set_mutation_result_for_view(
+        request.state_view,
+        frame,
+        decision,
+        request.text,
+        locale=request.locale,
+    )
+    if result is None:
         return None
     return ContextFrameFollowupResponse(
-        recent_domain_focus=schedule_result.recent_domain_focus,
+        response=result.response,
+        recent_domain_focus=result.recent_domain_focus,
         context_frames=context_frames_after_surface_answer_for_view(request.state_view, frame, decision),
-        tasks=schedule_result.tasks,
-        waves=schedule_result.waves,
+        tasks=result.tasks,
+        waves=result.waves,
     )
 
 
@@ -109,8 +116,18 @@ def build_context_frame_followup_response_from_request(
     decision_key = canonical_decision(decision.decision)
     if decision_key == "replay_tasks":
         return _build_replay_followup_response(request, decision)
-    if decision_key in {"edit_schedule", "cancel_schedule"}:
-        return _build_schedule_followup_response(request, decision)
+    if decision_key in {
+        "delete_beneficiary",
+        "unlink_account",
+        "set_default_account",
+        "relink_account",
+        "transfer_beneficiaries",
+        "edit_schedule",
+        "cancel_schedule",
+    }:
+        set_result = _build_set_mutation_followup_response(request, decision)
+        if set_result is not None:
+            return set_result
     return _build_semantic_followup_response(request, decision)
 
 

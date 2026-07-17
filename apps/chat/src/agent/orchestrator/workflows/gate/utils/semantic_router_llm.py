@@ -2,6 +2,7 @@
 """Top-level semantic-router and schedule-read router prompts and LLM class."""
 
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, ConfigDict, Field
 
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_prompt_compiler import (
     SemanticRouterPromptSignals,
@@ -10,10 +11,66 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_promp
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_model_wiring import with_structured_output
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_observability import invoke_structured_prompt
 from shared.observability.llm import build_llm_runnable_config
-from shared.types.planner import SemanticRouteDecision
+from shared.types.planner import (
+    RouterDomainIntent,
+    SemanticRouteDecision,
+    SemanticRouterResponseKey,
+    SemanticRoutingDecision,
+    SemanticRoutingMode,
+    TransactionExecutor,
+)
+from shared.types.read import ReadSubject, ResponseShape
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+class SemanticRouteLLMDecision(BaseModel):
+    """Compact LLM-facing router output; runtime contracts are derived in code."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    decision: SemanticRoutingDecision = "planner_ambiguous"
+    confidence: float = Field(default=0.0, alias="conf")
+    detected_language: str | None = Field(default=None, alias="lang")
+    requested_language: str | None = Field(default=None, alias="req_lang")
+    mode: SemanticRoutingMode | None = None
+    target_intent: RouterDomainIntent | None = Field(default=None, alias="intent")
+    response_key: SemanticRouterResponseKey | None = Field(default=None, alias="res_key")
+    response: str | None = Field(default=None, alias="res")
+    expected_transaction_executors: list[TransactionExecutor] = Field(default_factory=list, alias="execs")
+    read_subject: ReadSubject | None = None
+    response_shape: ResponseShape | None = None
+    entity_name: str | None = None
+    bank_name: str | None = None
+    status: str | None = None
+    reference: str | None = None
+    schedule_response_mode: str | None = Field(default=None, alias="sch_mode")
+    unsupported_capability: str | None = Field(default=None, alias="unsupported_cap")
+
+
+def _adapt_semantic_route_llm_decision(value: SemanticRouteLLMDecision) -> SemanticRouteDecision:
+    payload = value.model_dump(mode="json", by_alias=True, exclude_none=True)
+    subject = payload.pop("read_subject", None)
+    shape = payload.pop("response_shape", None)
+    entity_name = payload.pop("entity_name", None)
+    bank_name = payload.pop("bank_name", None)
+    status = payload.pop("status", None)
+    reference = payload.pop("reference", None)
+    schedule_mode = payload.pop("sch_mode", None)
+    if subject is None and value.decision == "domain_schedule" and schedule_mode in {"list", "count"}:
+        subject = "schedule"
+        shape = "surface_list" if schedule_mode == "list" else "fact_count"
+    if subject is not None and shape is not None:
+        payload["read"] = {
+            "subject": subject,
+            "response_shape": shape,
+            "entity_name": entity_name,
+            "bank_name": bank_name,
+            "status": status,
+            "reference": reference,
+        }
+    return SemanticRouteDecision.model_validate(payload)
 
 SCHEDULE_READ_ROUTER_SYSTEM_PROMPT = """Classify whether a user is asking to read scheduled banking instructions.
 Return ONLY JSON for this schema:
@@ -281,8 +338,8 @@ Message: \"\"\"{user_message}\"\"\"
 class SemanticRouterLLM:
     def __init__(self, llm: ChatOpenAI) -> None:
         self.llm = llm
-        self.structured_semantic_router = with_structured_output(llm, SemanticRouteDecision)
-        self.structured_schedule_read_router = with_structured_output(llm, SemanticRouteDecision)
+        self.structured_semantic_router = with_structured_output(llm, SemanticRouteLLMDecision)
+        self.structured_schedule_read_router = with_structured_output(llm, SemanticRouteLLMDecision)
 
     async def route_semantic_turn(
         self,
@@ -301,9 +358,9 @@ class SemanticRouterLLM:
         )
         compiled_prompt = compile_semantic_router_prompt(prompt_signals)
         system_prompt = compiled_prompt.system_prompt
-        return await invoke_structured_prompt(
+        result = await invoke_structured_prompt(
             self.structured_semantic_router,
-            SemanticRouteDecision,
+            SemanticRouteLLMDecision,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             logger=logger,
@@ -315,7 +372,7 @@ class SemanticRouterLLM:
                 "context_chars": len(context),
                 "context_mode": "compact" if context == "None" else "full",
                 "prompt_profile": compiled_prompt.profile,
-                "prompt_cache_key_version": "v2",
+                "prompt_cache_key_version": "v3",
             },
             config=build_llm_runnable_config(
                 role="semantic_router",
@@ -325,6 +382,7 @@ class SemanticRouterLLM:
             ),
             prompt_cache_key=compiled_prompt.cache_key,
         )
+        return _adapt_semantic_route_llm_decision(result)
 
     async def route_schedule_read_turn(
         self,
@@ -339,9 +397,9 @@ class SemanticRouterLLM:
             user_message=text,
         )
         system_prompt = SCHEDULE_READ_ROUTER_SYSTEM_PROMPT
-        return await invoke_structured_prompt(
+        result = await invoke_structured_prompt(
             self.structured_schedule_read_router,
-            SemanticRouteDecision,
+            SemanticRouteLLMDecision,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             logger=logger,
@@ -356,3 +414,4 @@ class SemanticRouterLLM:
                 task_domain="schedule",
             ),
         )
+        return _adapt_semantic_route_llm_decision(result)

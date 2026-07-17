@@ -38,7 +38,6 @@ class _SuggestionAwarePlanner:
                 is_cancellation=False,
                 is_confirmation=False,
                 detected_language="English",
-                context_read_subtype=None,
                 normalized_instruction="save beneficiary",
                 tasks=[
                     make_planned_task(
@@ -61,7 +60,6 @@ class _SuggestionAwarePlanner:
             is_cancellation=False,
             is_confirmation=False,
             detected_language="English",
-            context_read_subtype=None,
             normalized_instruction="send 10k to mom",
             tasks=[
                 make_planned_task(

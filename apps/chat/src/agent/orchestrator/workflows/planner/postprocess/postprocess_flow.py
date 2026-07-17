@@ -2,7 +2,7 @@
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import TRANSACTION_EXECUTORS
+from apps.chat.src.agent.orchestrator.workflows.planner.core.domains import TRANSACTION_EXECUTORS
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
 from shared.types.planner import PlannedTask
 

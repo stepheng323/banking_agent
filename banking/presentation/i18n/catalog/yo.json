@@ -2,7 +2,15 @@
   "common": {
     "safe_capability_fallback": "Emi ko le \u1e63e e sib\u1eb9. Mo le ran \u1ecd l\u1ecdw\u1ecd p\u1eb9lu gbigbe owo, rira airtime/data, ay\u1eb9wo balance, ati ibeere transaction.",
     "cancelled_prompt": "A ti fagilee transaction naa, kini mo tun le \u1e63e fun \u1ecd loni?",
-    "gibberish_prompt": "Mi \u00f2 ye ohun y\u1eb9n. I\u1e63\u1eb9 banking wo ni o f\u1eb9 ki n ran \u1ecd l\u1ecdw\u1ecd p\u1eb9lu?"
+    "gibberish_prompt": "Mi \u00f2 ye ohun y\u1eb9n. I\u1e63\u1eb9 banking wo ni o f\u1eb9 ki n ran \u1ecd l\u1ecdw\u1ecd p\u1eb9lu?",
+    "pagination": {"more": "Die sii fun oju-iwe to kan", "previous": "Pada si oju-iwe to koja"}
+  },
+  "conversation_set": {
+    "selection_required": "Ewo tabi awọn wo ni o tumọ si? Dahun pẹlu nọmba tabi orukọ ti a fi han.",
+    "single_selection_required": "Yan ohun kan ṣoṣo fun iṣe yẹn.",
+    "mutation_limit": "O le yi ohun to {count} pada ni akoko kan. Yan diẹ sii.",
+    "stale_selection": "Abajade yẹn ti yipada tabi pari. Tun atokọ naa ṣe ki o yan lẹẹkansi.",
+    "allocation_required": "Sọ iye fun anfani kọọkan ti o yan. Mi o ni ro pe a pin ni dọgba."
   },
   "capability": {
     "blocked_with_alternative": "Mi o le \u1e63e {action} nibi. Mo le ran \u1ecd l\u1ecdw\u1ecd p\u1eb9lu {alternative}. Dahun ohun ti o f\u1eb9 ki n t\u1eb9siwaju p\u1eb9lu.",
@@ -527,6 +535,8 @@
       "transaction_item_with_bank": "{amount} \u2022 {label} \u2014 {narration} _({bank_name})_",
       "transaction_item": "{amount} \u2022 {label} \u2014 {narration}",
       "direct_answer_grouped_lead": "Eyi ni {name}.",
+      "evidence_lead_single": "Eyi ni idunadura ti o wa leyin apapo naa.",
+      "evidence_lead_plural": "Iwonba idunadura {count} ni won wa leyin apapo naa.",
       "show_more_hint": "_S\u1ecd 'show more' lati t\u1eb9siwaju._"
     },
     "affordability": {
@@ -620,12 +630,21 @@
     }
   },
   "account": {
+    "readiness": {"fact": "Awọn akanti {ready_count} ninu {total_count} ti ṣetan fun lilo."},
     "user_not_found": "A ko ri user.",
     "no_linked_accounts": "O ko ni account ti a ti link.",
     "account_not_found": "Mi o le ri an account matching '{identifier}'.",
     "account_not_found_with_count": "Mi o le ri an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
     "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now or default.",
+    "default_identity": "Akọọlẹ aiyipada rẹ ni {bank_name} ({masked}).",
+    "default_unavailable": "Mi ò rí akọọlẹ asopọ aiyipada kan.",
     "unlink": {
+      "review": "Ṣayẹwo yiyọ awọn akanti {count}:\n{items}\n\nDahun bẹẹni lati tẹsiwaju, tabi fagile.",
+      "keep_one": "O kere ju akanti kan gbọdọ wa ni asopọ.",
+      "choose_remaining_default": "Yan akanti kan ti o ku gẹgẹ bi aiyipada ṣaaju yiyọ awọn wọnyi.",
+      "item_success": "✓ {item} — a ti yọ",
+      "item_failed": "✗ {item} — a ko le yọ",
+      "bulk_result": "Abajade yiyọ akanti:\n{items}",
       "success": "success: *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
       "only_account": "\ufe0f O can't unlink or only account. Link another one first."
     },
@@ -636,6 +655,8 @@
       "count_zero": "O ko ni linked account kankan.",
       "count_one": "O ni linked account 1.",
       "count_many": "O ni linked accounts {count}.",
+      "exists_yes": "Bee ni, o ni {bank_name} linked.",
+      "exists_no": "Rara, o ko ni {bank_name} linked.",
       "preview_header": "Awon apere:",
       "default_badge": "(default)",
       "commands_hint": "_'set 2 as default' | 'unlink GTB'_"
@@ -645,10 +666,12 @@
       "header_single": "*Balance r\u1eb9*",
       "header_multi": "*Awon balance r\u1eb9*",
       "total": "\u00c0pap\u1ecd\u0300 gbogbo r\u1eb9\u0300 j\u1eb9\u0301 **\u20a6{total_balance}**.",
+      "total_label": "Lapapo",
       "unavailable": "Mi o le retrieve your balance at the moment.",
       "natural_single": "Account {bank_name} r\u1eb9 ({masked}) n\u00ed \u00ecy\u00f3k\u00f9 ow\u00f3 t\u00f3 j\u1eb9 **\u20a6{amount}**.",
       "natural_multi_intro": "\u00c8y\u00ed ni \u00e0w\u1ecdn \u00ecy\u00f3k\u00f9 ow\u00f3 account r\u1eb9:",
-      "natural_multi_item": "\u2022 {bank_name} ({masked}): **\u20a6{amount}**"
+      "natural_multi_item": "\u2022 {bank_name} ({masked}): **\u20a6{amount}**",
+      "scope_clarify": "Aw\u1ecdn account wo ni k\u00ed n l\u00f2 f\u00fan \u00ecb\u00e9\u00e8r\u00e8 balance y\u1eb9n?"
     },
     "prompt": {
       "unlink_identifier": "Ewo account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'.",
@@ -890,6 +913,10 @@
       "count_zero": "O ko tii fi beneficiary kankan pamo.",
       "count_one": "O ni saved beneficiary 1.",
       "count_many": "O ni saved beneficiaries {count}.",
+      "filtered_count": "O ni saved beneficiaries {count} ti o ba ‘{filter}’ mu.",
+      "exists_yes": "Bee ni, o ni saved beneficiary ti o ba ‘{filter}’ mu.",
+      "exists_no": "Rara, o ko ni saved beneficiary ti o ba ‘{filter}’ mu.",
+      "filtered_header": "Saved beneficiaries ti o ba ‘{filter}’ mu",
       "preview_header": "Awon apere:"
     },
     "common": {
@@ -904,6 +931,9 @@
       "success": "Verified & Added **{display_name}** ({account_name}) to or beneficiaries."
     },
     "delete": {
+      "select_candidate": "Mo ri awọn ti o le ba {target} mu. Yan ọkan lati atokọ anfani tuntun.",
+      "review": "Ṣayẹwo piparẹ awọn anfani {count} wọnyi:\n{items}\n\nDahun bẹẹni lati paarẹ, tabi fagile.",
+      "bulk_success": "A ti yọ awọn anfani {count} kuro.",
       "missing_target": "J\u1ecdw\u1ecd s\u1ecd which beneficiary to remove.",
       "not_found": "Mi o le ri a beneficiary named '{target}'.",
       "success": "Ti paar\u1eb9 **{target}** from beneficiaries."
@@ -1302,7 +1332,10 @@
       "with_id": "{row} (ID: {schedule_id})"
     },
     "list": {
+      "status_fact": "Awọn eto {count} ni ipo {status}.",
       "count": "O ni {count} schedules to n duro.",
+      "exists_yes": "Bee ni, o ni active scheduled transaction.",
+      "exists_no": "Rara, o ko ni active scheduled transaction.",
       "empty": "O ko ni active schedules.",
       "header": "Awon scheduled transactions re:"
     },
@@ -1311,10 +1344,15 @@
       "header": "Awon schedules to ba mu:"
     },
     "cancel": {
+      "review": "Ṣayẹwo fifagile awọn eto {count}:\n{items}\n\nDahun bẹẹni lati fagile wọn, tabi sọ pe ki a fi wọn silẹ.",
+      "bulk_success": "A ti fagile awọn eto {count}.",
       "none": "O ko ni active schedules lati cancel.",
       "success": "Scheduled transaction ti cancel."
     },
     "edit": {
+      "bulk_review": "Ṣayẹwo iyipada kanna fun awọn eto {count}:\n\n{items}\n\nDahun bẹẹni lati tẹsiwaju, tabi fagile.",
+      "bulk_success": "A ti ṣe imudojuiwọn awọn eto {count}.",
+      "incompatible_set": "Iyipada yẹn ko wulo fun gbogbo awọn eto ti o yan. Yan ẹgbẹ to baamu tabi ṣe wọn lọtọ.",
       "ask_change": "Kini ki n change lori scheduled transaction yii?",
       "stale": "Schedule yii n process tele tabi ko active mo. Jowo try again.",
       "success": "Schedule ti update: {changes}. Next run: {next_run}.",

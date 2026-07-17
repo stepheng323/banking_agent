@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from banking.beneficiaries.services.alias_grounding import restore_exact_saved_alias
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transfers.extraction.parsers import (
     extract_media_caption_amount,
@@ -189,6 +190,22 @@ async def extract_transfer_update(
 
         if "bank_code" in extracted_data:
             extracted_data["recipient_bank_code"] = extracted_data.pop("bank_code")
+
+        extracted_recipient_name = extracted_data.get("recipient_name")
+        if isinstance(extracted_recipient_name, str):
+            beneficiaries = context.get("beneficiaries")
+            grounded_alias = restore_exact_saved_alias(
+                user_message,
+                extracted_recipient_name,
+                beneficiaries if isinstance(beneficiaries, list) else [],
+            )
+            if grounded_alias and grounded_alias != extracted_recipient_name:
+                extracted_data["recipient_name"] = grounded_alias
+                logger.info(
+                    "transfer_exact_saved_alias_restored",
+                    source="extractor_patch",
+                    alias_token_count=len(grounded_alias.split()),
+                )
 
         if extraction.acknowledgment:
             extracted_data["transition_acknowledgment"] = extraction.acknowledgment

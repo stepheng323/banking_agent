@@ -2,7 +2,15 @@
   "common": {
     "safe_capability_fallback": "Enwegh\u1ecb m ike ime nke ah\u1ee5 ugbu a. Enwere m ike inyere g\u1ecb aka na transfer, \u1ecbz\u1ee5ta airtime/data, ilele balance, na aj\u1ee5j\u1ee5 transaction.",
     "cancelled_prompt": "A kagburu transaction, kedu ihe \u1ecdz\u1ecd m ga-enyere g\u1ecb taa?",
-    "gibberish_prompt": "Agh\u1ecdtagh\u1ecb m nke ah\u1ee5. Kedu \u1ecdr\u1ee5 banking ka \u1ecbch\u1ecdr\u1ecd ka m nyere g\u1ecb aka na ya?"
+    "gibberish_prompt": "Agh\u1ecdtagh\u1ecb m nke ah\u1ee5. Kedu \u1ecdr\u1ee5 banking ka \u1ecbch\u1ecdr\u1ecd ka m nyere g\u1ecb aka na ya?",
+    "pagination": {"more": "Ihe ndi ozo na peeji na-esote", "previous": "Laghachi na peeji gara aga"}
+  },
+  "conversation_set": {
+    "selection_required": "Kedu ihe ma ọ bụ ihe ndị ị na-ekwu? Zaa nọmba ma ọ bụ aha egosiri.",
+    "single_selection_required": "Họrọ naanị otu ihe maka ọrụ ahụ.",
+    "mutation_limit": "Ị nwere ike ịgbanwe ihe ruru {count} n'otu oge. Họrọ ole na ole.",
+    "stale_selection": "Nsonaazụ ahụ agbanweela ma ọ bụ kubie ume. Mee ka ndepụta dị ọhụrụ ma họrọ ọzọ.",
+    "allocation_required": "Kwuo ego maka onye nnata ọ bụla ahọrọ. Agaghị m eche na nkewa hà."
   },
   "capability": {
     "blocked_with_alternative": "Enwegh\u1ecb m ike ime {action} ebe a. Enwere m ike inyere g\u1ecb aka na {alternative}. Zaghachi ihe \u1ecbch\u1ecdr\u1ecd ka m gaa n'ihu na ya.",
@@ -527,6 +535,8 @@
       "transaction_item_with_bank": "{amount} \u2022 {label} \u2014 {narration} _({bank_name})_",
       "transaction_item": "{amount} \u2022 {label} \u2014 {narration}",
       "direct_answer_grouped_lead": "Nke a b\u1ee5 {name}.",
+      "evidence_lead_single": "Nke a b\u1ee5 az\u1ee5mah\u1ecba d\u1ecb n'az\u1ee5 mkpok\u1ecdta ah\u1ee5.",
+      "evidence_lead_plural": "Nd\u1ecb a b\u1ee5 az\u1ee5mah\u1ecba {count} d\u1ecb n'az\u1ee5 mkpok\u1ecdta ah\u1ee5.",
       "show_more_hint": "_Kwuo 'show more' iji gaa n'ihu._"
     },
     "affordability": {
@@ -620,12 +630,21 @@
     }
   },
   "account": {
+    "readiness": {"fact": "Akaụntụ {ready_count} n'ime {total_count} dị njikere iji."},
     "user_not_found": "Ah\u1ee5gh\u1ecb user.",
     "no_linked_accounts": "\u1eca nwegh\u1ecb linked account.",
     "account_not_found": "Ah\u1ee5gh\u1ecb m an account matching '{identifier}'.",
     "account_not_found_with_count": "Ah\u1ee5gh\u1ecb m an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
     "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now \u1ecbr default.",
+    "default_identity": "Aka\u1ee5nt\u1ee5 ndabara g\u1ecb b\u1ee5 {bank_name} ({masked}).",
+    "default_unavailable": "Ah\u1ee5gh\u1ecb m aka\u1ee5nt\u1ee5 ejik\u1ecdtara edobere ka ndabara.",
     "unlink": {
+      "review": "Nyochaa iwepụ akaụntụ {count}:\n{items}\n\nZaa ee iji gaa n'ihu, ma ọ bụ kagbuo.",
+      "keep_one": "Ọ dịkarịa ala otu akaụntụ ga-anọgide jikọrọ.",
+      "choose_remaining_default": "Họrọ otu akaụntụ fọdụrụ ka ọ bụrụ nke ndabara tupu iwepụ ndị a.",
+      "item_success": "✓ {item} — ewepụla",
+      "item_failed": "✗ {item} — enweghị ike iwepụ",
+      "bulk_result": "Nsonaazụ iwepụ akaụntụ:\n{items}",
       "success": "success: *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
       "only_account": "\ufe0f \u1eca can't unlink \u1ecbr only account. Link another one first."
     },
@@ -636,6 +655,8 @@
       "count_zero": "\u1eca nwegh\u1ecb linked account \u1ecd b\u1ee5la.",
       "count_one": "\u1eca nwere linked account 1.",
       "count_many": "\u1eca nwere linked accounts {count}.",
+      "exists_yes": "Ee, i nwere {bank_name} linked.",
+      "exists_no": "Mba, i nweghi {bank_name} linked.",
       "preview_header": "Ihe at\u1ee5:",
       "default_badge": "(default)",
       "commands_hint": "_'set 2 as default' | 'unlink GTB'_"
@@ -645,10 +666,12 @@
       "header_single": "\ud83d\udcb0 *Your Balance*",
       "header_multi": "\ud83d\udcb0 *Your Balances*",
       "total": "Nchikota ego g\u1ecb b\u1ee5 **\u20a6{total_balance}**.",
+      "total_label": "Nchikota",
       "unavailable": "Enwegh\u1ecb m ike retrieve your balance at the moment.",
       "natural_single": "Aka\u1ee5nt\u1ee5 {bank_name} g\u1ecb ({masked}) nwere ego **\u20a6{amount}**.",
       "natural_multi_intro": "Lee ego d\u1ecb n'aka\u1ee5nt\u1ee5 g\u1ecb niile:",
-      "natural_multi_item": "\u2022 {bank_name} ({masked}): **\u20a6{amount}**"
+      "natural_multi_item": "\u2022 {bank_name} ({masked}): **\u20a6{amount}**",
+      "scope_clarify": "Kedu aka\u1ee5nt\u1ee5 ka m ga-eji maka aj\u1ee5j\u1ee5 balance a?"
     },
     "prompt": {
       "unlink_identifier": "Kedu account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'.",
@@ -890,6 +913,10 @@
       "count_zero": "\u1eca chekwabegh\u1ecb beneficiary \u1ecd b\u1ee5la.",
       "count_one": "\u1eca nwere saved beneficiary 1.",
       "count_many": "\u1eca nwere saved beneficiaries {count}.",
+      "filtered_count": "\u1eca nwere saved beneficiaries {count} dabara na ‘{filter}’.",
+      "exists_yes": "Ee, i nwere saved beneficiary dabara na ‘{filter}’.",
+      "exists_no": "Mba, i nweghi saved beneficiary dabara na ‘{filter}’.",
+      "filtered_header": "Saved beneficiaries dabara na ‘{filter}’",
       "preview_header": "Ihe at\u1ee5:"
     },
     "common": {
@@ -904,6 +931,9 @@
       "success": "Verified & Added **{display_name}** ({account_name}) to \u1ecbr beneficiaries."
     },
     "delete": {
+      "select_candidate": "Ahụrụ m ndị nwere ike dakọtara na {target}. Họrọ otu na ndepụta ọhụrụ.",
+      "review": "Nyochaa iwepụ ndị nnata {count}:\n{items}\n\nZaa ee iji wepụ ha, ma ọ bụ kagbuo.",
+      "bulk_success": "Ewepụla ndị nnata {count}.",
       "missing_target": "Biko k\u1ecdwaa which beneficiary to remove.",
       "not_found": "Ah\u1ee5gh\u1ecb m a beneficiary named '{target}'.",
       "success": "Ehichap\u1ee5la **{target}** from beneficiaries."
@@ -1302,7 +1332,10 @@
       "with_id": "{row} (ID: {schedule_id})"
     },
     "list": {
+      "status_fact": "Ihe a haziri {count} nwere ọkwa {status}.",
       "count": "I nwere schedules {count} na-eche.",
+      "exists_yes": "Ee, i nwere active scheduled transaction.",
+      "exists_no": "Mba, i nweghi active scheduled transaction.",
       "empty": "I nweghi active schedules.",
       "header": "Scheduled transactions gi:"
     },
@@ -1311,10 +1344,15 @@
       "header": "Schedules kwek\u1ecdr\u1ecd:"
     },
     "cancel": {
+      "review": "Nyochaa ịkagbu ihe a haziri {count}:\n{items}\n\nZaa ee iji kagbuo ha, ma ọ bụ kwuo ka edobe ha.",
+      "bulk_success": "Akagbuola ihe a haziri {count}.",
       "none": "I nweghi active schedules ka a cancel.",
       "success": "Scheduled transaction a kagburu."
     },
     "edit": {
+      "bulk_review": "Nyochaa otu mgbanwe maka ihe a haziri {count}:\n\n{items}\n\nZaa ee iji gaa n'ihu, ma ọ bụ kagbuo.",
+      "bulk_success": "Emelitela ihe a haziri {count}.",
+      "incompatible_set": "Mgbanwe ahụ adịghị mma maka ihe niile ahọrọ. Họrọ ndị kwekọrọ ma ọ bụ dezie ha iche.",
       "ask_change": "Gini ka m gbanwee na scheduled transaction a?",
       "stale": "Schedule a na processing ma obu o kwusighi active. Biko nwaa ozo.",
       "success": "Schedule emelitela: {changes}. Next run: {next_run}.",

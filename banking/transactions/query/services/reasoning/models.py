@@ -80,6 +80,7 @@ QueryTargetFieldType = FactFieldType
 QueryRankType = Literal["largest", "smallest", "newest", "oldest"]
 PageDirectionType = Literal["next", "previous"]
 CoverageIntentType = Literal["result_completeness", "data_coverage", "ambiguous"]
+TransactionDirectionDeltaType = Literal["credit", "debit", "both"]
 
 SemanticContextModeType = Literal["none", "pending_clarification", "active_result"]
 
@@ -140,6 +141,7 @@ class QuerySemanticDecision(BaseModel):
     rank: QueryRankType | None = Field(default=None)
     page_direction: PageDirectionType | None = Field(default=None)
     coverage_intent: CoverageIntentType | None = Field(default=None)
+    transaction_direction_delta: TransactionDirectionDeltaType | None = Field(default=None)
     drill_down_index: int | None = Field(default=None)
     drill_down_action: DrillDownActionType | None = Field(default=None)
     recipient_name: str | None = Field(default=None)
@@ -181,6 +183,7 @@ class ActiveContinuationDecision(BaseModel):
     rank: QueryRankType | None = Field(default=None)
     page_direction: PageDirectionType | None = Field(default=None)
     coverage_intent: CoverageIntentType | None = Field(default=None)
+    transaction_direction_delta: TransactionDirectionDeltaType | None = Field(default=None)
     drill_down_index: int | None = Field(default=None)
     drill_down_action: DrillDownActionType | None = Field(default=None)
     recipient_name: str | None = Field(default=None)
@@ -215,6 +218,7 @@ class ActiveContinuationDecision(BaseModel):
             rank=self.rank,
             page_direction=self.page_direction,
             coverage_intent=self.coverage_intent,
+            transaction_direction_delta=self.transaction_direction_delta,
             drill_down_index=self.drill_down_index,
             drill_down_action=self.drill_down_action,
             recipient_name=self.recipient_name,
@@ -300,6 +304,7 @@ class GroupedSummaryDecision(_NarrowActiveDecision):
     target_text: str | None = None
     recipient_name: str | None = None
     coverage_intent: CoverageIntentType | None = None
+    transaction_direction_delta: TransactionDirectionDeltaType | None = None
     drill_down_index: int | None = None
     drill_down_action: DrillDownActionType | None = None
     fact_field: FactFieldType | None = None

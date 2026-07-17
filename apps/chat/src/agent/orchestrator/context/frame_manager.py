@@ -145,6 +145,20 @@ class ContextFrameManager:
                 ]
                 items_str = ", ".join(items)
 
+            read_request = frame.metadata.get("read_request")
+            if isinstance(read_request, dict):
+                read_parts = [
+                    f"subject={read_request.get('subject')}",
+                    f"shape={read_request.get('response_shape')}",
+                ]
+                for key in ("entity_name", "bank_name", "status", "reference"):
+                    value = read_request.get(key)
+                    if isinstance(value, str) and value:
+                        read_parts.append(f"{key}={_clip_text(value, CONTEXT_FRAME_DETAILS_MAX_CHARS)}")
+                read_parts.append(f"total={frame.metadata.get('total_count', 0)}")
+                read_summary = f"read({', '.join(read_parts)})"
+                items_str = f"{items_str}; {read_summary}" if items_str else read_summary
+
             if overflow_count > 0:
                 items_str = (
                     f"{items_str}, ... (+{overflow_count} more)" if items_str else f"... (+{overflow_count} more)"

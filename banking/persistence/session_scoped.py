@@ -151,6 +151,9 @@ class SessionScopedAccountRepository(_SessionScopedRepositoryMixin, AccountRepos
     async def get_by_user(self, user_id: str):
         return await self._call_with_session(AccountRepository, "get_by_user", user_id)
 
+    async def get_by_user_for_update(self, user_id: str):
+        return await self._call_with_session(AccountRepository, "get_by_user_for_update", user_id)
+
     async def get_by_id(self, record_id: str):
         return await self._call_with_session(AccountRepository, "get_by_id", record_id)
 
@@ -163,8 +166,20 @@ class SessionScopedAccountRepository(_SessionScopedRepositoryMixin, AccountRepos
     async def set_default_account(self, user_id: str, account_id: str):
         return await self._call_with_session(AccountRepository, "set_default_account", user_id, account_id)
 
-    async def delete_account(self, account_id: str, user_id: str):
-        return await self._call_with_session(AccountRepository, "delete_account", account_id, user_id)
+    async def delete_account(
+        self,
+        account_id: str,
+        user_id: str,
+        *,
+        assign_new_default: bool = True,
+    ):
+        return await self._call_with_session(
+            AccountRepository,
+            "delete_account",
+            account_id,
+            user_id,
+            assign_new_default=assign_new_default,
+        )
 
     async def update_mandate_status(self, mandate_id: str, status: str):
         return await self._call_with_session(AccountRepository, "update_mandate_status", mandate_id, status)

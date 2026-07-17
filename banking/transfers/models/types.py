@@ -8,6 +8,13 @@ from typing import Any, Literal, NotRequired, TypedDict
 from pydantic import BaseModel, Field, field_validator
 
 from shared.money import MoneyAmount
+from shared.types.conversation_sets import (
+    BulkMutationRequest,
+    ConversationSetState,
+    EntitySelectionRef,
+    ScheduleQueryContract,
+)
+from shared.types.read import ReadRequest
 
 
 class TransferGates(BaseModel):
@@ -45,6 +52,7 @@ class TransferPayload(BaseModel):
     recipient_binding_source: Literal["fanout"] | None = None
     recipient_binding_index: int | None = None
     beneficiary_id: str | None = None
+    beneficiary_selection_ref: EntitySelectionRef | None = None
     beneficiary_candidates: list[dict[str, Any]] = Field(default_factory=list)
     referent_recipient_candidates: list[dict[str, Any]] = Field(default_factory=list)
     is_self: bool = False
@@ -102,10 +110,15 @@ class TransferPayload(BaseModel):
     schedule_id: str | None = None
     schedule_selector: str | None = None
     schedule_operation_note: str | None = None
-    schedule_response_mode: Literal["list", "count"] | None = None
+    read_request: ReadRequest | None = None
+    schedule_contract: ScheduleQueryContract | None = None
+    conversation_set_state: ConversationSetState | None = None
+    bulk_mutation: BulkMutationRequest | None = None
+    selected_entity_ids: list[str] = Field(default_factory=list, max_length=20)
     schedule_edit_patch: dict[str, Any] | None = None
     schedule_edit_requires_auth: bool | None = None
     schedule_edit_next_run_at_utc: str | None = None
+    bulk_schedule_next_runs: dict[str, str] = Field(default_factory=dict)
 
     # Generic schedule-management edit fields for airtime/data schedules.
     recipient_phone: str | None = None

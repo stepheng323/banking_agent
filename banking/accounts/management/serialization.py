@@ -11,6 +11,8 @@ def serialize_accounts(accounts: list[Any]) -> list[dict[str, Any]]:
     for idx, account in enumerate(accounts, 1):
         if isinstance(account, dict):
             account_id = account.get("account_id") or account.get("id")
+            updated_at = account.get("updated_at")
+            isoformat = getattr(updated_at, "isoformat", None)
             data = {
                 "index": idx,
                 "account_id": str(account_id or ""),
@@ -24,10 +26,17 @@ def serialize_accounts(accounts: list[Any]) -> list[dict[str, Any]]:
                 "balance": account.get("balance"),
                 "is_default": account.get("is_default"),
                 "extra_data": account.get("extra_data"),
+                "version_token": (
+                    str(isoformat() if callable(isoformat) else updated_at)
+                    if updated_at is not None
+                    else None
+                ),
             }
             serialized.append({key: value for key, value in data.items() if value not in (None, "")})
             continue
 
+        updated_at = getattr(account, "updated_at", None)
+        isoformat = getattr(updated_at, "isoformat", None)
         data = {
             "index": idx,
             "account_id": str(getattr(account, "account_id", "") or getattr(account, "id", "") or ""),
@@ -41,6 +50,11 @@ def serialize_accounts(accounts: list[Any]) -> list[dict[str, Any]]:
             "balance": getattr(account, "balance", None),
             "is_default": getattr(account, "is_default", None),
             "extra_data": getattr(account, "extra_data", None),
+            "version_token": (
+                str(isoformat() if callable(isoformat) else updated_at)
+                if updated_at is not None
+                else None
+            ),
         }
         serialized.append({key: value for key, value in data.items() if value not in (None, "")})
     return serialized

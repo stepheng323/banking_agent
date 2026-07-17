@@ -139,6 +139,7 @@ def _build_focused_missing_field_updates(
         fields_by_task={focused_tid: agg.input_fields_for(focused_tid)},
         prompt=prompt_text,
         entries=_with_policy_notice(state, outbox_entries),
+        metadata=agg.input_interrupt_metadata_for(focused_tid),
     )
     agg.clear_policy_notice()
     return agg.to_updates()

@@ -377,6 +377,74 @@ async def test_transfer_handler_hydrates_exact_compact_alias_before_worker_extra
 
 
 @pytest.mark.asyncio
+async def test_transfer_handler_restores_exact_alias_truncated_by_planner() -> None:
+    worker = _CaptureTransferWorker()
+    repo = _BeneficiaryRepoStub(
+        full_rows=[
+            {
+                "id": "bene-access",
+                "alias": "Tolu Access",
+                "account_name": "Tolu Adebayo",
+                "account_number": "2010000001",
+                "bank_name": "Access Bank",
+                "bank_code": "044",
+                "beneficiary_type": "transfer",
+            },
+            {
+                "id": "bene-gtb",
+                "alias": "Tolu GTB",
+                "account_name": "Tolu Adeyemi",
+                "account_number": "2010000002",
+                "bank_name": "GTBank",
+                "bank_code": "058",
+                "beneficiary_type": "transfer",
+            },
+        ]
+    )
+    task = TaskSpec(
+        id="t1",
+        type="transfer",
+        stage=TaskStage.EXTRACTED,
+        payload={
+            "amount": 20000,
+            "recipient_name": "tolu",
+            "skip_extraction": True,
+        },
+    )
+    state = OrchestratorState(
+        user_id="u_transfer_guard",
+        phone_number="2348000000123",
+        channel="whatsapp",
+        last_message_text="I wan send 20k to tolu access",
+        loaded_context={
+            "language": "en",
+            "user_id": "u_transfer_guard",
+            "accounts": [],
+            "beneficiaries": [{"id": "bene-access", "alias": "Tolu Access"}],
+            "beneficiary_context_mode": "cache_only",
+        },
+        tasks={"t1": task},
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {"configurable": {"beneficiary_repo": repo}, "recursion_limit": 50}
+    ctx = ExecutionTurnContext(
+        state=state,
+        config=config,
+        services=OrchestrationServices.from_mapping({"transfer": worker}),
+        current_wave_len=1,
+        accumulator=ExecutionAccumulator(state.tasks),
+    )
+
+    await TransferTaskExecutor().execute(task, "t1", ctx)
+
+    assert worker.last_payload is not None
+    assert worker.last_payload["recipient_name"] == "Tolu Access"
+    assert worker.last_user_message == "I wan send 20k to tolu access"
+    assert repo.full_calls == [("u_transfer_guard", "transfer")]
+
+
+@pytest.mark.asyncio
 async def test_transfer_handler_falls_back_to_full_beneficiary_reload_after_targeted_miss() -> None:
     worker = _CaptureTransferWorker()
     repo = _BeneficiaryRepoStub(

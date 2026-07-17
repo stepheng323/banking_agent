@@ -188,7 +188,6 @@ async def test_plan_tasks_caps_large_context_before_planner_call() -> None:
             is_cancellation=False,
             is_confirmation=False,
             detected_language="English",
-            context_read_subtype=None,
             normalized_instruction="continue",
             tasks=[],
         )
@@ -257,7 +256,6 @@ async def test_plan_tasks_skips_full_context_for_lightweight_turns() -> None:
             is_cancellation=False,
             is_confirmation=False,
             detected_language="English",
-            context_read_subtype=None,
             normalized_instruction="show my beneficiaries",
             tasks=[],
         )
@@ -308,7 +306,6 @@ async def test_plan_tasks_marks_guardrail_transfer_handoff_for_transfer_only_pro
             is_cancellation=False,
             is_confirmation=False,
             detected_language="English",
-            context_read_subtype=None,
             normalized_instruction="send 10k each to mum, tolu and doyin",
             tasks=[],
         )
@@ -357,7 +354,6 @@ async def test_plan_tasks_marks_narrow_transfer_interrupt_for_transfer_only_prom
             is_cancellation=False,
             is_confirmation=False,
             detected_language="English",
-            context_read_subtype=None,
             normalized_instruction="8967855634, First bank",
             tasks=[],
         )
@@ -406,7 +402,6 @@ async def test_plan_tasks_trims_user_state_for_narrow_transfer_replan() -> None:
             is_cancellation=False,
             is_confirmation=False,
             detected_language="English",
-            context_read_subtype=None,
             normalized_instruction="make it 20k",
             tasks=[],
         )
@@ -468,7 +463,6 @@ async def test_plan_tasks_uses_compact_context_for_mixed_transaction_turns() -> 
             is_cancellation=False,
             is_confirmation=False,
             detected_language="English",
-            context_read_subtype=None,
             normalized_instruction="send 10k to mum and buy me 2k airtime",
             tasks=[],
         )
@@ -512,7 +506,7 @@ async def test_plan_tasks_uses_compact_context_for_mixed_transaction_turns() -> 
 
 
 @pytest.mark.asyncio
-async def test_plan_tasks_keeps_context_for_referential_followups() -> None:
+async def test_plan_tasks_keeps_context_for_referential_followups_with_typed_frame() -> None:
     planner = _CapturingPlanner(
         PlannerOutput(
             primary_intent="conversational",
@@ -523,7 +517,6 @@ async def test_plan_tasks_keeps_context_for_referential_followups() -> None:
             is_cancellation=False,
             is_confirmation=False,
             detected_language="English",
-            context_read_subtype="linked_accounts_summary",
             normalized_instruction="show them",
             tasks=[],
         )
@@ -552,10 +545,36 @@ async def test_plan_tasks_keeps_context_for_referential_followups() -> None:
             is_cancellation=False,
             is_confirmation=False,
             detected_language="English",
-            context_read_subtype="account_count",
             normalized_instruction="how many accounts do i have linked",
             tasks=[],
         ),
+        context_frames=[
+            ContextFrame(
+                frame_id="linked_accounts_fact",
+                frame_type=ContextFrameType.ACCOUNT_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.ACCOUNT,
+                        entity_id="account-1",
+                        label="First Bank (...0001)",
+                        data={"bank_name": "First Bank"},
+                    )
+                ],
+                created_at_ts=int(time.time()),
+                metadata={
+                    "read_request": {
+                        "subject": "linked_account",
+                        "response_shape": "fact_count",
+                        "offset": 0,
+                        "page_size": 5,
+                    },
+                    "account_lifecycle_contract": {
+                        "operation": "count",
+                        "response_shape": "fact_count",
+                    },
+                },
+            )
+        ],
     )
     config: RunnableConfig = {
         "configurable": {

@@ -32,6 +32,19 @@ class AccountRepository(BaseRepository[Account]):
         result = await self.db.execute(select(Account).filter(Account.user_id == user_uuid))
         return list(result.scalars().all())
 
+    async def get_by_user_for_update(self, user_id: str) -> list[Account]:
+        """Lock all linked accounts for lifecycle mutation preflight."""
+        user_uuid: str | UUID = user_id
+        if isinstance(user_id, str):
+            try:
+                user_uuid = UUID(user_id)
+            except ValueError:
+                pass
+        result = await self.db.execute(
+            select(Account).filter(Account.user_id == user_uuid).with_for_update()
+        )
+        return list(result.scalars().all())
+
     async def get_by_account_id(self, account_id: str) -> Account | None:
         """Get account by account_id (external ID)."""
         result = await self.db.execute(select(Account).filter(Account.account_id == account_id))
@@ -89,7 +102,13 @@ class AccountRepository(BaseRepository[Account]):
 
         raise ValueError(f"Account {account_id} not found for user {user_id}")
 
-    async def delete_account(self, account_id: str, user_id: str) -> bool:
+    async def delete_account(
+        self,
+        account_id: str,
+        user_id: str,
+        *,
+        assign_new_default: bool = True,
+    ) -> bool:
         """
         Delete (unlink) an account.
         Returns True if successful, False otherwise.
@@ -108,7 +127,7 @@ class AccountRepository(BaseRepository[Account]):
             await self.db.delete(account)
             await self.db.flush()
 
-            if was_default:
+            if was_default and assign_new_default:
                 remaining_accounts = await self.get_by_user(user_id)
                 if remaining_accounts:
                     remaining_accounts[0].is_default = cast(Any, True)

@@ -101,19 +101,10 @@ def _critical_signature(output: PlannerOutput) -> dict[str, Any]:
     normalized_intent = output.primary_intent
     if executors:
         normalized_intent = executors[0] if len(set(executors)) == 1 else "mixed"
-    normalized_context_read_subtype = output.context_read_subtype
-    fastpath_equivalence = {
-        "account_count": "linked_accounts_summary",
-        "beneficiary_count": "beneficiary_list",
-    }
-    if normalized_context_read_subtype in fastpath_equivalence:
-        normalized_context_read_subtype = fastpath_equivalence[normalized_context_read_subtype]
-
     return {
         "primary_intent": normalized_intent,
         "beneficiary_route": output.beneficiary_route,
         "is_cancellation": output.is_cancellation,
-        "context_read_subtype": normalized_context_read_subtype,
         "task_count": len(tasks),
         "tasks": tasks,
     }
@@ -240,12 +231,10 @@ def _assert_case_signature(case_id: str, signature: dict[str, Any]) -> None:
         return
 
     if case_id == "context_list_them_accounts":
-        assert signature["primary_intent"] in {"account", "conversational"}, case_id
-        if signature["task_count"] == 0:
-            assert signature["context_read_subtype"] == "linked_accounts_summary", case_id
-        else:
-            assert first_task is not None and first_task["executor"] == "account", case_id
-            assert first_task["action"] == "list_accounts", case_id
+        assert signature["primary_intent"] == "account", case_id
+        assert signature["task_count"] >= 1, case_id
+        assert first_task is not None and first_task["executor"] == "account", case_id
+        assert first_task["action"] == "list_accounts", case_id
         return
 
     if case_id == "schedule_transfer":

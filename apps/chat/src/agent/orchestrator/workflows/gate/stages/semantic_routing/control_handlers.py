@@ -16,7 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.schedule_read_stage import (
     _build_direct_schedule_read_updates,
-    _semantic_schedule_response_mode,
+    _semantic_schedule_read_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import (
     _effective_response_locale,
@@ -27,6 +27,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.language import (
 )
 from banking.presentation.i18n.bridge import render_locale_switched
 from banking.presentation.i18n.locale import LocaleManager
+from shared.types.conversation_sets import ScheduleQueryContract
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -171,21 +172,27 @@ def semantic_schedule_target_updates(
     if getattr(route, "target_intent", None) != "schedule":
         return None
 
-    schedule_response_mode = _semantic_schedule_response_mode(route)
-    if schedule_response_mode is not None:
+    read_request = _semantic_schedule_read_request(route)
+    if read_request is not None:
         logger.info(
             "gate_semantic_router_schedule_direct",
             decision=canonical_decision,
             mode=canonical_mode,
-            schedule_response_mode=schedule_response_mode,
+            response_shape=read_request.response_shape,
         )
         return _build_direct_schedule_read_updates(
             ctx,
             updates=updates,
-            schedule_response_mode=schedule_response_mode,
             canonical_decision=canonical_decision,
             canonical_mode=canonical_mode,
             source="semantic_router_target_intent",
+            path_shape="semantic_router_domain",
+            read_request=read_request,
+            schedule_contract=(
+                route.schedule_contract
+                if isinstance(getattr(route, "schedule_contract", None), ScheduleQueryContract)
+                else None
+            ),
         )
 
     logger.info(

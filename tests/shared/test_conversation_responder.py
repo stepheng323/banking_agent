@@ -63,7 +63,7 @@ async def test_responder_records_mode_and_suggestion_count() -> None:
 
 
 @pytest.mark.asyncio
-async def test_social_meta_prompt_uses_safe_grounding_and_name() -> None:
+async def test_fresh_social_meta_prompt_omits_history_and_keeps_name() -> None:
     llm = _FakeLLM("Hey Olamide, I’m here. What banking task should we handle?")
     responder = ConversationResponder(llm)  # type: ignore[arg-type]
 
@@ -88,7 +88,7 @@ async def test_social_meta_prompt_uses_safe_grounding_and_name() -> None:
     assert "User name: Olamide" in user_prompt
     assert "my PIN is 1234" not in user_prompt
     assert "1234567890" not in user_prompt
-    assert "...7890" in user_prompt
+    assert "...7890" not in user_prompt
 
 
 @pytest.mark.asyncio
@@ -105,6 +105,49 @@ async def test_social_meta_unsafe_output_uses_localized_fallback(unsafe_reply: s
     reply = await responder.generate_reply(
         "Hi",
         {"language": "en", "history": [], SOCIAL_META_RESPONSE_KEY_CTX: "conversational.greeting"},
+        mode=ConversationResponseMode.SOCIAL_META,
+    )
+
+    assert reply == render_message("conversational.greeting", "en")
+
+
+@pytest.mark.asyncio
+async def test_fresh_social_opener_omits_stale_unsupported_grounding() -> None:
+    llm = _FakeLLM("Hi Olamide—how can I help?")
+    responder = ConversationResponder(llm)  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "Hi",
+        {
+            "language": "en",
+            "profile": {"first_name": "Olamide"},
+            "history": [
+                {"role": "user", "content": "Can you help me invest in crypto?"},
+                {"role": "assistant", "content": "I can't help with crypto investing."},
+            ],
+            SOCIAL_META_RESPONSE_KEY_CTX: "conversational.greeting_named",
+            SOCIAL_META_RENDER_PARAMS_CTX: {"display_name": "Olamide"},
+        },
+        mode=ConversationResponseMode.SOCIAL_META,
+    )
+
+    assert reply == "Hi Olamide—how can I help?"
+    assert llm.messages is not None
+    assert "crypto" not in llm.messages[1]["content"].lower()
+    assert "prior refusal" in llm.messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_social_meta_stale_refusal_uses_greeting_fallback() -> None:
+    responder = ConversationResponder(_FakeLLM("I can't help with crypto, but I can check your balance."))  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "Hi",
+        {
+            "language": "en",
+            "history": [],
+            SOCIAL_META_RESPONSE_KEY_CTX: "conversational.greeting",
+        },
         mode=ConversationResponseMode.SOCIAL_META,
     )
 

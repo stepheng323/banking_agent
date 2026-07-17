@@ -197,6 +197,11 @@ class ExecutionAccumulator:
         details = self._details_by_task.get(task_id)
         return dict(details) if details else None
 
+    def input_interrupt_metadata_for(self, task_id: str) -> dict[str, Any]:
+        details = self._details_by_task.get(task_id)
+        metadata = details.get("interrupt_metadata") if isinstance(details, dict) else None
+        return dict(metadata) if isinstance(metadata, dict) else {}
+
     def prompt_history(self) -> list[str]:
         return list(self._prompts)
 

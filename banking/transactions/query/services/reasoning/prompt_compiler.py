@@ -51,6 +51,9 @@ _SUMMARY = """Grouped-summary rules:
 - Evidence/list asks expose underlying transactions; total, ranking, grouping, and comparisons use aggregate.
 - Preserve the summary scope when refining. A named bucket may populate recipient_name/target_text or extraction
 filters.
+- A contrastive follow-up that changes money direction sets transaction_direction_delta=credit|debit and uses
+  filter_delta/refine_existing. A request for both directions sets transaction_direction_delta=both. Preserve the
+  active period and every unrelated filter; do not ask the user to confirm a clear direction change.
 - Calculations remain deterministic; output only the requested operation and semantic patch.
 """
 

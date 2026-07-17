@@ -3,10 +3,21 @@
 from collections.abc import Iterable
 from typing import Annotated, Any, ClassVar, Literal, TypeAlias, cast, get_args
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from shared.money import MoneyAmount
 from shared.types.amount_mutation import AmountMutation, set_amount_mutation
+from shared.types.balance import BalanceFollowupDelta, BalanceQueryContract, initial_balance_contract
+from shared.types.conversation_sets import (
+    AccountLifecycleContract,
+    AccountLifecycleFollowupDelta,
+    BeneficiaryFollowupDelta,
+    BeneficiaryQueryContract,
+    ScheduleQueryContract,
+    SetAmountAllocation,
+    SetScopeDelta,
+)
+from shared.types.read import ReadRequest, ReadSubject, ResponseShape
 
 
 class ContextReference(BaseModel):
@@ -31,18 +42,6 @@ class FundingSplitUpdate(BaseModel):
 
     bank_name: str = Field(..., description="User source bank/account reference for this funding leg")
     amount: MoneyAmount = Field(..., gt=0, description="Amount to fund from this source account")
-
-
-ResponseShape: TypeAlias = Literal[
-    "fact_bool",
-    "fact_count",
-    "fact_status",
-    "fact_recap",
-    "surface_list",
-    "surface_detail",
-    "surface_paginated",
-    "surface_actionable",
-]
 
 
 class BaseTaskParameters(BaseModel):
@@ -150,11 +149,33 @@ class AccountTaskParameters(BaseTaskParameters):
 
     model_config = ConfigDict(extra="forbid")
 
-    response_shape: ResponseShape | None = None
+    read_request: ReadRequest | None = None
+    balance_contract: BalanceQueryContract | None = None
+    account_lifecycle_contract: AccountLifecycleContract | None = None
     bank_name: str | None = None
     source_bank_name: str | None = None
     source_account_index: int | None = None
     alias: str | None = None
+
+    @model_validator(mode="after")
+    def validate_balance_contract(self) -> "AccountTaskParameters":
+        if self.balance_contract is not None and (
+            self.read_request is None or self.read_request.subject != "balance"
+        ):
+            raise ValueError("balance_contract requires a balance read_request")
+        if self.account_lifecycle_contract is not None and (
+            self.read_request is None or self.read_request.subject not in {"linked_account", "default_account"}
+        ):
+            raise ValueError("account_lifecycle_contract requires a linked-account read_request")
+        if self.read_request is not None and self.read_request.subject == "balance" and self.balance_contract is None:
+            raise ValueError("balance reads require balance_contract")
+        if (
+            self.read_request is not None
+            and self.read_request.subject in {"linked_account", "default_account"}
+            and self.account_lifecycle_contract is None
+        ):
+            raise ValueError("linked-account reads require account_lifecycle_contract")
+        return self
 
 
 class BeneficiaryTaskParameters(BaseTaskParameters):
@@ -162,7 +183,9 @@ class BeneficiaryTaskParameters(BaseTaskParameters):
 
     model_config = ConfigDict(extra="forbid")
 
-    response_shape: ResponseShape | None = None
+    read_request: ReadRequest | None = None
+    beneficiary_contract: BeneficiaryQueryContract | None = None
+    name_filter: str | None = None
     recipient: str | None = None
     recipient_name: str | None = None
     recipient_account: str | None = None
@@ -171,13 +194,24 @@ class BeneficiaryTaskParameters(BaseTaskParameters):
     target_phone: str | None = None
     alias: str | None = None
 
+    @model_validator(mode="after")
+    def validate_beneficiary_contract(self) -> "BeneficiaryTaskParameters":
+        if self.beneficiary_contract is not None and (
+            self.read_request is None or self.read_request.subject != "beneficiary"
+        ):
+            raise ValueError("beneficiary_contract requires a beneficiary read_request")
+        if self.read_request is not None and self.beneficiary_contract is None:
+            raise ValueError("beneficiary reads require beneficiary_contract")
+        return self
+
 
 class ScheduleTaskParameters(BaseTaskParameters):
     """Scheduled-transaction management parameters."""
 
     model_config = ConfigDict(extra="forbid")
 
-    response_shape: ResponseShape | None = None
+    read_request: ReadRequest | None = None
+    schedule_contract: ScheduleQueryContract | None = None
     amount: str | MoneyAmount | None = None
     recipient_name: str | None = None
     recipient_phone: str | None = None
@@ -190,18 +224,26 @@ class ScheduleTaskParameters(BaseTaskParameters):
     recurring: bool | None = None
     schedule_id: str | None = None
     schedule_selector: str | None = None
-    schedule_response_mode: Literal["list", "count"] | None = None
     source_bank_name: str | None = None
     source_account_index: int | None = None
+
+    @model_validator(mode="after")
+    def validate_schedule_contract(self) -> "ScheduleTaskParameters":
+        if self.schedule_contract is not None and (
+            self.read_request is None or self.read_request.subject != "schedule"
+        ):
+            raise ValueError("schedule_contract requires a schedule read_request")
+        if self.read_request is not None and self.schedule_contract is None:
+            raise ValueError("schedule reads require schedule_contract")
+        return self
 
 
 class QueryTaskParameters(BaseTaskParameters):
     """Read-only query task parameters."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
-    response_shape: ResponseShape | None = None
-    schedule_response_mode: Literal["list", "count"] | None = None
+    read_request: ReadRequest | None = None
 
 
 class SupportTaskParameters(BaseTaskParameters):
@@ -209,7 +251,7 @@ class SupportTaskParameters(BaseTaskParameters):
 
     model_config = ConfigDict(extra="forbid")
 
-    response_shape: ResponseShape | None = None
+    read_request: ReadRequest | None = None
 
 
 PlannerTaskParameters: TypeAlias = (
@@ -256,6 +298,15 @@ class BasePlannedTask(BaseModel):
         default=None,
         description="1-based clause index in planner decomposition that produced this task",
     )
+
+    @model_validator(mode="after")
+    def reject_read_contract_on_mutation(self) -> "BasePlannedTask":
+        parameters = getattr(self, "parameters", None)
+        if self.risk != "READ_ONLY" and getattr(parameters, "read_request", None) is not None:
+            raise ValueError("read_request is valid only for READ_ONLY tasks")
+        if self.risk != "READ_ONLY" and getattr(parameters, "balance_contract", None) is not None:
+            raise ValueError("balance_contract is valid only for READ_ONLY tasks")
+        return self
 
 
 class SendMoneyTask(BasePlannedTask):
@@ -901,6 +952,7 @@ AccountActionHint: TypeAlias = Literal[
     "balance",
     "show_balance",
     "overall_balance",
+    "get_default",
     "link",
     "unlink",
     "set_default",
@@ -926,22 +978,6 @@ SemanticRoutingDecision: TypeAlias = Literal[
 ]
 
 SemanticRoutingMode: TypeAlias = Literal["new", "continuation", "quoted_replay", "active_flow_interrupt"]
-
-ContextReadSubtype: TypeAlias = Literal[
-    "account_count",
-    "linked_accounts_summary",
-    "default_account_identity",
-    "pending_mandate_explanation",
-    "account_mandate_readiness_summary",
-    "account_linked_bank_existence_check",
-    "beneficiary_count",
-    "beneficiary_list",
-    "beneficiary_existence_check",
-    "beneficiary_name_match_preview",
-    "flow_recap",
-    "flow_missing_requirements",
-]
-
 
 InterruptRoutingDecision: TypeAlias = Literal[
     "continue_flow",
@@ -981,6 +1017,11 @@ ContextFrameFollowupAction: TypeAlias = Literal[
     "replay_tasks",
     "edit_schedule",
     "cancel_schedule",
+    "delete_beneficiary",
+    "unlink_account",
+    "set_default_account",
+    "relink_account",
+    "transfer_beneficiaries",
     "start_new_task",
     "completeness_check",
     "entity_lookup",
@@ -1166,6 +1207,10 @@ class PendingActionEditDecision(BaseModel):
         default=None,
         description="Intent to switch to when operation=switch_intent",
     )
+    account_action: AccountActionHint | None = Field(
+        default=None,
+        description="Typed read/action when switch_intent targets the account domain",
+    )
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 
     @property
@@ -1193,6 +1238,33 @@ class PendingActionEditDecision(BaseModel):
             usage_intent=self.usage_intent,
             show_options=self.show_options,
         )
+
+
+class ScheduleSetEditDelta(BaseModel):
+    """Sparse, explicit patch for a reviewed set of scheduled instructions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: MoneyAmount | None = Field(default=None, gt=0)
+    schedule_mode: Literal["one_time", "recurring"] | None = None
+    recurrence_type: Literal["one_time", "daily", "weekly", "monthly"] | None = None
+    schedule_timezone: str | None = Field(default=None, max_length=80)
+    schedule_start_date: str | None = Field(default=None, max_length=32)
+    schedule_time_local: str | None = Field(default=None, max_length=16)
+    schedule_day_of_week: int | None = Field(default=None, ge=0, le=6)
+    schedule_day_of_month: int | None = Field(default=None, ge=1, le=31)
+    schedule_end_date: str | None = Field(default=None, max_length=32)
+    source_account_id: str | None = Field(default=None, max_length=160)
+    source_bank_name: str | None = Field(default=None, max_length=120)
+    recipient_name: str | None = Field(default=None, max_length=160)
+    recipient_account: str | None = Field(default=None, max_length=32)
+    recipient_bank_name: str | None = Field(default=None, max_length=120)
+    narration: str | None = Field(default=None, max_length=240)
+    recipient_phone: str | None = Field(default=None, max_length=24)
+    target_phone: str | None = Field(default=None, max_length=24)
+    network: str | None = Field(default=None, max_length=40)
+    plan_code: str | None = Field(default=None, max_length=120)
+    plan_name: str | None = Field(default=None, max_length=160)
 
 
 class ContextFrameFollowupDecision(BaseModel):
@@ -1225,6 +1297,43 @@ class ContextFrameFollowupDecision(BaseModel):
     selection_index: int | None = Field(
         default=None,
         description="1-based selected item index when the user chooses an item by number or ordinal",
+    )
+    read_response_shape: ResponseShape | None = Field(
+        default=None,
+        description="Requested presentation for a retained canonical read, if applicable",
+    )
+    read_subject: ReadSubject | None = Field(
+        default=None,
+        description="Banking read subject intended by this turn; distinguishes retained refinements from pivots",
+    )
+    page_action: Literal["next", "previous", "first"] | None = Field(
+        default=None,
+        description="Requested page movement for a retained canonical read",
+    )
+    balance_delta: BalanceFollowupDelta | None = Field(
+        default=None,
+        description="Sparse account-scope/operation patch for a retained balance conversation",
+    )
+    beneficiary_delta: BeneficiaryFollowupDelta | None = Field(
+        default=None,
+        description="Sparse operation/filter patch for a retained beneficiary read",
+    )
+    account_lifecycle_delta: AccountLifecycleFollowupDelta | None = Field(
+        default=None,
+        description="Sparse operation and bank-scope patch for a retained linked-account read",
+    )
+    set_scope_delta: SetScopeDelta | None = Field(
+        default=None,
+        description="Sparse set-scope patch resolved only against stable references in the retained frame",
+    )
+    set_amount_allocations: list[SetAmountAllocation] = Field(
+        default_factory=list,
+        max_length=5,
+        description="Explicit per-beneficiary amounts; equal allocation must never be inferred",
+    )
+    schedule_edit_delta: ScheduleSetEditDelta | None = Field(
+        default=None,
+        description="Sparse explicit edit applied to every selected schedule; null outside schedule edits",
     )
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 
@@ -1322,6 +1431,14 @@ class InterruptRouteDecision(BaseModel):
         default=None,
         description="Optional routing mode hint (for example query new-vs-continuation)",
     )
+    account_action: AccountActionHint | None = Field(
+        default=None,
+        description="Typed account action when switching to the account domain",
+    )
+    account_read: ReadRequest | None = Field(
+        default=None,
+        description="Canonical account read requested while another banking flow is pending",
+    )
     status_query_type: Literal["recap", "requirements"] | None = Field(
         default=None,
         description="Subtype when decision=status_query",
@@ -1339,6 +1456,29 @@ class InterruptRouteDecision(BaseModel):
         description="Safety/unsupported reason when question_type=unsupported_or_unsafe",
     )
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
+
+    @model_validator(mode="after")
+    def canonicalize_account_read_switch(self) -> "InterruptRouteDecision":
+        if self.account_read is None:
+            return self
+        if self.account_read.subject not in {"balance", "linked_account", "default_account"}:
+            raise ValueError("interrupt account_read must use an account read subject")
+        self.decision = "switch_intent"
+        self.target_intent = "account"
+        self.target_mode = "new"
+        self.status_query_type = None
+        self.question_type = None
+        self.target_field = None
+        self.account_action = (
+            "check_balance"
+            if self.account_read.subject == "balance"
+            else "get_default"
+            if self.account_read.subject == "default_account"
+            else "count"
+            if self.account_read.response_shape in {"fact_bool", "fact_count"}
+            else "list_accounts"
+        )
+        return self
 
 
 class SemanticRouteDecision(BaseModel):
@@ -1378,16 +1518,136 @@ class SemanticRouteDecision(BaseModel):
         alias="execs",
         description="Explicit transaction executors expected from planner, when known",
     )
-    schedule_response_mode: Literal["list", "count"] | None = Field(
+    read_request: ReadRequest | None = Field(
         default=None,
-        alias="sch_mode",
-        description="For simple scheduled-transaction read intents, whether the user wants a list or count.",
+        alias="read",
+        description="Canonical read subject, response shape, explicit filters, and page when this is a read turn.",
+    )
+    balance_contract: BalanceQueryContract | None = Field(
+        default=None,
+        alias="bal",
+        description="Specialized account scope and operation for balance reads",
+    )
+    beneficiary_contract: BeneficiaryQueryContract | None = Field(
+        default=None,
+        alias="ben",
+        description="Specialized filters and operation for beneficiary reads",
+    )
+    schedule_contract: ScheduleQueryContract | None = Field(
+        default=None,
+        alias="sched",
+        description="Specialized filters and operation for schedule reads",
+    )
+    account_lifecycle_contract: AccountLifecycleContract | None = Field(
+        default=None,
+        alias="acct",
+        description="Specialized filters and operation for linked-account lifecycle reads",
     )
     unsupported_capability: str | None = Field(
         default=None,
         alias="unsupported_cap",
         description="Optional key of the detected unsupported capability, else null",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def complete_specialized_read_contract(cls, value: Any) -> Any:
+        """Complete redundant domain contracts from the canonical semantic read.
+
+        The semantic model remains authoritative for subject, shape, and explicit
+        filters. This adapter only maps that typed information into the narrower
+        worker contract, avoiding a second interpretation or a raw-text fallback.
+        """
+        if not isinstance(value, dict):
+            return value
+        raw_request = value.get("read_request", value.get("read"))
+        try:
+            request = (
+                raw_request
+                if isinstance(raw_request, ReadRequest)
+                else ReadRequest.model_validate(raw_request)
+                if isinstance(raw_request, dict)
+                else None
+            )
+        except ValueError:
+            return value
+        if request is None:
+            return value
+
+        completed = dict(value)
+        if request.subject == "balance" and completed.get("balance_contract", completed.get("bal")) is None:
+            completed["bal"] = initial_balance_contract(
+                bank_name=request.bank_name,
+                response_shape=request.response_shape,
+            )
+        elif request.subject == "beneficiary" and completed.get(
+            "beneficiary_contract", completed.get("ben")
+        ) is None:
+            operation: Literal["count", "existence", "list", "detail"] = "list"
+            if request.response_shape == "fact_count":
+                operation = "count"
+            elif request.response_shape == "fact_bool":
+                operation = "existence"
+            elif request.response_shape == "surface_detail":
+                operation = "detail"
+            completed["ben"] = BeneficiaryQueryContract(
+                operation=operation,
+                response_shape=request.response_shape,
+                entity_name=request.entity_name,
+                bank_name=request.bank_name,
+            )
+        elif request.subject == "schedule" and completed.get("schedule_contract", completed.get("sched")) is None:
+            schedule_operation: Literal["count", "existence", "list", "detail"] = "list"
+            if request.response_shape == "fact_count":
+                schedule_operation = "count"
+            elif request.response_shape == "fact_bool":
+                schedule_operation = "existence"
+            elif request.response_shape in {"fact_status", "surface_detail"}:
+                schedule_operation = "detail"
+            completed["sched"] = ScheduleQueryContract(
+                operation=schedule_operation,
+                response_shape=request.response_shape,
+                recipient_name=request.entity_name,
+                statuses=[request.status] if request.status else [],
+            )
+        elif request.subject in {"linked_account", "default_account"} and completed.get(
+            "account_lifecycle_contract", completed.get("acct")
+        ) is None:
+            account_operation: Literal[
+                "count", "existence", "list", "detail", "readiness", "default_identity"
+            ] = "default_identity" if request.subject == "default_account" else "list"
+            if request.subject == "linked_account":
+                if request.response_shape == "fact_count":
+                    account_operation = "count"
+                elif request.response_shape == "fact_bool":
+                    account_operation = "existence"
+                elif request.response_shape == "fact_status":
+                    account_operation = "readiness"
+                elif request.response_shape == "surface_detail":
+                    account_operation = "detail"
+            completed["acct"] = AccountLifecycleContract(
+                operation=account_operation,
+                response_shape=request.response_shape,
+                bank_name=request.bank_name,
+                mandate_statuses=[request.status] if request.status else [],
+            )
+        return completed
+
+    @model_validator(mode="after")
+    def require_specialized_read_contract(self) -> "SemanticRouteDecision":
+        request = self.read_request
+        if request is None:
+            return self
+        required_contract = {
+            "balance": self.balance_contract,
+            "beneficiary": self.beneficiary_contract,
+            "schedule": self.schedule_contract,
+            "linked_account": self.account_lifecycle_contract,
+            "default_account": self.account_lifecycle_contract,
+        }.get(request.subject, True)
+        if required_contract is None:
+            raise ValueError(f"{request.subject} reads require their specialized contract")
+        return self
 
 
 def _strip_llm_schema_annotations(schema: dict[str, Any]) -> None:
@@ -1435,13 +1695,6 @@ class PlannerOutput(BaseModel):
     detected_language: str | None = Field(
         default=None, description="Detected language: English, Yoruba, Hausa, Igbo, Pidgin, French"
     )
-    context_read_subtype: ContextReadSubtype | None = Field(
-        default=None,
-        description=(
-            "Set only for context-backed read-only account/beneficiary asks that are eligible for planner-owned "
-            "context-read synthesis; otherwise null"
-        ),
-    )
     beneficiary_route: BeneficiaryRouteHint = Field(
         default="none",
         description=(
@@ -1454,7 +1707,7 @@ class PlannerOutput(BaseModel):
         default="none",
         description=(
             "Account action hint for planner context-read disambiguation: "
-            "list/list_accounts/count/check_balance/link/unlink/set_default, else none"
+            "list/list_accounts/count/check_balance/get_default/link/unlink/set_default, else none"
         ),
     )
     unsupported_capability: str | None = Field(

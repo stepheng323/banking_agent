@@ -1,5 +1,5 @@
 import re
-from typing import Any
+from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (
     detect_unsupported_capability,
@@ -28,7 +28,11 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
-from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import _next_direct_domain_task_id
+from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import _current_locale
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
+    _build_direct_domain_task,
+    _next_direct_domain_task_id,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_context_for_state as build_context_frame_followup_context_for_state,
 )
@@ -38,8 +42,29 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_types import (
     ContextFrameFollowupResponse,
 )
+from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut
+from shared.types.balance import (
+    BalanceConversationState,
+    BalanceFollowupDelta,
+    BalanceQueryContract,
+    apply_balance_followup,
+    initial_balance_contract,
+)
+from shared.types.conversation_sets import (
+    AccountLifecycleContract,
+    AccountLifecycleOperation,
+    BeneficiaryOperation,
+    BeneficiaryQueryContract,
+    ConversationSetState,
+    ScheduleOperation,
+    ScheduleQueryContract,
+    apply_set_scope,
+    resolve_delta_references,
+)
 from shared.types.planner import ContextFrameFollowupDecision
+from shared.types.read import ReadRequest
+from shared.utils.bank_aliases import display_bank_name, is_known_bank_alias
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -152,53 +177,92 @@ def _context_frame_followup_updates(
 
 def _build_read_only_refresh_spec(ctx: GateContext, frame: ContextFrame | None) -> tuple[str, TaskSpec, str] | None:
     if frame is not None:
-        if frame.frame_type == ContextFrameType.ACCOUNT_LIST:
-            source_action = str(frame.metadata.get("source_action") or "").strip()
-            action = (
-                "check_balance"
-                if source_action in {"check_balance", "balance", "show_balance", "overall_balance"}
-                else "list_accounts"
-            )
-            task_id = _next_direct_domain_task_id(ctx.state_view.tasks, "account")
-            account_payload: dict[str, Any] = {
-                "action": action,
-                "message": ctx.message_text,
-                "instruction": ctx.message_text,
-            }
-            if action == "list_accounts":
-                account_payload["response_shape"] = "surface_list"
-            return task_id, TaskSpec(id=task_id, type="account", stage=TaskStage.DRAFT, payload=account_payload), action
-
-        if frame.frame_type == ContextFrameType.BENEFICIARY_LIST:
-            task_id = _next_direct_domain_task_id(ctx.state_view.tasks, "beneficiary")
-            beneficiary_payload: dict[str, Any] = {
-                "action": "list_beneficiaries",
-                "intent": "list_beneficiaries",
-                "list_intent": True,
-                "message": ctx.message_text,
-                "instruction": ctx.message_text,
-                "response_shape": "surface_list",
-            }
-            return (
-                task_id,
-                TaskSpec(id=task_id, type="beneficiary", stage=TaskStage.DRAFT, payload=beneficiary_payload),
-                "list_beneficiaries",
-            )
-
-        if frame.frame_type == ContextFrameType.SCHEDULE_LIST:
-            task_id = _next_direct_domain_task_id(ctx.state_view.tasks, "schedule")
-            schedule_payload: dict[str, Any] = {
-                "action": "list_scheduled_transactions",
-                "message": ctx.message_text,
-                "instruction": ctx.message_text,
-                "response_shape": "surface_list",
-                "schedule_response_mode": "list",
-            }
-            return (
-                task_id,
-                TaskSpec(id=task_id, type="schedule", stage=TaskStage.DRAFT, payload=schedule_payload),
-                "list_scheduled_transactions",
-            )
+        raw_read_request = frame.metadata.get("read_request")
+        if isinstance(raw_read_request, dict):
+            try:
+                retained = ReadRequest.model_validate(raw_read_request)
+            except ValueError:
+                retained = None
+            if retained is not None and retained.subject != "transaction":
+                shape = retained.response_shape
+                if shape.startswith("fact_"):
+                    shape = "surface_list"
+                request = retained.model_copy(update={"response_shape": shape, "offset": 0})
+                domain_by_subject = {
+                    "balance": "account",
+                    "linked_account": "account",
+                    "default_account": "account",
+                    "beneficiary": "beneficiary",
+                    "schedule": "schedule",
+                    "ticket": "support",
+                    "receipt": "support",
+                }
+                domain = domain_by_subject.get(request.subject)
+                if domain is not None:
+                    try:
+                        balance_contract = (
+                            BalanceQueryContract.model_validate(frame.metadata.get("balance_contract"))
+                            if request.subject == "balance"
+                            and isinstance(frame.metadata.get("balance_contract"), dict)
+                            else None
+                        )
+                        beneficiary_contract = (
+                            BeneficiaryQueryContract.model_validate(frame.metadata.get("beneficiary_contract"))
+                            if request.subject == "beneficiary"
+                            and isinstance(frame.metadata.get("beneficiary_contract"), dict)
+                            else None
+                        )
+                        schedule_contract = (
+                            ScheduleQueryContract.model_validate(frame.metadata.get("schedule_contract"))
+                            if request.subject == "schedule"
+                            and isinstance(frame.metadata.get("schedule_contract"), dict)
+                            else None
+                        )
+                        lifecycle_contract = (
+                            AccountLifecycleContract.model_validate(
+                                frame.metadata.get("account_lifecycle_contract")
+                            )
+                            if request.subject in {"linked_account", "default_account"}
+                            and isinstance(frame.metadata.get("account_lifecycle_contract"), dict)
+                            else None
+                        )
+                    except ValueError:
+                        balance_contract = None
+                        beneficiary_contract = None
+                        schedule_contract = None
+                        lifecycle_contract = None
+                    required_contract = {
+                        "balance": balance_contract,
+                        "beneficiary": beneficiary_contract,
+                        "schedule": schedule_contract,
+                        "linked_account": lifecycle_contract,
+                        "default_account": lifecycle_contract,
+                    }.get(request.subject, True)
+                    if required_contract is None:
+                        return None
+                    task_id, spec = _build_direct_domain_task(
+                        state_view=ctx.state_view,
+                        domain=cast(Any, domain),
+                        mode="continuation",
+                        read_request=request,
+                        balance_contract=balance_contract,
+                        beneficiary_contract=beneficiary_contract,
+                        schedule_contract=schedule_contract,
+                        account_lifecycle_contract=lifecycle_contract,
+                    )
+                    raw_set_state = frame.metadata.get("conversation_set_state")
+                    if request.subject in {"beneficiary", "schedule", "linked_account", "default_account"}:
+                        if not isinstance(raw_set_state, dict):
+                            return None
+                        try:
+                            set_state = ConversationSetState.model_validate(raw_set_state)
+                            spec.payload["conversation_set_state"] = set_state.model_dump(
+                                mode="json",
+                                exclude_none=True,
+                            )
+                        except ValueError:
+                            return None
+                    return task_id, spec, f"read_{request.subject}"
 
         if frame.frame_type == ContextFrameType.TRANSACTION_LIST and _is_query_surface_frame(frame):
             task_id = _next_direct_domain_task_id(ctx.state_view.tasks, "query")
@@ -208,37 +272,588 @@ def _build_read_only_refresh_spec(ctx: GateContext, frame: ContextFrame | None) 
             }
             return task_id, TaskSpec(id=task_id, type="query", stage=TaskStage.DRAFT, payload=payload), "repeat_query"
 
-    latest_account_task = _latest_completed_read_only_account_task(ctx)
-    if latest_account_task is not None:
-        action = str(latest_account_task.payload.get("action") or "").strip()
-        task_id = _next_direct_domain_task_id(ctx.state_view.tasks, "account")
-        return (
-            task_id,
-            TaskSpec(
-                id=task_id,
-                type="account",
-                stage=TaskStage.DRAFT,
-                payload={"action": action, "message": ctx.message_text, "instruction": ctx.message_text},
+    return None
+
+
+def _expired_set_context_response(ctx: GateContext, *, domain: str) -> RouteResolution:
+    return direct_response(
+        ctx,
+        response=render_message("conversation_set.stale_selection", _current_locale(ctx.state_view)),
+        owner="semantic_router",
+        decision="conversation_set_expired",
+        target_domain=domain,
+        mode="continuation",
+        source="context_frame_followup",
+        path_shape="conversation_set_expired",
+    )
+
+
+def _typed_read_subject_pivot_updates(
+    ctx: GateContext,
+    decision: ContextFrameFollowupDecision,
+) -> RouteResolution | None:
+    """Dispatch a fully typed read pivot without a second semantic call."""
+    subject = decision.read_subject
+    shape = decision.read_response_shape
+    if subject is None or shape is None or subject == "transaction":
+        return None
+
+    filters = decision.filters
+    bank_name = filters.bank if filters is not None else None
+    if bank_name is None and is_known_bank_alias(decision.target_text):
+        bank_name = display_bank_name(decision.target_text)
+    entity_name = filters.counterparty if filters is not None else None
+    status = filters.status if filters is not None else None
+    if subject == "beneficiary" and decision.beneficiary_delta is not None:
+        entity_name = decision.beneficiary_delta.entity_name or entity_name
+        bank_name = decision.beneficiary_delta.bank_name or bank_name
+
+    try:
+        request = ReadRequest(
+            subject=subject,
+            response_shape=shape,
+            entity_name=entity_name,
+            bank_name=bank_name,
+            status=status,
+        )
+    except ValueError:
+        return None
+
+    domain_by_subject = {
+        "balance": "account",
+        "linked_account": "account",
+        "default_account": "account",
+        "beneficiary": "beneficiary",
+        "schedule": "schedule",
+        "ticket": "support",
+        "receipt": "support",
+    }
+    domain = domain_by_subject.get(subject)
+    if domain is None:
+        return None
+
+    balance_contract = None
+    beneficiary_contract = None
+    schedule_contract = None
+    lifecycle_contract = None
+    if subject == "balance":
+        balance_contract = initial_balance_contract(bank_name=bank_name, response_shape=shape)
+    elif subject == "beneficiary":
+        beneficiary_operation: BeneficiaryOperation = "list"
+        if shape == "fact_bool":
+            beneficiary_operation = "existence"
+        elif shape == "fact_count":
+            beneficiary_operation = "count"
+        elif shape == "surface_detail":
+            beneficiary_operation = "detail"
+        beneficiary_contract = BeneficiaryQueryContract(
+            operation=beneficiary_operation,
+            response_shape=shape,
+            entity_name=entity_name,
+            bank_name=bank_name,
+            beneficiary_type=(
+                decision.beneficiary_delta.beneficiary_type
+                if decision.beneficiary_delta is not None
+                else None
             ),
-            action,
+        )
+    elif subject == "schedule":
+        schedule_operation: ScheduleOperation = "list"
+        if shape == "fact_bool":
+            schedule_operation = "existence"
+        elif shape == "fact_count":
+            schedule_operation = "count"
+        elif shape == "surface_detail":
+            schedule_operation = "detail"
+        schedule_contract = ScheduleQueryContract(
+            operation=schedule_operation,
+            response_shape=shape,
+            recipient_name=entity_name,
+            statuses=[status] if status else [],
+        )
+    elif subject in {"linked_account", "default_account"}:
+        lifecycle_operation: AccountLifecycleOperation = (
+            "default_identity" if subject == "default_account" else "list"
+        )
+        if subject == "linked_account":
+            if shape == "fact_bool":
+                lifecycle_operation = "existence"
+            elif shape == "fact_count":
+                lifecycle_operation = "count"
+            elif shape == "fact_status":
+                lifecycle_operation = "readiness"
+            elif shape == "surface_detail":
+                lifecycle_operation = "detail"
+        lifecycle_contract = AccountLifecycleContract(
+            operation=lifecycle_operation,
+            response_shape=shape,
+            bank_name=bank_name,
+            mandate_statuses=[status] if status else [],
         )
 
-    return None
+    task_id, spec = _build_direct_domain_task(
+        state_view=ctx.state_view,
+        domain=cast(Any, domain),
+        mode="new",
+        read_request=request,
+        balance_contract=balance_contract,
+        beneficiary_contract=beneficiary_contract,
+        schedule_contract=schedule_contract,
+        account_lifecycle_contract=lifecycle_contract,
+    )
+    logger.info(
+        "canonical_read_subject_pivot_resolved",
+        subject=subject,
+        response_shape=shape,
+        has_bank_filter=bool(bank_name),
+        has_entity_filter=bool(entity_name),
+        has_status_filter=bool(status),
+    )
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="semantic_router",
+        decision="canonical_read_subject_pivot",
+        target_domain=domain,
+        mode="new",
+        source="context_frame_followup",
+        path_shape="canonical_read_subject_pivot",
+    )
+
+
+def _read_contract_followup_updates(
+    ctx: GateContext,
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+) -> RouteResolution | None:
+    raw = frame.metadata.get("read_request")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        retained = ReadRequest.model_validate(raw)
+    except ValueError:
+        return None
+    if decision.read_subject is not None and decision.read_subject != retained.subject:
+        return _typed_read_subject_pivot_updates(ctx, decision)
+    if retained.subject in {"transaction", "balance"}:
+        return None
+
+    updates: dict[str, Any] = {}
+    filter_delta_applied = False
+    beneficiary_type_update: str | None = None
+    if decision.page_action == "next":
+        updates["offset"] = retained.offset + retained.page_size
+    elif decision.page_action == "previous":
+        updates["offset"] = max(0, retained.offset - retained.page_size)
+    elif decision.page_action == "first":
+        updates["offset"] = 0
+
+    filters = decision.filters
+    if filters is not None:
+        if retained.subject in {"balance", "linked_account"} and filters.bank:
+            updates["bank_name"] = filters.bank
+            updates["offset"] = 0
+            filter_delta_applied = True
+        if retained.subject in {"linked_account", "schedule", "ticket"} and filters.status:
+            updates["status"] = filters.status
+            updates["offset"] = 0
+            filter_delta_applied = True
+        if retained.subject == "beneficiary" and filters.counterparty:
+            updates["entity_name"] = filters.counterparty
+            updates["offset"] = 0
+            filter_delta_applied = True
+
+    # A named membership lookup refines the retained repository read; it is not
+    # a selection restricted to rows in the last frame. Fact-only frames carry
+    # no beneficiary rows, so promote the interpreter's typed lookup target into
+    # the canonical filter and existence shape.
+    if (
+        retained.subject == "beneficiary"
+        and decision.decision in {"lookup_entity", "entity_lookup"}
+        and isinstance(decision.target_text, str)
+        and decision.target_text.strip()
+    ):
+        updates.setdefault("entity_name", decision.target_text.strip())
+        updates.setdefault("response_shape", "fact_bool")
+        updates["offset"] = 0
+        filter_delta_applied = True
+
+    # The semantic interpreter may place an elliptical account target in
+    # ``target_text`` while classifying the turn as a lookup. Promote only a
+    # recognized typed bank target; never infer a bank from the raw message.
+    if (
+        retained.subject in {"balance", "linked_account"}
+        and "bank_name" not in updates
+        and is_known_bank_alias(decision.target_text)
+    ):
+        bank_name = display_bank_name(decision.target_text)
+        if bank_name is not None:
+            updates["bank_name"] = bank_name
+            updates["offset"] = 0
+            filter_delta_applied = True
+
+    if decision.read_response_shape is not None:
+        updates["response_shape"] = decision.read_response_shape
+    elif (
+        not filter_delta_applied
+        and decision.decision in {"show_details", "detail_request"}
+        and retained.response_shape.startswith("fact_")
+    ):
+        updates["response_shape"] = (
+            "surface_list"
+            if retained.subject in {"linked_account", "beneficiary", "schedule"}
+            else "surface_detail"
+        )
+        updates["offset"] = 0
+
+    beneficiary_delta = decision.beneficiary_delta if retained.subject == "beneficiary" else None
+    if beneficiary_delta is not None:
+        shape_by_operation = {
+            "count": "fact_count",
+            "existence": "fact_bool",
+            "list": "surface_list",
+            "detail": "surface_detail",
+        }
+        if beneficiary_delta.operation != "preserve":
+            updates["response_shape"] = shape_by_operation[beneficiary_delta.operation]
+            updates["offset"] = 0
+        if beneficiary_delta.entity_name is not None:
+            updates["entity_name"] = beneficiary_delta.entity_name
+            updates["offset"] = 0
+            filter_delta_applied = True
+        if beneficiary_delta.bank_name is not None:
+            updates["bank_name"] = beneficiary_delta.bank_name
+            updates["offset"] = 0
+            filter_delta_applied = True
+        beneficiary_type_update = beneficiary_delta.beneficiary_type
+
+    lifecycle_delta = (
+        decision.account_lifecycle_delta
+        if retained.subject in {"linked_account", "default_account"}
+        else None
+    )
+    if lifecycle_delta is not None:
+        lifecycle_shape_by_operation = {
+            "count": "fact_count",
+            "existence": "fact_bool",
+            "list": "surface_list",
+            "detail": "surface_detail",
+            "readiness": "fact_status",
+            "default_identity": "fact_value",
+        }
+        if lifecycle_delta.operation != "preserve":
+            updates["response_shape"] = lifecycle_shape_by_operation[lifecycle_delta.operation]
+            updates["offset"] = 0
+        if lifecycle_delta.bank_scope == "all":
+            updates["bank_name"] = None
+            updates["offset"] = 0
+            filter_delta_applied = True
+        elif lifecycle_delta.bank_scope == "named":
+            updates["bank_name"] = lifecycle_delta.bank_name
+            updates["offset"] = 0
+            filter_delta_applied = True
+
+    if (
+        not updates
+        and decision.set_scope_delta is None
+        and beneficiary_type_update is None
+        and lifecycle_delta is None
+    ):
+        return None
+
+    request = retained.model_copy(update=updates)
+    domain_by_subject = {
+        "balance": "account",
+        "linked_account": "account",
+        "default_account": "account",
+        "beneficiary": "beneficiary",
+        "schedule": "schedule",
+        "ticket": "support",
+        "receipt": "support",
+    }
+    domain = domain_by_subject.get(request.subject)
+    if domain is None:
+        return None
+    beneficiary_contract: BeneficiaryQueryContract | None = None
+    schedule_contract: ScheduleQueryContract | None = None
+    lifecycle_contract: AccountLifecycleContract | None = None
+    contract_key = {
+        "beneficiary": "beneficiary_contract",
+        "schedule": "schedule_contract",
+        "linked_account": "account_lifecycle_contract",
+        "default_account": "account_lifecycle_contract",
+    }.get(request.subject)
+    raw_contract = frame.metadata.get(contract_key) if contract_key else None
+    if contract_key is not None and not isinstance(raw_contract, dict):
+        return _expired_set_context_response(ctx, domain=domain)
+    try:
+        if request.subject == "beneficiary":
+            parsed_beneficiary_contract = BeneficiaryQueryContract.model_validate(raw_contract)
+            beneficiary_operation = {
+                "fact_bool": "existence",
+                "fact_count": "count",
+                "surface_list": "list",
+                "surface_paginated": "list",
+                "surface_detail": "detail",
+            }.get(request.response_shape, parsed_beneficiary_contract.operation)
+            beneficiary_contract = parsed_beneficiary_contract.model_copy(
+                update={
+                    "operation": beneficiary_operation,
+                    "response_shape": request.response_shape,
+                    "entity_name": request.entity_name,
+                    "bank_name": request.bank_name,
+                    "beneficiary_type": (
+                        beneficiary_type_update
+                        if beneficiary_type_update is not None
+                        else parsed_beneficiary_contract.beneficiary_type
+                    ),
+                    "scope": decision.set_scope_delta or parsed_beneficiary_contract.scope,
+                }
+            )
+        elif request.subject == "schedule":
+            parsed_schedule_contract = ScheduleQueryContract.model_validate(raw_contract)
+            schedule_contract = parsed_schedule_contract.model_copy(
+                update={
+                    "operation": (
+                        "list"
+                        if request.response_shape in {"surface_list", "surface_paginated"}
+                        else "detail"
+                        if request.response_shape == "surface_detail"
+                        else parsed_schedule_contract.operation
+                    ),
+                    "response_shape": request.response_shape,
+                    "statuses": [request.status] if request.status else [],
+                    "scope": decision.set_scope_delta or parsed_schedule_contract.scope,
+                }
+            )
+        elif request.subject in {"linked_account", "default_account"}:
+            parsed_lifecycle_contract = AccountLifecycleContract.model_validate(raw_contract)
+            lifecycle_operation_by_shape = {
+                "fact_bool": "existence",
+                "fact_count": "count",
+                "fact_status": "readiness",
+                "fact_value": "default_identity",
+                "surface_list": "list",
+                "surface_paginated": "list",
+                "surface_detail": "detail",
+            }
+            lifecycle_contract = parsed_lifecycle_contract.model_copy(
+                update={
+                    "operation": lifecycle_operation_by_shape.get(
+                        request.response_shape,
+                        parsed_lifecycle_contract.operation,
+                    ),
+                    "response_shape": request.response_shape,
+                    "bank_name": request.bank_name,
+                    "mandate_statuses": [request.status] if request.status else [],
+                    "scope": decision.set_scope_delta or parsed_lifecycle_contract.scope,
+                }
+            )
+    except ValueError:
+        return _expired_set_context_response(ctx, domain=domain)
+    logger.info(
+        "canonical_read_followup_resolved",
+        subject=request.subject,
+        response_shape=request.response_shape,
+        bank_filter_changed="bank_name" in updates,
+        bank_filter_source=(
+            "structured_filter"
+            if filters is not None and filters.bank
+            else "typed_target"
+            if "bank_name" in updates
+            else None
+        ),
+        status_filter_changed="status" in updates,
+        entity_filter_changed="entity_name" in updates,
+        page_action=decision.page_action,
+    )
+    task_id, spec = _build_direct_domain_task(
+        state_view=ctx.state_view,
+        domain=cast(Any, domain),
+        mode="continuation",
+        read_request=request,
+        beneficiary_contract=beneficiary_contract,
+        schedule_contract=schedule_contract,
+        account_lifecycle_contract=lifecycle_contract,
+    )
+    raw_set_state = frame.metadata.get("conversation_set_state")
+    if decision.set_scope_delta is not None:
+        if not isinstance(raw_set_state, dict):
+            return _expired_set_context_response(ctx, domain=domain)
+        try:
+            set_state = ConversationSetState.model_validate(raw_set_state)
+            visible_refs = list(set_state.last_result_refs)
+            resolved, unresolved = resolve_delta_references(
+                decision.set_scope_delta,
+                visible_refs=visible_refs,
+            )
+            selected = apply_set_scope(
+                set_state,
+                decision.set_scope_delta,
+                resolved_refs=resolved,
+                all_refs=visible_refs,
+            )
+            if unresolved or not selected:
+                return direct_response(
+                    ctx,
+                    response=render_message(
+                        "query.clarify.which_one",
+                        _current_locale(ctx.state_view),
+                        {"context_suffix": ""},
+                    ),
+                    owner="semantic_router",
+                    decision="conversation_set_clarification",
+                    target_domain=domain,
+                    mode="continuation",
+                    source="context_frame_followup",
+                    path_shape="conversation_set_clarification",
+                )
+            next_state = set_state.model_copy(
+                update={
+                    "focused_ref": selected[0] if len(selected) == 1 else None,
+                    "last_result_refs": selected,
+                    "operation": str(request.response_shape),
+                }
+            )
+            spec.payload["conversation_set_state"] = next_state.model_dump(mode="json", exclude_none=True)
+            spec.payload["selected_entity_ids"] = [ref.entity_id for ref in selected]
+            logger.info(
+                "conversation_set_scope_resolved",
+                domain=set_state.domain,
+                scope_operation=decision.set_scope_delta.operation,
+                selected_count=len(selected),
+                stale_count=0,
+            )
+        except ValueError:
+            return _expired_set_context_response(ctx, domain=domain)
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="semantic_router",
+        decision="canonical_read_followup",
+        path_shape="canonical_read_followup",
+        target_domain=domain,
+        mode="continuation",
+        source="context_frame_followup",
+    )
+
+
+def _balance_contract_followup_updates(
+    ctx: GateContext,
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+) -> RouteResolution | None:
+    raw_read = frame.metadata.get("read_request")
+    if not isinstance(raw_read, dict):
+        return None
+    try:
+        retained_read = ReadRequest.model_validate(raw_read)
+    except ValueError:
+        return None
+    if retained_read.subject != "balance":
+        return None
+
+    raw_contract = frame.metadata.get("balance_contract")
+    if not isinstance(raw_contract, dict):
+        return None
+    try:
+        contract = BalanceQueryContract.model_validate(raw_contract)
+    except ValueError:
+        return None
+
+    raw_state = frame.metadata.get("balance_conversation_state")
+    if not isinstance(raw_state, dict):
+        return None
+    try:
+        conversation = BalanceConversationState.model_validate(raw_state)
+    except ValueError:
+        return None
+
+    delta = decision.balance_delta
+    semantic_bank = decision.filters.bank if decision.filters is not None else None
+    if not semantic_bank and is_known_bank_alias(decision.target_text):
+        semantic_bank = display_bank_name(decision.target_text)
+    if semantic_bank:
+        operation = delta.operation if delta is not None else "value"
+        response_shape = delta.response_shape if delta is not None else "fact_value"
+        delta = BalanceFollowupDelta(
+            scope_operation="replace",
+            bank_names=[semantic_bank],
+            operation=operation,
+            response_shape=response_shape,
+        )
+    if delta is None:
+        return None
+
+    resolved = apply_balance_followup(contract, conversation, delta)
+    if resolved is None:
+        logger.info(
+            "balance_followup_scope_unresolved",
+            scope_operation=delta.scope_operation,
+            mentioned_count=len(conversation.mentioned_banks),
+            result_count=len(conversation.last_result_banks),
+        )
+        return direct_response(
+            ctx,
+            response=render_message("account.balance.scope_clarify", ctx.current_locale),
+            owner="semantic_router",
+            decision="balance_scope_clarification",
+            path_shape="balance_scope_clarification",
+            target_domain="account",
+            mode="continuation",
+            source="context_frame_followup",
+        )
+
+    shape = "fact_value" if resolved.operation in {"value", "total"} else "surface_list"
+    resolved = resolved.model_copy(update={"response_shape": shape})
+    bank_name = resolved.bank_names[0] if resolved.account_scope == "named" and len(resolved.bank_names) == 1 else None
+    request = retained_read.model_copy(update={"bank_name": bank_name, "response_shape": shape, "offset": 0})
+
+    mentioned = list(conversation.mentioned_banks)
+    for name in resolved.bank_names:
+        if name.casefold() not in {item.casefold() for item in mentioned}:
+            mentioned.append(name)
+    next_state = BalanceConversationState(
+        focused_bank=(resolved.bank_names[-1] if len(resolved.bank_names) == 1 else conversation.focused_bank),
+        mentioned_banks=mentioned,
+        last_result_banks=resolved.bank_names,
+        last_operation=resolved.operation,
+    )
+
+    task_id, spec = _build_direct_domain_task(
+        state_view=ctx.state_view,
+        domain="account",
+        mode="continuation",
+        read_request=request,
+        balance_contract=resolved,
+    )
+    spec.payload["balance_conversation_state"] = next_state.model_dump(mode="json", exclude_none=True)
+    logger.info(
+        "balance_followup_contract_resolved",
+        account_scope=resolved.account_scope,
+        operation=resolved.operation,
+        selected_count=len(resolved.bank_names),
+        mentioned_count=len(next_state.mentioned_banks),
+        scope_operation=delta.scope_operation,
+    )
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="semantic_router",
+        decision="balance_contract_followup",
+        path_shape="balance_contract_followup",
+        target_domain="account",
+        mode="continuation",
+        source="context_frame_followup",
+    )
 
 
 def _is_query_surface_frame(frame: ContextFrame) -> bool:
     source = str(frame.metadata.get("source") or "").strip()
     return source == "query" or frame.frame_id.startswith("query_surface_")
-
-
-def _latest_completed_read_only_account_task(ctx: GateContext) -> TaskSpec | None:
-    for task in reversed(list(ctx.state_view.tasks.values())):
-        if task.type != "account" or task.stage != TaskStage.COMPLETED:
-            continue
-        action = str(task.payload.get("action") or "").strip()
-        if action in {"check_balance", "balance", "show_balance", "overall_balance"}:
-            return task
-    return None
 
 
 def _read_only_refresh_updates(ctx: GateContext, frame: ContextFrame | None) -> RouteResolution | None:
@@ -286,9 +901,7 @@ def _data_plan_redisplay_updates(ctx: GateContext) -> RouteResolution | None:
 
 
 def _context_frame_followup_eligible(ctx: GateContext) -> bool:
-    return (
-        not ctx.live_pending_interrupt and not ctx.state_view.has_gate_blocking_state and ctx.task_planner is not None
-    )
+    return not ctx.live_pending_interrupt and not ctx.state_view.has_gate_blocking_state
 
 
 def _is_contextual_casual_continuation(ctx: GateContext) -> bool:
@@ -452,8 +1065,44 @@ async def _stage_context_frame_followup(ctx: GateContext) -> RouteResolution | N
         )
         return None
 
-    display_followup = _display_shortcut_followup(ctx)
-    if display_followup:
+    if _looks_like_context_frame_display_request(ctx.message_text):
+        balance_display = _balance_contract_followup_updates(
+            ctx,
+            frame,
+            ContextFrameFollowupDecision(
+                decision="show_details",
+                confidence=0.92,
+                detected_language=ctx.current_locale,
+                balance_delta=BalanceFollowupDelta(
+                    scope_operation="last_result",
+                    operation="breakdown",
+                    response_shape="surface_list",
+                ),
+                reason="typed balance display continuation",
+            ),
+        )
+        if balance_display is not None:
+            return balance_display
+        read_followup = _read_contract_followup_updates(
+            ctx,
+            frame,
+            ContextFrameFollowupDecision(
+                decision="show_details",
+                confidence=0.92,
+                detected_language=ctx.current_locale,
+                reason="short canonical read display request",
+            ),
+        )
+        if read_followup is not None:
+            logger.info(
+                "gate_context_frame_display_shortcut_rerouted_to_read_contract",
+                frame_type=frame.frame_type.value,
+                item_count=len(frame.items),
+            )
+            return read_followup
+        display_followup = _display_shortcut_followup(ctx)
+        if display_followup is None:
+            return None
         logger.info(
             "gate_context_frame_display_shortcut_hit",
             frame_type=frame.frame_type.value,
@@ -465,6 +1114,21 @@ async def _stage_context_frame_followup(ctx: GateContext) -> RouteResolution | N
     if resolved is None:
         return None
     decision, frame_followup = resolved
+    balance_followup = _balance_contract_followup_updates(ctx, frame, decision)
+    if balance_followup is not None:
+        return balance_followup
+    read_followup = _read_contract_followup_updates(ctx, frame, decision)
+    if read_followup is not None:
+        return read_followup
+    raw_retained_read = frame.metadata.get("read_request")
+    retained_subject = raw_retained_read.get("subject") if isinstance(raw_retained_read, dict) else None
+    if decision.read_subject is not None and decision.read_subject != retained_subject:
+        logger.info(
+            "gate_context_frame_followup_released_for_read_subject_pivot",
+            retained_subject=retained_subject,
+            requested_subject=decision.read_subject,
+        )
+        return None
     logger.info(
         "gate_context_frame_followup_decision",
         decision=decision.decision,

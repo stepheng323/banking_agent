@@ -17,6 +17,16 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
     context_frames_after_surface_answer,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
+from shared.types.balance import BalanceFollowupDelta, BalanceOperation
+from shared.types.conversation_sets import (
+    AccountLifecycleContract,
+    AccountLifecycleFollowupDelta,
+    BeneficiaryFollowupDelta,
+    BeneficiaryQueryContract,
+    ConversationSetState,
+    EntitySelectionRef,
+    ScheduleQueryContract,
+)
 from shared.types.planner import (
     ContextFrameFollowupDecision,
     ContextFrameFollowupFilters,
@@ -25,6 +35,7 @@ from shared.types.planner import (
     TransferTaskParameters,
     make_planned_task,
 )
+from shared.types.read import ReadRequest
 from tests.orchestrator.routing_fixtures import finalize_test_directive
 
 
@@ -1087,6 +1098,19 @@ async def test_account_surface_followup_rescues_status_question_misclassified_as
 
 @pytest.mark.asyncio
 async def test_account_surface_fetch_again_refetches_account_list_without_semantic_interpreter() -> None:
+    account_refs = [
+        EntitySelectionRef(
+            entity_type="linked_account",
+            entity_id=entity_id,
+            frame_id="accounts_recent_refetch",
+            display_label=label,
+            version_token="2026-07-17T07:00:00",
+        )
+        for entity_id, label in (
+            ("acct-first", "First Bank (...0001)"),
+            ("acct-gtb", "GTBank (...0002)"),
+        )
+    ]
     frame = ContextFrame(
         frame_id="accounts_recent_refetch",
         frame_type=ContextFrameType.ACCOUNT_LIST,
@@ -1106,6 +1130,17 @@ async def test_account_surface_fetch_again_refetches_account_list_without_semant
         ],
         created_at_ts=int(time.time()),
         ttl_seconds=600,
+        metadata={
+            "read_request": ReadRequest(
+                subject="linked_account", response_shape="surface_list"
+            ).model_dump(mode="json"),
+            "account_lifecycle_contract": AccountLifecycleContract().model_dump(mode="json"),
+            "conversation_set_state": ConversationSetState(
+                domain="linked_account",
+                mentioned_refs=account_refs,
+                last_result_refs=account_refs,
+            ).model_dump(mode="json"),
+        },
     )
     planner = _SurfaceFollowupPlanner(
         ContextFrameFollowupDecision(
@@ -1133,7 +1168,668 @@ async def test_account_surface_fetch_again_refetches_account_list_without_semant
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
     assert task.payload["action"] == "list_accounts"
-    assert task.payload["response_shape"] == "surface_list"
+    assert task.payload["read_request"]["subject"] == "linked_account"
+    assert task.payload["read_request"]["response_shape"] == "surface_list"
+
+
+@pytest.mark.asyncio
+async def test_account_count_show_them_reruns_typed_list_without_interpreter() -> None:
+    frame = ContextFrame(
+        frame_id="linked_account_count_fact",
+        frame_type=ContextFrameType.GENERIC,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="read_linked_account_count",
+                label="linked_account fact_count (3)",
+                data={"read_summary": True},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={
+            "read_request": ReadRequest(
+                subject="linked_account", response_shape="fact_count"
+            ).model_dump(mode="json"),
+            "account_lifecycle_contract": AccountLifecycleContract(
+                operation="count", response_shape="fact_count"
+            ).model_dump(mode="json"),
+            "total_count": 3,
+            "has_next": False,
+            "has_previous": False,
+        },
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="unclear",
+            confidence=0.0,
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_linked_account_count_show_them",
+        phone_number="23480000000301",
+        channel="telegram",
+        last_message_text="Show them",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    assert planner.last_frame_context is None
+    assert updates["turn_directive"].path_shape == "canonical_read_followup"
+    task = updates["tasks"]["direct_account"]
+    assert task.payload["action"] == "list_accounts"
+    assert task.payload["read_request"]["response_shape"] == "surface_list"
+    assert task.payload["account_lifecycle_contract"]["operation"] == "list"
+
+
+@pytest.mark.asyncio
+async def test_linked_account_existence_followup_can_clear_bank_filter_for_full_list() -> None:
+    frame = ContextFrame(
+        frame_id="opay_linked_account_fact",
+        frame_type=ContextFrameType.GENERIC,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="read_linked_account_opay",
+                label="linked_account fact_bool (0)",
+                data={"read_summary": True},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={
+            "read_request": ReadRequest(
+                subject="linked_account",
+                response_shape="fact_bool",
+                bank_name="Opay",
+            ).model_dump(mode="json"),
+            "account_lifecycle_contract": AccountLifecycleContract(
+                operation="existence",
+                response_shape="fact_bool",
+                bank_name="Opay",
+            ).model_dump(mode="json"),
+            "total_count": 0,
+            "has_next": False,
+            "has_previous": False,
+        },
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.96,
+            read_subject="linked_account",
+            account_lifecycle_delta=AccountLifecycleFollowupDelta(
+                operation="list",
+                bank_scope="all",
+            ),
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_linked_account_filter_clear",
+        phone_number="23480000000305",
+        channel="telegram",
+        last_message_text="Which are linked?",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    assert updates["turn_directive"].path_shape == "canonical_read_followup"
+    task = updates["tasks"]["direct_account"]
+    assert task.payload["action"] == "list_accounts"
+    assert task.payload["read_request"] == {
+        "subject": "linked_account",
+        "response_shape": "surface_list",
+        "offset": 0,
+        "page_size": 5,
+    }
+    assert task.payload["account_lifecycle_contract"]["operation"] == "list"
+    assert "bank_name" not in task.payload["account_lifecycle_contract"]
+
+
+@pytest.mark.asyncio
+async def test_beneficiary_count_named_membership_followup_becomes_filtered_existence_read() -> None:
+    frame = ContextFrame(
+        frame_id="beneficiary_count_fact",
+        frame_type=ContextFrameType.GENERIC,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="read_beneficiary_count",
+                label="beneficiary fact_count (3)",
+                data={"read_summary": True},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={
+            "read_request": ReadRequest(
+                subject="beneficiary", response_shape="fact_count"
+            ).model_dump(mode="json"),
+            "beneficiary_contract": BeneficiaryQueryContract(
+                operation="count", response_shape="fact_count"
+            ).model_dump(mode="json"),
+            "total_count": 3,
+            "has_next": False,
+            "has_previous": False,
+        },
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="lookup_entity",
+            confidence=0.96,
+            target_text="Mum",
+            beneficiary_delta=BeneficiaryFollowupDelta(
+                operation="existence",
+                entity_name="Mum",
+            ),
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_beneficiary_count_membership",
+        phone_number="23480000000302",
+        channel="telegram",
+        last_message_text="Do I have mum as beneficiary?",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    assert planner.last_frame_context is not None
+    assert "subject=beneficiary" in planner.last_frame_context
+    assert updates["turn_directive"].path_shape == "canonical_read_followup"
+    task = updates["tasks"]["direct_beneficiary"]
+    assert task.payload["read_request"] == {
+        "subject": "beneficiary",
+        "response_shape": "fact_bool",
+        "entity_name": "Mum",
+        "offset": 0,
+        "page_size": 5,
+    }
+    assert task.payload["beneficiary_contract"]["operation"] == "existence"
+    assert task.payload["beneficiary_contract"]["entity_name"] == "Mum"
+
+
+@pytest.mark.asyncio
+async def test_beneficiary_frame_linked_account_question_dispatches_typed_account_pivot() -> None:
+    frame = ContextFrame(
+        frame_id="beneficiary_tolu_list",
+        frame_type=ContextFrameType.BENEFICIARY_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.BENEFICIARY,
+                entity_id="bene-tolu",
+                label="Tolu Access · Access Bank · ···0001",
+                data={"bank": "Access Bank", "account_last4": "0001"},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={
+            "read_request": ReadRequest(
+                subject="beneficiary",
+                response_shape="surface_list",
+                entity_name="Tolu",
+            ).model_dump(mode="json"),
+            "beneficiary_contract": BeneficiaryQueryContract(
+                operation="list",
+                response_shape="surface_list",
+                entity_name="Tolu",
+            ).model_dump(mode="json"),
+        },
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="start_new_task",
+            confidence=0.97,
+            read_subject="linked_account",
+            read_response_shape="fact_bool",
+            filters=ContextFrameFollowupFilters(bank="Opay"),
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_beneficiary_to_linked_account_pivot",
+        phone_number="23480000000303",
+        channel="telegram",
+        last_message_text="Have I linked my opay account?",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    assert planner.plan_calls == 0
+    assert updates["turn_directive"].path_shape == "canonical_read_subject_pivot"
+    assert "final_response" not in updates
+    task = updates["tasks"]["direct_account"]
+    assert task.payload["action"] == "count"
+    assert task.payload["read_request"] == {
+        "subject": "linked_account",
+        "response_shape": "fact_bool",
+        "bank_name": "Opay",
+        "offset": 0,
+        "page_size": 5,
+    }
+    assert task.payload["account_lifecycle_contract"]["operation"] == "existence"
+    assert task.payload["account_lifecycle_contract"]["bank_name"] == "Opay"
+
+
+@pytest.mark.asyncio
+async def test_incomplete_read_subject_pivot_never_falls_back_to_old_beneficiary_frame() -> None:
+    frame = ContextFrame(
+        frame_id="beneficiary_fact",
+        frame_type=ContextFrameType.GENERIC,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="beneficiary_fact_item",
+                label="beneficiary fact_bool (1)",
+                data={"read_summary": True},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={
+            "read_request": ReadRequest(
+                subject="beneficiary", response_shape="fact_bool", entity_name="Tolu"
+            ).model_dump(mode="json"),
+            "beneficiary_contract": BeneficiaryQueryContract(
+                operation="existence", response_shape="fact_bool", entity_name="Tolu"
+            ).model_dump(mode="json"),
+        },
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="start_new_task",
+            confidence=0.8,
+            read_subject="linked_account",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_incomplete_read_subject_pivot",
+        phone_number="23480000000304",
+        channel="telegram",
+        last_message_text="Check a linked account",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is None
+
+
+@pytest.mark.asyncio
+async def test_balance_fact_same_bank_followup_reaffirms_value_instead_of_showing_generic_detail() -> None:
+    frame = ContextFrame(
+        frame_id="access_balance_fact",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-access",
+                label="Access Bank (...0003)",
+                data={
+                    "bank_name": "Access Bank",
+                    "account_number": "6000000003",
+                    "amount": "30000.00",
+                    "currency": "NGN",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={
+            "read_request": {
+                "subject": "balance",
+                "response_shape": "fact_value",
+                "bank_name": "Access Bank",
+                "offset": 0,
+                "page_size": 5,
+            },
+            "balance_contract": {
+                "account_scope": "named",
+                "bank_names": ["Access Bank"],
+                "operation": "value",
+                "response_shape": "fact_value",
+            },
+            "balance_conversation_state": {
+                "focused_bank": "Access Bank",
+                "mentioned_banks": ["Access Bank"],
+                "last_result_banks": ["Access Bank"],
+                "last_operation": "value",
+            },
+            "total_count": 1,
+            "has_next": False,
+            "has_previous": False,
+        },
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.95,
+            target_text="Access",
+            filters=ContextFrameFollowupFilters(bank="Access Bank"),
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_access_balance_followup",
+        phone_number="2348000000099",
+        channel="whatsapp",
+        last_message_text="What of access?",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    assert "final_response" not in updates
+    assert updates["turn_directive"].path_shape == "balance_contract_followup"
+    task = updates["tasks"]["direct_account"]
+    assert task.payload["action"] == "check_balance"
+    assert task.payload["read_request"] == {
+        "subject": "balance",
+        "response_shape": "fact_value",
+        "bank_name": "Access Bank",
+        "offset": 0,
+        "page_size": 5,
+    }
+
+
+@pytest.mark.asyncio
+async def test_balance_fact_bank_contrast_preserves_value_shape_and_changes_bank() -> None:
+    frame = ContextFrame(
+        frame_id="access_balance_fact",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-access",
+                label="Access Bank (...0003)",
+                data={
+                    "bank_name": "Access Bank",
+                    "account_number": "6000000003",
+                    "amount": "30000.00",
+                    "currency": "NGN",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={
+            "read_request": {
+                "subject": "balance",
+                "response_shape": "fact_value",
+                "bank_name": "Access Bank",
+                "offset": 0,
+                "page_size": 5,
+            },
+            "balance_contract": {
+                "account_scope": "named",
+                "bank_names": ["Access Bank"],
+                "operation": "value",
+                "response_shape": "fact_value",
+            },
+            "balance_conversation_state": {
+                "focused_bank": "Access Bank",
+                "mentioned_banks": ["Access Bank"],
+                "last_result_banks": ["Access Bank"],
+                "last_operation": "value",
+            },
+            "total_count": 1,
+            "has_next": False,
+            "has_previous": False,
+        },
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.96,
+            target_text="GTB",
+            filters=ContextFrameFollowupFilters(bank="GTBank"),
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gtb_balance_followup",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        last_message_text="What about my GTB account?",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    assert "final_response" not in updates
+    assert updates["turn_directive"].path_shape == "balance_contract_followup"
+    task = updates["tasks"]["direct_account"]
+    assert task.payload["action"] == "check_balance"
+    assert task.payload["identifier"] == "GTBank"
+    assert task.payload["skip_parse"] is True
+    assert task.payload["read_request"] == {
+        "subject": "balance",
+        "response_shape": "fact_value",
+        "bank_name": "GTBank",
+        "offset": 0,
+        "page_size": 5,
+    }
+    assert task.payload["balance_conversation_state"]["mentioned_banks"] == ["Access Bank", "GTBank"]
+
+
+@pytest.mark.asyncio
+async def test_balance_fact_promotes_typed_bank_lookup_target_when_filter_is_omitted() -> None:
+    frame = ContextFrame(
+        frame_id="access_balance_fact",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-access",
+                label="Access Bank (...0003)",
+                data={"bank_name": "Access Bank", "account_number": "6000000003"},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={
+            "read_request": {
+                "subject": "balance",
+                "response_shape": "fact_value",
+                "bank_name": "Access Bank",
+                "offset": 0,
+                "page_size": 5,
+            },
+            "balance_contract": {
+                "account_scope": "named",
+                "bank_names": ["Access Bank"],
+                "operation": "value",
+                "response_shape": "fact_value",
+            },
+            "balance_conversation_state": {
+                "focused_bank": "Access Bank",
+                "mentioned_banks": ["Access Bank"],
+                "last_result_banks": ["Access Bank"],
+                "last_operation": "value",
+            },
+            "total_count": 1,
+            "has_next": False,
+            "has_previous": False,
+        },
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="lookup_entity",
+            confidence=0.91,
+            target_text="GTB",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gtb_balance_lookup_followup",
+        phone_number="2348000000101",
+        channel="whatsapp",
+        last_message_text="What of gtb",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    assert "final_response" not in updates
+    assert updates["turn_directive"].path_shape == "balance_contract_followup"
+    task = updates["tasks"]["direct_account"]
+    assert task.payload["action"] == "check_balance"
+    assert task.payload["identifier"] == "GTBank"
+    assert task.payload["read_request"]["response_shape"] == "fact_value"
+    assert task.payload["read_request"]["bank_name"] == "GTBank"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "response_shape"),
+    [("total", "fact_value"), ("compare", "surface_list")],
+)
+async def test_balance_followup_operates_on_every_mentioned_account(
+    operation: str,
+    response_shape: str,
+) -> None:
+    frame = ContextFrame(
+        frame_id="gtb_balance_fact",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-gtb",
+                label="GTBank (...0002)",
+                data={"bank_name": "GTBank", "account_number": "7000000002"},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={
+            "read_request": {
+                "subject": "balance",
+                "response_shape": "fact_value",
+                "bank_name": "GTBank",
+                "offset": 0,
+                "page_size": 5,
+            },
+            "balance_contract": {
+                "account_scope": "named",
+                "bank_names": ["GTBank"],
+                "operation": "value",
+                "response_shape": "fact_value",
+            },
+            "balance_conversation_state": {
+                "focused_bank": "GTBank",
+                "mentioned_banks": ["Access Bank", "GTBank", "First Bank"],
+                "last_result_banks": ["GTBank"],
+                "last_operation": "value",
+            },
+            "total_count": 1,
+            "has_next": False,
+            "has_previous": False,
+        },
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.96,
+            balance_delta=BalanceFollowupDelta(
+                scope_operation="mentioned",
+                operation=cast(BalanceOperation, operation),
+            ),
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_multi_balance_followup",
+        phone_number="2348000000102",
+        channel="whatsapp",
+        last_message_text="Use all the accounts we discussed",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    assert "final_response" not in updates
+    assert updates["turn_directive"].path_shape == "balance_contract_followup"
+    task = updates["tasks"]["direct_account"]
+    assert task.payload["action"] == "check_balance"
+    assert task.payload["identifiers"] == ["Access Bank", "GTBank", "First Bank"]
+    assert task.payload["read_request"]["response_shape"] == response_shape
+    assert task.payload["balance_contract"] == {
+        "account_scope": "named",
+        "bank_names": ["Access Bank", "GTBank", "First Bank"],
+        "operation": operation,
+        "response_shape": response_shape,
+    }
+
+
+@pytest.mark.asyncio
+async def test_balance_followup_clarifies_when_contextual_account_set_is_not_grounded() -> None:
+    frame = ContextFrame(
+        frame_id="gtb_balance_fact",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-gtb",
+                label="GTBank (...0002)",
+                data={"bank_name": "GTBank", "account_number": "7000000002"},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={
+            "read_request": {"subject": "balance", "response_shape": "fact_value", "bank_name": "GTBank"},
+            "balance_contract": {
+                "account_scope": "named",
+                "bank_names": ["GTBank"],
+                "operation": "value",
+                "response_shape": "fact_value",
+            },
+            "balance_conversation_state": {
+                "focused_bank": "GTBank",
+                "mentioned_banks": ["GTBank"],
+                "last_result_banks": ["GTBank"],
+                "last_operation": "value",
+            },
+        },
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.91,
+            balance_delta=BalanceFollowupDelta(scope_operation="recent_two", operation="total"),
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_balance_scope_clarify",
+        phone_number="2348000000103",
+        channel="whatsapp",
+        last_message_text="What is their total?",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    assert updates["turn_directive"].path_shape == "balance_scope_clarification"
+    assert updates["final_response"] == "Which accounts should I use for that balance request?"
+    assert "tasks" not in updates
 
 
 @pytest.mark.asyncio
@@ -1188,7 +1884,19 @@ async def test_account_balance_fetch_again_reruns_balance_not_account_list() -> 
         ],
         created_at_ts=int(time.time()),
         ttl_seconds=600,
-        metadata={"source_domain": "account", "source_action": "check_balance"},
+        metadata={
+            "source_domain": "account",
+            "source_action": "check_balance",
+            "read_request": ReadRequest(
+                subject="balance", response_shape="fact_value", bank_name="Access Bank"
+            ).model_dump(mode="json"),
+            "balance_contract": {
+                "account_scope": "named",
+                "bank_names": ["Access Bank"],
+                "operation": "value",
+                "response_shape": "fact_value",
+            },
+        },
     )
     planner = _SurfaceFollowupPlanner(
         ContextFrameFollowupDecision(decision="unclear", confidence=0.0, detected_language="English")
@@ -1211,7 +1919,7 @@ async def test_account_balance_fetch_again_reruns_balance_not_account_list() -> 
 
 
 @pytest.mark.asyncio
-async def test_account_balance_fetch_again_falls_back_to_latest_completed_account_task() -> None:
+async def test_account_balance_refresh_does_not_reconstruct_contract_from_completed_task() -> None:
     planner = _SurfaceFollowupPlanner(
         ContextFrameFollowupDecision(decision="unclear", confidence=0.0, detected_language="English")
     )
@@ -1232,14 +1940,18 @@ async def test_account_balance_fetch_again_falls_back_to_latest_completed_accoun
 
     updates = await _run_context_frame_gate_stage(state, planner)
 
-    assert updates is not None
-    task = updates["tasks"]["direct_account"]
-    assert task.type == "account"
-    assert task.payload["action"] == "check_balance"
+    assert updates is None
 
 
 @pytest.mark.asyncio
 async def test_beneficiary_surface_refresh_refetches_beneficiary_list() -> None:
+    beneficiary_ref = EntitySelectionRef(
+        entity_type="beneficiary",
+        entity_id="ben-tolu",
+        frame_id="beneficiaries_recent_refetch",
+        display_label="Tolu Adebayo",
+        version_token="2026-07-17T07:00:00",
+    )
     frame = ContextFrame(
         frame_id="beneficiaries_recent_refetch",
         frame_type=ContextFrameType.BENEFICIARY_LIST,
@@ -1253,6 +1965,17 @@ async def test_beneficiary_surface_refresh_refetches_beneficiary_list() -> None:
         ],
         created_at_ts=int(time.time()),
         ttl_seconds=600,
+        metadata={
+            "read_request": ReadRequest(
+                subject="beneficiary", response_shape="surface_list"
+            ).model_dump(mode="json"),
+            "beneficiary_contract": BeneficiaryQueryContract().model_dump(mode="json"),
+            "conversation_set_state": ConversationSetState(
+                domain="beneficiary",
+                mentioned_refs=[beneficiary_ref],
+                last_result_refs=[beneficiary_ref],
+            ).model_dump(mode="json"),
+        },
     )
     planner = _SurfaceFollowupPlanner(
         ContextFrameFollowupDecision(decision="unclear", confidence=0.0, detected_language="English")
@@ -1272,11 +1995,19 @@ async def test_beneficiary_surface_refresh_refetches_beneficiary_list() -> None:
     assert task.type == "beneficiary"
     assert task.payload["action"] == "list_beneficiaries"
     assert task.payload["intent"] == "list_beneficiaries"
-    assert task.payload["response_shape"] == "surface_list"
+    assert task.payload["read_request"]["subject"] == "beneficiary"
+    assert task.payload["read_request"]["response_shape"] == "surface_list"
 
 
 @pytest.mark.asyncio
 async def test_schedule_surface_check_again_refetches_schedule_list() -> None:
+    schedule_ref = EntitySelectionRef(
+        entity_type="schedule",
+        entity_id="sched-1",
+        frame_id="schedule_recent_refetch",
+        display_label="Weekly transfer to Mum",
+        version_token="2026-07-17T07:00:00",
+    )
     frame = ContextFrame(
         frame_id="schedule_recent_refetch",
         frame_type=ContextFrameType.SCHEDULE_LIST,
@@ -1290,6 +2021,17 @@ async def test_schedule_surface_check_again_refetches_schedule_list() -> None:
         ],
         created_at_ts=int(time.time()),
         ttl_seconds=600,
+        metadata={
+            "read_request": ReadRequest(subject="schedule", response_shape="surface_list").model_dump(
+                mode="json"
+            ),
+            "schedule_contract": ScheduleQueryContract().model_dump(mode="json"),
+            "conversation_set_state": ConversationSetState(
+                domain="schedule",
+                mentioned_refs=[schedule_ref],
+                last_result_refs=[schedule_ref],
+            ).model_dump(mode="json"),
+        },
     )
     planner = _SurfaceFollowupPlanner(
         ContextFrameFollowupDecision(decision="unclear", confidence=0.0, detected_language="English")
@@ -1308,8 +2050,9 @@ async def test_schedule_surface_check_again_refetches_schedule_list() -> None:
     task = updates["tasks"]["direct_schedule"]
     assert task.type == "schedule"
     assert task.payload["action"] == "list_scheduled_transactions"
-    assert task.payload["schedule_response_mode"] == "list"
-    assert task.payload["response_shape"] == "surface_list"
+    assert task.payload["read_request"]["subject"] == "schedule"
+    assert task.payload["read_request"]["response_shape"] == "surface_list"
+    assert "schedule_response_mode" not in task.payload
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ class EntityType(str, Enum):
     BENEFICIARY = "beneficiary"
     TRANSACTION = "transaction"
     ACCOUNT = "account"
+    SCHEDULE = "schedule"
     DATA_PLAN = "data_plan"
     SUPPORT_TICKET = "support_ticket"
     GENERIC = "generic"

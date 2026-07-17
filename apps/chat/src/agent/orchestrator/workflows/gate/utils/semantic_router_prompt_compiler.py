@@ -9,7 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_
     TurnContextSummary,
 )
 
-_PROMPT_VERSION = "v2"
+_PROMPT_VERSION = "v3"
 
 _BASE = """You route one multilingual turn for a Nigerian banking assistant. Interpret meaning across English,
 Pidgin, Yoruba, Hausa, Igbo, French, and mixed wording; do not depend on exact phrases.
@@ -43,6 +43,23 @@ PDF/CSV export, and all-time history use capability.unsupported_unavailable plus
 go to their domain. If grounding is insufficient, use planner_ambiguous.
 7. Explicit replacement banking commands route to their true domain even when older context exists. Preserve mode=new.
 8. Set detected language when clear. If uncertain, use planner_ambiguous with empty execs.
+
+Read contract rules:
+- For every supported read, emit read_subject, response_shape, and only explicit entity_name/bank_name/status/reference
+filters. Never emit read fields for a mutation.
+- Shapes: count=fact_count, existence=yes/no=fact_bool, one scalar or identity=fact_value,
+  readiness/state=fact_status, collection=surface_list, one entity=surface_detail, receipt=surface_actionable.
+- Preserve only explicit filters: beneficiary/person -> entity_name; linked bank -> bank_name; state -> status;
+  ticket/transaction code -> reference. Do not infer a missing filter.
+- A question about whether a specifically named person or alias is a saved beneficiary is beneficiary/fact_bool with
+  that name as entity_name. It is an existence read, not an unfiltered beneficiary count.
+- Account-linkage membership questions are linked_account/fact_bool with an explicit bank in bank_name. Never inherit
+  beneficiary subject or beneficiary filters merely because the preceding read displayed beneficiaries.
+- Examples: "How many Tolu beneficiaries" -> beneficiary/fact_count/entity_name=Tolu;
+  "How much is in Access" -> balance/fact_value/bank_name=Access;
+  "Do I have pending schedules" -> schedule/fact_bool/status=pending.
+- Specialized balance, beneficiary, schedule, and linked-account worker contracts are derived deterministically from
+  these canonical read fields. Do not emit records, IDs, balances, or mutation targets.
 
 Compact examples: "show my credits this month" -> domain_query; "what is my balance" -> domain_account;
 "send 5k to Mum" -> domain_transfer; "buy 2k airtime" -> domain_airtime; "buy 1GB data" -> domain_data;

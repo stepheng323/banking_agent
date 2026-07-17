@@ -23,6 +23,12 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
 )
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.support.classifier import classify_support_intent_deterministic
+from shared.types.balance import initial_balance_contract
+from shared.types.conversation_sets import (
+    AccountLifecycleContract,
+    AccountLifecycleOperation,
+    ScheduleQueryContract,
+)
 from shared.types.planner import (
     InterruptRouteDecision,
     PlannerTaskParameters,
@@ -30,6 +36,7 @@ from shared.types.planner import (
     dump_task_parameters,
     make_planned_task,
 )
+from shared.types.read import ReadRequest
 
 _SCHEDULE_ACTION_ALIASES = {
     "cancel_scheduled_transfer": "cancel_scheduled_transaction",
@@ -171,13 +178,53 @@ def _build_direct_non_transaction_switch_tasks(
     target_intent: str,
     route: InterruptRouteDecision,
 ) -> tuple[dict[str, TaskSpec], list[list[str]], set[str]]:
+    if target_intent == "account" and route.account_read is not None:
+        read_request = route.account_read
+        balance_contract = None
+        lifecycle_contract = None
+        if read_request.subject == "balance":
+            balance_contract = initial_balance_contract(
+                bank_name=read_request.bank_name,
+                response_shape=read_request.response_shape,
+            )
+        elif read_request.subject in {"linked_account", "default_account"}:
+            lifecycle_operation: AccountLifecycleOperation = (
+                "default_identity" if read_request.subject == "default_account" else "list"
+            )
+            if read_request.subject == "linked_account":
+                if read_request.response_shape == "fact_bool":
+                    lifecycle_operation = "existence"
+                elif read_request.response_shape == "fact_count":
+                    lifecycle_operation = "count"
+                elif read_request.response_shape == "fact_status":
+                    lifecycle_operation = "readiness"
+                elif read_request.response_shape == "surface_detail":
+                    lifecycle_operation = "detail"
+            lifecycle_contract = AccountLifecycleContract(
+                operation=lifecycle_operation,
+                response_shape=read_request.response_shape,
+                bank_name=read_request.bank_name,
+                mandate_statuses=[read_request.status] if read_request.status else [],
+            )
+        task_id, task = _build_direct_domain_task(
+            state_view=cast(Any, interrupt_state_view(state)),
+            domain="account",
+            mode="new",
+            message_text=text,
+            read_request=read_request,
+            balance_contract=balance_contract,
+            account_lifecycle_contract=lifecycle_contract,
+        )
+        return {task_id: task}, [[task_id]], {target_intent}
+
     if target_intent == "schedule":
         task_id, task = _build_direct_domain_task(
             state_view=cast(Any, interrupt_state_view(state)),
             domain="schedule",
             mode=route.target_mode,
-            schedule_response_mode="list",
             message_text=text,
+            read_request=ReadRequest(subject="schedule", response_shape="surface_list"),
+            schedule_contract=ScheduleQueryContract(),
         )
         return {task_id: task}, [[task_id]], {target_intent}
 
@@ -194,6 +241,8 @@ def _build_direct_non_transaction_switch_tasks(
         deterministic = classify_support_intent_deterministic(text)
         if deterministic is not None and deterministic.intent is not None and deterministic.confidence >= 0.85:
             payload["intent"] = deterministic.intent.value
+    elif target_intent == "account" and route.account_action not in {None, "none", "unknown"}:
+        payload["action"] = route.account_action
 
     task = TaskSpec(
         id=task_id,

@@ -72,8 +72,11 @@ def _build_system_prompt(prompt_input: ConversationResponderPromptInput) -> str:
             "Rules:\n"
             "- Match the user's energy lightly while staying professional.\n"
             "- Acknowledge briefly and invite a banking task naturally.\n"
+            "- A fresh opener starts a fresh topic. Do not revive a prior refusal or unsupported request.\n"
             "- No markdown, no emojis.\n"
         )
+        if prompt_input.casual_streak > 0:
+            system += "- Do not repeat the same banking suggestions or task menu from recent social replies.\n"
     elif prompt_input.mode == ConversationResponseMode.CLARIFY:
         system += (
             "The user's message is ambiguous, unclear, or lacks an actionable instruction.\n"

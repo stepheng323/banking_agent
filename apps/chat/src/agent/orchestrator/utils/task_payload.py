@@ -16,10 +16,9 @@ from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import (
     infer_schedule_action_from_text,
 )
 from apps.chat.src.agent.orchestrator.utils.waves import build_dependency_waves
-from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.read_only_response import (
-    classify_read_only_response_shape,
-)
+from shared.types.balance import BalanceConversationState, BalanceQueryContract
 from shared.types.planner import BaseTaskParameters, dump_task_parameters
+from shared.types.read import normalize_read_request
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_nigerian_phone
 from shared.utils.sanitize import normalize_bank_account_number
@@ -401,10 +400,21 @@ def build_task_spec_from_plan_item(
     format_narration_requires_recipient_field: bool,
 ) -> TaskSpec:
     payload = _dump_plan_parameters(plan_item.parameters)
-    if not payload.get("response_shape"):
-        response_shape = classify_read_only_response_shape(fallback_message or plan_item.instruction or "")
-        if response_shape:
-            payload["response_shape"] = response_shape
+    normalized_read = normalize_read_request(payload)
+    if normalized_read is not None:
+        payload["read_request"] = normalized_read.model_dump(mode="json", exclude_none=True)
+        if normalized_read.subject == "balance":
+            raw_balance_contract = payload.get("balance_contract")
+            if not isinstance(raw_balance_contract, dict):
+                raise ValueError("balance read task is missing balance_contract")
+            balance_contract = BalanceQueryContract.model_validate(raw_balance_contract)
+            payload["balance_contract"] = balance_contract.model_dump(mode="json", exclude_none=True)
+            payload["balance_conversation_state"] = BalanceConversationState(
+                focused_bank=(balance_contract.bank_names[0] if len(balance_contract.bank_names) == 1 else None),
+                mentioned_banks=balance_contract.bank_names,
+                last_result_banks=balance_contract.bank_names,
+                last_operation=balance_contract.operation,
+            ).model_dump(mode="json", exclude_none=True)
 
     if plan_item.action:
         if preserve_existing_action_instruction:

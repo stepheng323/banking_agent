@@ -65,7 +65,9 @@ def _build_missing_field_interrupt_updates(
 
     fallback_options_entry: dict[str, Any] | None = None
     fallback_queue_meta: dict[str, Any] | None = None
+    interrupt_metadata: dict[str, Any] = {}
     if task_id := agg.single_input_task_id():
+        interrupt_metadata = agg.input_interrupt_metadata_for(task_id)
         queued_tasks = _queued_transaction_tasks_for_focus(
             state=state,
             current_wave=current_wave,
@@ -99,6 +101,7 @@ def _build_missing_field_interrupt_updates(
         fields_by_task=agg.input_fields_by_task(),
         prompt=prompt_text,
         entries=_with_policy_notice(state, fallback_outbox_entries),
+        metadata=interrupt_metadata,
     )
     agg.clear_policy_notice()
     return agg.to_updates()

@@ -95,6 +95,21 @@ def _build_confirmation_gate_updates(
             if synthesized:
                 update_messages.append(synthesized)
     update_msg = _compact_confirmation_update_message(update_messages, locale)
+    consumed_update_metadata = 0
+    for _task_id, task in confirmation_tasks:
+        confirmation_payload = task.payload.get("confirmation")
+        if not isinstance(confirmation_payload, dict):
+            continue
+        for key in ("update_message", "previous_snapshot"):
+            if key in confirmation_payload:
+                confirmation_payload.pop(key, None)
+                consumed_update_metadata += 1
+    if consumed_update_metadata:
+        logger.info(
+            "confirmation_update_message_consumed",
+            task_count=len(confirmation_tasks),
+            metadata_field_count=consumed_update_metadata,
+        )
     snapshots_by_task = {
         task_id: task.payload.get("confirmation", {}).get("snapshot", {}) for task_id, task in confirmation_tasks
     }

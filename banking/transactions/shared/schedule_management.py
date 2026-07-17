@@ -100,6 +100,12 @@ _DOMAIN_AUTH_FIELDS = {
 }
 
 
+def schedule_edit_patch_supported(domain: str, patch: dict[str, Any]) -> bool:
+    """Return whether every patch field is valid for one schedule domain."""
+    allowed = _SCHEDULE_FIELDS | _COMMON_EDIT_FIELDS | _DOMAIN_EDIT_FIELDS.get(domain, set())
+    return bool(patch) and set(patch).issubset(allowed)
+
+
 @dataclass(slots=True)
 class ScheduleSelection:
     schedules: list[Any]
@@ -246,6 +252,10 @@ def build_schedule_context_items(schedules: list[Any], *, locale: str = "en") ->
         next_run = format_lagos_schedule_datetime(next_run_at_utc) if isinstance(next_run_at_utc, datetime) else None
         row = format_schedule_row(index, schedule, include_id=False, locale=locale)
         label = row.split(". ", 1)[1] if row.startswith(f"{index}. ") else row
+        updated_at = getattr(schedule, "updated_at", None)
+        isoformat = getattr(updated_at, "isoformat", None)
+        version_token = str(isoformat() if callable(isoformat) else updated_at) if updated_at is not None else None
+        recipient_account = str(payload.get("recipient_account") or "").strip()
         data: dict[str, Any] = {
             "type": "scheduled_transaction",
             "schedule_id": str(getattr(schedule, "id", "")),
@@ -263,13 +273,14 @@ def build_schedule_context_items(schedules: list[Any], *, locale: str = "en") ->
             "source_bank_name": payload.get("source_bank_name"),
             "recipient_name": payload.get("recipient_name") or payload.get("recipient_resolved_name"),
             "recipient_resolved_name": payload.get("recipient_resolved_name"),
-            "recipient_account": payload.get("recipient_account"),
+            "recipient_account_last4": recipient_account[-4:] if recipient_account else None,
             "bank_name": payload.get("recipient_bank_name"),
             "recipient_phone": payload.get("recipient_phone"),
             "target_phone": payload.get("target_phone"),
             "network": payload.get("network"),
             "plan_name": payload.get("plan_name"),
             "summary": label,
+            "version_token": version_token,
         }
         items.append(
             {

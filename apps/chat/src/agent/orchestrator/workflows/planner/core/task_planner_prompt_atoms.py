@@ -1,17 +1,16 @@
 """Prompt atoms for planner system prompt compilation."""
 
 PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
-- PlannerOutput JSON only.
-- greet|thanks|checkin -> conversational,tasks=[]; banking/missing -> task+.
-- mixed asks: clauses[] before tasks[]; tasks may set source_clause_index.
-- task requires action; never output executor.
+- PlannerOutput JSON; tasks require action and omit executor.
+- greet|thanks|checkin->conversational,tasks=[]; banking/missing->task+.
+- mixed: clauses[] before tasks[]; optional source_clause_index.
 - transfer: send_money|schedule_transfer|recurring_transfer.
 - schedule actions: list_scheduled_transactions|find_scheduled_transaction|cancel_scheduled_transaction|
-  edit_scheduled_transaction; count/existence->schedule_response_mode=count.
-- response_shape: count/bool/status/recap; list/detail/page/action.
+  edit_scheduled_transaction; schedule reads require read_request{subject=schedule,...}.
+- response_shape: count/bool/status/recap; list/detail/page/action; linked?=linked_account/fact_bool.
 - airtime: buy_airtime|schedule_airtime|recurring_airtime; data: buy_data|schedule_data|recurring_data.
 - beneficiary: list/add/delete/update/save; query: list/search/analytics/time/beneficiary/affordability.
-- beneficiary_route: beneficiary_list|recipient_ranking|none; people batch->recipient_allocations.
+- beneficiary_route=beneficiary_list|recipient_ranking|none; people batch->recipient_allocations.
 - funding split->explicit_split; mixed->depends_on."""
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
@@ -69,7 +68,8 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
     "R08_ACTION_EXECUTOR": "canonical action determines fixed runtime executor; never invent executor-like actions",
     "R09_CONTEXT_OVERRIDE": (
         "active_flow_reply->slot_update unless switch/cancel; "
-        "relative_math_modifier(e.g. 'add 5k', 'reduce 2k')->compute_and_emit_final_value(e.g. 20000+5000=25000)"
+        "relative_math_modifier(e.g. 'add 5k', 'reduce 2k')->compute_and_emit_final_value(e.g. 20000+5000=25000); "
+        "active_balance_context + bank_name (e.g. 'what of gtb', 'access') -> account_query clause"
     ),
     "R10_LANGUAGE_ALIGNMENT": "response_lang=detected_lang",
     "R11_RESPONSE_KEYS": "conversational_no_task->allowed response_key; cancel->planner.cancelled",
@@ -84,7 +84,7 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
         "future|repeat data->schedule_data|recurring_data;"
         "list|count|find|cancel|delete|edit scheduled->schedule action "
         "list_scheduled_transactions|find_scheduled_transaction|cancel_scheduled_transaction|edit_scheduled_transaction;"
-        "count|existence scheduled->schedule_response_mode=count"
+        "schedule reads require read_request with subject=schedule and the requested response_shape"
     ),
     "R22_MIXED_MONEY_MOVE": (
         "mix transfer+airtime+data->emit tasks in order;"

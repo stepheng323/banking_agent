@@ -22,6 +22,7 @@ from banking.runtime.results import (
     TransactionOutcome,
     TransactionResult,
 )
+from shared.types.conversation_sets import ScheduleQueryContract
 from shared.types.planner import (
     AirtimeTaskParameters,
     BeneficiaryTaskParameters,
@@ -35,6 +36,7 @@ from shared.types.planner import (
     TransferTaskParameters,
     make_planned_task,
 )
+from shared.types.read import ReadRequest
 
 
 class _MockPlanner:
@@ -337,7 +339,8 @@ async def test_pending_schedule_confirmation_allows_read_only_schedule_view() ->
             confidence=0.93,
             detected_language="English",
             expected_transaction_executors=[],
-            schedule_response_mode="list",
+            read_request=ReadRequest(subject="schedule", response_shape="surface_list"),
+            schedule_contract=ScheduleQueryContract(),
             reason="show scheduled transactions",
         )
     )
@@ -2978,6 +2981,129 @@ async def test_confirmation_switch_to_account_is_direct_and_stashes_transfer() -
     assert len(task_ids) == 1
     assert updates["tasks"][task_ids[0]].type == "account"
     assert updates["tasks"][task_ids[0]].payload["message"] == "what's my balance"
+
+
+@pytest.mark.asyncio
+async def test_pending_transfer_input_linked_account_read_switches_with_canonical_contract() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_linked_account_read",
+        phone_number="2348077777791",
+        channel="telegram",
+        last_message_text="Have I linked my opay account?",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["recipient_bank_name"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.RESOLVED,
+                payload={"amount": 5000, "recipient_name": "Tolu"},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        session_stack=[ActiveSession(domain="transfer", state="WAITING_FOR_INPUT", interrupt_policy="BLOCK")],
+        active_domain="transfer",
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            # The typed read is authoritative even if the model's coarse label
+            # initially resembles a pending-flow requirements question.
+            decision="status_query",
+            confidence=0.94,
+            detected_language="English",
+            status_query_type="requirements",
+            target_field="recipient_bank_name",
+            account_read=ReadRequest(
+                subject="linked_account",
+                response_shape="fact_bool",
+                bank_name="Opay",
+            ),
+            reason="read about the user's own linked account",
+        )
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert len(updates["stashed_sessions"]) == 1
+    stashed = updates["stashed_sessions"][0]
+    assert stashed["tasks"]["t1"].stage == TaskStage.RESOLVED
+    switched_task = next(iter(updates["tasks"].values()))
+    assert switched_task.type == "account"
+    assert switched_task.payload["action"] == "count"
+    assert switched_task.payload["read_request"] == {
+        "subject": "linked_account",
+        "response_shape": "fact_bool",
+        "bank_name": "Opay",
+        "offset": 0,
+        "page_size": 5,
+    }
+    assert switched_task.payload["account_lifecycle_contract"]["operation"] == "existence"
+    assert switched_task.payload["account_lifecycle_contract"]["bank_name"] == "Opay"
+
+
+@pytest.mark.asyncio
+async def test_pending_action_default_account_read_stashes_confirmation_and_switches() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_default_account_read",
+        phone_number="2348077777790",
+        channel="whatsapp",
+        last_message_text="What's my default account?",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 5000,
+                    "recipient_name": "Tolu Adebayo",
+                    "confirmation": {"summary": "Confirm transfer"},
+                },
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        session_stack=[ActiveSession(domain="transfer", state="WAITING_FOR_INPUT", interrupt_policy="CONFIRM")],
+        active_domain="transfer",
+    )
+    planner = _PendingEditOnlyPlanner(
+        PendingActionEditDecision(
+            operation="switch_intent",
+            confidence=0.96,
+            detected_language="English",
+            target_intent="account",
+            account_action="get_default",
+            reason="read-only question about the user's default linked account",
+        )
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert len(updates["stashed_sessions"]) == 1
+    stashed = updates["stashed_sessions"][0]
+    assert stashed["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
+    switched_task = next(iter(updates["tasks"].values()))
+    assert switched_task.type == "account"
+    assert switched_task.payload["action"] == "get_default"
+    assert switched_task.payload["message"] == "What's my default account?"
 
 
 @pytest.mark.asyncio

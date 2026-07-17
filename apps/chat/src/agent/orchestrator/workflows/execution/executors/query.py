@@ -41,6 +41,7 @@ from banking.transactions.query.contracts import FocusedReferent
 from banking.transactions.query.models.domain import QueryAnswerStrategy, QueryIntent, QueryResult
 from banking.transactions.query.presentation.formatter import QueryFormatter
 from shared.messaging.body_blocks import MessageDocument
+from shared.types.read import ReadRequest, ReadResult, ResponseShape, normalize_read_request
 
 
 class QueryTaskExecutor:
@@ -133,6 +134,24 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         referent_candidate = getattr(query_result, "followup_referent", None)
         if isinstance(referent_candidate, FocusedReferent | dict):
             followup_referent = referent_candidate
+        if isinstance(query_result, QueryResult) and result.read_result is None:
+            read_request = normalize_read_request(task.payload)
+            if read_request is None:
+                if query_result.answer_strategy == QueryAnswerStrategy.TRANSACTION_LIST:
+                    shape: ResponseShape = "surface_paginated" if query_result.has_more else "surface_list"
+                elif query_result.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER:
+                    shape = "fact_value"
+                else:
+                    shape = "surface_list"
+                read_request = ReadRequest(subject="transaction", response_shape=shape)
+            item_count = len(query_result.items or [])
+            result.read_result = ReadResult(
+                request=read_request,
+                total_count=item_count + (1 if query_result.has_more else 0),
+                returned_count=min(item_count, read_request.page_size),
+                has_next=query_result.has_more,
+                has_previous=read_request.offset > 0,
+            )
 
     if result.outcome == TransactionOutcome.OK:
         complete_task(task)

@@ -17,6 +17,9 @@ from banking.presentation.formatters.transaction_copy_common import (
 )
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def format_transaction_status_reply(
@@ -125,8 +128,17 @@ def format_transaction_list_item_parts(
     else:
         narration = description or render_message("query.format.narration.transaction", locale)
 
-    bank_name = _string(data.get("bank_name"))
-    account = _masked_account(data)
+    bank_name = (
+        _string(data.get("source_bank_name"))
+        or _string(data.get("source_account_label"))
+        or _string(data.get("bank_name"))
+    )
+    account, account_provenance = _masked_source_account(data)
+    logger.info(
+        "query_transaction_account_display",
+        provenance=account_provenance,
+        has_account_suffix=bool(account),
+    )
     subtitle_parts = [part for part in (narration, bank_name, account) if part]
     title = f"{date_text} · {amount}" if include_date and date_text else amount
     if status_label:
@@ -170,17 +182,15 @@ def _display_name(value: str) -> str:
     return text
 
 
-def _masked_account(metadata: dict[str, Any]) -> str:
-    for key in (
-        "account_number",
-        "recipient_account",
-        "recipient_account_number",
-        "source_account_number",
+def _masked_source_account(metadata: dict[str, Any]) -> tuple[str, str]:
+    for key, provenance in (
+        ("source_account_number", "source_account_number"),
+        ("account_number", "linked_account_number"),
     ):
         digits = "".join(ch for ch in _string(metadata.get(key)) if ch.isdigit())
         if digits:
-            return f"···{digits[-4:]}"
-    return ""
+            return f"···{digits[-4:]}", provenance
+    return "", "unavailable"
 
 
 def format_transaction_evidence_line(

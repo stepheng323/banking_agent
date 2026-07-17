@@ -1,7 +1,7 @@
 """Planner context mode selection heuristics."""
 
 from apps.chat.src.agent.orchestrator.models.turn_directive import TurnNextStep
-from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import TRANSACTION_EXECUTORS
+from apps.chat.src.agent.orchestrator.workflows.planner.core.domains import TRANSACTION_EXECUTORS
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.types.planner import RouterDomainIntent, TransactionExecutor
 

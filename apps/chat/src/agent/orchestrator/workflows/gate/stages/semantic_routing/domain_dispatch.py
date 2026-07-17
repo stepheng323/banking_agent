@@ -15,7 +15,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import (
 from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import TRANSACTION_EXECUTORS
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.schedule_read_stage import (
     _build_direct_schedule_read_updates,
-    _semantic_schedule_response_mode,
+    _semantic_schedule_read_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit import (
     _build_query_session_exit_updates,
@@ -27,7 +27,14 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
 from banking.intent.routing_signals import (
     looks_like_transaction_replay_modifier_request,
 )
+from shared.types.balance import BalanceQueryContract
+from shared.types.conversation_sets import (
+    AccountLifecycleContract,
+    BeneficiaryQueryContract,
+    ScheduleQueryContract,
+)
 from shared.types.planner import RouterDomainIntent, SemanticRoutingMode
+from shared.types.read import ReadRequest
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -53,21 +60,27 @@ async def _handle_semantic_domain_dispatch(
     canonical_mode: SemanticRoutingMode | None,
 ) -> RouteResolution | None:
     if canonical_decision == "domain_schedule":
-        schedule_response_mode = _semantic_schedule_response_mode(route)
-        if schedule_response_mode is not None:
+        read_request = _semantic_schedule_read_request(route)
+        if read_request is not None:
             logger.info(
                 "gate_semantic_router_schedule_direct",
                 decision=canonical_decision,
                 mode=canonical_mode,
-                schedule_response_mode=schedule_response_mode,
+                response_shape=read_request.response_shape,
             )
             return _build_direct_schedule_read_updates(
                 ctx,
                 updates=updates,
-                schedule_response_mode=schedule_response_mode,
                 canonical_decision=canonical_decision,
                 canonical_mode=canonical_mode,
                 source="semantic_router",
+                path_shape="semantic_router_domain",
+                read_request=read_request,
+                schedule_contract=(
+                    route.schedule_contract
+                    if isinstance(getattr(route, "schedule_contract", None), ScheduleQueryContract)
+                    else None
+                ),
             )
         logger.info(
             "gate_semantic_router_schedule_planner_handoff",
@@ -185,10 +198,47 @@ async def _handle_semantic_domain_dispatch(
             )
         )
 
+    read_request = getattr(route, "read_request", None)
+    if not isinstance(read_request, ReadRequest):
+        read_request = None
+    if domain in {"account", "beneficiary"} and read_request is None:
+        logger.info(
+            "gate_semantic_router_read_contract_missing",
+            decision=canonical_decision,
+            domain=domain,
+            mode=canonical_mode,
+        )
+        return planner_handoff(
+            ctx,
+            owner="semantic_router",
+            decision="planner_handoff",
+            target_domain=domain,
+            mode=canonical_mode,
+            source="semantic_router",
+            path_shape="semantic_router_missing_read_contract",
+            extra_updates=updates,
+        )
+    balance_contract = getattr(route, "balance_contract", None)
+    if not isinstance(balance_contract, BalanceQueryContract):
+        balance_contract = None
+    beneficiary_contract = getattr(route, "beneficiary_contract", None)
+    if not isinstance(beneficiary_contract, BeneficiaryQueryContract):
+        beneficiary_contract = None
+    schedule_contract = getattr(route, "schedule_contract", None)
+    if not isinstance(schedule_contract, ScheduleQueryContract):
+        schedule_contract = None
+    account_lifecycle_contract = getattr(route, "account_lifecycle_contract", None)
+    if not isinstance(account_lifecycle_contract, AccountLifecycleContract):
+        account_lifecycle_contract = None
     task_id, spec = _build_direct_domain_task(
         state_view=ctx.state_view,
         domain=domain,
         mode=canonical_mode,
+        read_request=read_request,
+        balance_contract=balance_contract,
+        beneficiary_contract=beneficiary_contract,
+        schedule_contract=schedule_contract,
+        account_lifecycle_contract=account_lifecycle_contract,
     )
     logger.info(
         "gate_semantic_router_domain_dispatch",

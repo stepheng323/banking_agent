@@ -143,6 +143,11 @@ async def _stage_deterministic_meta(ctx: GateContext) -> RouteResolution | None:
         exit_updates = _build_query_session_exit_updates(ctx.state)
         logger.info("gate_query_session_exited_on_direct_reply")
 
+    social_context_updates: dict[str, Any] = {}
+    if response_key in SOCIAL_META_RESPONSE_KEYS:
+        social_context_updates["capability_boundary"] = None
+        logger.info("conversation_social_context_reset", response_key=response_key)
+
     return direct_response(
         ctx,
         response=final_response,
@@ -152,6 +157,7 @@ async def _stage_deterministic_meta(ctx: GateContext) -> RouteResolution | None:
         extra_updates={
             **locale_updates,
             **capability_boundary_updates,
+            **social_context_updates,
             **exit_updates,
             "conversation_topic": conversation_topic_for_response(
                 final_response,

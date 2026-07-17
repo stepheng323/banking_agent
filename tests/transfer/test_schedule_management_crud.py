@@ -18,6 +18,8 @@ from banking.transfers.models.types import TransferGates, TransferPayload
 from banking.transfers.pipeline_factory import build_transfer_pipeline
 from banking.transfers.scheduling import TransferSchedulingHandler
 from shared.messaging.body_blocks import render_body_blocks_text
+from shared.types.conversation_sets import BulkMutationRequest, EntitySelectionRef, ScheduleQueryContract
+from shared.types.read import ReadRequest, ResponseShape
 
 
 class _FakeScheduleRepo:
@@ -27,6 +29,56 @@ class _FakeScheduleRepo:
     async def get_active_by_user(self, user_id: str, limit: int = 20) -> list[SimpleNamespace]:
         del user_id, limit
         return [schedule for schedule in self.schedules if schedule.status == "active"]
+
+    async def get_filtered_by_user(
+        self,
+        user_id: str,
+        *,
+        statuses: list[str],
+        domains: list[str],
+        recurrence: str | None,
+        recipient_name: str | None,
+        starts_at: datetime | None,
+        ends_at: datetime | None,
+        selected_ids: list[str],
+        limit: int,
+        offset: int,
+    ) -> list[SimpleNamespace]:
+        del user_id, recurrence, recipient_name, starts_at, ends_at
+        matches = [
+            schedule
+            for schedule in self.schedules
+            if schedule.status in statuses
+            and (not domains or schedule.domain in domains)
+            and (not selected_ids or str(schedule.id) in selected_ids)
+        ]
+        return matches[offset : offset + limit]
+
+    async def count_filtered_by_user(
+        self,
+        user_id: str,
+        *,
+        statuses: list[str],
+        domains: list[str],
+        recurrence: str | None,
+        recipient_name: str | None,
+        starts_at: datetime | None,
+        ends_at: datetime | None,
+        selected_ids: list[str],
+    ) -> int:
+        rows = await self.get_filtered_by_user(
+            user_id,
+            statuses=statuses,
+            domains=domains,
+            recurrence=recurrence,
+            recipient_name=recipient_name,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            selected_ids=selected_ids,
+            limit=len(self.schedules) + 1,
+            offset=0,
+        )
+        return len(rows)
 
     async def get_active_for_user_for_update(self, schedule_id: str, user_id: str) -> SimpleNamespace | None:
         del user_id
@@ -38,6 +90,18 @@ class _FakeScheduleRepo:
             ),
             None,
         )
+
+    async def get_active_ids_for_user_for_update(
+        self,
+        schedule_ids: list[str],
+        user_id: str,
+    ) -> list[SimpleNamespace]:
+        del user_id
+        return [
+            schedule
+            for schedule in self.schedules
+            if str(schedule.id) in schedule_ids and schedule.status == "active"
+        ]
 
 
 class _FakeUnitOfWork:
@@ -58,6 +122,14 @@ class _FakeUnitOfWork:
 
 def _scheduling() -> TransferSchedulingHandler:
     return TransferSchedulingHandler(build_pipeline=build_transfer_pipeline)
+
+
+def _list_payload(*, response_shape: ResponseShape = "surface_list") -> TransferPayload:
+    operation = "count" if response_shape == "fact_count" else "list"
+    return TransferPayload(
+        read_request=ReadRequest(subject="schedule", response_shape=response_shape),
+        schedule_contract=ScheduleQueryContract(operation=operation, response_shape=response_shape),
+    )
 
 
 class _StubRedis:
@@ -107,6 +179,7 @@ def _schedule(
         end_date=None,
         next_run_at_utc=next_run_at,
         cancelled_at=None,
+        updated_at=datetime(2026, 7, 17, 8, 0, 0),
     )
 
 
@@ -133,7 +206,7 @@ async def test_schedule_management_list_shows_transfer_airtime_and_data(monkeypa
     )
     monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
-    result = await _scheduling().list_schedules(user_id="user-1", locale="en")
+    result = await _scheduling().list_schedules(data=_list_payload(), user_id="user-1", locale="en")
 
     assert result.outcome == TransactionOutcome.OK
     assert result.response
@@ -194,15 +267,21 @@ async def test_schedule_management_count_mode_reports_pending_count(monkeypatch:
     monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
     result = await _scheduling().list_schedules(
-        data=TransferPayload(schedule_response_mode="count"),
+        data=TransferPayload(
+            read_request=ReadRequest(subject="schedule", response_shape="fact_count"),
+            schedule_contract=ScheduleQueryContract(operation="count", response_shape="fact_count"),
+        ),
         user_id="user-1",
         locale="en",
     )
 
     assert result.outcome == TransactionOutcome.OK
     assert result.response == "Pending scheduled transactions: 2."
-    assert result.patch["schedule_context_items"][0]["label"].startswith("Transfer:")
-    assert result.patch["schedule_context_items"][1]["data"]["domain_key"] == "airtime"
+    assert "schedule_context_items" not in result.patch
+    assert result.read_result is not None
+    assert result.read_result.request.response_shape == "fact_count"
+    assert result.read_result.total_count == 2
+    assert result.read_result.returned_count == 0
 
 
 @pytest.mark.asyncio
@@ -211,7 +290,10 @@ async def test_schedule_management_count_mode_zero_uses_natural_empty_copy(monke
     monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
     result = await _scheduling().list_schedules(
-        data=TransferPayload(schedule_response_mode="count"),
+        data=TransferPayload(
+            read_request=ReadRequest(subject="schedule", response_shape="fact_count"),
+            schedule_contract=ScheduleQueryContract(operation="count", response_shape="fact_count"),
+        ),
         user_id="user-1",
         locale="en",
     )
@@ -226,7 +308,7 @@ async def test_schedule_management_empty_list_uses_locale_catalog(monkeypatch: p
     repo = _FakeScheduleRepo([])
     monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
-    result = await _scheduling().list_schedules(user_id="user-1", locale="pcm")
+    result = await _scheduling().list_schedules(data=_list_payload(), user_id="user-1", locale="pcm")
 
     assert result.outcome == TransactionOutcome.OK
     assert result.response == "You no get active schedules."
@@ -245,7 +327,7 @@ async def test_schedule_management_list_uses_locale_row_copy(monkeypatch: pytest
     )
     monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
-    result = await _scheduling().list_schedules(user_id="user-1", locale="pcm")
+    result = await _scheduling().list_schedules(data=_list_payload(), user_id="user-1", locale="pcm")
 
     assert result.outcome == TransactionOutcome.OK
     assert result.response is not None
@@ -254,7 +336,7 @@ async def test_schedule_management_list_uses_locale_row_copy(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
-async def test_schedule_management_cancel_deletes_by_disabling_active_schedule(
+async def test_schedule_management_cancel_requires_review_before_disabling_active_schedule(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     schedule = _schedule(
@@ -265,15 +347,30 @@ async def test_schedule_management_cancel_deletes_by_disabling_active_schedule(
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
     monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
 
-    result = await _scheduling().cancel_schedule(
+    review = await _scheduling().cancel_schedule(
         data=TransferPayload(schedule_selector="1"),
         user_id="user-1",
         locale="en",
         user_message="delete scheduled airtime",
     )
 
+    assert review.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert schedule.status == "active"
+    assert uow.committed is False
+
+    result = await _scheduling().cancel_schedule(
+        data=TransferPayload(
+            schedule_selector="1",
+            bulk_mutation=review.patch["bulk_mutation"],
+            confirmation={"confirmed": True},
+        ),
+        user_id="user-1",
+        locale="en",
+        user_message="delete scheduled airtime",
+    )
+
     assert result.outcome == TransactionOutcome.OK
-    assert result.response == "Scheduled transaction cancelled."
+    assert result.response == "Cancelled 1 scheduled item(s)."
     assert schedule.status == "cancelled"
     assert schedule.cancelled_at is not None
     assert uow.committed is True
@@ -521,3 +618,68 @@ async def test_schedule_management_recurrence_edit_requires_pin(
     assert auth.outcome == TransactionOutcome.NEEDS_AUTH
     assert auth.patch["schedule_edit_requires_auth"] is True
     assert schedule.recurrence_type == "one_time"
+
+
+@pytest.mark.asyncio
+async def test_bulk_schedule_edit_reviews_once_and_applies_atomically_after_pin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedules = [
+        _schedule(
+            f"sch-{index}",
+            domain="transfer",
+            payload_snapshot={"amount": 5000, "recipient_name": f"Person {index}"},
+        )
+        for index in (1, 2)
+    ]
+    repo = _FakeScheduleRepo(schedules)
+    uow = _FakeUnitOfWork(repo)
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
+    request = BulkMutationRequest(
+        domain="schedule",
+        action="edit",
+        targets=[
+            EntitySelectionRef(
+                entity_type="schedule",
+                entity_id=str(schedule.id),
+                frame_id="schedule-frame",
+                display_label=f"Scheduled transfer {index}",
+                version_token=schedule.updated_at.isoformat(),
+            )
+            for index, schedule in enumerate(schedules, start=1)
+        ],
+        idempotency_key="bulk-schedule-edit",
+    )
+    scheduling = _scheduling()
+
+    review = await scheduling.edit_schedule(
+        data=TransferPayload(
+            bulk_mutation=request,
+            schedule_edit_patch={"amount": 6000},
+        ),
+        user_id="user-1",
+        locale="en",
+        user_message="make both 6k",
+        gates=TransferGates(),
+    )
+
+    assert review.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert [schedule.payload_snapshot["amount"] for schedule in schedules] == [5000, 5000]
+
+    updated = await scheduling.edit_schedule(
+        data=TransferPayload(
+            bulk_mutation=review.patch["bulk_mutation"],
+            bulk_schedule_next_runs=review.patch["bulk_schedule_next_runs"],
+            schedule_edit_patch=review.patch["schedule_edit_patch"],
+            schedule_edit_requires_auth=True,
+            confirmation={"confirmed": True},
+        ),
+        user_id="user-1",
+        locale="en",
+        user_message="yes",
+        gates=TransferGates(pin_verified=True, confirmation_confirmed=True),
+    )
+
+    assert updated.outcome == TransactionOutcome.OK
+    assert [schedule.payload_snapshot["amount"] for schedule in schedules] == [6000, 6000]
+    assert uow.committed is True

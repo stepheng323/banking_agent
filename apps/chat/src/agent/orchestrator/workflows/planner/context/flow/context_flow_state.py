@@ -11,17 +11,17 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.flow.context_flo
     _is_narrow_transfer_replan,
     _should_use_compact_transaction_context,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.context.flow.recent_domain_focus import (
+    infer_recent_domain_focus,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.context.query_session.context_query_session import (
     _load_query_session_snapshot,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import (
-    TRANSACTION_EXECUTORS,
-)
-from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_focus import (
-    _infer_recent_domain_focus,
-)
 from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_summary_focus import (
     _derive_recent_answer_focus,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.core.domains import (
+    TRANSACTION_EXECUTORS,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.types.planner import RouterDomainIntent, TransactionExecutor
@@ -62,7 +62,7 @@ async def build_context_flow_state(
         logger.info("planner_query_context_skipped", reason="active_transaction_flow")
 
     active_intent = state_view.current_wave_first_task_type
-    recent_domain_focus = _infer_recent_domain_focus(state_view)
+    recent_domain_focus = infer_recent_domain_focus(state_view)
     recent_answer_focus = _derive_recent_answer_focus(state_view)
     has_transaction_intent_hint = _has_transaction_intent_hint(text)
     expected_executors = state_view.expected_transaction_executors

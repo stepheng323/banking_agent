@@ -11,9 +11,8 @@ from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
 class _InjectedScheduleWorker:
-    def __init__(self, *, response: str, schedule_response_mode: str | None = None) -> None:
+    def __init__(self, *, response: str) -> None:
         self.response = response
-        self.schedule_response_mode = schedule_response_mode
         self.calls: list[dict[str, Any]] = []
 
     async def run(
@@ -75,7 +74,11 @@ async def test_schedule_executor_attaches_mobile_body_blocks_and_pushes_context_
         id="schedule_1",
         type="schedule",
         stage=TaskStage.DRAFT,
-        payload={"action": "list_scheduled_transactions", "schedule_response_mode": "list"},
+        payload={
+            "action": "list_scheduled_transactions",
+            "read_request": {"subject": "schedule", "response_shape": "surface_list"},
+            "schedule_contract": {"operation": "list", "response_shape": "surface_list"},
+        },
     )
     worker = _InjectedScheduleWorker(response="Scheduled transactions:\n1. Transfer: ₦5,000 Mum")
     ctx = _context(task, worker)
@@ -105,9 +108,13 @@ async def test_schedule_executor_keeps_count_mode_plain_even_with_context_items(
         id="schedule_count",
         type="schedule",
         stage=TaskStage.DRAFT,
-        payload={"action": "list_scheduled_transactions", "schedule_response_mode": "count"},
+        payload={
+            "action": "list_scheduled_transactions",
+            "read_request": {"subject": "schedule", "response_shape": "fact_count"},
+            "schedule_contract": {"operation": "count", "response_shape": "fact_count"},
+        },
     )
-    worker = _InjectedScheduleWorker(response="Pending scheduled transactions: 1.", schedule_response_mode="count")
+    worker = _InjectedScheduleWorker(response="Pending scheduled transactions: 1.")
     ctx = _context(task, worker)
 
     await ScheduleTaskExecutor().execute(task, "schedule_count", ctx)

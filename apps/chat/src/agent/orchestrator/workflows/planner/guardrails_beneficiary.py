@@ -80,7 +80,6 @@ def _apply_clarify_fallback(planner_output: PlannerOutput) -> PlannerOutput:
     planner_output.is_complex = False
     planner_output.response = ""
     planner_output.response_key = "conversational.clarify"
-    planner_output.context_read_subtype = None
     return planner_output
 
 

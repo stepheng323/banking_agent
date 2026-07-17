@@ -136,7 +136,21 @@ def build_presentation_plan(
         show_expanded=show_expanded,
         has_more=has_more,
     )
-    if plan is not None and getattr(result, "conversational_prefix", None):
+    query_contract = result_query_contract(result)
+    is_evidence_continuation = bool(
+        query_contract and query_contract.continuation_type == "show_evidence"
+    )
+    if plan is not None and is_evidence_continuation and plan.mode == PresentationMode.TRANSACTION_LIST:
+        visible_count = sum(item.lstrip().startswith("•") for item in plan.items)
+        if visible_count == 1:
+            plan.lead_text = render_message("query.format.evidence_lead_single", locale)
+        else:
+            plan.lead_text = render_message(
+                "query.format.evidence_lead_plural",
+                locale,
+                {"count": visible_count},
+            )
+    elif plan is not None and getattr(result, "conversational_prefix", None):
         plan.lead_text = (
             f"{result.conversational_prefix} {plan.lead_text}"
             if plan.lead_text

@@ -59,6 +59,6 @@ async def test_beneficiary_management_uses_injected_service() -> None:
     outbox = ctx.accumulator.to_updates()["outbox"]
     assert outbox[0]["text"] == "Saved beneficiaries"
     assert outbox[0]["body_blocks"] == [
-        {"type": "heading", "text": "Saved beneficiaries"},
+        {"type": "heading", "text": "Saved Beneficiaries"},
         {"type": "text", "text": "1. Tolu — Tolu Adebayo\nAccess Bank • ···0001"},
     ]

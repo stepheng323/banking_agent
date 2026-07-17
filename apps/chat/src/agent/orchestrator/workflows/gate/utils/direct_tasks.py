@@ -7,13 +7,17 @@ from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import (
     derive_transfer_schedule_fields,
     infer_schedule_action_from_text,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.read_only_response import (
-    classify_read_only_response_shape,
-)
 from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import DIRECT_DOMAIN_ACTIONS
 from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import _current_locale
 from apps.chat.src.agent.orchestrator.workflows.gate.state.state_view import GateStateView
 from banking.policy.service import capability_block_message
+from shared.types.balance import BalanceConversationState, BalanceQueryContract
+from shared.types.conversation_sets import (
+    AccountLifecycleContract,
+    BeneficiaryQueryContract,
+    ScheduleQueryContract,
+)
+from shared.types.read import ReadRequest
 
 
 def _next_direct_account_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
@@ -52,30 +56,17 @@ def _next_direct_beneficiary_task_id(existing_tasks: dict[str, TaskSpec]) -> str
     return task_id
 
 
-def _direct_task_response_shape(
-    *,
-    state_view: GateStateView,
-    message_text: str,
-    schedule_response_mode: Literal["list", "count"] | None,
-) -> str | None:
-    if schedule_response_mode == "count":
-        return "fact_count"
-    if schedule_response_mode == "list":
-        return "surface_list"
-    return classify_read_only_response_shape(
-        message_text,
-        loaded_context=state_view.loaded_context_or_empty,
-        context_frames=state_view.context_frames,
-    )
-
-
 def _build_direct_domain_task(
     *,
     state_view: GateStateView,
     domain: Literal["query", "account", "support", "beneficiary", "transfer", "airtime", "data", "schedule", "faq"],
     mode: str | None = None,
-    schedule_response_mode: Literal["list", "count"] | None = None,
     message_text: str | None = None,
+    read_request: ReadRequest | None = None,
+    balance_contract: BalanceQueryContract | None = None,
+    beneficiary_contract: BeneficiaryQueryContract | None = None,
+    schedule_contract: ScheduleQueryContract | None = None,
+    account_lifecycle_contract: AccountLifecycleContract | None = None,
 ) -> tuple[str, TaskSpec]:
     if domain == "query":
         task_id = _next_direct_query_task_id(state_view.tasks)
@@ -87,16 +78,63 @@ def _build_direct_domain_task(
         "message": task_message,
         "instruction": task_message,
     }
-    response_shape = _direct_task_response_shape(
-        state_view=state_view,
-        message_text=task_message or "",
-        schedule_response_mode=schedule_response_mode,
+    if read_request is not None:
+        payload["read_request"] = read_request.model_dump(mode="json", exclude_none=True)
+        required_contract = {
+            "balance": balance_contract,
+            "beneficiary": beneficiary_contract,
+            "schedule": schedule_contract,
+            "linked_account": account_lifecycle_contract,
+            "default_account": account_lifecycle_contract,
+        }.get(read_request.subject, True)
+        if required_contract is None:
+            raise ValueError(f"{read_request.subject} reads require their specialized contract")
+    specialized_contracts = (
+        ("beneficiary_contract", beneficiary_contract, "beneficiary"),
+        ("schedule_contract", schedule_contract, "schedule"),
+        ("account_lifecycle_contract", account_lifecycle_contract, "linked_account"),
     )
-    if response_shape:
-        payload["response_shape"] = response_shape
+    for key, contract, subject in specialized_contracts:
+        if contract is not None and read_request is not None and (
+            read_request.subject == subject
+            or (key == "account_lifecycle_contract" and read_request.subject == "default_account")
+        ):
+            payload[key] = contract.model_dump(mode="json", exclude_none=True)
+    if read_request is None or read_request.subject != "balance":
+        balance_contract = None
+    if balance_contract is not None:
+        payload["balance_contract"] = balance_contract.model_dump(mode="json", exclude_none=True)
+        payload["balance_conversation_state"] = BalanceConversationState(
+            focused_bank=(balance_contract.bank_names[-1] if len(balance_contract.bank_names) == 1 else None),
+            mentioned_banks=balance_contract.bank_names,
+            last_result_banks=balance_contract.bank_names,
+            last_operation=balance_contract.operation,
+        ).model_dump(mode="json", exclude_none=True)
     if domain == "query":
         if mode == "new":
             payload["force_new_query"] = True
+    elif domain == "account" and read_request is not None:
+        if read_request.subject == "balance":
+            payload["action"] = "check_balance"
+            if balance_contract is not None and balance_contract.account_scope == "named":
+                payload["identifiers"] = balance_contract.bank_names
+                if len(balance_contract.bank_names) == 1:
+                    payload["identifier"] = balance_contract.bank_names[0]
+            elif read_request.bank_name:
+                payload["identifier"] = read_request.bank_name
+            payload["skip_parse"] = True
+        elif read_request.subject == "default_account":
+            payload["action"] = "get_default"
+            payload["skip_parse"] = True
+        elif read_request.subject == "linked_account":
+            payload["action"] = (
+                "count"
+                if read_request.response_shape in {"fact_count", "fact_bool"}
+                else "list_accounts"
+            )
+            if read_request.bank_name:
+                payload["identifier"] = read_request.bank_name
+            payload["skip_parse"] = True
     elif domain in {"transfer", "airtime", "data"}:
         schedule_message_text = task_message or ""
         inferred_schedule_action = infer_schedule_action_from_text(schedule_message_text)
@@ -121,14 +159,10 @@ def _build_direct_domain_task(
         payload["action"] = "list_beneficiaries"
         payload["intent"] = "list_beneficiaries"
         payload["list_intent"] = True
-        if response_shape == "fact_count":
-            payload["count_intent"] = True
-        elif response_shape == "fact_bool":
-            payload["existence_intent"] = True
+        if read_request is not None and read_request.entity_name:
+            payload["name_filter"] = read_request.entity_name
     elif domain == "schedule":
         payload["action"] = "list_scheduled_transactions"
-        if schedule_response_mode in {"list", "count"}:
-            payload["schedule_response_mode"] = schedule_response_mode
     elif domain == "faq":
         payload["action"] = "answer_question"
 

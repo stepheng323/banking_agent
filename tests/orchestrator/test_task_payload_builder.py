@@ -4,6 +4,7 @@ from apps.chat.src.agent.orchestrator.utils.task_payload_recipients import (
     derive_recipients_from_user_text,
 )
 from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import derive_transfer_schedule_fields
+from shared.types.conversation_sets import ScheduleQueryContract
 from shared.types.planner import (
     AirtimeTaskParameters,
     DataTaskParameters,
@@ -12,6 +13,7 @@ from shared.types.planner import (
     TransferTaskParameters,
     make_planned_task,
 )
+from shared.types.read import ReadRequest
 
 
 def test_transfer_recipient_not_in_user_text_is_dropped() -> None:
@@ -772,7 +774,10 @@ def test_schedule_management_action_uses_schedule_executor() -> None:
         action="list_scheduled_transactions",
         executor="schedule",
         instruction="How many scheduled transaction is pending",
-        parameters=ScheduleTaskParameters(schedule_response_mode="count"),
+        parameters=ScheduleTaskParameters(
+            read_request=ReadRequest(subject="schedule", response_shape="fact_count"),
+            schedule_contract=ScheduleQueryContract(operation="count", response_shape="fact_count"),
+        ),
         risk="READ_ONLY",
     )
 
@@ -787,8 +792,10 @@ def test_schedule_management_action_uses_schedule_executor() -> None:
 
     assert spec.type == "schedule"
     assert spec.payload.get("action") == "list_scheduled_transactions"
-    assert spec.payload.get("schedule_response_mode") == "count"
-    assert spec.payload.get("response_shape") == "fact_count"
+    assert spec.payload["read_request"]["subject"] == "schedule"
+    assert spec.payload["read_request"]["response_shape"] == "fact_count"
+    assert "schedule_response_mode" not in spec.payload
+    assert "response_shape" not in spec.payload
     assert "skip_extraction" not in spec.payload
 
 
@@ -814,13 +821,15 @@ def test_query_payload_prefers_user_message_over_planner_instruction() -> None:
     assert spec.payload.get("message") == "How much did I spend today"
 
 
-def test_payload_builder_infers_query_count_response_shape_from_user_message() -> None:
+def test_payload_builder_uses_planner_query_read_contract_without_text_inference() -> None:
     plan_item = make_planned_task(
         task_id="q1",
         action="transaction_search",
         executor="query",
         instruction="Count last week's transactions",
-        parameters=QueryTaskParameters(),
+        parameters=QueryTaskParameters(
+            read_request=ReadRequest(subject="transaction", response_shape="fact_count")
+        ),
         risk="READ_ONLY",
     )
 
@@ -833,7 +842,7 @@ def test_payload_builder_infers_query_count_response_shape_from_user_message() -
         format_narration_requires_recipient_field=False,
     )
 
-    assert spec.payload.get("response_shape") == "fact_count"
+    assert spec.payload["read_request"]["response_shape"] == "fact_count"
 
 
 def test_payload_builder_preserves_explicit_response_shape() -> None:
@@ -842,7 +851,9 @@ def test_payload_builder_preserves_explicit_response_shape() -> None:
         action="transaction_search",
         executor="query",
         instruction="Show transaction history",
-        parameters=QueryTaskParameters(response_shape="surface_paginated"),
+        parameters=QueryTaskParameters(
+            read_request=ReadRequest(subject="transaction", response_shape="surface_paginated")
+        ),
         risk="READ_ONLY",
     )
 
@@ -855,4 +866,6 @@ def test_payload_builder_preserves_explicit_response_shape() -> None:
         format_narration_requires_recipient_field=False,
     )
 
-    assert spec.payload.get("response_shape") == "surface_paginated"
+    assert spec.payload["read_request"]["subject"] == "transaction"
+    assert spec.payload["read_request"]["response_shape"] == "surface_paginated"
+    assert "response_shape" not in spec.payload

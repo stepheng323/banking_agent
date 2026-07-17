@@ -2,7 +2,15 @@
   "common": {
     "safe_capability_fallback": "I never fit do that yet. I fit help with transfer, airtime/data buy, balance, and transaction query.",
     "cancelled_prompt": "Transaction don cancel, wetin else you want make I help you do?",
-    "gibberish_prompt": "I no really catch that. Wetin banking task you want make I help with?"
+    "gibberish_prompt": "I no really catch that. Wetin banking task you want make I help with?",
+    "pagination": {"more": "More for next page", "previous": "Previous for earlier page"}
+  },
+  "conversation_set": {
+    "selection_required": "Which item or items you mean? Reply with the number or name wey show.",
+    "single_selection_required": "Choose only one item for that action.",
+    "mutation_limit": "You fit change up to {count} items at once. Choose fewer items.",
+    "stale_selection": "That result don change or expire. Refresh the list and choose again.",
+    "allocation_required": "Tell me the amount for each beneficiary you choose. I no go assume equal split."
   },
   "capability": {
     "blocked_with_alternative": "I no fit do {action} here. I fit help with {alternative}. Reply wetin you want make I continue with.",
@@ -522,6 +530,8 @@
       "type_outgoing_debit": "Outgoing debit",
       "accounts_item": "{amount} \u2014 {bank_name}",
       "direct_answer_grouped_lead": "Na {name}.",
+      "evidence_lead_single": "See the transaction wey make that total.",
+      "evidence_lead_plural": "See the {count} transactions wey make that total.",
       "breakdown_heading": "See your {summary}:",
       "ranked_heading": "See your {summary}:",
       "show_more_hint": "_Talk 'show more' to continue._",
@@ -620,12 +630,21 @@
     }
   },
   "account": {
+    "readiness": {"fact": "{ready_count} out of {total_count} linked account(s) ready to use."},
     "user_not_found": "I no find user.",
     "no_linked_accounts": "You no get linked account.",
     "account_not_found": "I no fit find an account matching '{identifier}'.",
     "account_not_found_with_count": "I no fit find an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
     "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now your default.",
+    "default_identity": "Your default account na {bank_name} ({masked}).",
+    "default_unavailable": "I no fit find any default linked account.",
     "unlink": {
+      "review": "Check the {count} account(s) to unlink:\n{items}\n\nReply yes to continue, or cancel.",
+      "keep_one": "You need leave at least one bank account linked.",
+      "choose_remaining_default": "Choose one account wey remain as your default before I unlink these ones.",
+      "item_success": "✓ {item} — don unlink",
+      "item_failed": "✗ {item} — no fit unlink",
+      "bulk_result": "Account unlink result:\n{items}",
       "success": "success: *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
       "only_account": "\ufe0f You can't unlink your only account. Link another one first."
     },
@@ -636,6 +655,8 @@
       "count_zero": "You no get any linked account.",
       "count_one": "You get 1 linked account.",
       "count_many": "You get {count} linked accounts.",
+      "exists_yes": "Yes, you get {bank_name} linked.",
+      "exists_no": "No, you no get {bank_name} linked.",
       "preview_header": "Example dem:",
       "default_badge": "(default)",
       "commands_hint": "_'set 2 as default' | 'unlink GTB'_"
@@ -645,10 +666,12 @@
       "header_single": "*Your Balance*",
       "header_multi": "*Your Balances*",
       "total": "Everything together na **\u20a6{total_balance}**.",
+      "total_label": "Everything join",
       "unavailable": "I no fit retrieve your balance at the moment.",
       "natural_single": "Your {bank_name} account ({masked}) get balance of **\u20a6{amount}**.",
       "natural_multi_intro": "See your account balances:",
-      "natural_multi_item": "\u2022 {bank_name} ({masked}): **\u20a6{amount}**"
+      "natural_multi_item": "\u2022 {bank_name} ({masked}): **\u20a6{amount}**",
+      "scope_clarify": "Which accounts make I use for that balance request?"
     },
     "prompt": {
       "unlink_identifier": "Which account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'.",
@@ -890,6 +913,10 @@
       "count_zero": "You never save any beneficiary.",
       "count_one": "You get 1 saved beneficiary.",
       "count_many": "You get {count} saved beneficiaries.",
+      "filtered_count": "You get {count} saved beneficiaries wey match ‘{filter}’.",
+      "exists_yes": "Yes, you get saved beneficiary wey match ‘{filter}’.",
+      "exists_no": "No, you no get saved beneficiary wey match ‘{filter}’.",
+      "filtered_header": "Saved beneficiaries wey match ‘{filter}’",
       "preview_header": "Example dem:"
     },
     "common": {
@@ -904,6 +931,9 @@
       "success": "success: Verified & Added **{display_name}** ({account_name}) to your beneficiaries."
     },
     "delete": {
+      "select_candidate": "I see possible matches for {target}. Choose one from fresh beneficiary list.",
+      "review": "Check the {count} saved beneficiary item(s) to remove:\n{items}\n\nReply yes to remove them, or cancel.",
+      "bulk_success": "I remove {count} saved beneficiary item(s).",
       "missing_target": "Abeg specify which beneficiary to remove.",
       "not_found": "I no fit find a beneficiary named '{target}'.",
       "success": "success: Deleted **{target}** from beneficiaries."
@@ -1302,7 +1332,10 @@
       "with_id": "{row} (ID: {schedule_id})"
     },
     "list": {
+      "status_fact": "{count} scheduled item(s) get status {status}.",
       "count": "You get {count} pending schedules.",
+      "exists_yes": "Yes, you get active scheduled transaction.",
+      "exists_no": "No, you no get active scheduled transaction.",
       "empty": "You no get active schedules.",
       "header": "Your scheduled transactions:"
     },
@@ -1311,10 +1344,15 @@
       "header": "Schedules wey match:"
     },
     "cancel": {
+      "review": "Check the {count} scheduled item(s) to cancel:\n{items}\n\nReply yes to cancel them, or say keep them.",
+      "bulk_success": "I cancel {count} scheduled item(s).",
       "none": "You no get active schedules to cancel.",
       "success": "Scheduled transaction don cancel."
     },
     "edit": {
+      "bulk_review": "Check the same update for {count} scheduled item(s):\n\n{items}\n\nReply yes to continue, or cancel.",
+      "bulk_success": "I update {count} scheduled item(s).",
+      "incompatible_set": "That change no fit work for all the schedules you choose. Choose matching ones or edit them one by one.",
       "ask_change": "Wetin make I change for this scheduled transaction?",
       "stale": "This schedule dey process already or e no active again. Try again.",
       "success": "Schedule don update: {changes}. Next run: {next_run}.",

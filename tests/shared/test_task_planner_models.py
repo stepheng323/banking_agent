@@ -12,6 +12,12 @@ from pydantic import ValidationError
 
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_llm_models import (
+    PlannerAmbiguousPlan,
+    PlannerLLMGenericParameters,
+    PlannerLLMGenericTask,
+    adapt_planner_llm_output,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_models import PlannerPromptSignals
 from shared.types.planner import (
     AirtimeTaskParameters,
@@ -73,6 +79,39 @@ class _StructuredFakeLLM:
         return _StructuredResponder(self.payloads.get(schema_name, {}))
 
 
+def test_ambiguous_planner_linkage_question_adapts_to_canonical_existence_read() -> None:
+    raw = PlannerAmbiguousPlan(
+        primary_intent="mixed",
+        normalized_instruction="Have I linked my Opay account?",
+        tasks=[
+            PlannerLLMGenericTask(
+                task_id="account_read_1",
+                executor="account",
+                action="link",
+                instruction="Have I linked my Opay account?",
+                parameters=PlannerLLMGenericParameters(
+                    read_subject="linked_account",
+                    response_shape="fact_bool",
+                    bank_name="Opay",
+                ),
+            )
+        ],
+    )
+
+    output = adapt_planner_llm_output(raw, original_text="Have I linked my Opay account?")
+
+    assert len(output.tasks) == 1
+    task = output.tasks[0]
+    assert task.action == "count"
+    assert task.risk == "READ_ONLY"
+    assert task.parameters.read_request is not None
+    assert task.parameters.read_request.subject == "linked_account"
+    assert task.parameters.read_request.response_shape == "fact_bool"
+    assert task.parameters.read_request.bank_name == "Opay"
+    assert task.parameters.account_lifecycle_contract is not None
+    assert task.parameters.account_lifecycle_contract.operation == "existence"
+
+
 def test_task_planner_uses_dedicated_interrupt_model_when_provided() -> None:
     planner_llm = _FakeLLM("planner")
     interrupt_llm = _FakeLLM("interrupt")
@@ -100,19 +139,18 @@ def test_task_planner_falls_back_to_interrupt_model_for_semantic_router_when_not
     semantic_llm = _FakeLLM("semantic")
     router = SemanticRouterLLM(llm=semantic_llm)  # type: ignore[arg-type]
     # The router holds two structured-output handles, both using the semantic LLM
-    assert router.structured_semantic_router == "semantic:SemanticRouteDecision"
-    assert router.structured_schedule_read_router == "semantic:SemanticRouteDecision"
+    assert router.structured_semantic_router == "semantic:SemanticRouteLLMDecision"
+    assert router.structured_schedule_read_router == "semantic:SemanticRouteLLMDecision"
 
 
 async def test_task_planner_route_semantic_turn_uses_shared_structured_invocation() -> None:
     router_llm = _StructuredFakeLLM(
         {
-            "SemanticRouteDecision": {
+            "SemanticRouteLLMDecision": {
                 "decision": "domain_query",
-                "confidence": 0.91,
-                "detected_language": "en",
-                "target_intent": "query",
-                "reason": "query_followup",
+                "conf": 0.91,
+                "lang": "en",
+                "intent": "query",
             }
         }
     )
@@ -128,6 +166,37 @@ async def test_task_planner_route_semantic_turn_uses_shared_structured_invocatio
     assert decision.target_intent == "query"
     assert router.structured_semantic_router.last_messages is not None
     assert router.structured_semantic_router.last_messages[1]["content"].startswith("User phone: 2348000000010")
+
+
+async def test_semantic_router_adapts_flat_account_read_into_runtime_contract() -> None:
+    router_llm = _StructuredFakeLLM(
+        {
+            "SemanticRouteLLMDecision": {
+                "decision": "domain_account",
+                "conf": 0.96,
+                "lang": "English",
+                "intent": "account",
+                "mode": "new",
+                "read_subject": "linked_account",
+                "response_shape": "fact_bool",
+                "bank_name": "Opay",
+            }
+        }
+    )
+    router = SemanticRouterLLM(llm=router_llm)  # type: ignore[arg-type]
+
+    decision = await router.route_semantic_turn(
+        "2348000000011",
+        "Have I linked my Opay account?",
+    )
+
+    assert decision.decision == "domain_account"
+    assert decision.read_request is not None
+    assert decision.read_request.subject == "linked_account"
+    assert decision.read_request.response_shape == "fact_bool"
+    assert decision.read_request.bank_name == "Opay"
+    assert decision.account_lifecycle_contract is not None
+    assert decision.account_lifecycle_contract.operation == "existence"
 
 
 async def test_task_planner_pending_action_edit_uses_shared_structured_invocation() -> None:
@@ -295,7 +364,10 @@ def test_planner_task_parameters_are_coerced_by_executor_and_action() -> None:
                 executor="schedule",
                 action="list_scheduled_transactions",
                 instruction="List scheduled transfers",
-                parameters={"schedule_response_mode": "count"},
+                parameters={
+                    "read_request": {"subject": "schedule", "response_shape": "fact_count"},
+                    "schedule_contract": {"operation": "count", "response_shape": "fact_count"},
+                },
                 risk="READ_ONLY",
             ),
             make_planned_task(
@@ -303,7 +375,9 @@ def test_planner_task_parameters_are_coerced_by_executor_and_action() -> None:
                 executor="query",
                 action="transaction_search",
                 instruction="Show transactions",
-                parameters={"response_shape": "surface_paginated"},
+                parameters={
+                    "read_request": {"subject": "transaction", "response_shape": "surface_paginated"}
+                },
                 risk="READ_ONLY",
             ),
         ],

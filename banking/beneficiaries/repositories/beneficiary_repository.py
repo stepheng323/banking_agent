@@ -57,6 +57,29 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
         result = await self.db.execute(query)
         return result.scalars().first()
 
+    async def get_by_ids_for_update(self, user_id: str, beneficiary_ids: list[str]) -> list[Beneficiary]:
+        """Lock an ID-backed beneficiary selection owned by one user."""
+        user_uuid: str | UUID = user_id
+        if isinstance(user_id, str):
+            try:
+                user_uuid = UUID(user_id)
+            except ValueError:
+                pass
+        lookup_ids: list[str | UUID] = []
+        for beneficiary_id in beneficiary_ids:
+            try:
+                lookup_ids.append(UUID(beneficiary_id))
+            except ValueError:
+                lookup_ids.append(beneficiary_id)
+        if not lookup_ids:
+            return []
+        result = await self.db.execute(
+            select(Beneficiary)
+            .filter(Beneficiary.user_id == user_uuid, Beneficiary.id.in_(lookup_ids))
+            .with_for_update()
+        )
+        return list(result.scalars().all())
+
     async def search_by_name(
         self, user_id: str, search_term: str, beneficiary_type: str | None = None
     ) -> list[Beneficiary]:

@@ -20,6 +20,10 @@ _TX_HINT_KEYWORDS = (
     "envoye",
     "envoyer",
 )
+_TX_HINT_PATTERN = re.compile(
+    rf"(?<!\w)(?:{'|'.join(re.escape(keyword) for keyword in _TX_HINT_KEYWORDS)})(?!\w)",
+    re.IGNORECASE,
+)
 _PHONE_HINT_PATTERN = re.compile(r"(?:\+?234|0)?(?:[\s().-]*\d){10,13}")
 _AMOUNT_HINT_PATTERN = re.compile(r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKmMhH]?\b")
 
@@ -29,7 +33,7 @@ def _has_transaction_intent_hint(text: str) -> bool:
     if not normalized:
         return False
 
-    if any(keyword in normalized for keyword in _TX_HINT_KEYWORDS):
+    if _TX_HINT_PATTERN.search(normalized):
         return True
 
     if _AMOUNT_HINT_PATTERN.search(normalized):

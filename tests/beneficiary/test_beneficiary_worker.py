@@ -1,3 +1,4 @@
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -6,6 +7,7 @@ from banking.beneficiaries.formatter import BeneficiaryFormatter
 from banking.beneficiaries.worker import BeneficiaryWorker
 from banking.runtime.results import TransactionOutcome
 from shared.messaging.body_blocks import render_body_blocks_text
+from shared.types.conversation_sets import BulkMutationRequest, EntitySelectionRef
 
 
 class _FakeBeneficiaryRepo:
@@ -24,6 +26,12 @@ class _FakeBeneficiaryRepo:
 
     async def delete(self, instance: Any) -> None:
         self.deleted = instance
+        if instance in self.existing:
+            self.existing.remove(instance)
+
+    async def get_by_ids_for_update(self, user_id: str, beneficiary_ids: list[str]) -> list[Any]:
+        del user_id
+        return [item for item in self.existing if str(item.id) in beneficiary_ids]
 
 
 class _FakeUnitOfWork:
@@ -71,15 +79,50 @@ async def test_add_beneficiary_is_disabled_and_does_not_resolve_or_create(monkey
     assert uow.commit_calls == 0
 
 
-async def test_delete_beneficiary_passes_instance_to_repository_delete(monkeypatch) -> None:
-    existing = SimpleNamespace(id="bene-1", alias="Tolu", account_name="Tolu Adebayo")
+async def test_delete_beneficiary_is_id_backed_and_reviewed_before_atomic_delete(monkeypatch) -> None:
+    updated_at = datetime(2026, 7, 17, 8, 0, 0)
+    existing = SimpleNamespace(
+        id="bene-1",
+        alias="Tolu",
+        account_name="Tolu Adebayo",
+        bank_name="Access Bank",
+        account_number="2010000001",
+        updated_at=updated_at,
+    )
     repo = _FakeBeneficiaryRepo(existing=[existing])
     uow = _FakeUnitOfWork(repo)
     monkeypatch.setattr(worker_module, "UnitOfWork", lambda: uow)
 
+    request = BulkMutationRequest(
+        domain="beneficiary",
+        action="delete",
+        targets=[
+            EntitySelectionRef(
+                entity_type="beneficiary",
+                entity_id="bene-1",
+                frame_id="beneficiary-list-1",
+                display_label="Tolu · Access Bank · ···0001",
+                version_token=updated_at.isoformat(),
+            )
+        ],
+        idempotency_key="delete-bene-1",
+    )
+    review = await BeneficiaryWorker()._delete_beneficiary(
+        "user-1",
+        {"bulk_mutation": request.model_dump(mode="json")},
+        {"language": "en"},
+    )
+
+    assert review.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert repo.deleted is None
+    assert uow.commit_calls == 0
+
     result = await BeneficiaryWorker()._delete_beneficiary(
         "user-1",
-        {"alias": "Tolu"},
+        {
+            "bulk_mutation": request.model_dump(mode="json"),
+            "confirmation": {"confirmed": True},
+        },
         {"language": "en"},
     )
 
@@ -88,7 +131,7 @@ async def test_delete_beneficiary_passes_instance_to_repository_delete(monkeypat
     assert uow.commit_calls == 1
 
 
-async def test_list_beneficiaries_count_shape_returns_count_first_preview(monkeypatch) -> None:
+async def test_list_beneficiaries_count_shape_returns_strict_fact(monkeypatch) -> None:
     repo = _FakeBeneficiaryRepo(
         existing=[
             SimpleNamespace(
@@ -124,22 +167,22 @@ async def test_list_beneficiaries_count_shape_returns_count_first_preview(monkey
     monkeypatch.setattr(worker_module, "UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
     result = await BeneficiaryWorker().run(
-        {"action": "list_beneficiaries", "intent": "list_beneficiaries", "response_shape": "fact_count"},
+        {
+            "action": "list_beneficiaries",
+            "intent": "list_beneficiaries",
+            "read_request": {"subject": "beneficiary", "response_shape": "fact_count"},
+            "beneficiary_contract": {
+                "operation": "count",
+                "response_shape": "fact_count",
+            },
+        },
         {"user_id": "user-1", "language": "en"},
     )
 
     assert result.outcome == TransactionOutcome.OK
-    assert result.response == (
-        "You have 4 saved beneficiaries.\n\n"
-        "Examples\n\n"
-        "1. Mum — Mama Nkechi\n"
-        "Opay • ···1023\n\n"
-        "2. Tolu Access — Tolu Adebayo\n"
-        "Access Bank • ···0001\n\n"
-        "3. Tolu GTB — Tolu Adeyemi\n"
-        "GTBank • ···0002"
-    )
-    assert "Tolu First" not in result.response
+    assert result.response == "You have 4 saved beneficiaries."
+    assert result.read_result is not None
+    assert result.read_result.returned_count == 0
 
 
 async def test_list_beneficiaries_zero_count_uses_natural_copy(monkeypatch) -> None:
@@ -147,7 +190,15 @@ async def test_list_beneficiaries_zero_count_uses_natural_copy(monkeypatch) -> N
     monkeypatch.setattr(worker_module, "UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
     result = await BeneficiaryWorker().run(
-        {"action": "list_beneficiaries", "intent": "list_beneficiaries", "response_shape": "fact_count"},
+        {
+            "action": "list_beneficiaries",
+            "intent": "list_beneficiaries",
+            "read_request": {"subject": "beneficiary", "response_shape": "fact_count"},
+            "beneficiary_contract": {
+                "operation": "count",
+                "response_shape": "fact_count",
+            },
+        },
         {"user_id": "user-1", "language": "en"},
     )
 
@@ -157,6 +208,111 @@ async def test_list_beneficiaries_zero_count_uses_natural_copy(monkeypatch) -> N
         == "You haven't saved any beneficiaries yet. They will automatically appear here when you choose to save a contact after a successful transfer."
     )
     assert " 0 " not in f" {result.response} "
+
+
+async def test_filtered_beneficiary_count_excludes_unrelated_saved_people(monkeypatch) -> None:
+    repo = _FakeBeneficiaryRepo(
+        existing=[
+            SimpleNamespace(
+                id="bene-1",
+                alias="Mum",
+                account_name="Mama Nkechi",
+                bank_name="Opay",
+                account_number="8162511023",
+            ),
+            SimpleNamespace(
+                id="bene-2",
+                alias="Tolu Access",
+                account_name="Tolu Adebayo",
+                bank_name="Access Bank",
+                account_number="2010000001",
+            ),
+            SimpleNamespace(
+                id="bene-3",
+                alias="Tolu GTB",
+                account_name="Tolu Adeyemi",
+                bank_name="GTBank",
+                account_number="2010000002",
+            ),
+            SimpleNamespace(
+                id="bene-4",
+                alias="Landlord",
+                account_name="Chidi Okafor",
+                bank_name="First Bank",
+                account_number="2010000004",
+            ),
+        ]
+    )
+    monkeypatch.setattr(worker_module, "UnitOfWork", lambda: _FakeUnitOfWork(repo))
+
+    result = await BeneficiaryWorker().run(
+        {
+            "action": "list_beneficiaries",
+            "intent": "list_beneficiaries",
+            "read_request": {
+                "subject": "beneficiary",
+                "response_shape": "fact_count",
+                "entity_name": "Tolu",
+            },
+            "beneficiary_contract": {
+                "operation": "count",
+                "response_shape": "fact_count",
+                "entity_name": "Tolu",
+            },
+        },
+        {"user_id": "user-1", "language": "en"},
+    )
+
+    assert result.response == "You have 2 saved beneficiaries matching ‘Tolu’."
+    assert result.read_result is not None
+    assert result.read_result.total_count == 2
+    assert result.details == {}
+
+
+async def test_named_beneficiary_existence_filters_repository_results(monkeypatch) -> None:
+    repo = _FakeBeneficiaryRepo(
+        existing=[
+            SimpleNamespace(
+                id="bene-1",
+                alias="Mum",
+                account_name="Mama Nkechi",
+                bank_name="Opay",
+                account_number="8162511023",
+            ),
+            SimpleNamespace(
+                id="bene-2",
+                alias="Tolu Access",
+                account_name="Tolu Adebayo",
+                bank_name="Access Bank",
+                account_number="2010000001",
+            ),
+        ]
+    )
+    monkeypatch.setattr(worker_module, "UnitOfWork", lambda: _FakeUnitOfWork(repo))
+
+    result = await BeneficiaryWorker().run(
+        {
+            "action": "list_beneficiaries",
+            "intent": "list_beneficiaries",
+            "read_request": {
+                "subject": "beneficiary",
+                "response_shape": "fact_bool",
+                "entity_name": "Mum",
+            },
+            "beneficiary_contract": {
+                "operation": "existence",
+                "response_shape": "fact_bool",
+                "entity_name": "Mum",
+            },
+        },
+        {"user_id": "user-1", "language": "en"},
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.response == "Yes, you have a saved beneficiary matching ‘Mum’."
+    assert result.read_result is not None
+    assert result.read_result.total_count == 1
+    assert result.read_result.returned_count == 0
 
 
 async def test_list_beneficiaries_surface_list_keeps_full_list(monkeypatch) -> None:
@@ -181,16 +337,84 @@ async def test_list_beneficiaries_surface_list_keeps_full_list(monkeypatch) -> N
     monkeypatch.setattr(worker_module, "UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
     result = await BeneficiaryWorker().run(
-        {"action": "list_beneficiaries", "intent": "list_beneficiaries", "response_shape": "surface_list"},
+        {
+            "action": "list_beneficiaries",
+            "intent": "list_beneficiaries",
+            "read_request": {"subject": "beneficiary", "response_shape": "surface_list"},
+            "beneficiary_contract": {
+                "operation": "list",
+                "response_shape": "surface_list",
+            },
+        },
         {"user_id": "user-1", "language": "en"},
     )
 
     assert result.outcome == TransactionOutcome.OK
     assert result.response is not None
-    assert result.response.startswith("Saved beneficiaries")
+    assert result.response.startswith("Saved Beneficiaries")
     assert "1. Mum — Mama Nkechi\nOpay • ···1023" in result.response
     assert "2. Tolu Access — Tolu Adebayo\nAccess Bank • ···0001" in result.response
     assert "You have 2 saved beneficiaries." not in result.response
+
+
+async def test_beneficiary_lists_use_five_item_pages_with_truthful_boundaries(monkeypatch) -> None:
+    beneficiaries = [
+        SimpleNamespace(
+            id=f"bene-{index}",
+            alias=f"Person {index}",
+            account_name=f"Saved Person {index}",
+            bank_name="Access Bank",
+            account_number=f"201000000{index}",
+        )
+        for index in range(1, 8)
+    ]
+    repo = _FakeBeneficiaryRepo(existing=beneficiaries)
+    monkeypatch.setattr(worker_module, "UnitOfWork", lambda: _FakeUnitOfWork(repo))
+
+    first = await BeneficiaryWorker().run(
+        {
+            "action": "list_beneficiaries",
+            "intent": "list_beneficiaries",
+            "read_request": {
+                "subject": "beneficiary",
+                "response_shape": "surface_list",
+            },
+            "beneficiary_contract": {
+                "operation": "list",
+                "response_shape": "surface_list",
+            },
+        },
+        {"user_id": "user-1", "language": "en"},
+    )
+    second = await BeneficiaryWorker().run(
+        {
+            "action": "list_beneficiaries",
+            "intent": "list_beneficiaries",
+            "read_request": {
+                "subject": "beneficiary",
+                "response_shape": "surface_list",
+                "offset": 5,
+            },
+            "beneficiary_contract": {
+                "operation": "list",
+                "response_shape": "surface_list",
+            },
+        },
+        {"user_id": "user-1", "language": "en"},
+    )
+
+    assert first.read_result is not None
+    assert first.read_result.returned_count == 5
+    assert first.read_result.has_next is True
+    assert first.read_result.has_previous is False
+    assert first.response is not None and "Person 6" not in first.response
+    assert "More for the next page" in first.response
+
+    assert second.read_result is not None
+    assert second.read_result.returned_count == 2
+    assert second.read_result.has_next is False
+    assert second.read_result.has_previous is True
+    assert second.response is not None and "Person 6" in second.response and "Person 1" not in second.response
 
 
 def test_beneficiary_list_blocks_render_mobile_spacing() -> None:
@@ -214,7 +438,7 @@ def test_beneficiary_list_blocks_render_mobile_spacing() -> None:
 
     assert blocks is not None
     assert render_body_blocks_text(blocks) == (
-        "Saved beneficiaries\n\n"
+        "Saved Beneficiaries\n\n"
         "1. Mum — Mama Nkechi\n"
         "Opay • ···1023\n\n"
         "2. Tolu Access — Tolu Adebayo\n"

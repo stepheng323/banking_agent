@@ -15,6 +15,7 @@ from banking.transfers.models.extraction import (
 )
 from banking.transfers.models.types import TransferContext, TransferGates, TransferPayload
 from banking.transfers.nodes.extraction import ExtractionStep
+from banking.transfers.nodes.resolution import ResolutionStep
 from banking.transfers.nodes.validation import ValidationStep
 from banking.transfers.pipeline.base import TransferPipeline
 from banking.transfers.validation.service import ValidationService
@@ -145,6 +146,131 @@ async def test_media_caption_amount_overrides_image_receipt_amount() -> None:
     assert result.patch["recipient_account"] == "7750145200"
     assert result.patch["recipient_bank_name"] == "Wema Bank"
     assert result.patch["recipient_name"] == "Spectranet Limited"
+
+
+async def test_extractor_restores_exact_saved_alias_after_recipient_truncation() -> None:
+    extractor = _StaticExtractor(
+        TransferExtractionResult(
+            entities=TransferEntities(
+                amount=20000,
+                recipient_name="tolu",
+            )
+        )
+    )
+    beneficiaries = [
+        {
+            "id": "bene-access",
+            "alias": "Tolu Access",
+            "account_name": "Tolu Adebayo",
+            "account_number": "2010000001",
+            "bank_name": "Access Bank",
+        },
+        {"id": "bene-gtb", "alias": "Tolu GTB", "account_name": "Tolu Adeyemi"},
+    ]
+
+    result = await extract_transfer_update(
+        TransferPayload(),
+        extractor,
+        "I wan send 20k to tolu access",
+        {"beneficiaries": beneficiaries},
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_name"] == "Tolu Access"
+    assert result.patch["amount"] == 20000
+
+
+async def test_extractor_does_not_restore_alias_for_unrelated_recipient_name() -> None:
+    extractor = _StaticExtractor(
+        TransferExtractionResult(
+            entities=TransferEntities(
+                amount=20000,
+                recipient_name="Bayo",
+            )
+        )
+    )
+
+    result = await extract_transfer_update(
+        TransferPayload(),
+        extractor,
+        "Send 20k to Bayo for the Tolu Access event",
+        {"beneficiaries": [{"id": "bene-access", "alias": "Tolu Access"}]},
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_name"] == "Bayo"
+
+
+async def test_pidgin_transfer_resolves_full_saved_alias_after_truncated_extraction() -> None:
+    extractor = _StaticExtractor(
+        TransferExtractionResult(
+            entities=TransferEntities(
+                amount=20000,
+                recipient_name="tolu",
+            )
+        )
+    )
+    context = TransferContext(
+        phone_number="2348000000999",
+        language="en",
+        beneficiaries=[
+            {
+                "id": "bene-access",
+                "alias": "Tolu Access",
+                "account_name": "Tolu Adebayo",
+                "account_number": "2010000001",
+                "bank_name": "Access Bank",
+                "bank_code": "044",
+                "beneficiary_type": "transfer",
+            },
+            {
+                "id": "bene-gtb",
+                "alias": "Tolu GTB",
+                "account_name": "Tolu Adeyemi",
+                "account_number": "2010000002",
+                "bank_name": "GTBank",
+                "bank_code": "058",
+                "beneficiary_type": "transfer",
+            },
+            {
+                "id": "bene-first",
+                "alias": "Tolu First",
+                "account_name": "Tolulope Johnson",
+                "account_number": "2010000003",
+                "bank_name": "First Bank",
+                "bank_code": "011",
+                "beneficiary_type": "transfer",
+            },
+        ],
+    )
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+        resolver_provider=None,
+        bank_cache=None,
+        payout_resolver_provider=None,
+        payout_bank_cache=None,
+    )
+    pipeline = TransferPipeline(
+        [
+            ExtractionStep(user_message="I wan send 20k to tolu access"),
+            ResolutionStep(),
+        ]
+    )
+
+    result = await pipeline.run(
+        TransferPayload(),
+        context,
+        TransferGates(),
+        worker_context,
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_name"] == "Tolu Access"
+    assert result.patch["beneficiary_id"] == "bene-access"
+    assert result.patch["recipient_account"] == "2010000001"
+    assert result.patch["beneficiary_candidates"] == []
 
 
 def test_extractor_context_string_includes_required_fields_and_known_recipient_hints() -> None:

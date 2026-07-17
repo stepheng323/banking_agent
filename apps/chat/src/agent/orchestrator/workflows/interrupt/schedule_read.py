@@ -18,6 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
 from banking.presentation.i18n.renderer import render_message
 from shared.observability.llm import LLMCallDeadlineExceeded
 from shared.types.planner import ContextFrameFollowupDecision
+from shared.types.read import ReadRequest
 
 
 async def _resolve_schedule_read_during_pending_confirmation(
@@ -54,9 +55,14 @@ async def _resolve_schedule_read_during_pending_confirmation(
         return None
 
     decision = str(getattr(route, "decision", "") or "").strip()
-    schedule_response_mode = getattr(route, "schedule_response_mode", None)
+    read_request = getattr(route, "read_request", None)
     confidence = float(getattr(route, "confidence", 0.0) or 0.0)
-    if decision != "domain_schedule" or schedule_response_mode not in {"list", "count"} or confidence < 0.72:
+    if (
+        decision != "domain_schedule"
+        or not isinstance(read_request, ReadRequest)
+        or read_request.subject != "schedule"
+        or confidence < 0.72
+    ):
         return None
 
     frame = ContextFrameManager().latest_active_frame(state)
@@ -65,7 +71,7 @@ async def _resolve_schedule_read_during_pending_confirmation(
     loaded_context = state.loaded_context if isinstance(state.loaded_context, dict) else {}
     locale = str(loaded_context.get("language") or "en")
 
-    if schedule_response_mode == "count":
+    if read_request.response_shape in {"fact_count", "fact_bool"}:
         count = len(frame.items)
         response = render_message(
             "context_frame.followup.pending_scheduled_count",
@@ -95,7 +101,7 @@ async def _resolve_schedule_read_during_pending_confirmation(
 
     logger.info(
         "interrupt_schedule_read_context_answer",
-        schedule_response_mode=schedule_response_mode,
+        response_shape=read_request.response_shape,
         confidence=round(confidence, 2),
         pending_task_ids=getattr(interrupt, "task_ids", None),
     )

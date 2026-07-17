@@ -10,7 +10,11 @@ from apps.chat.src.agent.orchestrator.workflows.execution.beneficiary_resolution
     _recipient_supports_targeted_beneficiary_lookup,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
-from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import push_schedule_list_frame
+from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import (
+    invalidate_conversation_set_frames,
+    push_read_result_frame,
+    push_schedule_list_frame,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import context_surface
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_demands import (
     _batch_transfer_task_ids_for_wave,
@@ -41,12 +45,14 @@ from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import 
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
+from banking.beneficiaries.services.alias_grounding import restore_exact_saved_alias
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.shared.schedule_management import format_schedule_context_blocks
 from banking.transfers.funding.plan_validation import FUNDING_ADJUSTMENT_REVIEW_STATE
 from banking.transfers.resolution.names import normalize_name
 from shared.messaging.body_blocks import MessageDocument
+from shared.types.read import normalize_read_request
 from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
@@ -607,6 +613,20 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
                 error=str(e),
             )
 
+    grounded_alias = restore_exact_saved_alias(
+        user_msg,
+        recipient_name_text,
+        beneficiaries,
+    )
+    if grounded_alias and grounded_alias != recipient_name_text:
+        update_task_payload(task, {"recipient_name": grounded_alias})
+        recipient_name_text = grounded_alias
+        logger.info(
+            "transfer_exact_saved_alias_restored",
+            source="task_payload",
+            alias_token_count=len(grounded_alias.split()),
+        )
+
     resolved_referents = build_resolved_referents(ctx.state, user_msg)
     context_data = {
         "phone_number": turn.phone_number,
@@ -677,6 +697,13 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         result = _strip_single_leg_funding_artifacts(result)
 
     _apply_result_patch(task, result)
+    invalidated_domain = (
+        result.patch.get("invalidate_conversation_set_domain")
+        if isinstance(result.patch, dict)
+        else None
+    )
+    if result.outcome == TransactionOutcome.OK and isinstance(invalidated_domain, str):
+        invalidate_conversation_set_frames(ctx, invalidated_domain)
     recipient_review_required = False
     if isinstance(result.patch, dict):
         recipient_review_required = _maybe_mark_recipient_review_required(
@@ -688,7 +715,31 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         )
         schedule_items = result.patch.get("schedule_context_items")
         if isinstance(schedule_items, list):
-            push_schedule_list_frame(ctx, [item for item in schedule_items if isinstance(item, dict)])
+            metadata = (
+                {
+                    "read_request": result.read_result.request.model_dump(mode="json", exclude_none=True),
+                    "total_count": result.read_result.total_count,
+                    "has_next": result.read_result.has_next,
+                    "has_previous": result.read_result.has_previous,
+                }
+                if result.read_result is not None
+                else None
+            )
+            raw_schedule_contract = task.payload.get("schedule_contract")
+            if isinstance(raw_schedule_contract, dict):
+                metadata = dict(metadata or {})
+                metadata["schedule_contract"] = raw_schedule_contract
+            raw_set_state = task.payload.get("conversation_set_state")
+            if isinstance(raw_set_state, dict):
+                metadata = dict(metadata or {})
+                metadata["conversation_set_state"] = raw_set_state
+            push_schedule_list_frame(
+                ctx,
+                [item for item in schedule_items if isinstance(item, dict)],
+                metadata=metadata,
+            )
+        elif result.read_result is not None:
+            push_read_result_frame(ctx, result.read_result)
     if result.response and not recipient_review_required and not suppress_single_leg_batch_blocker:
         ctx.accumulator.say(result.response)
 
@@ -786,10 +837,28 @@ async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
     logger.info("schedule_worker_returned", outcome=result.outcome, task_id=task_id)
 
     _apply_result_patch(task, result)
+    invalidated_domain = (
+        result.patch.get("invalidate_conversation_set_domain")
+        if isinstance(result.patch, dict)
+        else None
+    )
+    if result.outcome == TransactionOutcome.OK and isinstance(invalidated_domain, str):
+        invalidate_conversation_set_frames(ctx, invalidated_domain)
     if isinstance(result.patch, dict):
         schedule_items = result.patch.get("schedule_context_items")
         if isinstance(schedule_items, list):
-            push_schedule_list_frame(ctx, [item for item in schedule_items if isinstance(item, dict)])
+            raw_schedule_contract = task.payload.get("schedule_contract")
+            raw_set_state = task.payload.get("conversation_set_state")
+            metadata: dict[str, Any] = {}
+            if isinstance(raw_schedule_contract, dict):
+                metadata["schedule_contract"] = raw_schedule_contract
+            if isinstance(raw_set_state, dict):
+                metadata["conversation_set_state"] = raw_set_state
+            push_schedule_list_frame(
+                ctx,
+                [item for item in schedule_items if isinstance(item, dict)],
+                metadata=metadata or None,
+            )
     if result.response:
         body_blocks = _schedule_response_body_blocks(task, result, locale=_state_locale(ctx.state))
         if body_blocks:
@@ -815,7 +884,12 @@ def _schedule_response_body_blocks(
 ) -> MessageDocument | None:
     if not isinstance(result.patch, dict):
         return None
-    if str(task.payload.get("schedule_response_mode") or "").strip().lower() == "count":
+    read_request = (
+        result.read_result.request
+        if result.read_result is not None
+        else normalize_read_request(task.payload)
+    )
+    if read_request is not None and read_request.response_shape.startswith("fact_"):
         return None
 
     schedule_items = result.patch.get("schedule_context_items")

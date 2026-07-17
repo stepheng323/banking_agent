@@ -27,20 +27,42 @@ class AccountFormatter:
         return f"···{suffix}"
 
     @staticmethod
-    def format_account_list(accounts: list[Any], locale: str = "en") -> str:
+    def format_account_list(accounts: list[Any], locale: str = "en", *, has_next: bool = False) -> str:
         """Format list of accounts for display."""
-        return render_body_blocks_text(AccountFormatter.format_account_list_blocks(accounts, locale=locale)) or (
+        return render_body_blocks_text(
+            AccountFormatter.format_account_list_blocks(accounts, locale=locale, has_next=has_next)
+        ) or (
             render_message("account.list.empty", locale)
         )
 
     @staticmethod
-    def format_account_list_blocks(accounts: list[Any], locale: str = "en") -> MessageDocument | None:
+    def format_default_account(account: Any | None, locale: str = "en") -> str:
+        """Format the current default account without exposing its full number."""
+        if account is None:
+            return render_message("account.default_unavailable", locale)
+        return render_message(
+            "account.default_identity",
+            locale,
+            {
+                "bank_name": get_bank_label(account),
+                "masked": AccountFormatter._mask_from_last4(get_last4(account)),
+            },
+        )
+
+    @staticmethod
+    def format_account_list_blocks(
+        accounts: list[Any],
+        locale: str = "en",
+        *,
+        has_next: bool = False,
+    ) -> MessageDocument | None:
         """Format linked accounts as mobile-friendly message blocks."""
-        del locale
         if not accounts:
             return None
 
-        blocks: MessageDocument = [{"type": "heading", "text": "Linked accounts"}]
+        blocks: MessageDocument = [
+            {"type": "heading", "text": render_message("account.list.header", locale).strip("*")}
+        ]
         action_hints: list[str] = []
 
         for i, account in enumerate(accounts, 1):
@@ -73,6 +95,8 @@ class AccountFormatter:
             action_hints.append("set 2 as default")
         action_hints.append("unlink GTB")
         blocks.append({"type": "text", "text": f"Actions: {' | '.join(action_hints)}"})
+        if has_next:
+            blocks.append({"type": "text", "text": render_message("common.pagination.more", locale)})
         return blocks
 
     @staticmethod
@@ -95,11 +119,30 @@ class AccountFormatter:
         locale: str = "en",
     ) -> MessageDocument | None:
         """Format account balances as mobile-friendly message blocks."""
-        del locale
         if not balances:
             return None
 
-        blocks: MessageDocument = [{"type": "heading", "text": "Balances"}]
+        if len(balances) == 1:
+            bal = balances[0]
+            masked = AccountFormatter._mask_account(bal.get("account_number"))
+            return [
+                {
+                    "type": "text",
+                    "text": render_message(
+                        "account.balance.natural_single",
+                        locale,
+                        {
+                            "bank_name": bal["bank_name"],
+                            "masked": masked,
+                            "amount": f"{bal['amount']:,.2f}",
+                        },
+                    ),
+                }
+            ]
+
+        blocks: MessageDocument = [
+            {"type": "heading", "text": render_message("account.balance.header_multi", locale).strip("*")}
+        ]
         for bal in balances:
             masked = AccountFormatter._mask_account(bal.get("account_number"))
             blocks.append(
@@ -110,6 +153,12 @@ class AccountFormatter:
             )
 
         if total_balance is not None:
-            blocks.append({"type": "key_value", "label": "Total", "value": f"₦{total_balance:,.2f}"})
+            blocks.append(
+                {
+                    "type": "key_value",
+                    "label": render_message("account.balance.total_label", locale),
+                    "value": f"₦{total_balance:,.2f}",
+                }
+            )
 
         return blocks

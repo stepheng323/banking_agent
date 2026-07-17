@@ -62,14 +62,14 @@ def build_turn_context_summary(
     active_flow = _build_active_flow_details(state_view)
 
     from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
-    from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_focus import (
-        _infer_recent_domain_focus,
+    from apps.chat.src.agent.orchestrator.workflows.planner.context.flow.recent_domain_focus import (
+        infer_recent_domain_focus,
     )
 
     return TurnContextSummary(
         active_domain=state_view.active_domain,
         session_domain=state_view.session_domain,
-        recent_domain_focus=_infer_recent_domain_focus(state_view),
+        recent_domain_focus=infer_recent_domain_focus(state_view),
         recent_answer_focus=_derive_recent_answer_focus(state_view),
         profile_name=profile_name,
         account_lines=account_lines,

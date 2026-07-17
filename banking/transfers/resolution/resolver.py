@@ -88,6 +88,21 @@ async def resolve_beneficiary(
         selected_id = canonical_beneficiary_id(payload.beneficiary_id)
         selected = next((b for b in ctx.beneficiaries if str(b.get("id")) == selected_id), None)
         if selected:
+            selection_ref = payload.beneficiary_selection_ref
+            if selection_ref is not None:
+                updated_at = selected.get("updated_at")
+                isoformat = getattr(updated_at, "isoformat", None)
+                version_token = (
+                    str(isoformat() if callable(isoformat) else updated_at)
+                    if updated_at is not None
+                    else None
+                )
+                if version_token != selection_ref.version_token:
+                    return TransactionResult(
+                        outcome=TransactionOutcome.NEEDS_INPUT,
+                        required_fields=["beneficiary_id"],
+                        prompt=render_message("conversation_set.stale_selection", locale),
+                    )
             if not matches_selected_beneficiary(payload, selected):
                 logger.info(
                     "beneficiary_binding_overridden",

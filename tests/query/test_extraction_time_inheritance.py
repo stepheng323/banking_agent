@@ -1625,6 +1625,7 @@ async def test_show_evidence_follow_up_converts_aggregate_summary_to_scoped_tran
     assert query_contract.filters.transaction_type == "debit"
     assert query_contract.answer_fact_field is None
     assert query_contract.result_reference is None
+    assert query_contract.conversational_prefix is None
     assert updates["current_page"] == 0
     assert updates["show_expanded"] is False
 
@@ -3292,6 +3293,108 @@ async def test_income_vs_spending_followup_compiles_transaction_type_breakdown()
     assert query_contract.aggregation.group_by == "transaction_type"
     assert updates["current_page"] == 0
     assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "language"),
+    [
+        ("What about income?", "en"),
+        ("Income nko?", "pcm"),
+        ("Bawo ni owo to wole?", "yo"),
+        ("Yaya batun kudin shiga?", "ha"),
+        ("Kedu maka ego batara?", "ig"),
+        ("Et les revenus ?", "fr"),
+        ("Switch that same summary to money coming in", "en"),
+    ],
+)
+async def test_typed_income_direction_followup_preserves_monthly_summary_scope(
+    message: str,
+    language: str,
+) -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 7, 16)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 7, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit", account_filter="GTBank", status="successful"),
+        aggregation=Aggregation(type="sum"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="refine_existing",
+            transaction_direction_delta="credit",
+            confidence=0.93,
+            reason="semantic_direction_refinement",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": message, "today": today, "language": language},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.time_start == date(2026, 7, 1)
+    assert query_contract.time_end == today
+    assert query_contract.filters.transaction_type == "credit"
+    assert query_contract.filters.account_filter == "GTBank"
+    assert query_contract.filters.status == "successful"
+    assert query_contract.aggregation.type == "sum"
+    assert query_contract.continuation_type == "filter_delta"
+    assert query_contract.conversational_prefix is None
+    assert updates["current_page"] == 0
+
+
+@pytest.mark.asyncio
+async def test_typed_both_directions_followup_builds_direction_breakdown() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 7, 16)
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 7, 1), end=today, granularity="month"),
+            filters=Filters(transaction_type="debit", account_filter="GTBank"),
+            aggregation=Aggregation(type="sum"),
+        )
+    )
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            transaction_direction_delta="both",
+            confidence=0.95,
+            reason="semantic_both_directions",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    updates = await step._handle_continuation(
+        {"message": "Compare both directions", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.filters.transaction_type is None
+    assert query_contract.filters.account_filter == "GTBank"
+    assert query_contract.aggregation.type == "breakdown"
+    assert query_contract.aggregation.group_by == "transaction_type"
 
 
 @pytest.mark.asyncio

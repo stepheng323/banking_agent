@@ -2,7 +2,7 @@
 
 import asyncio
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
@@ -160,7 +160,7 @@ class OrchestratorGraphHandler:
         return graph_thread_id(phone_number, channel)
 
     @asynccontextmanager
-    async def _thread_invocation_lock(self, thread_id: str) -> AsyncIterator[None]:
+    async def _thread_invocation_lock(self, thread_id: str) -> AsyncGenerator[None]:
         async with thread_invocation_lock(self.redis_client, thread_id, logger=logger):
             yield
 

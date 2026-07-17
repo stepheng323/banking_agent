@@ -134,9 +134,53 @@ async def test_auto_pooled_single_transfer_requires_funding_suggestion_acceptanc
 
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
     assert result.details["insufficient_reason"] == "pool_approval_required"
+    assert result.details["review_state"] == "funding_adjustment"
     assert "funding_plan" in result.details
+    assert result.details["interrupt_metadata"] == {
+        "intent": "single_funding_source_choice",
+        "anchor_source_ids": [ACCESS_ID],
+        "candidate_source_ids": [GTB_ID],
+        "remaining_amount": "30000.00",
+        "primary_contribution": "30000.00",
+    }
     assert "This transfer needs ₦60,000," in (result.prompt or "")
     assert "Which would you like to use?" in (result.prompt or "")
+
+
+@pytest.mark.asyncio
+async def test_explicit_single_transfer_pool_choice_advances_without_second_funding_prompt() -> None:
+    payload = _payload(
+        amount=Decimal("60000.00"),
+        funding_plan=None,
+        source_account_id=ACCESS_ID,
+    ).model_copy(
+        update={
+            "source_accounts": ["Access Bank", "GTBank"],
+            "use_dual_accounts": True,
+            "explicit_split": {
+                "Access Bank": Decimal("30000.00"),
+                "GTBank": Decimal("30000.00"),
+            },
+            "source_affinity_mode": "explicit",
+        }
+    )
+
+    result = await FundingStep().execute(
+        payload,
+        _context_two_accounts(),
+        TransferGates(),
+        worker_context=SimpleNamespace(
+            dd_provider=_BalanceProvider({"mono-1": Decimal("30000.00"), "mono-2": Decimal("30000.00")})
+        ),
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.prompt is None
+    assert result.patch["funding_plan"]["is_single_source"] is False
+    assert [step["amount"] for step in result.patch["funding_plan"]["steps"]] == [
+        Decimal("30000.00"),
+        Decimal("30000.00"),
+    ]
 
 
 @pytest.mark.asyncio

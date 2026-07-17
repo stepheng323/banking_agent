@@ -2,6 +2,7 @@
 
 from shared.utils.bank_aliases import (
     display_bank_name,
+    extract_known_bank_names,
     find_matching_bank_name,
     get_bank_search_terms,
     normalize_bank_name,
@@ -95,6 +96,18 @@ class TestDisplayBankName:
     def test_display_unknown_preserves_input(self):
         assert display_bank_name("Random Bank Nigeria") == "Random Bank Nigeria"
         assert display_bank_name("") is None
+
+
+class TestExtractKnownBankNames:
+    def test_extracts_unique_banks_in_mention_order(self):
+        assert extract_known_bank_names("Compare Access Bank, GTB and First Bank") == [
+            "Access Bank",
+            "GTBank",
+            "First Bank",
+        ]
+
+    def test_does_not_invent_unknown_banks(self):
+        assert extract_known_bank_names("How much is in my unknown bank?") == []
 
 
 class TestFindMatchingBankName:

@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 SCHEMA_VERSION = 1
-EPHEMERAL_CONTEXT_TTL_SECONDS = 900
+EPHEMERAL_CONTEXT_TTL_SECONDS = 600
 
 
 class SupportIntent(str, Enum):

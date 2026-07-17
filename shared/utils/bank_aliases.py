@@ -5,6 +5,7 @@ eliminating duplication across BankCacheService and AccountManagementService.
 """
 
 import difflib
+import re
 
 BANK_ALIASES: dict[str, str] = {
     "gtb": "gtbank",
@@ -117,6 +118,40 @@ def display_bank_name(name: str | None) -> str | None:
         return BANK_DISPLAY_NAMES[normalized]
 
     return BANK_DISPLAY_NAMES.get(raw.casefold(), raw)
+
+
+def extract_known_bank_names(text: str) -> list[str]:
+    """Extract known bank entities from free text using the central bank ontology."""
+    lowered = (text or "").casefold()
+    if not lowered:
+        return []
+    candidates = {
+        *BANK_ALIASES,
+        *BANK_ALIASES.values(),
+        *BANK_DISPLAY_NAMES,
+        *(name.casefold() for name in BANK_DISPLAY_NAMES.values()),
+    }
+    hits: list[tuple[int, int, str]] = []
+    for candidate in candidates:
+        if len(candidate) < 3:
+            continue
+        pattern = re.compile(r"\b" + re.escape(candidate).replace(r"\ ", r"\s+") + r"\b")
+        match = pattern.search(lowered)
+        if match is None:
+            continue
+        display = display_bank_name(candidate)
+        if display is not None:
+            hits.append((match.start(), -len(candidate), display))
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for _, _, display in sorted(hits):
+        canonical = normalize_bank_name(display)
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        ordered.append(display)
+    return ordered
 
 
 def get_bank_search_terms(name: str) -> list[str]:

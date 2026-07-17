@@ -1,18 +1,24 @@
-from typing import Any, cast
+from typing import cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import (
+    invalidate_conversation_set_frames,
     push_account_list_frame,
     push_beneficiary_list_frame,
+    push_read_result_frame,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
-from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import _apply_result_patch
+from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import (
+    _apply_result_patch,
+    _handle_transaction_outcome,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import (
     complete_task,
     fail_task,
+    set_task_confirmation,
     set_task_payload_value,
     set_task_stage,
 )
@@ -21,28 +27,11 @@ from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _
 from banking.beneficiaries.formatter import BeneficiaryFormatter
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import AccountOutcome, AccountResult, TransactionOutcome, TransactionResult
+from shared.types.balance import BalanceConversationState, BalanceQueryContract
+from shared.types.read import ReadRequest, ReadResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-_COUNT_PREVIEW_SHAPES = {"fact_count", "fact_bool"}
-
-
-def _beneficiary_frame_metadata(task: TaskSpec, viewed: Any) -> dict[str, Any]:
-    response_shape = str(task.payload.get("response_shape") or "").strip().lower()
-    if response_shape not in _COUNT_PREVIEW_SHAPES or not isinstance(viewed, list):
-        return {}
-    total_count = len(viewed)
-    shown_count = min(3, total_count)
-    if total_count <= shown_count:
-        return {}
-    return {
-        "display_shape": "count_preview",
-        "response_shape": response_shape,
-        "shown_count": shown_count,
-        "total_count": total_count,
-    }
-
 
 class AccountTaskExecutor:
     async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
@@ -89,20 +78,121 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
         ),
     )
 
+    action = str(task.payload.get("action") or "").strip()
+    if result.outcome == AccountOutcome.OK and result.read_result is None and action in {
+        "check_balance",
+        "balance",
+        "show_balance",
+        "overall_balance",
+    }:
+        viewed = result.details.get("viewed_accounts") if isinstance(result.details, dict) else None
+        derived_viewed_accounts = (
+            [item for item in viewed if isinstance(item, dict)]
+            if isinstance(viewed, list)
+            else []
+        )
+        bank_name = str(task.payload.get("identifier") or "").strip() or None
+        if bank_name is None and len(derived_viewed_accounts) == 1:
+            bank_name = str(derived_viewed_accounts[0].get("bank_name") or "").strip() or None
+        request = ReadRequest(subject="balance", response_shape="fact_value", bank_name=bank_name)
+        result.read_result = ReadResult(
+            request=request,
+            total_count=len(derived_viewed_accounts),
+            returned_count=0,
+        )
+        logger.info(
+            "account_typed_action_read_contract_derived",
+            subject="balance",
+            response_shape="fact_value",
+            bank_filter_present=bank_name is not None,
+        )
+
     _apply_result_patch(task, result)
+    invalidated_domain = (
+        result.patch.get("invalidate_conversation_set_domain")
+        if isinstance(result.patch, dict)
+        else None
+    )
+    if result.outcome == AccountOutcome.OK and isinstance(invalidated_domain, str):
+        invalidate_conversation_set_frames(ctx, invalidated_domain)
 
     if result.outcome == AccountOutcome.OK:
         complete_task(task)
         viewed_accounts = result.details.get("viewed_accounts") if isinstance(result.details, dict) else None
         if isinstance(viewed_accounts, list):
+            metadata: dict[str, object] = {
+                "source_domain": "account",
+                "source_action": str(task.payload.get("action") or ""),
+            }
+            if result.read_result is not None:
+                metadata.update(
+                    {
+                        "read_request": result.read_result.request.model_dump(mode="json", exclude_none=True),
+                        "total_count": result.read_result.total_count,
+                        "has_next": result.read_result.has_next,
+                        "has_previous": result.read_result.has_previous,
+                    }
+                )
+            raw_balance_contract = task.payload.get("balance_contract")
+            if isinstance(raw_balance_contract, dict):
+                try:
+                    balance_contract = BalanceQueryContract.model_validate(raw_balance_contract)
+                except ValueError:
+                    balance_contract = None
+                if balance_contract is not None:
+                    metadata["balance_contract"] = balance_contract.model_dump(mode="json", exclude_none=True)
+                    raw_balance_state = task.payload.get("balance_conversation_state")
+                    try:
+                        balance_state = (
+                            BalanceConversationState.model_validate(raw_balance_state)
+                            if isinstance(raw_balance_state, dict)
+                            else BalanceConversationState(last_operation=balance_contract.operation)
+                        )
+                    except ValueError:
+                        balance_state = BalanceConversationState(last_operation=balance_contract.operation)
+                    result_banks = [
+                        str(item.get("bank_name") or "").strip()
+                        for item in viewed_accounts
+                        if isinstance(item, dict) and str(item.get("bank_name") or "").strip()
+                    ]
+                    mentioned = list(balance_state.mentioned_banks)
+                    seen = {name.casefold() for name in mentioned}
+                    for bank_name in result_banks:
+                        if bank_name.casefold() not in seen:
+                            mentioned.append(bank_name)
+                            seen.add(bank_name.casefold())
+                    balance_state = balance_state.model_copy(
+                        update={
+                            "focused_bank": result_banks[0] if len(result_banks) == 1 else balance_state.focused_bank,
+                            "mentioned_banks": mentioned,
+                            "last_result_banks": result_banks,
+                            "last_operation": balance_contract.operation,
+                        }
+                    )
+                    metadata["balance_conversation_state"] = balance_state.model_dump(
+                        mode="json", exclude_none=True
+                    )
+            raw_lifecycle_contract = task.payload.get("account_lifecycle_contract")
+            if isinstance(raw_lifecycle_contract, dict):
+                metadata["account_lifecycle_contract"] = raw_lifecycle_contract
+            raw_set_state = task.payload.get("conversation_set_state")
+            if isinstance(raw_set_state, dict):
+                metadata["conversation_set_state"] = raw_set_state
             push_account_list_frame(
                 ctx,
                 [item for item in viewed_accounts if isinstance(item, dict)],
-                metadata={
-                    "source_domain": "account",
-                    "source_action": str(task.payload.get("action") or ""),
-                    "response_shape": str(task.payload.get("response_shape") or ""),
-                },
+                metadata=metadata,
+            )
+        elif result.read_result is not None:
+            raw_lifecycle_contract = task.payload.get("account_lifecycle_contract")
+            push_read_result_frame(
+                ctx,
+                result.read_result,
+                metadata=(
+                    {"account_lifecycle_contract": raw_lifecycle_contract}
+                    if isinstance(raw_lifecycle_contract, dict)
+                    else None
+                ),
             )
         if result.response:
             set_task_payload_value(task, "result", result.response)
@@ -115,6 +205,16 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
         set_task_stage(task, TaskStage.EXTRACTED)
         ctx.accumulator.add_missing_fields(task_id, result.required_fields or ["identifier"])
         ctx.accumulator.add_prompt(result.prompt, task_id)
+
+    elif result.outcome == AccountOutcome.NEEDS_CONFIRMATION:
+        set_task_stage(task, TaskStage.AWAITING_CONFIRMATION)
+        ctx.accumulator.add_confirmation_task(task_id)
+        set_task_confirmation(
+            task,
+            summary=result.confirmation_summary,
+            snapshot=result.confirmation_snapshot,
+            update_message=result.update_message,
+        )
 
     elif result.outcome == AccountOutcome.FAILED:
         fail_task(
@@ -129,7 +229,6 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
 
 
 async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
-    del task_id
     action = task.payload.get("action")
     is_management = (
         task.payload.get("intent")
@@ -171,29 +270,57 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
 
         result = cast(TransactionResult, await worker.run(payload=task.payload, context=context_data))
         _apply_result_patch(task, result)
+        invalidated_domain = (
+            result.patch.get("invalidate_conversation_set_domain") if isinstance(result.patch, dict) else None
+        )
+        if result.outcome == TransactionOutcome.OK and isinstance(invalidated_domain, str):
+            invalidate_conversation_set_frames(ctx, invalidated_domain)
 
         if result.outcome == TransactionOutcome.OK:
             complete_task(task)
 
             if result.details and "viewed_beneficiaries" in result.details:
                 viewed = result.details["viewed_beneficiaries"]
-                push_beneficiary_list_frame(ctx, viewed, metadata=_beneficiary_frame_metadata(task, viewed))
-                response_shape = str(task.payload.get("response_shape") or "").strip().lower()
-                if isinstance(viewed, list) and response_shape in _COUNT_PREVIEW_SHAPES and result.response:
-                    body_blocks = BeneficiaryFormatter.format_count_preview_blocks(
-                        viewed,
-                        result.response.splitlines()[0],
-                        locale=_state_locale(ctx.state),
-                    )
-                elif isinstance(viewed, list):
+                read_result = result.read_result
+                metadata = (
+                    {
+                        "read_request": read_result.request.model_dump(mode="json", exclude_none=True),
+                        "total_count": read_result.total_count,
+                        "has_next": read_result.has_next,
+                        "has_previous": read_result.has_previous,
+                    }
+                    if read_result is not None
+                    else {}
+                )
+                raw_contract = task.payload.get("beneficiary_contract")
+                if isinstance(raw_contract, dict):
+                    metadata["beneficiary_contract"] = raw_contract
+                raw_set_state = task.payload.get("conversation_set_state")
+                if isinstance(raw_set_state, dict):
+                    metadata["conversation_set_state"] = raw_set_state
+                push_beneficiary_list_frame(ctx, viewed, metadata=metadata)
+                if isinstance(viewed, list):
                     body_blocks = BeneficiaryFormatter.format_beneficiary_list_blocks(
                         viewed,
                         locale=_state_locale(ctx.state),
+                        name_filter=(read_result.request.entity_name if read_result is not None else None),
+                        has_next=(read_result.has_next if read_result is not None else False),
                     )
                 else:
                     body_blocks = None
             else:
                 body_blocks = None
+                if result.read_result is not None:
+                    raw_contract = task.payload.get("beneficiary_contract")
+                    push_read_result_frame(
+                        ctx,
+                        result.read_result,
+                        metadata=(
+                            {"beneficiary_contract": raw_contract}
+                            if isinstance(raw_contract, dict)
+                            else None
+                        ),
+                    )
 
             if result.response:
                 set_task_payload_value(task, "result", result.response)
@@ -208,6 +335,18 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
             )
             fail_task(task, err)
             ctx.accumulator.say(err)
+        else:
+            _handle_transaction_outcome(
+                task,
+                task_id,
+                result,
+                ctx.accumulator,
+                confirmation_gate="snapshot",
+                default_error=render_message(
+                    "orchestrator.error.beneficiary_operation_failed",
+                    _state_locale(ctx.state),
+                ),
+            )
         return
 
     suggestion_service = ctx.dependencies.beneficiary_suggestion_service

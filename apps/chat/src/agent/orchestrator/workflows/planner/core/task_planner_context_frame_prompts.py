@@ -5,7 +5,8 @@ to the latest displayed assistant result frame.
 
 Return ONLY JSON for this schema:
 - decision: answer_completeness | lookup_entity | show_details | filter_items | compare_items | select_item |
-  explain_result | replay_tasks | edit_schedule | cancel_schedule | start_new_task | unclear
+  explain_result | replay_tasks | edit_schedule | cancel_schedule | delete_beneficiary | unlink_account |
+  set_default_account | relink_account | transfer_beneficiaries | start_new_task | unclear
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
 - target_text: referenced displayed entity, label, bank, recipient, group, or visible target, else null
@@ -13,6 +14,24 @@ Return ONLY JSON for this schema:
 - rank: largest | smallest | newest | oldest | null
 - filters: object with optional transaction_type, status, direction, bank, counterparty
 - selection_index: integer or null
+- read_subject: transaction | balance | linked_account | default_account | beneficiary | schedule | ticket | receipt |
+  null. Set it for every banking read represented by the message
+- read_response_shape: fact_bool | fact_count | fact_value | fact_status | fact_recap | surface_list |
+  surface_detail | surface_paginated | surface_actionable | null
+- page_action: next | previous | first | null
+- balance_delta: object with scope_operation, bank_names, operation, response_shape; null outside balance follow-ups
+- beneficiary_delta: object with operation, entity_name, bank_name, beneficiary_type; null outside retained
+  beneficiary reads. operation is preserve | count | existence | list | detail
+- account_lifecycle_delta: object with operation, bank_scope, bank_name; null outside linked/default-account reads.
+  operation is preserve | count | existence | list | detail | readiness | default_identity; bank_scope is
+  preserve | named | all
+- set_scope_delta: object with operation, selection_indices, target_labels; null outside beneficiary, schedule, or
+  linked-account set follow-ups
+- set_amount_allocations: array of explicit {selection_index or target_label, amount}; use only for
+  transfer_beneficiaries and include one allocation for every selected beneficiary
+- schedule_edit_delta: sparse object containing only explicitly requested schedule edits such as amount,
+  schedule_time_local, schedule_start_date, recurrence_type, recipient/source fields, phone/network, or plan; null
+  outside edit_schedule
 - reason: short reason
 
 Semantic operations:
@@ -33,11 +52,17 @@ Semantic operations:
    displayed frame. This is only valid for transaction/receipt frames. If no specific item is referenced, it means
    every replayable transaction item in the displayed frame.
 9) edit_schedule: user asks to change, update, reschedule, move, or modify one or more displayed scheduled
-   transaction items. This is only valid for scheduled transaction frames.
+   transaction items. This is only valid for scheduled transaction frames. Extract every explicit change into
+   schedule_edit_delta; do not calculate, copy, or invent unchanged values.
 10) cancel_schedule: user asks to cancel, delete, remove, stop, or disable one or more displayed scheduled
    transaction items. This is only valid for scheduled transaction frames.
 11) start_new_task: user is starting a fresh banking/conversation task, not following up on the displayed frame.
 12) unclear: not enough signal.
+13) delete_beneficiary: user asks to remove one or more beneficiaries from a beneficiary frame.
+14) unlink_account/set_default_account/relink_account: user asks to apply that lifecycle action to selected linked
+    accounts. set_default_account and relink_account require exactly one selected account.
+15) transfer_beneficiaries: user asks to transfer to one or more selected beneficiaries. Return an explicit amount
+    allocation for every selected beneficiary. Never split, copy, or infer an amount across recipients.
 
 Rules:
 - Be semantic and language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
@@ -48,6 +73,46 @@ Rules:
   another language: bank, amount, counterparty, date, network, phone, reference, status.
 - For account frames, questions about why a displayed account is pending/ready/approved/rejected are frame
   follow-ups, not transaction queries. Use explain_result or show_details with target_text set to the account/bank
+
+Canonical read follow-ups:
+- When context contains read(...), preserve its subject and filters.
+- Set read_subject to the subject the latest message actually asks about. A named filter does not override an
+  explicit subject noun: an account-linkage/readiness question is linked_account even when a beneficiary frame is
+  active; a beneficiary-membership question is beneficiary. If read_subject differs from the retained frame, this
+  is a typed read pivot, not a lookup inside the old result.
+- For a retained beneficiary read, a question asking whether a specifically named person or alias is saved is a
+  repository membership lookup, even when the preceding answer was only a total count. Return lookup_entity,
+  target_text set to only that name or alias, and beneficiary_delta={operation: existence, entity_name: target}.
+  Do not limit the lookup to rows in the fact frame and do not use set_scope_delta for a person who may not be in the
+  last displayed result.
+- Always return beneficiary_delta for a retained beneficiary read. A narrowed count uses operation=count; a
+  membership question uses operation=existence; revealing matching rows uses operation=list. Include only explicit
+  filter changes and preserve unrelated retained filters.
+- Always return account_lifecycle_delta for a retained linked/default-account read. A request for the linked-account
+  collection uses operation=list. Use bank_scope=all when the user asks for the linked accounts generally rather than
+  the previously filtered bank; preserve keeps the old bank filter, and named replaces it with bank_name.
+- When the user repeats, reaffirms, contrasts, or substitutes a bank on a retained balance or linked-account read,
+  set filters.bank to the requested bank and preserve the prior response shape. This is a refinement of the same
+  read whether it names the same bank again or a different bank that was not in the displayed result.
+- A short elliptical follow-up that names only a bank relative to a retained balance is still a balance refinement,
+  not an unsupported request or a lookup limited to the currently displayed row. Return that bank in filters.bank.
+- For retained balance context, also return balance_delta. Scope operations: replace for newly targeted banks, add or
+  remove for set edits, recent_two for the two most recently mentioned distinct banks, mentioned for every distinct
+  bank mentioned in this balance thread, last_result for the last displayed set, all for every linked account,
+  default for the default account, preserve when scope does not change.
+- Balance operations: value for one account, total for one combined amount, breakdown for per-account values, and
+  compare for an ordered comparison. Comparison and totals may contain any number of accounts, not only two.
+- A reference to exactly two prior targets uses recent_two. References to the whole discussed set use mentioned;
+  this set may contain more than two accounts. References to the displayed set use last_result. Resolve these only
+  when the supplied balance context grounds the requested scope.
+- Asking to reveal matching entries after a collection count/bool answer sets read_response_shape=surface_list and
+  show_details.
+- Asking for expanded information after a balance/default-account/ticket/receipt fact answer sets
+  read_response_shape=surface_detail and show_details.
+- Moving through a retained list sets page_action=next|previous|first; do not reinterpret it as a fresh request.
+- For beneficiary, schedule, and linked-account frames, use set_scope_delta rather than copying records. Operations:
+  preserve, replace, add, remove, recent_two, mentioned, last_result, all. Put only visible ordinals or display labels
+  in the delta. Never invent IDs. Use recent_two/mentioned/last_result only when the frame conversation set grounds it.
   name and requested_field=status.
 - For ranking questions, set rank to one of these English rank labels: largest, smallest, newest, oldest.
 - For narrowing by displayed transaction type/status/direction/bank/counterparty, set filters. Use transaction_type

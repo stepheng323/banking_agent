@@ -73,13 +73,24 @@ def _approve_confirmation_updates(state: OrchestratorState, interrupt: Any) -> d
         task = new_tasks[tid].model_copy(deep=True)
         task.payload.setdefault("confirmation", {})
         task.payload["confirmation"]["confirmed"] = True
-        schedule_edit_without_auth = (
+        confirmation_only_action = (
             task.type == "schedule"
-            and str(task.payload.get("action") or "").strip().lower() == "edit_scheduled_transaction"
-            and task.payload.get("schedule_edit_requires_auth") is False
+            and (
+                str(task.payload.get("action") or "").strip().lower() == "cancel_scheduled_transaction"
+                or (
+                    str(task.payload.get("action") or "").strip().lower() == "edit_scheduled_transaction"
+                    and task.payload.get("schedule_edit_requires_auth") is False
+                )
+            )
+        ) or (
+            task.type == "beneficiary"
+            and str(task.payload.get("action") or "").strip().lower() == "delete_beneficiary"
+        ) or (
+            task.type == "account"
+            and str(task.payload.get("action") or "").strip().lower() == "unlink"
         )
         task.stage = (
-            TaskStage.EXECUTING if state_view.pin_verified or schedule_edit_without_auth else TaskStage.AWAITING_AUTH
+            TaskStage.EXECUTING if state_view.pin_verified or confirmation_only_action else TaskStage.AWAITING_AUTH
         )
         new_tasks[tid] = task
     return {

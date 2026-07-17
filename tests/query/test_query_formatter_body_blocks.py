@@ -62,7 +62,7 @@ def test_transaction_list_blocks_use_mobile_spacing_instead_of_dense_rows() -> N
                     "transaction_type": "transfer",
                     "counterparty": "Mum",
                     "bank_name": "Wema",
-                    "recipient_account": "8067892221",
+                    "source_account_number": "8067892221",
                     "status": "successful",
                 },
             ),
@@ -90,6 +90,40 @@ def test_transaction_list_blocks_use_mobile_spacing_instead_of_dense_rows() -> N
     assert "• ₦30,000 — Sent to Mum · Wema · ···2221" in rendered
     assert "• ₦2,000 — Airtime for 08162511023 · Access Bank" in rendered
     assert "Showing 1-2 of 2" not in rendered
+
+
+def test_show_evidence_blocks_replace_free_form_prefix_with_localized_lead() -> None:
+    contract = _contract(filters=Filters(transaction_type="debit")).model_copy(
+        update={"continuation_type": "show_evidence"}
+    )
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        conversational_prefix="Show the underlying rows.",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Tolu",
+                amount=6000,
+                date=date(2026, 7, 16),
+                metadata={
+                    "type": "debit",
+                    "transaction_type": "transfer",
+                    "counterparty": "Tolu Adebayo",
+                    "source_bank_name": "GTBank",
+                    "source_account_number": "2010000002",
+                    "recipient_account_number": "2010000001",
+                },
+            )
+        ],
+        query_contract=contract,
+    )
+
+    rendered = render_body_blocks_text(QueryFormatter.format_blocks(result, locale="en"))
+
+    assert "Here's the transaction behind that total." in rendered
+    assert "Show the underlying rows." not in rendered
+    assert "GTBank · ···0002" in rendered
+    assert "···0001" not in rendered
 
 
 def test_failed_transaction_list_blocks_do_not_label_failed_transfer_as_sent() -> None:

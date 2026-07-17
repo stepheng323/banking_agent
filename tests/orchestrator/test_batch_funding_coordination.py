@@ -873,6 +873,69 @@ async def test_accepting_suggested_batch_funding_rejects_missing_recipient_desti
     assert task.payload["suggested_funding_plan"] is None
 
 
+@pytest.mark.parametrize(
+    ("reply", "expected_bank"),
+    [("Use access", "Access Bank"), ("2", "Access Bank")],
+)
+async def test_single_funding_source_choice_adds_selected_account_to_anchor(
+    reply: str,
+    expected_bank: str,
+) -> None:
+    gtb = _account("GTBank", "acc_gtb", is_default=True)
+    first = _account("First Bank", "acc_first")
+    access = _account("Access Bank", "acc_access")
+    state = OrchestratorState(
+        turn_directive=execution_test_directive(),
+        user_id="u_single_funding_choice",
+        phone_number="2348000001013",
+        channel="whatsapp",
+        last_message_text=reply,
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t_mum"],
+            fields_by_task={"t_mum": ["source_accounts", "explicit_split"]},
+            prompt="Which additional account would you like to use?",
+            metadata={
+                "intent": "single_funding_source_choice",
+                "anchor_source_ids": [gtb["id"]],
+                "candidate_source_ids": [first["id"], access["id"]],
+                "remaining_amount": "15000.00",
+                "primary_contribution": "30000.00",
+            },
+        ),
+        tasks={
+            "t_mum": TaskSpec(
+                id="t_mum",
+                type="transfer",
+                stage=TaskStage.AWAITING_FUNDING_ADJUSTMENT,
+                payload={
+                    "amount": 45000.0,
+                    "recipient_name": "mum",
+                    "recipient_account": "0760505261",
+                    "recipient_bank_name": "Wema",
+                    "source_account_id": gtb["id"],
+                    "source_bank_name": "GTBank",
+                    "funding_plan": None,
+                },
+            )
+        },
+        loaded_context={"language": "en", "accounts": [gtb, first, access]},
+    )
+    config: RunnableConfig = {"configurable": {"services": {}}, "recursion_limit": 50}
+    runtime = build_interrupt_runtime(state=state, config=config)
+
+    updates = await _input_shortcut_updates(state=state, runtime=runtime)
+
+    assert updates is not None
+    assert updates["pending_interrupt"] is None
+    task = updates["tasks"]["t_mum"]
+    assert task.stage == TaskStage.EXTRACTED
+    assert task.payload["source_accounts"] == ["GTBank", expected_bank]
+    assert task.payload["explicit_split"] == {"GTBank": 30000.0, expected_bank: 15000.0}
+    assert task.payload["source_account_id"] is None
+    assert task.payload["skip_extraction"] is True
+
+
 async def test_accepting_suggested_batch_funding_reaches_existing_confirmation_gate() -> None:
     access = _account("Access Bank", "acc_access", is_default=True)
     gtb = _account("GTBank", "acc_gtb")

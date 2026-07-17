@@ -74,6 +74,48 @@ def test_format_transaction_list_item_uses_query_row_copy() -> None:
     assert format_transaction_list_item(item, locale="en") == "• Jun 11 · ₦10,000 — Sent to Tolu Adebayo · GTBank"
 
 
+def test_format_transaction_list_item_uses_source_account_provenance() -> None:
+    item = SimpleNamespace(
+        amount=6000,
+        description="Transfer to Tolu",
+        date=date(2026, 7, 16),
+        metadata={
+            "type": "debit",
+            "transaction_type": "transfer",
+            "counterparty": "Tolu Adebayo",
+            "bank_name": "Access Bank",
+            "source_bank_name": "GTBank",
+            "source_account_number": "2010000002",
+            "recipient_account_number": "2010000001",
+        },
+    )
+
+    row = format_transaction_list_item(item, locale="en")
+
+    assert row == "• Jul 16 · ₦6,000 — Sent to Tolu Adebayo · GTBank · ···0002"
+    assert "···0001" not in row
+
+
+def test_format_transaction_list_item_omits_recipient_suffix_without_source_evidence() -> None:
+    item = SimpleNamespace(
+        amount=6000,
+        description="Transfer to Tolu",
+        date=date(2026, 7, 16),
+        metadata={
+            "type": "debit",
+            "transaction_type": "transfer",
+            "counterparty": "Tolu Adebayo",
+            "bank_name": "Access Bank",
+            "recipient_account_number": "2010000001",
+        },
+    )
+
+    row = format_transaction_list_item(item, locale="en")
+
+    assert row == "• Jul 16 · ₦6,000 — Sent to Tolu Adebayo · Access Bank"
+    assert "···0001" not in row
+
+
 def test_format_transaction_list_item_humanizes_uppercase_counterparty() -> None:
     item = SimpleNamespace(
         amount=5000,

@@ -120,6 +120,40 @@ def _implicit_pooled_plan_needs_approval(payload: TransferPayload, plan: Any) ->
     )
 
 
+def _single_transfer_pool_shortfall(payload: TransferPayload, plan: Any) -> Decimal:
+    amount = require_naira(payload.amount or plan.transfer_amount)
+    primary_balance = require_naira(plan.primary_available_balance or 0)
+    return max(Decimal("0.00"), amount - primary_balance)
+
+
+def _eligible_single_transfer_pool_candidates(payload: TransferPayload, plan: Any) -> list[dict[str, Any]]:
+    shortfall = _single_transfer_pool_shortfall(payload, plan)
+    return [
+        candidate
+        for candidate in getattr(plan, "candidate_sources", [])
+        if isinstance(candidate, dict)
+        and candidate.get("id")
+        and require_naira(candidate.get("available") or 0) >= shortfall
+    ]
+
+
+def _single_transfer_funding_interrupt_metadata(payload: TransferPayload, plan: Any) -> dict[str, Any]:
+    shortfall = _single_transfer_pool_shortfall(payload, plan)
+    amount = require_naira(payload.amount or plan.transfer_amount)
+    steps = list(getattr(plan, "steps", []) or [])
+    primary_account_id = getattr(plan, "primary_account_id", None)
+    if primary_account_id is None and steps:
+        primary_account_id = getattr(steps[0], "account_id", None)
+    candidates = _eligible_single_transfer_pool_candidates(payload, plan)
+    return {
+        "intent": "single_funding_source_choice",
+        "anchor_source_ids": [str(primary_account_id)] if primary_account_id else [],
+        "candidate_source_ids": [str(candidate["id"]) for candidate in candidates],
+        "remaining_amount": str(shortfall),
+        "primary_contribution": str(amount - shortfall),
+    }
+
+
 def _single_transfer_funding_approval_prompt(payload: TransferPayload, plan: Any, locale: str = "en") -> str:
     amount = payload.amount or plan.transfer_amount
     primary_bank = plan.primary_bank_name or (plan.steps[0].bank_name if plan.steps else "Account")
@@ -142,8 +176,8 @@ def _single_transfer_funding_approval_prompt(payload: TransferPayload, plan: Any
         ""
     ]
 
-    shortfall = amount - primary_balance
-    candidate_sources = getattr(plan, "candidate_sources", [])
+    shortfall = _single_transfer_pool_shortfall(payload, plan)
+    candidate_sources = _eligible_single_transfer_pool_candidates(payload, plan)
 
     if not candidate_sources:
         lines.append(
@@ -238,12 +272,17 @@ async def plan_transaction_funding(
 
     plan_dict = _funding_plan_dict(plan, signature)
 
-    if not plan.is_single_source:
+    if _implicit_pooled_plan_needs_approval(payload, plan):
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["source_accounts", "explicit_split"],
             prompt=_single_transfer_funding_approval_prompt(payload, plan, locale),
-            details={"funding_plan": plan, "insufficient_reason": "pool_approval_required"},
+            details={
+                **funding_adjustment_details("pool_approval_required"),
+                "funding_plan": plan,
+                "insufficient_reason": "pool_approval_required",
+                "interrupt_metadata": _single_transfer_funding_interrupt_metadata(payload, plan),
+            },
         )
 
     return TransactionResult(outcome=TransactionOutcome.OK, patch={"funding_plan": plan_dict})

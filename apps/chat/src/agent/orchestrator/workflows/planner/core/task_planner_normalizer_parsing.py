@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from shared.money import MoneyAmount, to_naira
-from shared.utils.bank_aliases import BANK_ALIASES, normalize_bank_name
+from shared.utils.bank_aliases import extract_known_bank_names
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 from shared.utils.sanitize import normalize_bank_account_number
 
@@ -17,33 +17,6 @@ DATA_PLAN_PATTERN = re.compile(r"(?<!\d)(\d{1,3}(?:\.\d+)?)\s*(gb|mb)(?!\w)", re
 BALANCE_SHARE_PERCENT_PATTERN = re.compile(r"\b(?P<pct>\d{1,3})\s*%\b", re.IGNORECASE)
 
 _CANONICAL_NETWORKS = {"MTN", "AIRTEL", "GLO", "9MOBILE"}
-_CANONICAL_BANK_DISPLAY = {
-    "gtbank": "GTBank",
-    "uba": "UBA",
-    "firstbank": "First Bank",
-    "fcmb": "FCMB",
-    "stanbic": "Stanbic",
-    "ecobank": "Ecobank",
-    "fidelity": "Fidelity",
-    "wema": "Wema",
-    "polaris": "Polaris",
-    "keystone": "Keystone",
-    "union": "Union",
-    "sterling": "Sterling",
-    "providus": "Providus",
-    "opay": "Opay",
-    "palmpay": "PalmPay",
-    "kuda": "Kuda",
-    "moniepoint": "Moniepoint",
-    "access": "Access Bank",
-}
-_BANK_ALIASES = sorted(
-    {alias for alias in (list(BANK_ALIASES.keys()) + list(BANK_ALIASES.values())) if alias and len(alias) >= 3},
-    key=len,
-    reverse=True,
-)
-
-
 def digits_only(value: str) -> str:
     return re.sub(r"\D+", "", value or "")
 
@@ -144,25 +117,7 @@ def extract_data_plan_candidates(text: str) -> list[str]:
 
 
 def extract_bank_candidates(text: str) -> list[str]:
-    lowered = text.lower()
-    canonical_hits: dict[str, str] = {}
-    for alias in _BANK_ALIASES:
-        pattern = r"\b" + re.escape(alias).replace("\\ ", r"\s+") + r"\b"
-        if not re.search(pattern, lowered):
-            continue
-        canonical = normalize_bank_name(alias)
-        if canonical in canonical_hits:
-            continue
-        canonical_hits[canonical] = alias
-
-    results: list[str] = []
-    for canonical, alias in canonical_hits.items():
-        display = _CANONICAL_BANK_DISPLAY.get(canonical)
-        if display:
-            results.append(display)
-        else:
-            results.append(alias.title())
-    return results
+    return extract_known_bank_names(text)
 
 
 def single_unambiguous(values: list[Any]) -> tuple[Any | None, bool]:

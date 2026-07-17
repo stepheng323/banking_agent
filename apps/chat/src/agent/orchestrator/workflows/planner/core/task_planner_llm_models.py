@@ -7,7 +7,17 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from shared.money import MoneyAmount
+from shared.types.balance import initial_balance_contract
+from shared.types.conversation_sets import (
+    AccountLifecycleContract,
+    AccountLifecycleOperation,
+    BeneficiaryOperation,
+    BeneficiaryQueryContract,
+    ScheduleOperation,
+    ScheduleQueryContract,
+)
 from shared.types.planner import PlannerClauseIntentFamily, PlannerOutput, PlannerResponseKey
+from shared.types.read import ReadRequest, ReadSubject, ResponseShape
 
 
 def _strip_annotations(schema: dict[str, Any]) -> None:
@@ -133,6 +143,118 @@ class PlannerLLMGenericParameters(PlannerLLMTransactionParameters):
     query: str | None = None
     account_id: str | None = None
     alias: str | None = None
+    read_subject: ReadSubject | None = None
+    response_shape: ResponseShape | None = None
+    entity_name: str | None = None
+    read_status: str | None = None
+
+
+def _adapt_generic_read_task(task: dict[str, Any]) -> bool:
+    """Materialize compact LLM read fields into canonical worker contracts."""
+    parameters = task.get("parameters")
+    if not isinstance(parameters, dict):
+        return True
+    subject = parameters.pop("read_subject", None)
+    shape = parameters.pop("response_shape", None)
+    entity_name = parameters.pop("entity_name", None)
+    status = parameters.pop("read_status", None)
+    if subject is None and shape is None:
+        return True
+    if not isinstance(subject, str) or not isinstance(shape, str):
+        return False
+
+    executor = str(task.get("executor") or "")
+    expected_executor = {
+        "balance": "account",
+        "linked_account": "account",
+        "default_account": "account",
+        "beneficiary": "beneficiary",
+        "schedule": "schedule",
+        "ticket": "support",
+        "receipt": "support",
+        "transaction": "query",
+    }.get(subject)
+    if executor != expected_executor:
+        return False
+    bank_name = parameters.get("bank_name")
+    try:
+        request = ReadRequest.model_validate(
+            {
+                "subject": subject,
+                "response_shape": shape,
+                "entity_name": entity_name,
+                "bank_name": bank_name,
+                "status": status,
+            }
+        )
+    except ValueError:
+        return False
+    subject = request.subject
+    shape = request.response_shape
+    parameters["read_request"] = request.model_dump(mode="json", exclude_none=True)
+
+    if subject == "beneficiary":
+        beneficiary_operation: BeneficiaryOperation = "list"
+        if shape == "fact_bool":
+            beneficiary_operation = "existence"
+        elif shape == "fact_count":
+            beneficiary_operation = "count"
+        elif shape == "surface_detail":
+            beneficiary_operation = "detail"
+        parameters["beneficiary_contract"] = BeneficiaryQueryContract(
+            operation=beneficiary_operation,
+            response_shape=shape,
+            entity_name=entity_name,
+            bank_name=bank_name,
+        ).model_dump(mode="json", exclude_none=True)
+        task["action"] = "list_beneficiaries"
+    elif subject == "schedule":
+        schedule_operation: ScheduleOperation = "list"
+        if shape == "fact_bool":
+            schedule_operation = "existence"
+        elif shape == "fact_count":
+            schedule_operation = "count"
+        elif shape in {"fact_status", "surface_detail"}:
+            schedule_operation = "detail"
+        parameters["schedule_contract"] = ScheduleQueryContract(
+            operation=schedule_operation,
+            response_shape=shape,
+            recipient_name=entity_name,
+            statuses=[status] if status else [],
+        ).model_dump(mode="json", exclude_none=True)
+        task["action"] = "list_scheduled_transactions"
+    elif subject in {"linked_account", "default_account"}:
+        lifecycle_operation: AccountLifecycleOperation = (
+            "default_identity" if subject == "default_account" else "list"
+        )
+        if subject == "linked_account":
+            if shape == "fact_bool":
+                lifecycle_operation = "existence"
+            elif shape == "fact_count":
+                lifecycle_operation = "count"
+            elif shape == "fact_status":
+                lifecycle_operation = "readiness"
+            elif shape == "surface_detail":
+                lifecycle_operation = "detail"
+        parameters["account_lifecycle_contract"] = AccountLifecycleContract(
+            operation=lifecycle_operation,
+            response_shape=shape,
+            bank_name=bank_name,
+            mandate_statuses=[status] if status else [],
+        ).model_dump(mode="json", exclude_none=True)
+        if subject == "default_account":
+            task["action"] = "get_default"
+        elif shape in {"fact_bool", "fact_count"}:
+            task["action"] = "count"
+        else:
+            task["action"] = "list_accounts"
+    elif subject == "balance":
+        parameters["balance_contract"] = initial_balance_contract(
+            bank_name=bank_name,
+            response_shape=shape,
+        ).model_dump(mode="json", exclude_none=True)
+        task["action"] = "check_balance"
+    return True
 
 
 class _PlannerLLMTaskBase(BaseModel):
@@ -253,6 +375,8 @@ def adapt_planner_llm_output(value: BaseModel, *, original_text: str) -> Planner
         for task in tasks
         if isinstance(task, dict) and task.get("task_id") and task.get("executor")
     }
+    tasks = [task for task in tasks if isinstance(task, dict) and _adapt_generic_read_task(task)]
+    payload["tasks"] = tasks
     for task in tasks:
         if not isinstance(task, dict):
             continue

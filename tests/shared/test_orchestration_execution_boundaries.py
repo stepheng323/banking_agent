@@ -227,7 +227,6 @@ PLANNER_CONTEXT_FLOW_STATE_VIEW_MODULES = (
     PLANNER_ROOT / "context" / "flow" / "context_flow_mode_decisions.py",
     PLANNER_ROOT / "context" / "flow" / "context_flow_state.py",
     PLANNER_ROOT / "context" / "query_session" / "context_query_session.py",
-    PLANNER_ROOT / "context" / "read" / "context_read_focus.py",
     PLANNER_ROOT / "context" / "summary" / "context_summary_focus.py",
 )
 PLANNER_CONTEXT_SUMMARY_STATE_VIEW_MODULES = (
@@ -236,10 +235,6 @@ PLANNER_CONTEXT_SUMMARY_STATE_VIEW_MODULES = (
     PLANNER_ROOT / "context" / "summary" / "context_summary_state.py",
 )
 PLANNER_CONTEXT_READ_STATE_VIEW_MODULES = (
-    PLANNER_ROOT / "context" / "read" / "context_read_account.py",
-    PLANNER_ROOT / "context" / "read" / "context_read_availability.py",
-    PLANNER_ROOT / "context" / "read" / "context_read_frames.py",
-    PLANNER_ROOT / "execution_context_read.py",
     PLANNER_ROOT / "execution_flow.py",
 )
 PLANNER_CONTEXT_FRAME_STATE_VIEW_MODULES = (
@@ -255,7 +250,6 @@ PLANNER_CONTEXT_FRAME_STATE_VIEW_MODULES = (
     PLANNER_ROOT / "context" / "replay" / "context_frame_replay_payload_source.py",
     PLANNER_ROOT / "context" / "replay" / "context_frame_replay_targets.py",
     PLANNER_ROOT / "context" / "replay" / "context_frame_replay_tasks.py",
-    PLANNER_ROOT / "context" / "frames" / "context_frame_schedule.py",
 )
 PLANNER_QUOTED_REPLAY_STATE_VIEW_MODULES = (
     PLANNER_ROOT / "quoted_replay" / "quoted_flow.py",
@@ -1496,6 +1490,50 @@ def test_planner_context_frame_modules_use_typed_state_view() -> None:
                 violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 
     assert violations == []
+
+
+def test_canonical_read_cutover_has_no_legacy_routing_authority() -> None:
+    removed_modules = (
+        PLANNER_ROOT / "execution_context_read.py",
+        PLANNER_ROOT / "context" / "frames" / "context_frame_schedule.py",
+        PLANNER_ROOT / "context" / "read" / "context_read_account.py",
+        PLANNER_ROOT / "context" / "read" / "context_read_availability.py",
+        PLANNER_ROOT / "context" / "read" / "context_read_constants.py",
+        PLANNER_ROOT / "context" / "read" / "context_read_fallback.py",
+        PLANNER_ROOT / "context" / "read" / "context_read_focus.py",
+        PLANNER_ROOT / "context" / "read" / "context_read_frames.py",
+        GATE_ROOT / "classifiers" / "read_only_response.py",
+        ROOT / "banking" / "accounts" / "management" / "parser.py",
+    )
+    assert [path.relative_to(ROOT) for path in removed_modules if path.exists()] == []
+
+    forbidden = (
+        "context_read_subtype",
+        "conversation_set.legacy_read_only",
+        "classify_read_only_response_shape",
+        "AccountParser",
+        "schedule_response_mode",
+        'hasattr(repo, "get_filtered_by_user")',
+        'hasattr(repo, "get_by_ids_for_update")',
+        'hasattr(repo, "get_active_ids_for_user_for_update")',
+        'hasattr(repo, "get_by_user_for_update")',
+        "def unlink_account(",
+    )
+    violations: list[str] = []
+    for source_root in (ORCHESTRATOR_ROOT, ROOT / "banking", ROOT / "shared"):
+        for path in source_root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            for token in forbidden:
+                if token in text:
+                    violations.append(f"{path.relative_to(ROOT)} references {token}")
+
+    assert violations == []
+
+    direct_task_source = (GATE_ROOT / "utils" / "direct_tasks.py").read_text(encoding="utf-8")
+    assert "initial_balance_contract" not in direct_task_source
+    assert "BeneficiaryQueryContract(" not in direct_task_source
+    assert "ScheduleQueryContract(" not in direct_task_source
+    assert "AccountLifecycleContract(" not in direct_task_source
 
 
 def test_planner_quoted_replay_modules_use_typed_state_view() -> None:

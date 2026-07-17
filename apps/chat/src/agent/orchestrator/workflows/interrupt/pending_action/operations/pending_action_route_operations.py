@@ -3,16 +3,12 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _cancel_updates, logger
-from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_continue import _continue_flow_updates
+from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _cancel_updates
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_switch import _handle_switch_intent_route
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import KNOWN_SWITCH_INTENTS, TRANSACTION_INTENTS
 from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_flow import _status_query_updates
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from shared.types.planner import InterruptRouteDecision
-
-from ..flow.pending_action_confirmation_flow import _confirmation_edit_clarification_updates
-from ..payloads.pending_action_payload_account_switch import _account_switch_source_overrides
 
 
 async def _resolve_status_query_operation(
@@ -63,36 +59,13 @@ async def _resolve_switch_intent_operation(
     if target_intent not in KNOWN_SWITCH_INTENTS:
         return None
 
-    if target_intent == "account" and current_task_types.intersection(TRANSACTION_INTENTS):
-        overrides = _account_switch_source_overrides(
-            state=state,
-            interrupt=interrupt,
-            decision=decision,
-            text=text,
-        )
-        if overrides:
-            logger.info(
-                "pending_action_account_switch_as_source_edit",
-                task_ids=list(overrides.keys()),
-            )
-            return _continue_flow_updates(
-                state,
-                interrupt,
-                precomputed_payload_overrides=overrides,
-            )
-        logger.info(
-            "pending_action_account_switch_blocked",
-            reason="transaction_confirmation_active",
-            task_ids=getattr(interrupt, "task_ids", None),
-        )
-        return _confirmation_edit_clarification_updates(state, interrupt)
-
     route = InterruptRouteDecision(
         decision="switch_intent",
         confidence=decision.confidence,
         detected_language=decision.detected_language,
         target_intent=target_intent,
         target_mode="continuation" if target_intent in TRANSACTION_INTENTS else "new",
+        account_action=getattr(decision, "account_action", None),
         reason=decision.reason or "pending_action_switch_intent",
     )
     return await _handle_switch_intent_route(

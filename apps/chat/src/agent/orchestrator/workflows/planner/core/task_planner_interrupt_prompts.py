@@ -9,6 +9,7 @@ Return ONLY JSON for this schema:
 - target_intent: transfer | airtime | data | query | account | support | faq |
   beneficiary | conversational | cancel | mixed | null
 - target_mode: new | continuation | null
+- account_read: canonical {subject,response_shape,bank_name,status} for a separate account read, else null
 - status_query_type: recap | requirements | null
 - question_type: recap | requirements | why_required | confirmation_effect | cancellation_effect |
   auth_pin_reason | source_account | editable_fields | current_value | timing_or_status |
@@ -31,7 +32,9 @@ Rules:
    - new for a fresh query
    - continuation for an ongoing query thread
    - otherwise null.
-9) Balance/account-status asks map to target_intent=account.
+9) Balance/account-status asks map to target_intent=account. Separate reads about the user's accounts use
+   switch_intent and account_read. Linkage membership uses subject=linked_account,response_shape=fact_bool with the
+   explicit bank; it is not a requirements question about the pending transaction's recipient bank.
 10) Spending/history/analytics asks map to target_intent=query.
 11) In confirmation/auth flows, concise corrections stay continue_flow, not switch_intent.
 12) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed input.
@@ -46,6 +49,7 @@ Return ONLY JSON for this schema:
 - target_intent: transfer | airtime | data | query | account | support | faq |
   beneficiary | conversational | cancel | mixed | null
 - target_mode: new | continuation | null
+- account_read: canonical {subject,response_shape,bank_name,status} for a separate account read, else null
 - status_query_type: recap | requirements | null
 - question_type: recap | requirements | why_required | confirmation_effect | cancellation_effect |
   auth_pin_reason | source_account | editable_fields | current_value | timing_or_status |
@@ -81,6 +85,9 @@ Rules:
     Examples: "how much did I spend", "show my transactions", "expense summary".
 12) In confirmation/auth interrupt contexts, if user asks balance/account status,
     use decision=switch_intent with target_intent=account (not query).
+    Include account_read: balance questions use balance/fact_value; linkage membership questions use
+    linked_account/fact_bool with the explicitly named bank. These concern the user's own accounts, not missing
+    recipient/source fields in the pending transaction.
 13) If user asks for flow status (e.g. "where are we", "what next", "what do you need from me",
     "which step", "wetin remain"), return decision=status_query and:
     - status_query_type=recap for progress/recap asks
@@ -145,6 +152,7 @@ Return ONLY JSON for this schema:
 - add_instruction: fresh transaction instruction when operation=add_tasks, else null
 - status_query_type: recap | requirements | null
 - target_intent: target domain when operation=add_tasks or switch_intent, else null
+- account_action: get_default | list | count | check_balance | null when target_intent=account
 - reason: short reason
 
 Semantic operations:
@@ -190,6 +198,11 @@ Semantic operations:
 6) cancel_all: user wants to cancel the whole pending transaction flow.
 7) status_query: user asks what is pending, what is missing, or asks for a recap.
 8) switch_intent: user starts a different non-edit banking task.
+   Questions or read-only requests about the user's own linked accounts, including account identity, default/primary
+   account, balances, authorization state, or account details, are switch_intent with target_intent=account. They are
+   not status_query merely because a transaction confirmation is pending. The pending transaction will be preserved
+   while the separate account request is answered. Set account_action=get_default for a request asking which linked
+   account is the default/primary account; use list, count, or check_balance for those corresponding account reads.
 9) show_options: user asks to see alternate catalog options for a pending data purchase without directly
    approving or cancelling it. Examples: "what other plan within that range", "anything cheaper?", "what else
    can I get for 4k?", "show monthly ones", "more data if possible". Set target_types=["data"], show_options=true,
@@ -220,6 +233,9 @@ Rules:
   contain transfer.
 - If the message can reasonably edit the pending confirmation, prefer update_fields over switch_intent.
   Use switch_intent only for a clearly separate task outside the pending confirmation.
+- Distinguish source-account edits from account reads by meaning: changing which account funds the pending request is
+  update_fields with source_bank_name/source_account_index; asking which source the pending request currently uses is
+  status_query; asking about the user's default account or other account information is switch_intent to account.
 - If one message gives different edits for different pending tasks, use updates instead of flattening the edit.
   Example: "mum is allowance and tolu is transport, make tolu 5k" should return updates for mum narration and
   tolu narration+amount.

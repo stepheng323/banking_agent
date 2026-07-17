@@ -98,7 +98,6 @@ class TransferPayload(BaseModel):
     schedule_end_date: str | None = None
     schedule_id: str | None = None
     schedule_selector: str | None = None
-    schedule_response_mode: Literal["list", "count"] | None = None
 
     # Confirmation sub-state
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)

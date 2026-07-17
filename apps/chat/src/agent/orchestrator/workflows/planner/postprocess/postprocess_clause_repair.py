@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import TRANSACTION_EXECUTORS
+from apps.chat.src.agent.orchestrator.workflows.planner.core.domains import TRANSACTION_EXECUTORS
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_clause_balance import (
     _balance_like_clause,
     _build_balance_task_from_clause,

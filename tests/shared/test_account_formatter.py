@@ -17,7 +17,7 @@ def test_format_balance_response_single_account_mobile_blocks() -> None:
         locale="en",
     )
 
-    assert rendered == "Balances\n\nZenith Bank (···9384): ₦30,000.00"
+    assert rendered == "Your Zenith Bank account (···9384) has a balance of **₦30,000.00**."
     assert "₦30,000.00" in rendered
     assert "*Your Balance*" not in rendered
     assert "1." not in rendered
@@ -44,7 +44,7 @@ def test_format_balance_response_multi_account_mobile_blocks() -> None:
     )
 
     assert rendered == (
-        "Balances\n\nZenith Bank (···9384): ₦30,000.00\n\nAccess Bank (···5678): ₦15,000.00\n\nTotal: ₦45,000.00"
+        "Your Balances\n\nZenith Bank (···9384): ₦30,000.00\n\nAccess Bank (···5678): ₦15,000.00\n\nTotal: ₦45,000.00"
     )
 
 
@@ -63,7 +63,9 @@ def test_format_balance_response_blocks_render_with_mobile_spacing() -> None:
     )
 
     assert blocks is not None
-    assert render_body_blocks_text(blocks) == "Balances\n\nZenith Bank (···9384): ₦30,000.00"
+    assert render_body_blocks_text(blocks) == (
+        "Your Zenith Bank account (···9384) has a balance of **₦30,000.00**."
+    )
 
 
 def test_account_list_does_not_mask_internal_account_id_as_account_number() -> None:
@@ -123,6 +125,26 @@ def test_account_list_uses_natural_status_and_action_copy() -> None:
     assert "1. Zenith Bank (···9384) — Unlinked" in rendered
     assert "2. Access Bank (···0003) — Default • Active" in rendered
     assert "Actions: link Zenith Bank | set 2 as default | unlink GTB" in rendered
+
+
+def test_format_default_account_returns_only_masked_default_identity() -> None:
+    rendered = AccountFormatter.format_default_account(
+        {
+            "bank_name": "GTBank",
+            "account_number": "2010000002",
+            "is_default": True,
+        },
+        locale="en",
+    )
+
+    assert rendered == "Your default account is GTBank (···0002)."
+    assert "2010000002" not in rendered
+
+
+def test_format_default_account_handles_missing_default() -> None:
+    assert AccountFormatter.format_default_account(None, locale="en") == (
+        "I couldn't find a default linked account."
+    )
 
 
 def test_get_last4_never_falls_back_to_internal_id_suffix() -> None:

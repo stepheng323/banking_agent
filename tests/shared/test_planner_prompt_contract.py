@@ -1,7 +1,5 @@
 """Contract tests for planner prompt guidance."""
 
-from typing import get_args
-
 import tiktoken
 
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import (
@@ -21,7 +19,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt
     PLANNER_PROMPT_BASELINE_RESULT,
     build_runtime_planner_system_prompt,
 )
-from shared.types.planner import ContextReadSubtype
 
 
 def _build_prompt(
@@ -53,12 +50,6 @@ def test_context_read_fastpath_rules_removed_from_planner_prompt() -> None:
     assert "R16_FASTPATH_CONTEXT_READ" not in runtime_prompt
     assert "R17_FASTPATH_FALLBACK" not in runtime_prompt
     assert "R18_FASTPATH_SUBTYPE" not in runtime_prompt
-    fastpath_values = set(get_args(ContextReadSubtype))
-    assert "account_mandate_readiness_summary" in fastpath_values
-    assert "account_linked_bank_existence_check" in fastpath_values
-    assert "beneficiary_name_match_preview" in fastpath_values
-    assert "flow_recap" in fastpath_values
-    assert "flow_missing_requirements" in fastpath_values
 
 
 def test_interrupt_status_query_contract_present() -> None:
@@ -180,8 +171,8 @@ def test_transfer_scheduling_rules_present() -> None:
     assert "schedule actions" in runtime_prompt
     assert "list_scheduled_transactions" in runtime_prompt
     assert "cancel_scheduled_transaction" in runtime_prompt
-    assert "count/existence->schedule_response_mode=count" in runtime_prompt
-    assert "schedule_response_mode=count" in runtime_prompt
+    assert "schedule reads require read_request" in runtime_prompt
+    assert "subject=schedule" in runtime_prompt
 
 
 def test_money_move_fallback_examples_present() -> None:

@@ -2,7 +2,15 @@
   "common": {
     "safe_capability_fallback": "Ba zan iya yin wannan yanzu ba. Zan iya taimakawa da tura kudi, sayen airtime/data, duba balance, da tambayoyin transaction.",
     "cancelled_prompt": "An soke transaction, me kuma zan taimaka maka da shi yau?",
-    "gibberish_prompt": "Ban gane wannan ba. Wane aikin banking kake so in taimaka da shi?"
+    "gibberish_prompt": "Ban gane wannan ba. Wane aikin banking kake so in taimaka da shi?",
+    "pagination": {"more": "Karin sakamako a shafi na gaba", "previous": "Koma shafin baya"}
+  },
+  "conversation_set": {
+    "selection_required": "Wanne abu ko abubuwa kake nufi? Amsa da lamba ko sunan da aka nuna.",
+    "single_selection_required": "Zaɓi abu guda kawai don wannan aikin.",
+    "mutation_limit": "Za ka iya canza abubuwa har {count} a lokaci guda. Zaɓi kaɗan.",
+    "stale_selection": "Wannan sakamakon ya canza ko ya ƙare. Sabunta jerin ka sake zaɓa.",
+    "allocation_required": "Faɗi adadin kowane mai amfana da ka zaɓa. Ba zan ɗauka rabon daidai ba."
   },
   "capability": {
     "blocked_with_alternative": "Ba zan iya yin {action} a nan ba. Zan iya taimakawa da {alternative}. Ka amsa abin da kake so na ci gaba da shi.",
@@ -527,6 +535,8 @@
       "transaction_item_with_bank": "{amount} \u2022 {label} \u2014 {narration} _({bank_name})_",
       "transaction_item": "{amount} \u2022 {label} \u2014 {narration}",
       "direct_answer_grouped_lead": "Wannan shine {name}.",
+      "evidence_lead_single": "Ga cinikin da ya samar da wannan jimillar.",
+      "evidence_lead_plural": "Ga cinikoki {count} da suka samar da wannan jimillar.",
       "show_more_hint": "_Fa\u0257i 'show more' don ci gaba._"
     },
     "affordability": {
@@ -620,12 +630,21 @@
     }
   },
   "account": {
+    "readiness": {"fact": "Asusu {ready_count} cikin {total_count} sun shirya don amfani."},
     "user_not_found": "Ba a samu user ba.",
     "no_linked_accounts": "Ba ka da linked account.",
     "account_not_found": "Ban iya samun an account matching '{identifier}'.",
     "account_not_found_with_count": "Ban iya samun an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
     "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now kar default.",
+    "default_identity": "Asusunka na asali shi ne {bank_name} ({masked}).",
+    "default_unavailable": "Ban sami asusun haɗin da aka sa a matsayin na asali ba.",
     "unlink": {
+      "review": "Duba cire asusu {count}:\n{items}\n\nAmsa eh don ci gaba, ko soke.",
+      "keep_one": "Dole a bar aƙalla asusu ɗaya a haɗe.",
+      "choose_remaining_default": "Zaɓi asusun da zai zama na asali kafin a cire waɗannan.",
+      "item_success": "✓ {item} — an cire",
+      "item_failed": "✗ {item} — ba a iya cirewa ba",
+      "bulk_result": "Sakamakon cire asusu:\n{items}",
       "success": "success: *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
       "only_account": "\ufe0f Kai can't unlink kar only account. Link another one first."
     },
@@ -636,6 +655,8 @@
       "count_zero": "Ba ka da linked account.",
       "count_one": "Kana da linked account 1.",
       "count_many": "Kana da linked accounts {count}.",
+      "exists_yes": "Eh, kana da {bank_name} linked.",
+      "exists_no": "A'a, ba ka da {bank_name} linked.",
       "preview_header": "Misalai:",
       "default_badge": "(default)",
       "commands_hint": "_'set 2 as default' | 'unlink GTB'_"
@@ -645,10 +666,12 @@
       "header_single": "*Balance dinka*",
       "header_multi": "*Balances dinka*",
       "total": "Jimlar ku\u0257in ka shine **\u20a6{total_balance}**.",
+      "total_label": "Jimilla",
       "unavailable": "Ban iya retrieve your balance at the moment.",
       "natural_single": "Asusun {bank_name} ({masked}) yana da ku\u0257i **\u20a6{amount}**.",
       "natural_multi_intro": "Ga nan ne ku\u0257in da ke cikin asusun ka:",
-      "natural_multi_item": "\u2022 {bank_name} ({masked}): **\u20a6{amount}**"
+      "natural_multi_item": "\u2022 {bank_name} ({masked}): **\u20a6{amount}**",
+      "scope_clarify": "Wa\u0257anne asusu zan yi amfani da su don wannan tambayar balance?"
     },
     "prompt": {
       "unlink_identifier": "Wane account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'.",
@@ -890,6 +913,10 @@
       "count_zero": "Ba ka adana beneficiary ba.",
       "count_one": "Kana da saved beneficiary 1.",
       "count_many": "Kana da saved beneficiaries {count}.",
+      "filtered_count": "Kana da saved beneficiaries {count} masu dacewa da ‘{filter}’.",
+      "exists_yes": "Eh, kana da saved beneficiary mai dacewa da ‘{filter}’.",
+      "exists_no": "A'a, ba ka da saved beneficiary mai dacewa da ‘{filter}’.",
+      "filtered_header": "Saved beneficiaries masu dacewa da ‘{filter}’",
       "preview_header": "Misalai:"
     },
     "common": {
@@ -904,6 +931,9 @@
       "success": "Verified & Added **{display_name}** ({account_name}) to kar beneficiaries."
     },
     "delete": {
+      "select_candidate": "Na sami masu yiwuwa da suka dace da {target}. Zaɓi ɗaya daga sabon jerin masu amfana.",
+      "review": "Duba cire masu amfana {count}:\n{items}\n\nAmsa eh don cire su, ko soke.",
+      "bulk_success": "An cire masu amfana {count}.",
       "missing_target": "Da fatan bayyana which beneficiary to remove.",
       "not_found": "Ban iya samun a beneficiary named '{target}'.",
       "success": "An share **{target}** from beneficiaries."
@@ -1302,7 +1332,10 @@
       "with_id": "{row} (ID: {schedule_id})"
     },
     "list": {
+      "status_fact": "Abubuwan da aka tsara {count} suna da matsayi {status}.",
       "count": "Kana da schedules {count} masu pending.",
+      "exists_yes": "Eh, kana da active scheduled transaction.",
+      "exists_no": "A'a, ba ka da active scheduled transaction.",
       "empty": "Babu active schedules.",
       "header": "Scheduled transactions naka:"
     },
@@ -1311,10 +1344,15 @@
       "header": "Schedules da suka dace:"
     },
     "cancel": {
+      "review": "Duba soke abubuwan da aka tsara {count}:\n{items}\n\nAmsa eh don soke su, ko ka ce a bar su.",
+      "bulk_success": "An soke abubuwan da aka tsara {count}.",
       "none": "Babu active schedules da za a cancel.",
       "success": "Scheduled transaction an cancel."
     },
     "edit": {
+      "bulk_review": "Duba gyara iri ɗaya ga abubuwan da aka tsara {count}:\n\n{items}\n\nAmsa eh don ci gaba, ko soke.",
+      "bulk_success": "An sabunta abubuwan da aka tsara {count}.",
+      "incompatible_set": "Wannan gyaran bai dace da duk abubuwan da aka zaɓa ba. Zaɓi masu dacewa ko gyara su dabam.",
       "ask_change": "Me zan canza a wannan scheduled transaction?",
       "stale": "Wannan schedule yana processing ko kuma baya active yanzu. Ka sake gwadawa.",
       "success": "Schedule an update: {changes}. Next run: {next_run}.",

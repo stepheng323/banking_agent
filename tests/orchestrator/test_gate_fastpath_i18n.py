@@ -44,7 +44,16 @@ from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.shared.confirmation.models import ConfirmationDecision
 from shared.config.settings import settings
-from shared.types.planner import ContextFrameFollowupDecision, SemanticRouteDecision
+from shared.types.balance import BalanceQueryContract
+from shared.types.conversation_sets import (
+    AccountLifecycleContract,
+    BeneficiaryQueryContract,
+    ConversationSetState,
+    EntitySelectionRef,
+    ScheduleQueryContract,
+)
+from shared.types.planner import ContextFrameFollowupDecision, ScheduleSetEditDelta, SemanticRouteDecision
+from shared.types.read import ReadRequest
 
 
 def _apply_updates(state: OrchestratorState, updates: dict[str, object]) -> OrchestratorState:
@@ -207,6 +216,12 @@ async def test_account_balance_query_preempts_stale_account_list_context_frame()
             target_intent="account",
             confidence=0.94,
             detected_language="English",
+            read_request=ReadRequest(
+                subject="balance", response_shape="fact_value", bank_name="First Bank"
+            ),
+            balance_contract=BalanceQueryContract(
+                account_scope="named", bank_names=["First Bank"], operation="value"
+            ),
             reason="fresh account balance query wins over stale account list frame",
         ),
         frame_followup_decision=ContextFrameFollowupDecision(
@@ -1593,10 +1608,8 @@ async def test_gate_supported_balance_clears_lending_boundary() -> None:
     updates = await session_gate_direct_path(state, config)
 
     assert updates["capability_boundary"] is None
-    assert updates["turn_directive"].path_shape == "balance_direct"
-    task = next(iter(updates["tasks"].values()))
-    assert task.type == "account"
-    assert task.payload["action"] == "check_balance"
+    assert updates["turn_directive"].path_shape == "deterministic_balance_read"
+    assert updates["tasks"]["direct_account"].payload["identifier"] == "Access Bank"
 
 
 async def test_gate_handles_pidgin_social_greeting_deterministically() -> None:
@@ -3398,6 +3411,10 @@ async def test_gate_semantic_schedule_domain_hands_off_to_planner() -> None:
             confidence=0.95,
             detected_language="English",
             expected_transaction_executors=[],
+            read_request=ReadRequest(subject="schedule", response_shape="fact_count", status="pending"),
+            schedule_contract=ScheduleQueryContract(
+                operation="count", response_shape="fact_count", statuses=["pending"]
+            ),
             reason="scheduled task management",
         )
     )
@@ -3415,18 +3432,17 @@ async def test_gate_semantic_schedule_domain_hands_off_to_planner() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "deterministic_schedule_read"
-    assert updates["turn_directive"].owner == "guardrail"
-    assert updates["turn_directive"].decision == "deterministic_schedule_read"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].decision == "domain_schedule"
     assert updates["turn_directive"].target_domain == "schedule"
-    assert updates["turn_directive"].source == "schedule_read_guard"
+    assert updates["turn_directive"].source == "semantic_router_target_intent"
     task = updates["tasks"]["direct_schedule"]
     assert task.type == "schedule"
     assert task.payload["action"] == "list_scheduled_transactions"
-    assert task.payload["schedule_response_mode"] == "count"
-    assert task.payload["response_shape"] == "fact_count"
+    assert task.payload["read_request"]["response_shape"] == "fact_count"
 
 
 async def test_gate_semantic_schedule_target_vetoes_direct_context_answer() -> None:
@@ -3473,7 +3489,10 @@ async def test_gate_semantic_schedule_count_skips_planner() -> None:
             confidence=0.95,
             detected_language="English",
             expected_transaction_executors=[],
-            schedule_response_mode="count",
+            read_request=ReadRequest(subject="schedule", response_shape="fact_count", status="pending"),
+            schedule_contract=ScheduleQueryContract(
+                operation="count", response_shape="fact_count", statuses=["pending"]
+            ),
             reason="scheduled task count",
         )
     )
@@ -3492,17 +3511,17 @@ async def test_gate_semantic_schedule_count_skips_planner() -> None:
     updates = await session_gate_direct_path(state, config)
 
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "deterministic_schedule_read"
-    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
     assert updates["turn_directive"].target_domain == "schedule"
-    assert updates["turn_directive"].source == "schedule_read_guard"
+    assert updates["turn_directive"].source == "semantic_router_target_intent"
     assert planner.plan_calls == 0
+    assert planner.route_calls == 1
     assert planner.schedule_read_calls == 0
     task = updates["tasks"]["direct_schedule"]
     assert task.type == "schedule"
     assert task.payload["action"] == "list_scheduled_transactions"
-    assert task.payload["schedule_response_mode"] == "count"
-    assert task.payload["response_shape"] == "fact_count"
+    assert task.payload["read_request"]["response_shape"] == "fact_count"
 
 
 async def test_gate_schedule_read_router_skips_broad_semantic_router() -> None:
@@ -3514,7 +3533,10 @@ async def test_gate_schedule_read_router_skips_broad_semantic_router() -> None:
             confidence=0.94,
             detected_language="English",
             expected_transaction_executors=[],
-            schedule_response_mode="count",
+            read_request=ReadRequest(subject="schedule", response_shape="fact_count", status="pending"),
+            schedule_contract=ScheduleQueryContract(
+                operation="count", response_shape="fact_count", statuses=["pending"]
+            ),
             reason="scheduled count read",
         )
     )
@@ -3533,15 +3555,14 @@ async def test_gate_schedule_read_router_skips_broad_semantic_router() -> None:
     updates = await session_gate_direct_path(state, config)
 
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "schedule_read_router_direct"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     assert updates["turn_directive"].owner == "semantic_router"
-    assert updates["turn_directive"].source == "schedule_read_router"
-    assert planner.schedule_read_calls == 1
-    assert planner.route_calls == 0
+    assert updates["turn_directive"].source == "semantic_router_target_intent"
+    assert planner.schedule_read_calls == 0
+    assert planner.route_calls == 1
     task = updates["tasks"]["direct_schedule"]
     assert task.payload["action"] == "list_scheduled_transactions"
-    assert task.payload["schedule_response_mode"] == "count"
-    assert task.payload["response_shape"] == "fact_count"
+    assert task.payload["read_request"]["response_shape"] == "fact_count"
 
 
 async def test_gate_schedule_count_ignores_existing_schedule_frame() -> None:
@@ -3571,7 +3592,10 @@ async def test_gate_schedule_count_ignores_existing_schedule_frame() -> None:
             confidence=0.95,
             detected_language="English",
             expected_transaction_executors=[],
-            schedule_response_mode="count",
+            read_request=ReadRequest(subject="schedule", response_shape="fact_count", status="pending"),
+            schedule_contract=ScheduleQueryContract(
+                operation="count", response_shape="fact_count", statuses=["pending"]
+            ),
             reason="scheduled task count",
         )
     )
@@ -3591,15 +3615,15 @@ async def test_gate_schedule_count_ignores_existing_schedule_frame() -> None:
     updates = await session_gate_direct_path(state, config)
 
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "deterministic_schedule_read"
-    assert updates["turn_directive"].owner == "guardrail"
-    assert updates["turn_directive"].source == "schedule_read_guard"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].owner == "semantic_router"
+    assert updates["turn_directive"].source == "semantic_router_target_intent"
     assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 1
     assert planner.schedule_read_calls == 0
     task = updates["tasks"]["direct_schedule"]
     assert task.type == "schedule"
-    assert task.payload["schedule_response_mode"] == "count"
-    assert task.payload["response_shape"] == "fact_count"
+    assert task.payload["read_request"]["response_shape"] == "fact_count"
 
 
 async def test_gate_schedule_terse_followup_uses_context_frame_before_router() -> None:
@@ -3666,12 +3690,19 @@ async def test_gate_schedule_terse_followup_uses_context_frame_before_router() -
 
 
 async def test_gate_schedule_edit_followup_uses_context_frame_task() -> None:
+    schedule_ref = EntitySelectionRef(
+        entity_type="schedule",
+        entity_id="sch-1",
+        frame_id="schedule_list_existing",
+        display_label="Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 2:00 PM Lagos time",
+        version_token="2026-05-22T12:00:00+00:00",
+    )
     frame = ContextFrame(
         frame_id="schedule_list_existing",
         frame_type=ContextFrameType.SCHEDULE_LIST,
         items=[
             ContextEntity(
-                entity_type=EntityType.GENERIC,
+                entity_type=EntityType.SCHEDULE,
                 entity_id="sch-1",
                 label="Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 2:00 PM Lagos time",
                 data={
@@ -3686,6 +3717,15 @@ async def test_gate_schedule_edit_followup_uses_context_frame_task() -> None:
             )
         ],
         created_at_ts=int(time.time()),
+        metadata={
+            "conversation_set_state": ConversationSetState(
+                domain="schedule",
+                focused_ref=schedule_ref,
+                mentioned_refs=[schedule_ref],
+                last_result_refs=[schedule_ref],
+                operation="list",
+            ).model_dump(mode="json", exclude_none=True),
+        },
     )
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -3701,6 +3741,7 @@ async def test_gate_schedule_edit_followup_uses_context_frame_task() -> None:
             decision="edit_schedule",
             confidence=0.9,
             detected_language="Pidgin",
+            schedule_edit_delta=ScheduleSetEditDelta(schedule_time_local="09:00"),
         ),
     )
     state = OrchestratorState(
@@ -3723,11 +3764,11 @@ async def test_gate_schedule_edit_followup_uses_context_frame_task() -> None:
     assert updates["turn_directive"].target_domain == "schedule"
     assert planner.frame_followup_calls == 1
     assert planner.route_calls == 0
-    task = updates["tasks"]["context_schedule_management_1"]
+    task = updates["tasks"]["context_schedule_set_mutation_1"]
     assert task.type == "schedule"
     assert task.payload["action"] == "edit_scheduled_transaction"
-    assert task.payload["schedule_selector"] == "sch-1"
-    assert task.payload["schedule_time_local"] == "09:00"
+    assert task.payload["selected_entity_ids"] == ["sch-1"]
+    assert task.payload["bulk_mutation"]["patch"] == {"schedule_time_local": "09:00"}
 
 
 async def test_gate_bypasses_planner_for_pure_query_have_i_sent_turn() -> None:
@@ -4028,7 +4069,7 @@ async def test_gate_semantic_router_routes_income_query_clarification_bypass_to_
     assert task.payload["force_new_query"] is True
 
 
-async def test_gate_deterministic_account_list_bypasses_semantic_router() -> None:
+async def test_gate_account_list_uses_canonical_semantic_read_contract() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_account",
@@ -4039,6 +4080,8 @@ async def test_gate_deterministic_account_list_bypasses_semantic_router() -> Non
             response_key=None,
             response=None,
             expected_transaction_executors=[],
+            read_request=ReadRequest(subject="linked_account", response_shape="surface_list"),
+            account_lifecycle_contract=AccountLifecycleContract(),
             reason="single-domain account request",
         )
     )
@@ -4056,20 +4099,18 @@ async def test_gate_deterministic_account_list_bypasses_semantic_router() -> Non
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "deterministic_account_domain"
-    assert updates["turn_directive"].source == "account_domain_guard"
-    assert updates["turn_directive"].heuristic_type == "guardrail_shortcut"
-    assert updates["turn_directive"].heuristic_name == "account_domain_request"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].source == "semantic_router"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
     assert task.payload["message"] == "Show my linked accounts"
-    assert task.payload["response_shape"] == "surface_list"
+    assert task.payload["read_request"]["response_shape"] == "surface_list"
 
 
-async def test_gate_deterministic_account_count_preserves_response_shape() -> None:
+async def test_gate_account_count_preserves_canonical_response_shape() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_account",
@@ -4080,6 +4121,10 @@ async def test_gate_deterministic_account_count_preserves_response_shape() -> No
             response_key=None,
             response=None,
             expected_transaction_executors=[],
+            read_request=ReadRequest(subject="linked_account", response_shape="fact_count"),
+            account_lifecycle_contract=AccountLifecycleContract(
+                operation="count", response_shape="fact_count"
+            ),
             reason="single-domain account count",
         )
     )
@@ -4097,17 +4142,17 @@ async def test_gate_deterministic_account_count_preserves_response_shape() -> No
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "deterministic_account_domain"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
     assert task.payload["message"] == "How many accounts do I have?"
-    assert task.payload["response_shape"] == "fact_count"
+    assert task.payload["read_request"]["response_shape"] == "fact_count"
 
 
-async def test_gate_deterministic_beneficiary_list_bypasses_semantic_router() -> None:
+async def test_gate_beneficiary_list_uses_canonical_semantic_read_contract() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_beneficiary",
@@ -4118,6 +4163,8 @@ async def test_gate_deterministic_beneficiary_list_bypasses_semantic_router() ->
             response_key=None,
             response=None,
             expected_transaction_executors=[],
+            read_request=ReadRequest(subject="beneficiary", response_shape="surface_list"),
+            beneficiary_contract=BeneficiaryQueryContract(),
             reason="single-domain beneficiary request",
         )
     )
@@ -4135,22 +4182,20 @@ async def test_gate_deterministic_beneficiary_list_bypasses_semantic_router() ->
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "deterministic_beneficiary_domain"
-    assert updates["turn_directive"].source == "beneficiary_domain_guard"
-    assert updates["turn_directive"].heuristic_type == "guardrail_shortcut"
-    assert updates["turn_directive"].heuristic_name == "beneficiary_list_request"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].source == "semantic_router"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["message"] == "Show my beneficiaries"
     assert task.payload["action"] == "list_beneficiaries"
     assert task.payload["intent"] == "list_beneficiaries"
     assert task.payload["list_intent"] is True
-    assert task.payload["response_shape"] == "surface_list"
+    assert task.payload["read_request"]["response_shape"] == "surface_list"
 
 
-async def test_gate_deterministic_beneficiary_count_preserves_response_shape() -> None:
+async def test_gate_beneficiary_count_preserves_canonical_response_shape() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_beneficiary",
@@ -4161,6 +4206,10 @@ async def test_gate_deterministic_beneficiary_count_preserves_response_shape() -
             response_key=None,
             response=None,
             expected_transaction_executors=[],
+            read_request=ReadRequest(subject="beneficiary", response_shape="fact_count"),
+            beneficiary_contract=BeneficiaryQueryContract(
+                operation="count", response_shape="fact_count"
+            ),
             reason="single-domain beneficiary count",
         )
     )
@@ -4178,17 +4227,16 @@ async def test_gate_deterministic_beneficiary_count_preserves_response_shape() -
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "deterministic_beneficiary_domain"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["action"] == "list_beneficiaries"
-    assert task.payload["response_shape"] == "fact_count"
-    assert task.payload["count_intent"] is True
+    assert task.payload["read_request"]["response_shape"] == "fact_count"
 
 
-async def test_gate_deterministic_beneficiary_count_allowed_in_pidgin_locale() -> None:
+async def test_gate_canonical_beneficiary_count_allowed_in_pidgin_locale() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_beneficiary",
@@ -4199,6 +4247,10 @@ async def test_gate_deterministic_beneficiary_count_allowed_in_pidgin_locale() -
             response_key=None,
             response=None,
             expected_transaction_executors=[],
+            read_request=ReadRequest(subject="beneficiary", response_shape="fact_count"),
+            beneficiary_contract=BeneficiaryQueryContract(
+                operation="count", response_shape="fact_count"
+            ),
             reason="semantic router should not be needed for beneficiary count",
         )
     )
@@ -4216,13 +4268,12 @@ async def test_gate_deterministic_beneficiary_count_allowed_in_pidgin_locale() -
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "deterministic_beneficiary_domain"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
-    assert task.payload["response_shape"] == "fact_count"
-    assert task.payload["count_intent"] is True
+    assert task.payload["read_request"]["response_shape"] == "fact_count"
 
 
 async def test_gate_context_frame_completeness_preempts_beneficiary_reroute() -> None:
@@ -4502,6 +4553,8 @@ async def test_gate_context_frame_start_new_task_falls_through_to_fresh_benefici
             response_key=None,
             response=None,
             expected_transaction_executors=[],
+            read_request=ReadRequest(subject="beneficiary", response_shape="surface_list"),
+            beneficiary_contract=BeneficiaryQueryContract(),
             reason="would repeat list if uncertain frame decision fell through",
         ),
         frame_followup_decision=ContextFrameFollowupDecision(
@@ -7118,12 +7171,9 @@ async def test_gate_english_domain_fastpath_still_applies_with_non_english_local
     updates = await session_gate_direct_path(state, config)
 
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "deterministic_account_domain"
+    assert updates["turn_directive"].path_shape == "planner_handoff"
     assert updates["turn_directive"].owner == "guardrail"
-    assert updates["turn_directive"].decision == "deterministic_account_domain"
-    assert updates["turn_directive"].source == "account_domain_guard"
-    assert updates["turn_directive"].heuristic_type == "guardrail_shortcut"
-    assert updates["turn_directive"].heuristic_name == "account_domain_request"
+    assert updates["turn_directive"].decision == "planner_handoff"
 
 
 async def test_gate_non_english_domain_phrase_falls_through_safely(monkeypatch) -> None:
@@ -7538,15 +7588,7 @@ async def test_gate_resume_prompt_does_not_capture_fresh_transfer_request() -> N
 
 class _ScheduleReadPlanner(_RouteTurnPlanner):
     def __init__(self, schedule_read_decision: SemanticRouteDecision) -> None:
-        super().__init__(
-            SemanticRouteDecision(
-                decision="planner_ambiguous",
-                confidence=0.1,
-                detected_language="English",
-                expected_transaction_executors=[],
-                reason="broad router should not run",
-            )
-        )
+        super().__init__(schedule_read_decision)
         self._schedule_read_decision = schedule_read_decision
         self.schedule_read_calls = 0
 
@@ -7667,6 +7709,26 @@ async def test_gate_deterministic_social_meta_uses_conversation_responder(
     assert responder.calls[0]["mode"] == ConversationResponseMode.SOCIAL_META
     assert responder.calls[0]["user_ctx"]["language"] == expected_locale
     assert responder.calls[0]["user_ctx"][SOCIAL_META_RESPONSE_KEY_CTX] == expected_key
+
+
+@pytest.mark.asyncio
+async def test_fresh_greeting_clears_stale_unsupported_capability_boundary() -> None:
+    responder = _FakeConversationResponder("Hi Olamide—how can I help?")
+    state = OrchestratorState(
+        user_id="u_social_meta_stale_boundary",
+        phone_number="23480099991234",
+        channel="whatsapp",
+        last_message_text="Hi",
+        capability_boundary=CapabilityBoundary(key="investments", label="investments or crypto"),
+        loaded_context={"language": "en", "profile": {"first_name": "Olamide"}},
+    )
+    config: RunnableConfig = {"configurable": {"conversation_responder": responder}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["final_response"] == "Hi Olamide—how can I help?"
+    assert updates["capability_boundary"] is None
+    assert updates["turn_directive"].path_shape == "meta_direct"
 
 
 @pytest.mark.asyncio
@@ -8834,7 +8896,7 @@ async def test_gate_skips_semantic_router_for_numeric_input_source_selection_int
     assert updates["turn_directive"].next_step.value == "handle_interrupt"
 
 
-async def test_gate_active_query_balance_request_uses_semantic_router() -> None:
+async def test_gate_active_query_balance_request_uses_typed_fastpath() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_account",
@@ -8845,6 +8907,8 @@ async def test_gate_active_query_balance_request_uses_semantic_router() -> None:
             response_key=None,
             response=None,
             expected_transaction_executors=[],
+            read_request=ReadRequest(subject="balance", response_shape="fact_value"),
+            balance_contract=BalanceQueryContract(),
             reason="balance during active query",
         )
     )
@@ -8864,10 +8928,10 @@ async def test_gate_active_query_balance_request_uses_semantic_router() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].decision == "domain_account"
+    assert updates["turn_directive"].path_shape == "deterministic_balance_read"
+    assert updates["turn_directive"].decision == "deterministic_balance_read"
     assert updates["turn_directive"].target_domain == "account"
     assert updates["session_stack"] == []
     assert updates["active_domain"] is None
@@ -8875,7 +8939,7 @@ async def test_gate_active_query_balance_request_uses_semantic_router() -> None:
     assert task.type == "account"
 
 
-async def test_gate_active_query_bank_specific_balance_request_uses_semantic_router() -> None:
+async def test_gate_active_query_bank_specific_balance_request_uses_typed_fastpath() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_account",
@@ -8886,6 +8950,12 @@ async def test_gate_active_query_bank_specific_balance_request_uses_semantic_rou
             response_key=None,
             response=None,
             expected_transaction_executors=[],
+            read_request=ReadRequest(
+                subject="balance", response_shape="fact_value", bank_name="Access Bank"
+            ),
+            balance_contract=BalanceQueryContract(
+                account_scope="named", bank_names=["Access Bank"], operation="value"
+            ),
             reason="bank-specific balance during active query",
         )
     )
@@ -8905,14 +8975,101 @@ async def test_gate_active_query_bank_specific_balance_request_uses_semantic_rou
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].decision == "domain_account"
+    assert planner.route_calls == 0
+    assert updates["turn_directive"].path_shape == "deterministic_balance_read"
+    assert updates["turn_directive"].decision == "deterministic_balance_read"
     assert updates["turn_directive"].target_domain == "account"
     assert updates["session_stack"] == []
     assert updates["active_domain"] is None
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
+
+
+async def test_explicit_balance_read_bypasses_slow_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_account",
+            mode="new",
+            target_intent="account",
+            confidence=0.96,
+            detected_language="English",
+            read_request=ReadRequest(
+                subject="balance", response_shape="fact_value", bank_name="Access Bank"
+            ),
+            reason="bank-specific balance read",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_access_balance_contract_completion",
+        phone_number="2348000000078",
+        channel="whatsapp",
+        last_message_text="How much is on my access bank balance",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    task = updates["tasks"]["direct_account"]
+    assert task.payload["action"] == "check_balance"
+    assert task.payload["identifier"] == "Access Bank"
+    assert task.payload["balance_contract"] == {
+        "account_scope": "named",
+        "bank_names": ["Access Bank"],
+        "operation": "value",
+        "response_shape": "fact_value",
+    }
+
+
+async def test_semantic_balance_route_dispatches_three_named_accounts_without_reparsing() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_account",
+            mode="new",
+            target_intent="account",
+            confidence=0.96,
+            detected_language="English",
+            read_request=ReadRequest(subject="balance", response_shape="surface_list"),
+            balance_contract=BalanceQueryContract(
+                account_scope="named",
+                bank_names=["Access Bank", "GTBank", "First Bank"],
+                operation="compare",
+                response_shape="surface_list",
+            ),
+            reason="compare three linked account balances",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_multi_balance",
+        phone_number="2348000000078",
+        channel="whatsapp",
+        last_message_text="Compare Access, GTB and First Bank",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    task = updates["tasks"]["direct_account"]
+    assert task.payload["skip_parse"] is True
+    assert task.payload["identifiers"] == ["Access Bank", "GTBank", "First Bank"]
+    assert task.payload["balance_contract"]["operation"] == "compare"
 
 
 async def test_gate_query_session_does_not_swallow_full_query_restatement_as_fast_resume() -> None:
@@ -9002,6 +9159,8 @@ async def test_gate_blocks_router_direct_text_for_linked_accounts_surface() -> N
             response_key=None,
             response=None,
             expected_transaction_executors=[],
+            read_request=ReadRequest(subject="linked_account", response_shape="surface_list"),
+            account_lifecycle_contract=AccountLifecycleContract(),
             reason="structured account surface",
         )
     )
@@ -9025,9 +9184,9 @@ async def test_gate_blocks_router_direct_text_for_linked_accounts_surface() -> N
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "deterministic_account_domain"
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
 
@@ -9046,6 +9205,21 @@ async def test_gate_balance_fastpath_does_not_swallow_mixed_transaction_and_bala
 
     assert "turn_context_summary" in updates
     assert "path_shape" not in updates
+
+
+async def test_gate_balance_fastpath_does_not_claim_ambiguous_non_banking_balance() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_ambiguous_balance",
+        phone_number="23480000000072",
+        channel="whatsapp",
+        last_message_text="Explain balance in everyday life",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["turn_directive"].path_shape != "deterministic_balance_read"
 
 
 async def test_gate_query_session_ignores_generic_checkin_direct_response_for_follow_up_question() -> None:
@@ -9535,17 +9709,11 @@ async def test_gate_direct_path_cancel_and_balance_cleans_query_and_runs_balance
     updates = await session_gate_direct_path(state, config)
 
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "balance_direct"
-    assert updates["turn_directive"].source == "account_balance_guard"
-    assert updates["turn_directive"].heuristic_type == "guardrail_shortcut"
-    assert updates["turn_directive"].heuristic_name == "balance_request"
-    assert updates["waves"] == [["direct_account_balance"]]
-    task = updates["tasks"]["direct_account_balance"]
-    assert task.type == "account"
-    assert task.payload["action"] == "check_balance"
-    assert task.payload["skip_parse"] is True
+    assert updates["turn_directive"].path_shape == "deterministic_balance_read"
+    assert updates["turn_directive"].next_step.value == "advance"
     assert updates["session_stack"] == []
-    assert updates.get("active_domain") is None
+    assert updates["active_domain"] is None
+    assert updates["tasks"]["direct_account"].payload["action"] == "check_balance"
 
 
 async def test_gate_lending_request_blocks_even_with_stale_support_context() -> None:

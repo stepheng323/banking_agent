@@ -1,6 +1,7 @@
 """Scheduled transfer requirements and management actions."""
 
-from datetime import datetime
+import time
+from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
 from banking.persistence.unit_of_work import UnitOfWork
@@ -24,6 +25,7 @@ from banking.transactions.shared.schedule_management import (
     disambiguation_result,
     format_schedule_row,
     resolve_schedule_selection,
+    schedule_edit_patch_supported,
     schedule_edit_requires_auth,
 )
 from banking.transactions.shared.scheduling import schedule_recurrence_label, schedule_required_prompt
@@ -31,6 +33,12 @@ from banking.transfers.authorization.pin_token import persist_schedule_pin_token
 from banking.transfers.models.types import TransferContext, TransferGates, TransferPayload
 from banking.transfers.pipeline.base import TransferPipeline, TransferStep
 from shared.database.enums import ScheduledInstructionStatusEnum
+from shared.types.conversation_sets import (
+    BulkMutationRequest,
+    BulkMutationReviewSnapshot,
+    ScheduleQueryContract,
+)
+from shared.types.read import ReadRequest, ReadResult
 
 SCHEDULING_ACTIONS = {
     "schedule_transfer",
@@ -44,6 +52,14 @@ SCHEDULING_ACTIONS = {
 }
 CANCEL_SCHEDULE_ACTIONS = {"cancel_scheduled_transfer", "cancel_scheduled_transaction"}
 EDIT_SCHEDULE_ACTIONS = {"edit_scheduled_transaction"}
+
+
+def _schedule_version_token(schedule: Any) -> str | None:
+    updated_at = getattr(schedule, "updated_at", None)
+    if updated_at is None:
+        return None
+    isoformat = getattr(updated_at, "isoformat", None)
+    return str(isoformat() if callable(isoformat) else updated_at)
 
 
 class TransferPipelineBuilder(Protocol):
@@ -117,42 +133,131 @@ class TransferSchedulingHandler:
         user_id: str,
         locale: str,
     ) -> TransactionResult:
+        if data is None or data.read_request is None or data.schedule_contract is None:
+            return TransactionResult(
+                outcome=TransactionOutcome.FAILED,
+                error=render_message("transfer.error.pipeline_failed", locale, {"error": "schedule_contract_missing"}),
+            )
+        request = data.read_request
+        contract = data.schedule_contract
+
+        def parsed_boundary(value: str | None) -> datetime | None:
+            if not value:
+                return None
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            if parsed.tzinfo is not None:
+                return parsed.astimezone(UTC).replace(tzinfo=None)
+            return parsed
+
+        starts_at = parsed_boundary(contract.starts_at)
+        ends_at = parsed_boundary(contract.ends_at)
+
         async with UnitOfWork() as uow:
             if not uow.scheduled_instructions:
                 return TransactionResult(
                     outcome=TransactionOutcome.FAILED,
                     error=render_message("transfer.error.pipeline_failed", locale, {"error": "schedule_repo_missing"}),
                 )
-            schedules = await uow.scheduled_instructions.get_active_by_user(user_id, limit=10)
-
-        if data and data.schedule_response_mode == "count":
-            count = len(schedules)
-            response = (
-                render_message("schedule.list.empty", locale)
-                if count == 0
-                else render_message("schedule.list.count", locale, {"count": count})
+            repo = uow.scheduled_instructions
+            schedules = await repo.get_filtered_by_user(
+                user_id,
+                statuses=contract.statuses or ["active"],
+                domains=contract.domains,
+                recurrence=contract.recurrence,
+                recipient_name=contract.recipient_name,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                selected_ids=data.selected_entity_ids,
+                limit=request.page_size + 1,
+                offset=request.offset,
             )
+            total_count = await repo.count_filtered_by_user(
+                user_id,
+                statuses=contract.statuses or ["active"],
+                domains=contract.domains,
+                recurrence=contract.recurrence,
+                recipient_name=contract.recipient_name,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                selected_ids=data.selected_entity_ids,
+            )
+
+        has_next = len(schedules) > request.page_size or request.offset + request.page_size < total_count
+        page = schedules[: request.page_size]
+        read_result = ReadResult(
+            request=request,
+            total_count=total_count,
+            returned_count=0 if request.response_shape.startswith("fact_") else len(page),
+            has_next=has_next,
+            has_previous=request.offset > 0,
+        )
+
+        if request.response_shape == "fact_status":
+            status = (
+                str(getattr(page[0], "status", "") or "unknown")
+                if total_count == 1 and page
+                else (contract.statuses[0] if len(contract.statuses) == 1 else "mixed")
+            )
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                response=render_message(
+                    "schedule.list.status_fact",
+                    locale,
+                    {"count": total_count, "status": status},
+                ),
+                patch={
+                    "is_scheduled_operation": True,
+                    "skip_finalize_summary": True,
+                    "schedule_contract": contract.model_dump(mode="json", exclude_none=True),
+                },
+                read_result=read_result,
+            )
+
+        if request.response_shape in {"fact_count", "fact_bool"}:
+            count = total_count
+            if request.response_shape == "fact_bool":
+                response = render_message(
+                    "schedule.list.exists_yes" if count else "schedule.list.exists_no",
+                    locale,
+                )
+            else:
+                response = (
+                    render_message("schedule.list.empty", locale)
+                    if count == 0
+                    else render_message("schedule.list.count", locale, {"count": count})
+                )
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
                 response=response,
                 patch={
                     "is_scheduled_operation": True,
                     "skip_finalize_summary": True,
-                    "schedule_context_items": build_schedule_context_items(schedules, locale=locale),
+                    "schedule_contract": contract.model_dump(mode="json", exclude_none=True),
                 },
+                read_result=read_result,
             )
 
-        if not schedules:
+        if not page:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
                 response=render_message("schedule.list.empty", locale),
-                patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
+                patch={
+                    "is_scheduled_operation": True,
+                    "skip_finalize_summary": True,
+                    "schedule_contract": contract.model_dump(mode="json", exclude_none=True),
+                },
+                read_result=read_result,
             )
 
         lines = [render_message("schedule.list.header", locale)]
         lines.extend(
-            format_schedule_row(idx, schedule, locale=locale) for idx, schedule in enumerate(schedules, start=1)
+            format_schedule_row(idx, schedule, locale=locale) for idx, schedule in enumerate(page, start=1)
         )
+        if has_next:
+            lines.extend(["", render_message("common.pagination.more", locale)])
 
         return TransactionResult(
             outcome=TransactionOutcome.OK,
@@ -160,8 +265,10 @@ class TransferSchedulingHandler:
             patch={
                 "is_scheduled_operation": True,
                 "skip_finalize_summary": True,
-                "schedule_context_items": build_schedule_context_items(schedules, locale=locale),
+                "schedule_context_items": build_schedule_context_items(page, locale=locale),
+                "schedule_contract": contract.model_dump(mode="json", exclude_none=True),
             },
+            read_result=read_result,
         )
 
     async def find_schedules(
@@ -225,19 +332,101 @@ class TransferSchedulingHandler:
                 )
 
             selection = resolve_schedule_selection(schedules, data=data, user_message=user_message)
-            selected = selection.selected
+            raw_request = data.bulk_mutation
+            request = raw_request if raw_request and raw_request.domain == "schedule" else None
+            if request is None:
+                selected = selection.selected
+                if selected is None:
+                    return disambiguation_result(selection.schedules, action_label="cancel", locale=locale)
+                version_token = _schedule_version_token(selected)
+                if not version_token:
+                    return TransactionResult(
+                        outcome=TransactionOutcome.FAILED,
+                        error=render_message("conversation_set.stale_selection", locale),
+                    )
+                from shared.types.conversation_sets import EntitySelectionRef
 
-            if selected is None:
-                return disambiguation_result(selection.schedules, action_label="cancel", locale=locale)
+                request = BulkMutationRequest(
+                    domain="schedule",
+                    action="cancel",
+                    targets=[
+                        EntitySelectionRef(
+                            entity_type="schedule",
+                            entity_id=str(selected.id),
+                            frame_id="direct_schedule_selection",
+                            display_label=format_schedule_row(1, selected, locale=locale),
+                            version_token=version_token,
+                        )
+                    ],
+                    idempotency_key=str(data.idempotency_key or f"cancel:{selected.id}"),
+                )
 
-            selected.status = ScheduledInstructionStatusEnum.CANCELLED.value
-            selected.cancelled_at = cancelled_now()
+            assert request is not None
+            target_ids = [ref.entity_id for ref in request.targets]
+            locked = await repo.get_active_ids_for_user_for_update(target_ids, user_id)
+            by_id = {str(schedule.id): schedule for schedule in locked}
+            stale = [
+                ref
+                for ref in request.targets
+                if ref.entity_id not in by_id or _schedule_version_token(by_id[ref.entity_id]) != ref.version_token
+            ]
+            if stale:
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message("conversation_set.stale_selection", locale),
+                )
+
+            if not data.confirmation.confirmed:
+                snapshot = BulkMutationReviewSnapshot(
+                    request=request,
+                    created_at_ts=time.time(),
+                )
+                summary = render_message(
+                    "schedule.cancel.review",
+                    locale,
+                    {"count": len(request.targets), "items": "\n".join(ref.display_label for ref in request.targets)},
+                )
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+                    confirmation_summary=summary,
+                    confirmation_snapshot=snapshot.model_dump(mode="json", exclude_none=True),
+                    patch={
+                        "is_scheduled_operation": True,
+                        "skip_finalize_summary": True,
+                        "bulk_mutation": request.model_dump(mode="json", exclude_none=True),
+                    },
+                )
+
+            for selected in locked:
+                selected.status = ScheduledInstructionStatusEnum.CANCELLED.value
+                selected.cancelled_at = cancelled_now()
             await uow.commit()
+            remaining = await repo.get_active_by_user(user_id, limit=6)
 
+        assert request is not None
+        refreshed_request = ReadRequest(subject="schedule", response_shape="surface_list")
+        refreshed_contract = ScheduleQueryContract(
+            operation="list",
+            response_shape="surface_list",
+            statuses=["active"],
+        )
         return TransactionResult(
             outcome=TransactionOutcome.OK,
-            response=render_message("schedule.cancel.success", locale),
-            patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
+            response=render_message("schedule.cancel.bulk_success", locale, {"count": len(request.targets)}),
+            patch={
+                "is_scheduled_operation": True,
+                "skip_finalize_summary": True,
+                "bulk_mutation": None,
+                "invalidate_conversation_set_domain": "schedule",
+                "schedule_context_items": build_schedule_context_items(remaining[:5], locale=locale),
+                "schedule_contract": refreshed_contract.model_dump(mode="json", exclude_none=True),
+            },
+            read_result=ReadResult(
+                request=refreshed_request,
+                total_count=len(remaining),
+                returned_count=min(5, len(remaining)),
+                has_next=len(remaining) > 5,
+            ),
         )
 
     async def edit_schedule(
@@ -269,6 +458,22 @@ class TransferSchedulingHandler:
                 return TransactionResult(
                     outcome=TransactionOutcome.FAILED,
                     error=render_message("transfer.error.pipeline_failed", locale, {"error": "schedule_repo_missing"}),
+                )
+
+            if (
+                data.bulk_mutation is not None
+                and data.bulk_mutation.domain == "schedule"
+                and data.bulk_mutation.action == "edit"
+            ):
+                return await self._edit_schedule_set(
+                    repo=repo,
+                    uow=uow,
+                    data=data,
+                    user_id=user_id,
+                    locale=locale,
+                    gates=gates,
+                    phone_number=phone_number,
+                    worker_context=worker_context,
                 )
 
             schedules = await repo.get_active_by_user(user_id, limit=20)
@@ -365,6 +570,147 @@ class TransferSchedulingHandler:
                 "schedule_id": str(schedule_id or selected.id),
                 "schedule_operation_note": success_message,
             },
+        )
+
+    async def _edit_schedule_set(
+        self,
+        *,
+        repo: Any,
+        uow: Any,
+        data: TransferPayload,
+        user_id: str,
+        locale: str,
+        gates: TransferGates,
+        phone_number: str | None,
+        worker_context: Any | None,
+    ) -> TransactionResult:
+        request = data.bulk_mutation
+        if request is None:
+            raise RuntimeError("bulk_schedule_request_missing")
+        target_ids = [ref.entity_id for ref in request.targets]
+        selected = await repo.get_active_ids_for_user_for_update(target_ids, user_id)
+        by_id = {str(schedule.id): schedule for schedule in selected}
+        stale = [
+            ref
+            for ref in request.targets
+            if ref.entity_id not in by_id or _schedule_version_token(by_id[ref.entity_id]) != ref.version_token
+        ]
+        if stale:
+            return TransactionResult(
+                outcome=TransactionOutcome.FAILED,
+                error=render_message("conversation_set.stale_selection", locale),
+            )
+
+        edit_patch = dict(request.patch or data.schedule_edit_patch or {})
+        if not edit_patch:
+            domain_patches = [
+                build_schedule_edit_patch(data, domain=str(getattr(schedule, "domain", "transfer")))
+                for schedule in selected
+            ]
+            edit_patch = domain_patches[0] if domain_patches else {}
+            if any(patch != edit_patch for patch in domain_patches[1:]):
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message("schedule.edit.incompatible_set", locale),
+                )
+        if not edit_patch:
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
+                required_fields=["schedule_edit_patch"],
+                prompt=render_message("schedule.edit.ask_change", locale),
+                patch={"bulk_mutation": request.model_dump(mode="json", exclude_none=True)},
+            )
+
+        summaries: list[str] = []
+        next_runs: dict[str, str] = dict(data.bulk_schedule_next_runs)
+        requires_auth = False
+        for ref in request.targets:
+            schedule = by_id[ref.entity_id]
+            domain = str(getattr(schedule, "domain", "transfer"))
+            if not schedule_edit_patch_supported(domain, edit_patch):
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message("schedule.edit.incompatible_set", locale),
+                )
+            summary, _, computed_next_run = build_schedule_update_summary(schedule, edit_patch, locale=locale)
+            if computed_next_run is None:
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["schedule_start_date", "schedule_time_local"],
+                    prompt=render_message("schedule.prompt.future_date_time", locale),
+                )
+            summaries.append(summary)
+            next_runs[ref.entity_id] = computed_next_run.isoformat()
+            requires_auth = requires_auth or schedule_edit_requires_auth(domain, edit_patch)
+
+        reviewed_request = request.model_copy(update={"patch": edit_patch})
+        review_summary = render_message(
+            "schedule.edit.bulk_review",
+            locale,
+            {"count": len(selected), "items": "\n\n".join(summaries)},
+        )
+        snapshot = BulkMutationReviewSnapshot(
+            request=reviewed_request,
+            created_at_ts=time.time(),
+        )
+        confirmation_patch = {
+            "bulk_mutation": reviewed_request.model_dump(mode="json", exclude_none=True),
+            "bulk_schedule_next_runs": next_runs,
+            "schedule_edit_patch": edit_patch,
+            "schedule_edit_requires_auth": requires_auth,
+            "is_scheduled_operation": True,
+            "skip_finalize_summary": True,
+        }
+        if not data.confirmation.confirmed:
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+                confirmation_summary=review_summary,
+                confirmation_snapshot=snapshot.model_dump(mode="json", exclude_none=True),
+                patch=confirmation_patch,
+            )
+        if requires_auth and not gates.pin_verified:
+            if phone_number:
+                await persist_schedule_pin_token(
+                    idempotency_key=data.idempotency_key,
+                    phone_number=phone_number,
+                    worker_context=worker_context,
+                )
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_AUTH,
+                confirmation_summary=review_summary,
+                confirmation_snapshot=snapshot.model_dump(mode="json", exclude_none=True),
+                patch=confirmation_patch,
+            )
+
+        for ref in request.targets:
+            schedule = by_id[ref.entity_id]
+            next_run = datetime.fromisoformat(next_runs[ref.entity_id])
+            apply_schedule_edit(schedule, edit_patch, next_run)
+        await uow.commit()
+        refreshed = await repo.get_active_by_user(user_id, limit=6)
+        refreshed_request = ReadRequest(subject="schedule", response_shape="surface_list")
+        refreshed_contract = ScheduleQueryContract(
+            operation="list",
+            response_shape="surface_list",
+            statuses=["active"],
+        )
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response=render_message("schedule.edit.bulk_success", locale, {"count": len(selected)}),
+            patch={
+                "bulk_mutation": None,
+                "invalidate_conversation_set_domain": "schedule",
+                "is_scheduled_operation": True,
+                "skip_finalize_summary": True,
+                "schedule_context_items": build_schedule_context_items(refreshed[:5], locale=locale),
+                "schedule_contract": refreshed_contract.model_dump(mode="json", exclude_none=True),
+            },
+            read_result=ReadResult(
+                request=refreshed_request,
+                total_count=len(refreshed),
+                returned_count=min(5, len(refreshed)),
+                has_next=len(refreshed) > 5,
+            ),
         )
 
     async def create_schedule_after_auth(

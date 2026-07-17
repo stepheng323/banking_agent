@@ -106,7 +106,7 @@ async def test_query_executor_attaches_mobile_body_blocks_to_say_outbox() -> Non
                     "transaction_type": "transfer",
                     "counterparty": "Mum",
                     "bank_name": "Wema",
-                    "recipient_account": "8067892221",
+                    "source_account_number": "8067892221",
                 },
             )
         ],

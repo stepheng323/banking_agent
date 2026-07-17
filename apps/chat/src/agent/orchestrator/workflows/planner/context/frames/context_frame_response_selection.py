@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
     decision_target_text,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_detail_fields import (
+    CONTEXT_READ_LIST_LIMIT,
     candidate_detail_fields,
     frame_noun,
 )
@@ -25,9 +26,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
     find_matching_entities,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_text import lookup_tokens
-from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import (
-    CONTEXT_READ_LIST_LIMIT,
-)
 from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import ContextFrameFollowupDecision, ContextFrameFollowupFilters
 
