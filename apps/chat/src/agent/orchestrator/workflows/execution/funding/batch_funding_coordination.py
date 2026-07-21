@@ -5,10 +5,10 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import _with_policy_notice
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_demands import (
-    _batch_transfer_tasks_for_wave,
-    _batch_transfer_tasks_not_ready_for_funding,
+    _batch_money_moving_tasks_for_wave,
+    _batch_money_moving_tasks_not_ready_for_funding,
     _build_transfer_demand,
-    _is_plannable_transfer_task,
+    _is_plannable_money_moving_task,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_payloads import (
     _funding_plan_to_payload_dict,
@@ -94,6 +94,49 @@ def _apply_default_auto_source_if_missing(payload: dict[str, Any], default_accou
     payload.setdefault("source_affinity_mode", "auto")
 
 
+def _bind_bill_to_approved_source(
+    *,
+    payload: dict[str, Any],
+    plan: Any,
+    accounts: list[dict[str, Any]],
+) -> bool:
+    """Bind an airtime/data task to the exact source approved by preflight.
+
+    Bill workers issue one provider debit from ``source_account_id``.  A
+    transfer-style multi-source plan is therefore unsafe for a bill: it could
+    preflight one set of accounts and debit another.  Accept only one source
+    and copy its safe display metadata into the task payload before execution.
+    """
+    steps = list(getattr(plan, "steps", []) or [])
+    if len(steps) != 1:
+        return False
+    step = steps[0]
+    source_account_id = str(getattr(step, "account_id", "") or "").strip()
+    if not source_account_id:
+        return False
+    payload["source_account_id"] = source_account_id
+    source_number = str(getattr(step, "account_number", "") or "").strip()
+    source_bank = str(getattr(step, "bank_name", "") or "").strip()
+    for account in accounts:
+        if not isinstance(account, dict):
+            continue
+        account_ids = {
+            str(account.get("id") or "").strip(),
+            str(account.get("account_id") or "").strip(),
+        }
+        if source_account_id not in account_ids:
+            continue
+        source_number = source_number or str(account.get("account_number") or account.get("number") or "").strip()
+        source_bank = source_bank or str(account.get("bank_name") or "").strip()
+        break
+    if source_number:
+        payload["source_account_number"] = source_number
+    if source_bank:
+        payload["source_bank_name"] = source_bank
+    payload["source_affinity_mode"] = "explicit"
+    return True
+
+
 async def _maybe_coordinate_batch_funding(
     *,
     state: OrchestratorState,
@@ -103,11 +146,20 @@ async def _maybe_coordinate_batch_funding(
     locale: str,
     allow_existing_funding_plans: bool = False,
 ) -> dict[str, Any] | None:
-    batch_transfer_tasks = _batch_transfer_tasks_for_wave(state, current_wave)
-    if len(batch_transfer_tasks) < 2:
+    batch_transfer_tasks = _batch_money_moving_tasks_for_wave(state, current_wave, include_single=True)
+    # Transfers retain their established single-transfer funding flow.  Bills
+    # need this shared preflight even by themselves, because their actual debit
+    # is asynchronous and otherwise an insufficient account reaches the queue.
+    if len(batch_transfer_tasks) == 1 and batch_transfer_tasks[0][1].type not in {"airtime", "data"}:
+        return None
+    if not batch_transfer_tasks:
         return None
 
-    waiting_task_ids = _batch_transfer_tasks_not_ready_for_funding(state, current_wave)
+    waiting_task_ids = _batch_money_moving_tasks_not_ready_for_funding(
+        state,
+        current_wave,
+        include_single=True,
+    )
     if waiting_task_ids:
         logger.debug(
             "batch_funding_coordinator_waiting_for_recipient_readiness",
@@ -119,10 +171,10 @@ async def _maybe_coordinate_batch_funding(
     transfer_tasks = [
         (task_id, task)
         for task_id, task in batch_transfer_tasks
-        if _is_plannable_transfer_task(task, allow_existing_funding_plan=allow_existing_funding_plans)
+        if _is_plannable_money_moving_task(task, allow_existing_funding_plan=allow_existing_funding_plans)
     ]
     transfer_task_ids = [task_id for task_id, _task in transfer_tasks]
-    if len(transfer_task_ids) != len(batch_transfer_tasks) or len(transfer_task_ids) < 2:
+    if len(transfer_task_ids) != len(batch_transfer_tasks) or not transfer_task_ids:
         logger.debug(
             "batch_funding_coordinator_waiting_for_full_plannable_batch",
             batch_task_count=len(batch_transfer_tasks),
@@ -143,7 +195,10 @@ async def _maybe_coordinate_batch_funding(
         payload = task.payload
         if isinstance(payload, dict):
             _apply_default_auto_source_if_missing(payload, default_account)
-    demands = [_build_transfer_demand(task_id, cast(dict[str, Any], task.payload)) for task_id, task in transfer_tasks]
+    demands = [
+        _build_transfer_demand(task_id, task.type, cast(dict[str, Any], task.payload))
+        for task_id, task in transfer_tasks
+    ]
     coordinator = BatchFundingCoordinator(dd_provider=dd_provider)
     result = await coordinator.coordinate(demands=demands, accounts=accounts, locale=locale)
     if result.is_feasible:
@@ -154,6 +209,27 @@ async def _maybe_coordinate_batch_funding(
             payload = task.payload
             if not isinstance(payload, dict):
                 continue
+            if task.type in {"airtime", "data"} and not _bind_bill_to_approved_source(
+                payload=payload,
+                plan=plan,
+                accounts=accounts,
+            ):
+                logger.warning(
+                    "batch_funding_bill_plan_rejected",
+                    task_type=task.type,
+                    plan_step_count=len(getattr(plan, "steps", []) or []),
+                )
+                task.stage = TaskStage.AWAITING_FUNDING_ADJUSTMENT
+                prompt = render_message("funding.batch.total_infeasible", locale)
+                agg.set_input_interrupt_outbox(
+                    task_ids=[task_id],
+                    fields_by_task={task_id: ["source_account_id"]},
+                    prompt=prompt,
+                    entries=_with_policy_notice(state, [_funding_prompt_outbox(prompt)]),
+                    metadata={"intent": "bill_funding_source_required"},
+                )
+                agg.clear_policy_notice()
+                return agg.to_updates()
             payload["funding_plan"] = _funding_plan_to_payload_dict(plan, payload)
             payload["suggested_funding_plan"] = None
         logger.info(
