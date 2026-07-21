@@ -57,10 +57,12 @@ def compile_planner_system_prompt(
         policy_block,
         PLANNER_RUNTIME_SCHEMA_PROMPT,
         _compile_rule_atoms(rule_ids),
-        PLANNER_RUNTIME_COMMON_EXAMPLES,
     ]
-    profile_parts = ["schema", f"rules_{len(rule_ids)}", "ex_common"]
-    if any(bundle in bundles for bundle in ("transfer_only", "mixed_tx", "money_move")):
+    profile_parts = ["schema", f"rules_{len(rule_ids)}"]
+    has_money_move_bundle = any(bundle in bundles for bundle in ("transfer_only", "mixed_tx", "money_move"))
+    if has_money_move_bundle:
+        sections.append(PLANNER_RUNTIME_COMMON_EXAMPLES)
+        profile_parts.append("ex_common")
         quality_prompt = PLANNER_MIXED_OUTPUT_QUALITY_PROMPT if "mixed_tx" in bundles else PLANNER_OUTPUT_QUALITY_PROMPT
         sections.append(quality_prompt)
         profile_parts.append("clean_tx")

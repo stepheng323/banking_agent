@@ -13,6 +13,7 @@ from shared.types.conversation_sets import (
     AccountLifecycleFollowupDelta,
     BeneficiaryFollowupDelta,
     BeneficiaryQueryContract,
+    EntitySelectionRef,
     ScheduleQueryContract,
     SetAmountAllocation,
     SetScopeDelta,
@@ -193,6 +194,9 @@ class BeneficiaryTaskParameters(BaseTaskParameters):
     phone: str | None = None
     target_phone: str | None = None
     alias: str | None = None
+    beneficiary_id: str | None = None
+    beneficiary_selection_ref: EntitySelectionRef | None = None
+    new_alias: str | None = Field(default=None, min_length=1, max_length=80)
 
     @model_validator(mode="after")
     def validate_beneficiary_contract(self) -> "BeneficiaryTaskParameters":
@@ -252,6 +256,10 @@ class SupportTaskParameters(BaseTaskParameters):
     model_config = ConfigDict(extra="forbid")
 
     read_request: ReadRequest | None = None
+    ticket_code: str | None = Field(default=None, max_length=32)
+    ticket_id: str | None = Field(default=None, max_length=160)
+    ticket_note: str | None = Field(default=None, min_length=1, max_length=1000)
+    offset: int = Field(default=0, ge=0)
 
 
 PlannerTaskParameters: TypeAlias = (
@@ -363,6 +371,12 @@ class RecurringDataTask(BasePlannedTask):
     parameters: DataTaskParameters = Field(default_factory=DataTaskParameters)
 
 
+class DataPlanQueryTask(BasePlannedTask):
+    action: Literal["data_plan_query"]
+    executor: ClassVar[Literal["data"]] = "data"
+    parameters: DataTaskParameters = Field(default_factory=DataTaskParameters)
+
+
 class ListScheduledTransactionsTask(BasePlannedTask):
     action: Literal["list_scheduled_transactions"]
     executor: ClassVar[Literal["schedule"]] = "schedule"
@@ -383,6 +397,30 @@ class CancelScheduledTransactionTask(BasePlannedTask):
 
 class EditScheduledTransactionTask(BasePlannedTask):
     action: Literal["edit_scheduled_transaction"]
+    executor: ClassVar[Literal["schedule"]] = "schedule"
+    parameters: ScheduleTaskParameters = Field(default_factory=ScheduleTaskParameters)
+
+
+class PauseScheduledTransactionTask(BasePlannedTask):
+    action: Literal["pause_scheduled_transaction"]
+    executor: ClassVar[Literal["schedule"]] = "schedule"
+    parameters: ScheduleTaskParameters = Field(default_factory=ScheduleTaskParameters)
+
+
+class ResumeScheduledTransactionTask(BasePlannedTask):
+    action: Literal["resume_scheduled_transaction"]
+    executor: ClassVar[Literal["schedule"]] = "schedule"
+    parameters: ScheduleTaskParameters = Field(default_factory=ScheduleTaskParameters)
+
+
+class ListScheduledRunsTask(BasePlannedTask):
+    action: Literal["list_scheduled_runs"]
+    executor: ClassVar[Literal["schedule"]] = "schedule"
+    parameters: ScheduleTaskParameters = Field(default_factory=ScheduleTaskParameters)
+
+
+class FindScheduledRunTask(BasePlannedTask):
+    action: Literal["find_scheduled_run"]
     executor: ClassVar[Literal["schedule"]] = "schedule"
     parameters: ScheduleTaskParameters = Field(default_factory=ScheduleTaskParameters)
 
@@ -423,20 +461,8 @@ class SetDefaultAccountTask(BasePlannedTask):
     parameters: AccountTaskParameters = Field(default_factory=AccountTaskParameters)
 
 
-class OverallBalanceTask(BasePlannedTask):
-    action: Literal["overall_balance"]
-    executor: ClassVar[Literal["account"]] = "account"
-    parameters: AccountTaskParameters = Field(default_factory=AccountTaskParameters)
-
-
 class ListBeneficiariesTask(BasePlannedTask):
     action: Literal["list_beneficiaries"]
-    executor: ClassVar[Literal["beneficiary"]] = "beneficiary"
-    parameters: BeneficiaryTaskParameters = Field(default_factory=BeneficiaryTaskParameters)
-
-
-class AddBeneficiaryTask(BasePlannedTask):
-    action: Literal["add_beneficiary"]
     executor: ClassVar[Literal["beneficiary"]] = "beneficiary"
     parameters: BeneficiaryTaskParameters = Field(default_factory=BeneficiaryTaskParameters)
 
@@ -447,8 +473,8 @@ class DeleteBeneficiaryTask(BasePlannedTask):
     parameters: BeneficiaryTaskParameters = Field(default_factory=BeneficiaryTaskParameters)
 
 
-class UpdateBeneficiaryTask(BasePlannedTask):
-    action: Literal["update_beneficiary"]
+class RenameBeneficiaryTask(BasePlannedTask):
+    action: Literal["rename_beneficiary"]
     executor: ClassVar[Literal["beneficiary"]] = "beneficiary"
     parameters: BeneficiaryTaskParameters = Field(default_factory=BeneficiaryTaskParameters)
 
@@ -489,6 +515,30 @@ class SupportReportIssueTask(BasePlannedTask):
     parameters: SupportTaskParameters = Field(default_factory=SupportTaskParameters)
 
 
+class ListSupportTicketsTask(BasePlannedTask):
+    action: Literal["list_support_tickets"]
+    executor: ClassVar[Literal["support"]] = "support"
+    parameters: SupportTaskParameters = Field(default_factory=SupportTaskParameters)
+
+
+class FindSupportTicketTask(BasePlannedTask):
+    action: Literal["find_support_ticket"]
+    executor: ClassVar[Literal["support"]] = "support"
+    parameters: SupportTaskParameters = Field(default_factory=SupportTaskParameters)
+
+
+class AppendSupportTicketNoteTask(BasePlannedTask):
+    action: Literal["append_support_ticket_note"]
+    executor: ClassVar[Literal["support"]] = "support"
+    parameters: SupportTaskParameters = Field(default_factory=SupportTaskParameters)
+
+
+class CloseSupportTicketTask(BasePlannedTask):
+    action: Literal["close_support_ticket"]
+    executor: ClassVar[Literal["support"]] = "support"
+    parameters: SupportTaskParameters = Field(default_factory=SupportTaskParameters)
+
+
 class FaqAnswerQuestionTask(BasePlannedTask):
     action: Literal["answer_question"]
     executor: ClassVar[Literal["faq"]] = "faq"
@@ -520,7 +570,7 @@ class AirtimePlannedTask(BasePlannedTask):
 
 
 class DataPlannedTask(BasePlannedTask):
-    action: Literal["buy_data", "schedule_data", "recurring_data"]
+    action: Literal["buy_data", "data_plan_query", "schedule_data", "recurring_data"]
     executor: ClassVar[Literal["data"]] = "data"
     parameters: DataTaskParameters = Field(default_factory=DataTaskParameters)
 
@@ -531,13 +581,26 @@ class SchedulePlannedTask(BasePlannedTask):
         "find_scheduled_transaction",
         "cancel_scheduled_transaction",
         "edit_scheduled_transaction",
+        "pause_scheduled_transaction",
+        "resume_scheduled_transaction",
+        "list_scheduled_runs",
+        "find_scheduled_run",
     ]
     executor: ClassVar[Literal["schedule"]] = "schedule"
     parameters: ScheduleTaskParameters = Field(default_factory=ScheduleTaskParameters)
 
 
 class AccountPlannedTask(BasePlannedTask):
-    action: Literal["check_balance", "list_accounts", "count", "link", "unlink", "set_default", "overall_balance"]
+    action: Literal[
+        "check_balance",
+        "list_accounts",
+        "count",
+        "get_default",
+        "link",
+        "unlink",
+        "set_default",
+        "reinitiate_mandate",
+    ]
     executor: ClassVar[Literal["account"]] = "account"
     parameters: AccountTaskParameters = Field(default_factory=AccountTaskParameters)
 
@@ -545,9 +608,8 @@ class AccountPlannedTask(BasePlannedTask):
 class BeneficiaryPlannedTask(BasePlannedTask):
     action: Literal[
         "list_beneficiaries",
-        "add_beneficiary",
         "delete_beneficiary",
-        "update_beneficiary",
+        "rename_beneficiary",
         "save_beneficiary",
     ]
     executor: ClassVar[Literal["beneficiary"]] = "beneficiary"
@@ -561,7 +623,14 @@ class QueryPlannedTask(BasePlannedTask):
 
 
 class SupportPlannedTask(BasePlannedTask):
-    action: Literal["handle_request", "report_issue"]
+    action: Literal[
+        "handle_request",
+        "report_issue",
+        "list_support_tickets",
+        "find_support_ticket",
+        "append_support_ticket_note",
+        "close_support_ticket",
+    ]
     executor: ClassVar[Literal["support"]] = "support"
     parameters: SupportTaskParameters = Field(default_factory=SupportTaskParameters)
 
@@ -660,29 +729,38 @@ _ACTION_TASK_MODELS: dict[str, PlannerTaskModel] = {
     "schedule_airtime": AirtimePlannedTask,
     "recurring_airtime": AirtimePlannedTask,
     "buy_data": DataPlannedTask,
+    "data_plan_query": DataPlannedTask,
     "schedule_data": DataPlannedTask,
     "recurring_data": DataPlannedTask,
     "list_scheduled_transactions": SchedulePlannedTask,
     "find_scheduled_transaction": SchedulePlannedTask,
     "cancel_scheduled_transaction": SchedulePlannedTask,
     "edit_scheduled_transaction": SchedulePlannedTask,
+    "pause_scheduled_transaction": SchedulePlannedTask,
+    "resume_scheduled_transaction": SchedulePlannedTask,
+    "list_scheduled_runs": SchedulePlannedTask,
+    "find_scheduled_run": SchedulePlannedTask,
     "check_balance": AccountPlannedTask,
     "list_accounts": AccountPlannedTask,
     "count": AccountPlannedTask,
+    "get_default": AccountPlannedTask,
     "link": AccountPlannedTask,
     "unlink": AccountPlannedTask,
     "set_default": AccountPlannedTask,
-    "overall_balance": AccountPlannedTask,
+    "reinitiate_mandate": AccountPlannedTask,
     "list_beneficiaries": BeneficiaryPlannedTask,
-    "add_beneficiary": BeneficiaryPlannedTask,
     "delete_beneficiary": BeneficiaryPlannedTask,
-    "update_beneficiary": BeneficiaryPlannedTask,
+    "rename_beneficiary": BeneficiaryPlannedTask,
     "save_beneficiary": BeneficiaryPlannedTask,
     "transaction_search": QueryPlannedTask,
     "transaction_list": QueryPlannedTask,
     "beneficiary_summary": QueryPlannedTask,
     "handle_request": SupportPlannedTask,
     "report_issue": SupportPlannedTask,
+    "list_support_tickets": SupportPlannedTask,
+    "find_support_ticket": SupportPlannedTask,
+    "append_support_ticket_note": SupportPlannedTask,
+    "close_support_ticket": SupportPlannedTask,
     "answer_question": FaqPlannedTask,
     "resume_session": OrchestratorPlannedTask,
     "dismiss_resume_session": OrchestratorPlannedTask,
@@ -696,29 +774,38 @@ _ACTION_PARAMETER_MODELS: dict[str, type[BaseTaskParameters]] = {
     "schedule_airtime": AirtimeTaskParameters,
     "recurring_airtime": AirtimeTaskParameters,
     "buy_data": DataTaskParameters,
+    "data_plan_query": DataTaskParameters,
     "schedule_data": DataTaskParameters,
     "recurring_data": DataTaskParameters,
     "list_scheduled_transactions": ScheduleTaskParameters,
     "find_scheduled_transaction": ScheduleTaskParameters,
     "cancel_scheduled_transaction": ScheduleTaskParameters,
     "edit_scheduled_transaction": ScheduleTaskParameters,
+    "pause_scheduled_transaction": ScheduleTaskParameters,
+    "resume_scheduled_transaction": ScheduleTaskParameters,
+    "list_scheduled_runs": ScheduleTaskParameters,
+    "find_scheduled_run": ScheduleTaskParameters,
     "check_balance": AccountTaskParameters,
     "list_accounts": AccountTaskParameters,
     "count": AccountTaskParameters,
+    "get_default": AccountTaskParameters,
     "link": AccountTaskParameters,
     "unlink": AccountTaskParameters,
     "set_default": AccountTaskParameters,
-    "overall_balance": AccountTaskParameters,
+    "reinitiate_mandate": AccountTaskParameters,
     "list_beneficiaries": BeneficiaryTaskParameters,
-    "add_beneficiary": BeneficiaryTaskParameters,
     "delete_beneficiary": BeneficiaryTaskParameters,
-    "update_beneficiary": BeneficiaryTaskParameters,
+    "rename_beneficiary": BeneficiaryTaskParameters,
     "save_beneficiary": BeneficiaryTaskParameters,
     "transaction_search": QueryTaskParameters,
     "transaction_list": QueryTaskParameters,
     "beneficiary_summary": QueryTaskParameters,
     "handle_request": SupportTaskParameters,
     "report_issue": SupportTaskParameters,
+    "list_support_tickets": SupportTaskParameters,
+    "find_support_ticket": SupportTaskParameters,
+    "append_support_ticket_note": SupportTaskParameters,
+    "close_support_ticket": SupportTaskParameters,
     "answer_question": SupportTaskParameters,
     "resume_session": EmptyTaskParameters,
     "dismiss_resume_session": EmptyTaskParameters,
@@ -1002,6 +1089,7 @@ ActiveFlowQuestionType: TypeAlias = Literal[
     "current_value",
     "timing_or_status",
     "fees_or_charges",
+    "funding_affordability",
     "unsupported_or_unsafe",
     "unknown",
 ]
@@ -1017,7 +1105,12 @@ ContextFrameFollowupAction: TypeAlias = Literal[
     "replay_tasks",
     "edit_schedule",
     "cancel_schedule",
+    "pause_schedule",
+    "resume_schedule",
     "delete_beneficiary",
+    "rename_beneficiary",
+    "append_ticket_note",
+    "close_ticket",
     "unlink_account",
     "set_default_account",
     "relink_account",
@@ -1335,6 +1428,16 @@ class ContextFrameFollowupDecision(BaseModel):
         default=None,
         description="Sparse explicit edit applied to every selected schedule; null outside schedule edits",
     )
+    new_alias: str | None = Field(
+        default=None,
+        max_length=80,
+        description="Explicit replacement beneficiary alias; null outside rename_beneficiary",
+    )
+    ticket_note: str | None = Field(
+        default=None,
+        max_length=1000,
+        description="Explicit note text; null outside append_ticket_note",
+    )
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 
 
@@ -1543,6 +1646,21 @@ class SemanticRouteDecision(BaseModel):
         alias="acct",
         description="Specialized filters and operation for linked-account lifecycle reads",
     )
+    # This is an internal, already-grounded continuation decision.  It is not
+    # part of the broad semantic-router provider schema: the provider returns a
+    # deliberately narrow wire representation which is adapted below.  Keeping
+    # the runtime value here lets the gate materialize one canonical route
+    # without starting a second context-frame LLM call.
+    context_followup: ContextFrameFollowupDecision | None = Field(
+        default=None,
+        exclude=True,
+        description="Optional typed continuation against an eligible displayed frame.",
+    )
+    context_replay_modifier: ContextFrameReplayModifier | None = Field(
+        default=None,
+        exclude=True,
+        description="Optional explicit replay patch returned with a context continuation.",
+    )
     unsupported_capability: str | None = Field(
         default=None,
         alias="unsupported_cap",
@@ -1693,7 +1811,7 @@ class PlannerOutput(BaseModel):
     is_cancellation: bool = Field(default=False, description="True if user wants to cancel/abort")
     is_confirmation: bool = Field(default=False, description="True if user explicitly confirms/agrees")
     detected_language: str | None = Field(
-        default=None, description="Detected language: English, Yoruba, Hausa, Igbo, Pidgin, French"
+        default=None, description="Detected language: English, Yoruba, Hausa, Igbo, or Pidgin"
     )
     beneficiary_route: BeneficiaryRouteHint = Field(
         default="none",

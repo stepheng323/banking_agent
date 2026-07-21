@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
@@ -13,6 +14,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_regist
 )
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.return_to_flow import append_return_to_flow_tail
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
@@ -26,7 +28,9 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_te
 )
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.renderer import render_message
+from shared.money import to_naira
 from shared.types.planner import InterruptRouteDecision
+from shared.utils.bank_aliases import get_bank_search_terms, normalize_bank_name
 from shared.utils.network_utils import format_network_display_name
 
 QUESTION_OVERRIDE_CONFIDENCE_THRESHOLD = 0.55
@@ -96,22 +100,26 @@ _FRESH_TASK_PATTERNS = (
 )
 
 
-def active_flow_question_updates(
+async def active_flow_question_updates(
     *,
     state: OrchestratorState,
     interrupt: PendingInterrupt,
     route: InterruptRouteDecision,
     current_task_types: set[str],
     path_shape: str = "active_flow_question",
+    services: Any | None = None,
+    message: str = "",
 ) -> dict[str, Any]:
     """Return a non-destructive answer for an active-flow question."""
 
     state_view = interrupt_state_view(state)
-    response = _build_active_flow_question_response(
+    response = await _build_active_flow_question_response(
         state=state,
         interrupt=interrupt,
         route=route,
         current_task_types=current_task_types,
+        services=services,
+        message=message,
     )
     logger.info(
         "interrupt_active_flow_question_hit",
@@ -130,12 +138,14 @@ def active_flow_question_updates(
     }
 
 
-def _build_active_flow_question_response(
+async def _build_active_flow_question_response(
     *,
     state: OrchestratorState,
     interrupt: PendingInterrupt,
     route: InterruptRouteDecision,
     current_task_types: set[str],
+    services: Any | None,
+    message: str,
 ) -> str:
     question_type = route.question_type or "unknown"
     if question_type in {"recap", "requirements"}:
@@ -163,6 +173,13 @@ def _build_active_flow_question_response(
         response = _timing_or_status_response(state=state, interrupt=interrupt)
     elif question_type == "fees_or_charges":
         response = _fees_or_charges_response(state=state, interrupt=interrupt)
+    elif question_type == "funding_affordability":
+        response = await _funding_affordability_response(
+            state=state,
+            interrupt=interrupt,
+            services=services,
+            message=message,
+        )
     elif question_type == "unsupported_or_unsafe":
         response = _unsupported_or_unsafe_response(route, state)
         if response.startswith("I cannot") or response.startswith("If you are unsure"):
@@ -331,6 +348,164 @@ def _fees_or_charges_response(*, state: OrchestratorState, interrupt: PendingInt
     if fee_text:
         return f"The fee shown for this request is {fee_text}."
     return "I do not have a fee to show for this step. If a fee applies, it should be shown before authorization."
+
+
+async def _funding_affordability_response(
+    *,
+    state: OrchestratorState,
+    interrupt: PendingInterrupt,
+    services: Any | None,
+    message: str,
+) -> str:
+    """Answer a pending-batch affordability question without changing the batch."""
+
+    locale = interrupt_state_view(state).current_locale
+    total, incomplete, task_count = _pending_batch_total(state, interrupt)
+    if incomplete or total is None:
+        logger.info(
+            "interrupt_funding_affordability",
+            outcome="incomplete_cost",
+            task_count=task_count,
+        )
+        return render_message("funding.active_question.incomplete_cost", locale)
+
+    account = _account_named_in_message(state, interrupt, message)
+    if account is None:
+        logger.info(
+            "interrupt_funding_affordability",
+            outcome="account_unresolved",
+            task_count=task_count,
+        )
+        return render_message("funding.active_question.account_unresolved", locale)
+
+    provider = getattr(getattr(services, "transfer", None), "dd_provider", None)
+    account_id = _provider_account_id(account)
+    if provider is None or not account_id:
+        logger.info(
+            "interrupt_funding_affordability",
+            outcome="balance_unavailable",
+            task_count=task_count,
+        )
+        return render_message("funding.active_question.balance_unavailable", locale)
+
+    try:
+        balance_result = await provider.get_balance(str(account_id), real_time=True)
+        available = to_naira(getattr(balance_result, "available_balance", None)) if balance_result is not None else None
+    except Exception:
+        available = None
+    if available is None:
+        logger.info(
+            "interrupt_funding_affordability",
+            outcome="balance_unavailable",
+            task_count=task_count,
+        )
+        return render_message("funding.active_question.balance_unavailable", locale)
+
+    account_label = _linked_account_label(account)
+    if available >= total:
+        logger.info(
+            "interrupt_funding_affordability",
+            outcome="sufficient",
+            task_count=task_count,
+        )
+        return render_message(
+            "funding.active_question.sufficient",
+            locale,
+            {
+                "account": account_label,
+                "total": format_naira(total),
+                "available": format_naira(available),
+                "remaining": format_naira(available - total),
+            },
+        )
+    logger.info(
+        "interrupt_funding_affordability",
+        outcome="insufficient",
+        task_count=task_count,
+    )
+    return render_message(
+        "funding.active_question.insufficient",
+        locale,
+        {
+            "account": account_label,
+            "total": format_naira(total),
+            "available": format_naira(available),
+            "shortfall": format_naira(total - available),
+        },
+    )
+
+
+def _pending_batch_total(state: OrchestratorState, interrupt: PendingInterrupt) -> tuple[Decimal | None, bool, int]:
+    state_view = interrupt_state_view(state)
+    total = Decimal("0.00")
+    task_count = 0
+    for task_id in interrupt.task_ids:
+        task = state_view.task(str(task_id))
+        if task is None or task.type not in TRANSACTION_INTENTS or not isinstance(task.payload, dict):
+            continue
+        task_count += 1
+        amount = to_naira(task.payload.get("amount"))
+        if amount is None or amount <= 0:
+            return None, True, task_count
+        total += amount
+        for fee_key in ("fee", "fees", "charge", "charges"):
+            fee = to_naira(task.payload.get(fee_key))
+            if fee is not None and fee > 0:
+                total += fee
+    return total, task_count == 0, task_count
+
+
+def _account_named_in_message(
+    state: OrchestratorState,
+    interrupt: PendingInterrupt,
+    message: str,
+) -> dict[str, Any] | None:
+    accounts = loaded_context(state).transaction_account_rows_or_account_rows
+    normalized_message = _normal_account_text(message)
+    matches = []
+    for account in accounts:
+        bank_name = str(account.get("bank_name") or account.get("institution_name") or "").strip()
+        if not bank_name:
+            continue
+        terms = {_normal_account_text(term) for term in get_bank_search_terms(bank_name)}
+        terms.add(_normal_account_text(normalize_bank_name(bank_name)))
+        if any(term and term in normalized_message for term in terms):
+            matches.append(account)
+    if len(matches) == 1:
+        return matches[0]
+
+    # If the user did not name a bank, use an unambiguous source already
+    # selected for every pending task.  We never infer a different source.
+    source_ids = {
+        str(task.payload.get("source_account_id") or "").strip()
+        for task_id in interrupt.task_ids
+        if (task := interrupt_state_view(state).task(str(task_id))) is not None and isinstance(task.payload, dict)
+    }
+    source_ids.discard("")
+    if len(source_ids) == 1:
+        return next(
+            (
+                account
+                for account in accounts
+                if str(account.get("id") or account.get("account_id") or "").strip() in source_ids
+            ),
+            None,
+        )
+    return None
+
+
+def _normal_account_text(value: Any) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", str(value or "").casefold()))
+
+
+def _provider_account_id(account: dict[str, Any]) -> Any:
+    return account.get("mono_account_id") or account.get("account_id") or account.get("id")
+
+
+def _linked_account_label(account: dict[str, Any]) -> str:
+    bank = _string(account.get("bank_name") or account.get("institution_name")) or "Your account"
+    suffix = _last4(account.get("account_number"))
+    return f"{bank} (...{suffix})" if suffix else bank
 
 
 def _unsupported_or_unsafe_response(route: InterruptRouteDecision, state: OrchestratorState) -> str:

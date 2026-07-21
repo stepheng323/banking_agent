@@ -187,6 +187,7 @@ async def _execute_planner_with_context(
         current_locale=current_locale,
         redis_client=redis_client,
     )
+    await _sync_progress_locale(progress_tracker, current_locale)
     await _clear_stale_beneficiary_suggestion(
         state_view=state_view,
         planner_context=planner_context,
@@ -200,6 +201,19 @@ async def _execute_planner_with_context(
         current_locale=current_locale,
         context_read_updates={},
     )
+
+
+async def _sync_progress_locale(progress_tracker: Any | None, locale: str) -> None:
+    """Keep delayed visible progress in the locale resolved by the planner."""
+    set_locale = getattr(progress_tracker, "set_locale", None)
+    if not callable(set_locale):
+        return
+    try:
+        result = set_locale(locale)
+        if inspect.isawaitable(result):
+            await result
+    except Exception as exc:  # Progress delivery must not affect banking work.
+        logger.warning("planner_progress_locale_update_failed", error_type=type(exc).__name__)
 
 
 __all__ = [

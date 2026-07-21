@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import
     sync_referent_memory,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.execution.progress import enter_task_progress
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import complete_task, fail_task
 from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from banking.presentation.i18n.renderer import render_message
@@ -38,6 +39,8 @@ async def _execute_orchestrator_task(task: TaskSpec, task_id: str, ctx: Executio
         ctx.accumulator.say(no_stash_message)
         fail_task(task, no_stash_message)
         return
+
+    await enter_task_progress(ctx, task)
 
     last_session = turn.latest_stashed_session
     if last_session is None:

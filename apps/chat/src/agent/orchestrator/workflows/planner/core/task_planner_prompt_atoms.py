@@ -1,17 +1,17 @@
 """Prompt atoms for planner system prompt compilation."""
 
 PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
-- PlannerOutput JSON; tasks require action and omit executor.
-- greet|thanks|checkin->conversational,tasks=[]; banking/missing->task+.
-- mixed: clauses[] before tasks[]; optional source_clause_index.
-- transfer: send_money|schedule_transfer|recurring_transfer.
-- schedule actions: list_scheduled_transactions|find_scheduled_transaction|cancel_scheduled_transaction|
-  edit_scheduled_transaction; schedule reads require read_request{subject=schedule,...}.
-- response_shape: count/bool/status/recap; list/detail/page/action; linked?=linked_account/fact_bool.
-- airtime: buy_airtime|schedule_airtime|recurring_airtime; data: buy_data|schedule_data|recurring_data.
-- beneficiary: list/add/delete/update/save; query: list/search/analytics/time/beneficiary/affordability.
-- beneficiary_route=beneficiary_list|recipient_ranking|none; people batch->recipient_allocations.
-- funding split->explicit_split; mixed->depends_on."""
+- PlannerOutput; task={action,instruction,parameters}, no executor. Social=>tasks=[]; banking=>task+.
+- Mixed asks: clauses[] then tasks[] with source_clause_index/depends_on when needed.
+- Actions: transfer=send_money|schedule_transfer|recurring_transfer; airtime=buy_airtime|schedule_airtime|
+  recurring_airtime; data=buy_data|schedule_data|recurring_data.
+- Schedule canonical actions: list|find|cancel|edit|pause|resume *_scheduled_transaction; list|find
+  *_scheduled_run. Reads include read_request; run reads set surface=runs.
+- Beneficiary=list|delete|rename; save only after verified transaction. Manual creation is unavailable.
+- Support=handle_request|report_issue|canonical list/find/note/close ticket actions.
+- Query=transaction_list|transaction_search|beneficiary_summary; exports unavailable.
+- Shapes: fact_count|fact_bool|fact_status|fact_recap|surface_list|surface_detail|surface_paginated|
+  surface_actionable. People batches require recipient_allocations; funding splits use explicit_split."""
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Keep recipient exact.
@@ -83,7 +83,8 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
         "future|repeat airtime->schedule_airtime|recurring_airtime;"
         "future|repeat data->schedule_data|recurring_data;"
         "list|count|find|cancel|delete|edit scheduled->schedule action "
-        "list_scheduled_transactions|find_scheduled_transaction|cancel_scheduled_transaction|edit_scheduled_transaction;"
+        "list_scheduled_transactions|find_scheduled_transaction|cancel_scheduled_transaction|edit_scheduled_transaction|"
+        "pause_scheduled_transaction|resume_scheduled_transaction|list_scheduled_runs|find_scheduled_run;"
         "schedule reads require read_request with subject=schedule and the requested response_shape"
     ),
     "R22_MIXED_MONEY_MOVE": (

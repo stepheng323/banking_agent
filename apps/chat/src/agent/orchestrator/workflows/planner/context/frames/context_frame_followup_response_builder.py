@@ -118,12 +118,17 @@ def build_context_frame_followup_response_from_request(
         return _build_replay_followup_response(request, decision)
     if decision_key in {
         "delete_beneficiary",
+        "rename_beneficiary",
         "unlink_account",
         "set_default_account",
         "relink_account",
         "transfer_beneficiaries",
         "edit_schedule",
         "cancel_schedule",
+        "pause_schedule",
+        "resume_schedule",
+        "append_ticket_note",
+        "close_ticket",
     }:
         set_result = _build_set_mutation_followup_response(request, decision)
         if set_result is not None:

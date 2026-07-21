@@ -6,6 +6,9 @@ from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.recipient_review import recipient_review_signature
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
+from apps.chat.src.agent.orchestrator.workflows.interrupt.input.batch_input_scope import (
+    resolve_batch_input_message_scope,
+)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_continue import (
     _continue_flow_updates,
 )
@@ -319,6 +322,11 @@ async def _input_shortcut_updates(
     single_funding_updates = _single_funding_source_choice_updates(state=state, runtime=runtime)
     if single_funding_updates is not None:
         return single_funding_updates
+
+    batch_scope = resolve_batch_input_message_scope(state=state, interrupt=interrupt, text=runtime.text)
+    if batch_scope:
+        logger.info("guided_batch_input_shortcut_hit", target_task_count=len(batch_scope))
+        return _continue_flow_updates(state, interrupt, input_messages_by_task=batch_scope)
 
     for route in (
         _resolve_deterministic_input_selection_route(state=state, interrupt=interrupt, text=runtime.text),

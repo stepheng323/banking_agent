@@ -25,9 +25,6 @@ from apps.chat.src.agent.orchestrator.presentation.conversational_style import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
-from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import (
-    _effective_response_locale,
-)
 from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit import (
     _build_query_session_exit_updates,
 )
@@ -76,12 +73,7 @@ async def _handle_semantic_direct_response(
     if canonical_decision not in {"direct_reply", "direct_context_answer"}:
         return None
 
-    locale, detected_locale_updates = await _effective_response_locale(
-        state_view=ctx.state_view,
-        redis_client=ctx.redis_client,
-        detected_language=getattr(route, "detected_language", None),
-    )
-    updates.update(detected_locale_updates)
+    locale = ctx.current_locale
     had_active_query_session = await ctx.has_active_query_session()
     has_live_query_focus = ctx.state_view.active_domain == "query" or ctx.state_view.has_session_for_domain("query")
     active_query_should_own_direct_answer = canonical_decision == "direct_reply" or (

@@ -13,6 +13,10 @@ def frame_domain(frame_type: ContextFrameType) -> str | None:
         return "account"
     if frame_type == ContextFrameType.SCHEDULE_LIST:
         return "schedule"
+    if frame_type == ContextFrameType.SCHEDULE_RUN_LIST:
+        return "schedule"
+    if frame_type == ContextFrameType.SUPPORT_TICKET_LIST:
+        return "support"
     if frame_type in {ContextFrameType.TRANSACTION_LIST, ContextFrameType.TRANSACTION_DETAIL, ContextFrameType.RECEIPT}:
         return "query"
     return None

@@ -32,6 +32,7 @@ class GateDependencies:
     semantic_router_llm: SemanticRouterLLM | None
     capability_classifier_llm: CapabilityClassifierLLM | None
     conversation_responder: ConversationResponder | None
+    progress_tracker: Any | None
 
     @classmethod
     def from_configurable(cls, configurable: Mapping[str, Any]) -> GateDependencies:
@@ -41,6 +42,7 @@ class GateDependencies:
             semantic_router_llm=configurable.get("semantic_router_llm"),
             capability_classifier_llm=configurable.get("capability_classifier_llm"),
             conversation_responder=configurable.get("conversation_responder"),
+            progress_tracker=configurable.get("progress_tracker"),
         )
 
 
@@ -66,6 +68,7 @@ class GateRuntime:
             semantic_router_llm=self.dependencies.semantic_router_llm,
             capability_classifier_llm=self.dependencies.capability_classifier_llm,
             conversation_responder=self.dependencies.conversation_responder,
+            progress_tracker=self.dependencies.progress_tracker,
             state_view=self.state_view,
             message_text=self.message_text,
             current_locale=self.current_locale,

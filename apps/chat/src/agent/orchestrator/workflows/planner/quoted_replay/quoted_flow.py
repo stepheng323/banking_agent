@@ -15,9 +15,9 @@ from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_rep
     _build_quoted_replay_execution_updates,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
-from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
 from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
 from banking.presentation.i18n.renderer import render_message
+from shared.money import to_naira
 from shared.types.planner import ContextFrameReplayModifier
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger, log_fingerprint
@@ -86,31 +86,17 @@ async def _handle_quoted_replay_shortcut(
                     "path_shape": "quoted_router",
                     **locale_updates,
                 }
-            replay_modifier: ContextFrameReplayModifier | None = None
-            if looks_like_transaction_replay_modifier_request(text):
-                try:
-                    replay_modifier = cast(
-                        ContextFrameReplayModifier | None,
-                        await task_planner.extract_context_frame_replay_modifiers(
-                            state_view.phone_number,
-                            text,
-                            context=quoted_context,
-                            path_label="planner_path",
-                        ),
-                    )
-                except Exception as exc:
-                    logger.warning("quoted_replay_modifier_extractor_failed", error=str(exc))
-                else:
-                    if replay_modifier is not None:
-                        logger.info(
-                            "quoted_replay_modifier_extracted",
-                            confidence=replay_modifier.confidence,
-                            detected_language=replay_modifier.detected_language,
-                            has_amount=replay_modifier.amount is not None,
-                            has_source=bool(replay_modifier.source_account_reference),
-                            has_narration=bool(replay_modifier.narration),
-                            reason=replay_modifier.reason,
-                        )
+            replay_modifier = ContextFrameReplayModifier(
+                confidence=interpretation.confidence,
+                detected_language=interpretation.detected_language,
+                amount=to_naira(interpretation.replay_amount),
+                amount_evidence=interpretation.replay_amount_evidence,
+                source_account_reference=interpretation.replay_source_account,
+                source_account_evidence=interpretation.replay_source_evidence,
+                narration=interpretation.replay_narration,
+                narration_evidence=interpretation.replay_narration_evidence,
+                reason="quoted_replay_interpretation",
+            )
             replay_updates = _build_quoted_replay_execution_updates(
                 state_view=state_view,
                 text=text,

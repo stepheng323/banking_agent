@@ -61,6 +61,10 @@ def detail_header(frame: ContextFrame, *, locale: str = "en") -> str:
         return render_message("context_frame.header.receipt_details", locale)
     if frame.frame_type == ContextFrameType.SCHEDULE_LIST:
         return render_message("context_frame.header.scheduled_transaction_details", locale)
+    if frame.frame_type == ContextFrameType.SCHEDULE_RUN_LIST:
+        return render_message("schedule.run.header", locale)
+    if frame.frame_type == ContextFrameType.SUPPORT_TICKET_LIST:
+        return render_message("support.ticket.list_header", locale)
     return render_message("context_frame.header.details", locale)
 
 

@@ -42,6 +42,7 @@ def _continue_flow_updates(
     state: OrchestratorState,
     interrupt: Any,
     precomputed_payload_overrides: dict[str, dict[str, Any]] | None = None,
+    input_messages_by_task: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     state_view = interrupt_state_view(state)
     if interrupt.kind in {"input", "confirmation"}:
@@ -126,6 +127,25 @@ def _continue_flow_updates(
                 task.payload.update(payload_overrides[task_id])
                 task.payload.pop("pending_user_message", None)
                 task.payload.pop("confirmation_message_scoped", None)
+        if interrupt.kind == "input" and input_messages_by_task is not None:
+            for task_id in task_ids_to_reset:
+                task = state_view.task(task_id)
+                if task is None:
+                    continue
+                scoped_message = input_messages_by_task.get(task_id)
+                if scoped_message:
+                    task.payload["pending_user_message"] = scoped_message
+                    task.payload.pop("suppress_current_input", None)
+                else:
+                    # A reply for one slot (for example option "1") must not
+                    # be replayed into another incomplete batch task.
+                    task.payload.pop("pending_user_message", None)
+                    task.payload["suppress_current_input"] = True
+            logger.info(
+                "batch_input_reply_scoped",
+                target_task_count=len(input_messages_by_task),
+                deferred_task_count=max(len(task_ids_to_reset) - len(input_messages_by_task), 0),
+            )
         last_interrupt = interrupt
         if interrupt.kind == "confirmation" and task_ids_to_reset != [str(task_id) for task_id in interrupt.task_ids]:
             if hasattr(interrupt, "model_copy"):

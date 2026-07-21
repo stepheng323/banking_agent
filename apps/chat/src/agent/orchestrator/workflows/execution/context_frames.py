@@ -57,10 +57,7 @@ def _replace_prior_read_frame(ctx: ExecutionTurnContext, *, subject: str | None 
         for frame in context_surface(ctx.state).frames
         if not (
             isinstance(frame.metadata.get("read_request"), dict)
-            and (
-                subject is None
-                or cast(dict[str, Any], frame.metadata["read_request"]).get("subject") == subject
-            )
+            and (subject is None or cast(dict[str, Any], frame.metadata["read_request"]).get("subject") == subject)
         )
     ]
     replace_context_frames(ctx, frames)
@@ -363,6 +360,41 @@ def push_schedule_list_frame(
         _replace_prior_read_frame(ctx, subject=str(request.get("subject") or "schedule"))
     _push_frame(ctx, frame)
     logger.info("context_frame_pushed", type="schedule_list", count=len(entities))
+
+
+def push_schedule_run_list_frame(
+    ctx: ExecutionTurnContext,
+    items: list[dict[str, Any]],
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Persist displayed run references as a dedicated read-only frame."""
+    if not items:
+        return
+    now = int(time.time())
+    entities = [
+        ContextEntity(
+            entity_type=EntityType.SCHEDULE_RUN,
+            entity_id=str(item.get("id") or "") or None,
+            label=str(item.get("display_label") or "").strip(),
+            data={"version_token": item.get("version_token"), "read_only": True},
+        )
+        for item in items
+        if isinstance(item, dict) and str(item.get("display_label") or "").strip()
+    ]
+    if not entities:
+        return
+    frame = ContextFrame(
+        frame_id=f"schedule_run_list_{now}",
+        frame_type=ContextFrameType.SCHEDULE_RUN_LIST,
+        items=entities,
+        created_at_ts=now,
+        source_message_id=turn_metadata(ctx.state).last_message_id,
+        metadata={**(metadata or {}), "read_only": True},
+    )
+    _replace_prior_read_frame(ctx, subject="schedule")
+    _push_frame(ctx, frame)
+    logger.info("context_frame_pushed", type="schedule_run_list", count=len(entities))
 
 
 def push_query_surface_frame(ctx: ExecutionTurnContext, query_result: Any) -> None:
@@ -670,3 +702,54 @@ def push_beneficiary_list_frame(
         _replace_prior_read_frame(ctx, subject="beneficiary")
     _push_frame(ctx, frame)
     logger.info("context_frame_pushed", type="beneficiary_list", count=len(entities))
+
+
+def push_support_ticket_list_frame(
+    ctx: ExecutionTurnContext,
+    viewed_tickets: Any,
+    *,
+    read_result: ReadResult,
+) -> None:
+    """Persist only the ticket references actually shown to the user."""
+    now = int(time.time())
+    entities: list[ContextEntity] = []
+    for item in viewed_tickets:
+        if not isinstance(item, dict):
+            continue
+        ticket_id = str(item.get("id") or "").strip()
+        label = str(item.get("display_label") or item.get("code") or "").strip()
+        if not ticket_id or not label:
+            continue
+        entities.append(
+            ContextEntity(
+                entity_type=EntityType.SUPPORT_TICKET,
+                entity_id=ticket_id,
+                label=label,
+                data={
+                    "ticket_code": item.get("code"),
+                    "status": item.get("status"),
+                    "summary": item.get("summary"),
+                    "priority": item.get("priority"),
+                    "version_token": item.get("version_token"),
+                },
+            )
+        )
+    if not entities:
+        push_read_result_frame(ctx, read_result)
+        return
+    frame = ContextFrame(
+        frame_id=f"support_ticket_list_{now}",
+        frame_type=ContextFrameType.SUPPORT_TICKET_LIST,
+        items=entities,
+        created_at_ts=now,
+        source_message_id=turn_metadata(ctx.state).last_message_id,
+        metadata={
+            "read_request": read_result.request.model_dump(mode="json", exclude_none=True),
+            "total_count": read_result.total_count,
+            "has_next": read_result.has_next,
+            "has_previous": read_result.has_previous,
+        },
+    )
+    _replace_prior_read_frame(ctx, subject="ticket")
+    _push_frame(ctx, frame)
+    logger.info("context_frame_pushed", type="support_ticket_list", count=len(entities))

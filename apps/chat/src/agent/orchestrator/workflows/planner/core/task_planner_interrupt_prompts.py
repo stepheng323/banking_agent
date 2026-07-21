@@ -13,7 +13,7 @@ Return ONLY JSON for this schema:
 - status_query_type: recap | requirements | null
 - question_type: recap | requirements | why_required | confirmation_effect | cancellation_effect |
   auth_pin_reason | source_account | editable_fields | current_value | timing_or_status |
-  fees_or_charges | unsupported_or_unsafe | unknown | null
+  fees_or_charges | funding_affordability | unsupported_or_unsafe | unknown | null
 - target_field: active-flow field the question asks about, else null
 - unsafe_reason: financial_advice | provider_guarantee | recipient_trust | future_reversal |
   general_unsupported | null
@@ -27,6 +27,8 @@ Rules:
 5) status_query for progress/requirements asks like "where are we", "what next", "what do you need".
 6) active_flow_question for questions about the current pending flow that should be answered from supplied state.
    Examples: "why do you need bank", "what happens if I cancel", "why pin", "who is this going to".
+   Use funding_affordability when the user asks whether a named source account can cover the current pending
+   transaction or batch. This is not a separate balance request and must preserve the pending flow.
 7) If decision != switch_intent, set target_intent=null.
 8) Use target_mode only when target_intent=query:
    - new for a fresh query
@@ -45,7 +47,7 @@ Return ONLY JSON for this schema:
 - decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query |
   active_flow_question
 - confidence: 0.0-1.0
-- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | null
 - target_intent: transfer | airtime | data | query | account | support | faq |
   beneficiary | conversational | cancel | mixed | null
 - target_mode: new | continuation | null
@@ -53,7 +55,7 @@ Return ONLY JSON for this schema:
 - status_query_type: recap | requirements | null
 - question_type: recap | requirements | why_required | confirmation_effect | cancellation_effect |
   auth_pin_reason | source_account | editable_fields | current_value | timing_or_status |
-  fees_or_charges | unsupported_or_unsafe | unknown | null
+  fees_or_charges | funding_affordability | unsupported_or_unsafe | unknown | null
 - target_field: active-flow field the question asks about, else null
 - unsafe_reason: financial_advice | provider_guarantee | recipient_trust | future_reversal |
   general_unsupported | null
@@ -98,6 +100,7 @@ Rules:
     Examples:
     - "why do you need the bank" -> question_type=why_required, target_field=recipient_bank_name.
     - "who am I sending to" -> question_type=current_value, target_field=recipient.
+    - "does my GTB have enough for these transactions" -> question_type=funding_affordability.
     - "can I reverse it later" -> question_type=unsupported_or_unsafe, unsafe_reason=future_reversal.
     - "should I send this money" -> question_type=unsupported_or_unsafe, unsafe_reason=financial_advice.
     - "is this person legit" -> question_type=unsupported_or_unsafe, unsafe_reason=recipient_trust.
@@ -124,7 +127,7 @@ Return ONLY JSON for this schema:
 - operation: remove_tasks | restore_tasks | update_fields | add_tasks | approve_flow | cancel_all |
   status_query | switch_intent | show_options | unclear
 - confidence: 0.0-1.0
-- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | null
 - target_task_ids: list of task ids from the pending/removed context when the target is clear, else []
 - target_types: transfer | airtime | data values when the edit targets a class of tasks, else []
 - target_texts: user references to targets such as recipient, amount, bank, phone, "both transfers", "the airtime"
@@ -217,7 +220,7 @@ Do not treat these as recipient/account input, and do not ask for account detail
 changes the recipient, account number, or destination bank.
 
 Rules:
-- Be semantic and language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
+- Be semantic and language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed input.
 - Use only the supplied pending/removed task context. Do not invent accounts, beneficiaries, balances, or records.
 - The batch is not authorized yet. You only classify; deterministic code will re-render confirmation and require PIN.
 - If user says "add it back", "put it back", "restore that", "undo that removal", "revert that", or similar,
@@ -251,7 +254,7 @@ Message: \"\"\"{user_message}\"\"\"
 BATCH_SLOT_PATCH_SYSTEM_PROMPT = """You extract scoped slot updates for an active, pre-authorization transaction batch.
 Return ONLY JSON for this schema:
 - confidence: 0.0-1.0
-- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | null
 - updates: list of {target_task_id, target_texts, recipient_account, recipient_bank_name, amount_mutation,
   narration, source_bank_name, source_accounts, use_dual_accounts}
 - needs_clarification: true/false

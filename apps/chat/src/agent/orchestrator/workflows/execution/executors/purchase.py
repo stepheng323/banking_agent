@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import
 from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.execution.progress import enter_task_progress
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import (
     _apply_result_patch,
     _handle_transaction_outcome,
@@ -92,11 +93,13 @@ async def _handle_purchase_task(
         "previous_response": previous_response,
         "authorization_context": turn.authorization_context_payload,
         "stashed_sessions": turn.stashed_sessions,
+        "progress_tracker": ctx.dependencies.progress_tracker,
     }
     if include_channel:
         context_data["channel"] = turn.channel
         context_data["channel_identity"] = turn.channel_identity
     _stamp_async_group_metadata(task, ctx)
+    await enter_task_progress(ctx, task)
 
     result = cast(
         TransactionResult,
@@ -112,7 +115,8 @@ async def _handle_purchase_task(
 
     if worker_name == "data" and str(task.payload.get("action") or "") == "data_plan_query":
         set_task_payload_value(task, "skip_finalize_summary", True)
-        if result.outcome == TransactionOutcome.OK and result.response:
+        is_part_of_batch = task.payload.get("async_group_size", 0) > 1
+        if result.outcome == TransactionOutcome.OK and result.response and not is_part_of_batch:
             ctx.accumulator.say(result.response)
 
     if worker_name == "data":

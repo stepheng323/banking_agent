@@ -8,6 +8,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES, _with_policy_notice
+from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_queue import (
     _append_queued_notice,
@@ -175,22 +176,26 @@ def maybe_request_recipient_review(
     task_ids = [task_id for task_id, _task in review_items]
     tasks = [task for _task_id, task in review_items]
     locale = _state_locale(state)
+    previous = last_interrupt(state).interrupt
+    guided_batch_input = bool(previous and previous.batch_input)
     for task_id, task in review_items:
         resume_fields = agg.input_fields_for(task_id)
         if resume_fields:
             task.payload["recipient_review_resume_fields"] = resume_fields
             resume_prompt = agg.prompt_for_task(task_id)
             if resume_prompt:
-                queued_tasks = _queued_transaction_tasks_for_focus(
-                    state=state,
-                    current_wave=current_wave,
-                    focused_tid=task_id,
-                )
-                resume_prompt, queue_meta = _append_queued_notice(
-                    prompt_text=resume_prompt,
-                    queued_tasks=queued_tasks,
-                    locale=locale,
-                )
+                queue_meta: dict[str, Any] | None = None
+                if not guided_batch_input:
+                    queued_tasks = _queued_transaction_tasks_for_focus(
+                        state=state,
+                        current_wave=current_wave,
+                        focused_tid=task_id,
+                    )
+                    resume_prompt, queue_meta = _append_queued_notice(
+                        prompt_text=resume_prompt,
+                        queued_tasks=queued_tasks,
+                        locale=locale,
+                    )
                 task.payload["recipient_review_resume_prompt"] = resume_prompt
                 resume_entry: dict[str, Any] = {
                     "type": "say",

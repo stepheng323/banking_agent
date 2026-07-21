@@ -33,6 +33,10 @@ def _empty_frame_response(frame: ContextFrame, *, locale: str) -> str | None:
         return render_message("beneficiary.list.empty", locale)
     if frame.frame_type == ContextFrameType.SCHEDULE_LIST:
         return render_message("schedule.list.empty", locale)
+    if frame.frame_type == ContextFrameType.SCHEDULE_RUN_LIST:
+        return render_message("schedule.run.empty", locale)
+    if frame.frame_type == ContextFrameType.SUPPORT_TICKET_LIST:
+        return render_message("support.ticket.list_empty", locale)
     if frame.frame_type in {ContextFrameType.TRANSACTION_LIST, ContextFrameType.TRANSACTION_DETAIL}:
         return render_message("query.format.no_matching_transactions", locale)
     return None

@@ -162,7 +162,18 @@ def _build_direct_domain_task(
         if read_request is not None and read_request.entity_name:
             payload["name_filter"] = read_request.entity_name
     elif domain == "schedule":
-        payload["action"] = "list_scheduled_transactions"
+        payload["action"] = (
+            "list_scheduled_runs"
+            if schedule_contract is not None and schedule_contract.surface == "runs"
+            else "list_scheduled_transactions"
+        )
+    elif domain == "support" and read_request is not None and read_request.subject == "ticket":
+        payload["action"] = (
+            "find_support_ticket"
+            if read_request.response_shape in {"surface_detail", "fact_status"}
+            else "list_support_tickets"
+        )
+        payload["ticket_code"] = read_request.reference
     elif domain == "faq":
         payload["action"] = "answer_question"
 

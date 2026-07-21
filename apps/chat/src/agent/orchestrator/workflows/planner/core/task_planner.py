@@ -10,9 +10,6 @@ from pydantic import BaseModel
 
 from apps.chat.src.agent.orchestrator.task_state.service import TaskStateService
 from apps.chat.src.agent.orchestrator.workflows.planner.core import (
-    task_planner_context_frame_prompts as context_frame_prompts,
-)
-from apps.chat.src.agent.orchestrator.workflows.planner.core import (
     task_planner_interrupt_prompts as interrupt_prompts,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core import (
@@ -63,8 +60,6 @@ from shared.observability.llm import build_llm_runnable_config
 from shared.observability.llm_call_metrics import record_llm_call, structured_output_metrics
 from shared.types.planner import (
     BatchSlotPatchDecision,
-    ContextFrameFollowupDecision,
-    ContextFrameReplayModifier,
     InterruptRouteDecision,
     PendingActionEditDecision,
     PlannerOutput,
@@ -340,8 +335,6 @@ class TaskPlanner:
 
         self.structured_interrupt_router = structured_outputs.interrupt_router
         self.structured_quoted_replay = structured_outputs.quoted_replay
-        self.structured_context_frame_followup = structured_outputs.context_frame_followup
-        self.structured_context_frame_replay_modifier = structured_outputs.context_frame_replay_modifier
         self.structured_pending_action_edit = structured_outputs.pending_action_edit
         self.structured_batch_slot_patch = structured_outputs.batch_slot_patch
         self.structured_confirmation_decision = structured_outputs.confirmation_decision
@@ -530,80 +523,6 @@ class TaskPlanner:
         )
         log_latency_span(logger, span="confirmation_decision_llm", duration_ms=duration_ms, path_label=path_label)
         return result
-
-    async def interpret_context_frame_followup(
-        self,
-        phone_number: str,
-        text: str,
-        context: str = "None",
-        *,
-        path_label: str = "planner_path",
-    ) -> ContextFrameFollowupDecision:
-        """Classify whether a user turn is a semantic follow-up to the latest displayed frame."""
-        user_prompt = context_frame_prompts.CONTEXT_FRAME_FOLLOWUP_USER_PROMPT_TEMPLATE.format(
-            phone_number=phone_number,
-            user_message=text,
-            context=context,
-        )
-        system_prompt = context_frame_prompts.CONTEXT_FRAME_FOLLOWUP_SYSTEM_PROMPT
-        return await invoke_structured_prompt(
-            self.structured_context_frame_followup,
-            ContextFrameFollowupDecision,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            logger=logger,
-            event_name="context_frame_followup_llm_call",
-            model_llm=self.semantic_router_llm,
-            path_label=path_label,
-            latency_span="context_frame_followup_llm",
-            log_fields={
-                "context_chars": len(context),
-                "context_mode": "compact" if context == "None" else "full",
-            },
-            config=build_llm_runnable_config(
-                role="context_frame_followup",
-                phone_number=phone_number,
-                path_label=path_label,
-                task_domain="query",
-            ),
-        )
-
-    async def extract_context_frame_replay_modifiers(
-        self,
-        phone_number: str,
-        text: str,
-        context: str = "None",
-        *,
-        path_label: str = "planner_path",
-    ) -> ContextFrameReplayModifier:
-        """Extract a strict edit patch for frame-backed transaction replay."""
-        user_prompt = context_frame_prompts.CONTEXT_FRAME_REPLAY_MODIFIER_USER_PROMPT_TEMPLATE.format(
-            phone_number=phone_number,
-            user_message=text,
-            context=context,
-        )
-        system_prompt = context_frame_prompts.CONTEXT_FRAME_REPLAY_MODIFIER_SYSTEM_PROMPT
-        return await invoke_structured_prompt(
-            self.structured_context_frame_replay_modifier,
-            ContextFrameReplayModifier,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            logger=logger,
-            event_name="context_frame_replay_modifier_llm_call",
-            model_llm=self.semantic_router_llm,
-            path_label=path_label,
-            latency_span="context_frame_replay_modifier_llm",
-            log_fields={
-                "context_chars": len(context),
-                "context_mode": "compact" if context == "None" else "full",
-            },
-            config=build_llm_runnable_config(
-                role="context_frame_replay_modifier",
-                phone_number=phone_number,
-                path_label=path_label,
-                task_domain="query",
-            ),
-        )
 
     async def interpret_pending_action_edit(
         self,

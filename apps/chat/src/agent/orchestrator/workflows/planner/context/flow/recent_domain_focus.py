@@ -22,6 +22,8 @@ def infer_recent_domain_focus(state_view: PlannerStateView) -> str | None:
         ContextFrameType.ACCOUNT_LIST: "account",
         ContextFrameType.BENEFICIARY_LIST: "beneficiary",
         ContextFrameType.SCHEDULE_LIST: "schedule",
+        ContextFrameType.SCHEDULE_RUN_LIST: "schedule",
+        ContextFrameType.SUPPORT_TICKET_LIST: "support",
         ContextFrameType.TRANSACTION_LIST: "query",
         ContextFrameType.RECEIPT: "support",
     }

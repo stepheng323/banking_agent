@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_re
 )
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.operations import operation_spec
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -120,11 +121,13 @@ def _group_tail_key(required_fields: list[str]) -> MessageKey | None:
 
 
 def _task_skips_auth_after_confirmation(task: TaskSpec) -> bool:
-    return (
-        task.type == "schedule"
-        and str(task.payload.get("action") or "").strip().lower() == "edit_scheduled_transaction"
-        and task.payload.get("schedule_edit_requires_auth") is False
-    )
+    try:
+        operation = operation_spec(task.type, str(task.payload.get("action") or ""))
+    except ValueError:
+        return False
+    if operation.action == "edit_scheduled_transaction":
+        return task.payload.get("schedule_edit_requires_auth") is False
+    return operation.requires_confirmation and not operation.requires_pin
 
 
 def _confirmation_requires_auth(state: OrchestratorState, interrupt: PendingInterrupt) -> bool:

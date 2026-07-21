@@ -68,22 +68,70 @@ def build_set_mutation_result_for_view(
     """Materialize a mutation only from current stable frame references."""
 
     semantic_decision = canonical_decision(decision.decision)
+    if semantic_decision in {"append_ticket_note", "close_ticket"}:
+        if (
+            frame.frame_type != ContextFrameType.SUPPORT_TICKET_LIST
+            or decision.confidence < CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE
+        ):
+            return None
+        selected_entity = None
+        if decision.selection_index is not None and 1 <= decision.selection_index <= len(frame.items):
+            selected_entity = frame.items[decision.selection_index - 1]
+        else:
+            target = decision_target_text(decision).casefold()
+            matches = [item for item in frame.items if target and target in item.label.casefold()]
+            if len(matches) == 1:
+                selected_entity = matches[0]
+            elif not target and len(frame.items) == 1:
+                selected_entity = frame.items[0]
+        if selected_entity is None or not selected_entity.entity_id:
+            return SetMutationResult(
+                recent_domain_focus="support",
+                response=render_message("support.ticket.select", locale),
+            )
+        ticket_payload: dict[str, object] = {
+            "action": (
+                "append_support_ticket_note" if semantic_decision == "append_ticket_note" else "close_support_ticket"
+            ),
+            "message": text,
+            "instruction": text,
+            "ticket_id": selected_entity.entity_id,
+            "ticket_code": selected_entity.data.get("ticket_code"),
+        }
+        if semantic_decision == "append_ticket_note":
+            if not decision.ticket_note:
+                return SetMutationResult(
+                    recent_domain_focus="support",
+                    response=render_message("support.ticket.note_prompt", locale),
+                )
+            ticket_payload["ticket_note"] = decision.ticket_note
+        task_id = _next_task_id(state_view, "support")
+        task = TaskSpec(id=task_id, type="support", stage=TaskStage.DRAFT, payload=ticket_payload)
+        return SetMutationResult(
+            recent_domain_focus="support",
+            tasks={task_id: task},
+            waves=[[task_id]],
+        )
+
     mapping: dict[
         str,
         tuple[
             ContextFrameType,
             MutationSetDomain,
-            Literal["delete", "cancel", "edit", "unlink"] | None,
+            Literal["delete", "cancel", "edit", "pause", "resume", "unlink"] | None,
             str,
         ],
     ] = {
         "delete_beneficiary": (ContextFrameType.BENEFICIARY_LIST, "beneficiary", "delete", "delete_beneficiary"),
+        "rename_beneficiary": (ContextFrameType.BENEFICIARY_LIST, "beneficiary", None, "rename_beneficiary"),
         "unlink_account": (ContextFrameType.ACCOUNT_LIST, "linked_account", "unlink", "unlink"),
         "set_default_account": (ContextFrameType.ACCOUNT_LIST, "linked_account", None, "set_default"),
         "relink_account": (ContextFrameType.ACCOUNT_LIST, "linked_account", None, "reinitiate_mandate"),
         "transfer_beneficiaries": (ContextFrameType.BENEFICIARY_LIST, "beneficiary", None, "send_money"),
         "cancel_schedule": (ContextFrameType.SCHEDULE_LIST, "schedule", "cancel", "cancel_scheduled_transaction"),
         "edit_schedule": (ContextFrameType.SCHEDULE_LIST, "schedule", "edit", "edit_scheduled_transaction"),
+        "pause_schedule": (ContextFrameType.SCHEDULE_LIST, "schedule", "pause", "pause_scheduled_transaction"),
+        "resume_schedule": (ContextFrameType.SCHEDULE_LIST, "schedule", "resume", "resume_scheduled_transaction"),
     }
     selected_mapping = mapping.get(semantic_decision)
     if selected_mapping is None or decision.confidence < CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE:
@@ -125,7 +173,7 @@ def build_set_mutation_result_for_view(
             recent_domain_focus=domain,
             response=render_message("conversation_set.mutation_limit", locale, {"count": 5}),
         )
-    if semantic_decision in {"set_default_account", "relink_account"} and len(selected) != 1:
+    if semantic_decision in {"set_default_account", "relink_account", "rename_beneficiary"} and len(selected) != 1:
         return SetMutationResult(
             recent_domain_focus=domain,
             response=render_message("conversation_set.single_selection_required", locale),
@@ -136,9 +184,7 @@ def build_set_mutation_result_for_view(
         for allocation in decision.set_amount_allocations:
             allocation_delta = SetScopeDelta(
                 operation="replace",
-                selection_indices=(
-                    [allocation.selection_index] if allocation.selection_index is not None else []
-                ),
+                selection_indices=([allocation.selection_index] if allocation.selection_index is not None else []),
                 target_labels=[allocation.target_label] if allocation.target_label else [],
             )
             allocation_refs, allocation_unresolved = resolve_delta_references(
@@ -200,6 +246,14 @@ def build_set_mutation_result_for_view(
             update={"focused_ref": selected[0] if len(selected) == 1 else None, "last_result_refs": selected}
         ).model_dump(mode="json", exclude_none=True),
     }
+    if semantic_decision == "rename_beneficiary":
+        if not decision.new_alias:
+            return SetMutationResult(
+                recent_domain_focus="beneficiary",
+                response=render_message("beneficiary.rename.ask_alias", locale),
+            )
+        payload["beneficiary_selection_ref"] = selected[0].model_dump(mode="json")
+        payload["new_alias"] = decision.new_alias
     if bulk_action is not None:
         signature = ":".join([frame.frame_id, bulk_action, *(ref.entity_id for ref in selected)])
         request = BulkMutationRequest(

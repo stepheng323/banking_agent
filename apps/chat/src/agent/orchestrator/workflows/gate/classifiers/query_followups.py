@@ -18,10 +18,10 @@ def _query_followup_bypass_reason(
     message_text: str,
     locale: str,
     has_active_query_session: bool,
-    has_context_frames: bool = False,
+    has_recent_query_context: bool = False,
     is_pending_clarification: bool = False,
 ) -> tuple[str | None, str | None]:
-    if not has_active_query_session and not has_context_frames:
+    if not has_active_query_session and not has_recent_query_context:
         return None, None
 
     # Do not let a live query claim an explicit request that has its own
@@ -54,7 +54,7 @@ def _query_followup_bypass_reason(
     if has_active_query_session:
         return "active_query_session", miss_reason or "query_session_active"
     normalized = " ".join(message_text.casefold().split())
-    if has_context_frames and any(
+    if has_recent_query_context and any(
         marker in normalized
         for marker in (
             "that",

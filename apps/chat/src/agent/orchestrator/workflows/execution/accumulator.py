@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
+from apps.chat.src.agent.orchestrator.models.domain import (
+    ActiveSession,
+    BatchInputContract,
+    PendingInterrupt,
+    TaskSpec,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.result_patch import ExecutionResultPatch
 
 
@@ -97,6 +102,7 @@ class ExecutionAccumulator:
         prompt: str,
         entries: list[dict[str, Any]],
         metadata: dict[str, Any] | None = None,
+        batch_input: BatchInputContract | None = None,
     ) -> None:
         self._set_interrupt_outbox(
             PendingInterrupt(
@@ -105,6 +111,7 @@ class ExecutionAccumulator:
                 fields_by_task=fields_by_task,
                 prompt=prompt,
                 metadata=metadata or {},
+                batch_input=batch_input,
             ),
             entries,
         )

@@ -55,8 +55,12 @@ def _frame_supports_decision(frame: ContextFrame, decision: ContextFrameFollowup
     semantic_decision = canonical_decision(decision.decision)
     if semantic_decision in {"start_new_task", "unclear", "answer_completeness", "compare_items", "replay_tasks"}:
         return True
-    if semantic_decision in {"edit_schedule", "cancel_schedule"}:
+    if semantic_decision in {"edit_schedule", "cancel_schedule", "pause_schedule", "resume_schedule"}:
         return frame.frame_type == ContextFrameType.SCHEDULE_LIST
+    if semantic_decision in {"append_ticket_note", "close_ticket"}:
+        return frame.frame_type == ContextFrameType.SUPPORT_TICKET_LIST and _decision_has_entity_match(frame, decision)
+    if semantic_decision in {"rename_beneficiary"}:
+        return frame.frame_type == ContextFrameType.BENEFICIARY_LIST and _decision_has_entity_match(frame, decision)
     if semantic_decision in {"show_details", "select_item", "filter_items", "lookup_entity", "explain_result"}:
         if _decision_has_entity_match(frame, decision):
             return True

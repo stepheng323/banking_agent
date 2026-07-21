@@ -10,7 +10,8 @@ def _auth_header_for_tasks(state: OrchestratorState, task_ids: list[str], *, loc
         task = get_task(state, task_id)
         payload = task.payload if task is not None and isinstance(task.payload, dict) else {}
         if (
-            str(payload.get("action") or "").strip().lower() == "edit_scheduled_transaction"
+            str(payload.get("action") or "").strip().lower()
+            in {"edit_scheduled_transaction", "resume_scheduled_transaction"}
             and payload.get("schedule_edit_requires_auth") is True
         ):
             return "Authorize Schedule Update"

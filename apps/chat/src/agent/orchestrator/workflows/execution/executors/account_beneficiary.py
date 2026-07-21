@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import 
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.execution.progress import enter_task_progress
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import (
     _apply_result_patch,
     _handle_transaction_outcome,
@@ -67,7 +68,9 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
         "accounts": context.accounts,
         "language": _state_locale(ctx.state),
         "stashed_sessions": turn.stashed_sessions,
+        "progress_tracker": ctx.dependencies.progress_tracker,
     }
+    await enter_task_progress(ctx, task)
 
     result = cast(
         AccountResult,
@@ -81,9 +84,6 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
     action = str(task.payload.get("action") or "").strip()
     if result.outcome == AccountOutcome.OK and result.read_result is None and action in {
         "check_balance",
-        "balance",
-        "show_balance",
-        "overall_balance",
     }:
         viewed = result.details.get("viewed_accounts") if isinstance(result.details, dict) else None
         derived_viewed_accounts = (
@@ -233,7 +233,7 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
     is_management = (
         task.payload.get("intent")
         or task.payload.get("list_intent")
-        or action in ("list_beneficiaries", "add_beneficiary", "delete_beneficiary", "update_beneficiary")
+        or action in ("list_beneficiaries", "delete_beneficiary", "rename_beneficiary")
     )
 
     if is_management:
@@ -266,7 +266,9 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
             "resolver_provider": provider,
             "language": _state_locale(ctx.state),
             "stashed_sessions": turn.stashed_sessions,
+            "progress_tracker": ctx.dependencies.progress_tracker,
         }
+        await enter_task_progress(ctx, task)
 
         result = cast(TransactionResult, await worker.run(payload=task.payload, context=context_data))
         _apply_result_patch(task, result)

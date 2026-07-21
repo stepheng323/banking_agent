@@ -74,12 +74,14 @@ async def _handle_auth_interrupt(
     )
 
     if route.decision == "active_flow_question":
-        return active_flow_question_updates(
+        return await active_flow_question_updates(
             state=state,
             interrupt=interrupt,
             route=route,
             current_task_types=current_task_types,
             path_shape="interrupt_router_only",
+            services=services,
+            message=text,
         )
 
     if route.decision in {"cancel", "reject_flow"}:

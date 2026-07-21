@@ -22,16 +22,27 @@ async def _effective_response_locale(
     state_view: GateStateView,
     redis_client: Any | None,
     detected_language: str | None,
+    confidence: float = 1.0,
 ) -> tuple[str, dict[str, Any]]:
     locale = _current_locale(state_view)
     if not detected_language:
         return locale, {}
 
-    detected_locale = LocaleManager.from_detection(detected_language).value
-    if detected_locale == locale:
+    detected_locale = LocaleManager.parse_locale_name(detected_language)
+    if detected_locale is None:
+        return locale, {}
+    if detected_locale.value == locale:
         return locale, {}
 
-    if redis_client and await LocaleManager.is_explicit_locale(state_view.phone_number):
+    resolved = await LocaleManager.resolve_turn_locale(
+        phone_number=state_view.phone_number,
+        current_locale=locale,
+        detected_language=detected_language,
+        confidence=confidence,
+        source="semantic_router",
+        persist_detection=bool(redis_client and callable(getattr(redis_client, "set", None))),
+    )
+    if resolved.value == locale:
         return locale, {}
 
-    return detected_locale, _locale_update(state_view, detected_locale)
+    return resolved.value, _locale_update(state_view, resolved.value)

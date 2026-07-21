@@ -6,6 +6,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.source_selection impor
     _propagate_batch_source_selection,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import get_task, non_terminal_tasks
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import fail_task
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_guards import (
     _active_input_task_types,
@@ -14,6 +15,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_guard
     _cancel_deadlocked_wave_tasks,
     _should_defer_during_input_interrupt,
 )
+from banking.runtime.operations import DEFAULT_OPERATION_BY_EXECUTOR, operation_spec
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -62,6 +64,32 @@ async def execute_current_wave_tasks(
         executor = runtime.task_executors.get(task.type)
         if not executor:
             continue
+
+        action = str(task.payload.get("action") or "").strip().lower()
+        if not action:
+            action = DEFAULT_OPERATION_BY_EXECUTOR[task.type]
+            task.payload["action"] = action
+        try:
+            operation = operation_spec(task.type, action)
+        except ValueError as exc:
+            fail_task(task, str(exc))
+            logger.warning(
+                "worker_operation_rejected",
+                executor=task.type,
+                canonical_action=action,
+                reason="unregistered",
+            )
+            progressed = True
+            continue
+        logger.info(
+            "worker_operation_dispatch",
+            domain=operation.domain,
+            executor=operation.executor,
+            canonical_action=operation.action,
+            risk=operation.risk,
+            requires_confirmation=operation.requires_confirmation,
+            requires_pin=operation.requires_pin,
+        )
 
         if _apply_mandate_gate_failure(state=state, task=task, runtime=runtime):
             progressed = True

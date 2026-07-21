@@ -1,6 +1,8 @@
 # ruff: noqa: E501
 """Top-level semantic-router and schedule-read router prompts and LLM class."""
 
+from typing import Literal, cast
+
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -10,8 +12,20 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_promp
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_model_wiring import with_structured_output
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_observability import invoke_structured_prompt
+from shared.money import MoneyAmount
 from shared.observability.llm import build_llm_runnable_config
+from shared.types.balance import BalanceFollowupDelta
+from shared.types.conversation_sets import (
+    AccountLifecycleFollowupDelta,
+    BeneficiaryFollowupDelta,
+    SetScopeDelta,
+)
 from shared.types.planner import (
+    ContextFrameFollowupAction,
+    ContextFrameFollowupDecision,
+    ContextFrameFollowupFilters,
+    ContextFrameReplayModifier,
+    ContextFrameRequestedField,
     RouterDomainIntent,
     SemanticRouteDecision,
     SemanticRouterResponseKey,
@@ -45,22 +59,222 @@ class SemanticRouteLLMDecision(BaseModel):
     bank_name: str | None = None
     status: str | None = None
     reference: str | None = None
-    schedule_response_mode: str | None = Field(default=None, alias="sch_mode")
     unsupported_capability: str | None = Field(default=None, alias="unsupported_cap")
 
 
-def _adapt_semantic_route_llm_decision(value: SemanticRouteLLMDecision) -> SemanticRouteDecision:
+class SemanticDirectReplyLLMDecision(BaseModel):
+    """Minimal wire contract for a turn already bounded to a direct reply."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    decision: Literal["direct_reply"] = "direct_reply"
+    confidence: float = Field(default=0.0, alias="conf")
+    detected_language: str | None = Field(default=None, alias="lang")
+    requested_language: str | None = Field(default=None, alias="req_lang")
+    response_key: SemanticRouterResponseKey | None = Field(default=None, alias="res_key")
+    response: str | None = Field(default=None, alias="res", max_length=480)
+    unsupported_capability: str | None = Field(default=None, alias="unsupported_cap")
+
+
+class _ContextRouteDecision(BaseModel):
+    """Shared compact context selector fields for one frame family."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    decision: SemanticRoutingDecision = "planner_ambiguous"
+    confidence: float = Field(default=0.0, alias="conf")
+    detected_language: str | None = Field(default=None, alias="lang")
+    mode: SemanticRoutingMode | None = None
+    target_intent: RouterDomainIntent | None = Field(default=None, alias="intent")
+    read_subject: ReadSubject | None = Field(default=None, alias="subject")
+    response_shape: ResponseShape | None = Field(default=None, alias="shape")
+    entity_name: str | None = Field(default=None, alias="entity", max_length=120)
+    bank_name: str | None = Field(default=None, alias="bank", max_length=120)
+    status: str | None = Field(default=None, max_length=64)
+    context_action: ContextFrameFollowupAction = Field(default="unclear", alias="ctx_act")
+    context_index: int | None = Field(default=None, alias="ctx_index", ge=1, le=20)
+    context_page: str | None = Field(default=None, alias="ctx_page")
+
+
+class BalanceContextRouteLLMDecision(_ContextRouteDecision):
+    balance_operation: str | None = Field(default=None, alias="bal_op")
+    balance_scope: str | None = Field(default=None, alias="bal_scope")
+    balance_banks: list[str] = Field(default_factory=list, alias="bal_banks", max_length=20)
+
+
+class BeneficiaryContextRouteLLMDecision(_ContextRouteDecision):
+    beneficiary_operation: str | None = Field(default=None, alias="ben_op")
+    beneficiary_type: str | None = Field(default=None, alias="ben_type")
+    new_alias: str | None = Field(default=None, alias="new_alias", max_length=80)
+    context_scope_operation: str | None = Field(default=None, alias="ctx_scope")
+    context_scope_indices: list[int] = Field(default_factory=list, alias="ctx_indices", max_length=20)
+    context_scope_labels: list[str] = Field(default_factory=list, alias="ctx_labels", max_length=20)
+
+
+class AccountContextRouteLLMDecision(_ContextRouteDecision):
+    account_operation: str | None = Field(default=None, alias="acct_op")
+    account_scope: str | None = Field(default=None, alias="acct_scope")
+    context_scope_operation: str | None = Field(default=None, alias="ctx_scope")
+    context_scope_indices: list[int] = Field(default_factory=list, alias="ctx_indices", max_length=20)
+    context_scope_labels: list[str] = Field(default_factory=list, alias="ctx_labels", max_length=20)
+
+
+class GenericContextRouteLLMDecision(_ContextRouteDecision):
+    ticket_note: str | None = Field(default=None, alias="ticket_note", max_length=1000)
+
+
+class TransactionContextRouteLLMDecision(BaseModel):
+    """Transaction frames need replay fields but not the broad read contract."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    decision: SemanticRoutingDecision = "planner_ambiguous"
+    confidence: float = Field(default=0.0, alias="conf")
+    detected_language: str | None = Field(default=None, alias="lang")
+    mode: SemanticRoutingMode | None = None
+    target_intent: RouterDomainIntent | None = Field(default=None, alias="intent")
+    context_action: ContextFrameFollowupAction = Field(default="unclear", alias="ctx_act")
+    context_target: str | None = Field(default=None, alias="ctx_target", max_length=160)
+    context_index: int | None = Field(default=None, alias="ctx_index", ge=1, le=20)
+    context_page: str | None = Field(default=None, alias="ctx_page")
+    context_field: ContextFrameRequestedField | None = Field(default=None, alias="ctx_field")
+    replay_amount: MoneyAmount | None = Field(default=None, alias="replay_amount", gt=0)
+    replay_amount_evidence: str | None = Field(default=None, alias="replay_amount_text", max_length=120)
+    replay_source: str | None = Field(default=None, alias="replay_source", max_length=120)
+    replay_source_evidence: str | None = Field(default=None, alias="replay_source_text", max_length=120)
+    replay_narration: str | None = Field(default=None, alias="replay_narration", max_length=240)
+    replay_narration_evidence: str | None = Field(default=None, alias="replay_narration_text", max_length=240)
+
+
+def _context_runtime_decision(
+    value: BaseModel,
+) -> tuple[ContextFrameFollowupDecision | None, ContextFrameReplayModifier | None]:
+    # The compact LLM models deliberately use strings to keep their JSON
+    # schemas small.  Validate each value before it crosses into the strict
+    # runtime contracts below.
+    action = cast(ContextFrameFollowupAction, getattr(value, "context_action", "unclear"))
+    if action in {"unclear", "start_new_task", "new_task"}:
+        return None, None
+    filters = ContextFrameFollowupFilters(
+        bank=getattr(value, "bank_name", None),
+        status=getattr(value, "status", None),
+        direction=getattr(value, "context_direction", None),
+        counterparty=getattr(value, "entity_name", None),
+        transaction_type=getattr(value, "context_transaction_type", None),
+    )
+    scope = None
+    scope_operation = getattr(value, "context_scope_operation", None)
+    if scope_operation in {
+        "preserve", "replace", "add", "remove", "recent_two", "mentioned", "last_result", "all"
+    }:
+        scope = SetScopeDelta(
+            operation=scope_operation,
+            selection_indices=getattr(value, "context_scope_indices", []),
+            target_labels=getattr(value, "context_scope_labels", []),
+        )
+    balance_delta = None
+    beneficiary_delta = None
+    account_delta = None
+    if isinstance(value, BalanceContextRouteLLMDecision):
+        if value.balance_scope in {
+            "preserve", "replace", "add", "remove", "recent_two", "mentioned", "last_result", "all", "default"
+        }:
+            balance_delta = BalanceFollowupDelta(
+                scope_operation=cast(
+                    Literal[
+                        "preserve", "replace", "add", "remove", "recent_two", "mentioned", "last_result", "all", "default"
+                    ],
+                    value.balance_scope,
+                ),
+                bank_names=value.balance_banks,
+                operation=(
+                    cast(Literal["value", "total", "breakdown", "compare"], value.balance_operation)
+                    if value.balance_operation in {"value", "total", "breakdown", "compare"}
+                    else None
+                ),
+                response_shape=value.response_shape,
+            )
+    elif isinstance(value, BeneficiaryContextRouteLLMDecision):
+        beneficiary_delta = BeneficiaryFollowupDelta(
+            operation=(
+                cast(Literal["preserve", "count", "existence", "list", "detail"], value.beneficiary_operation)
+                if value.beneficiary_operation in {"preserve", "count", "existence", "list", "detail"}
+                else "preserve"
+            ),
+            entity_name=value.entity_name,
+            bank_name=value.bank_name,
+            beneficiary_type=(
+                cast(Literal["transfer", "airtime", "data"], value.beneficiary_type)
+                if value.beneficiary_type in {"transfer", "airtime", "data"}
+                else None
+            ),
+        )
+    elif isinstance(value, AccountContextRouteLLMDecision):
+        account_delta = AccountLifecycleFollowupDelta(
+            operation=(
+                cast(
+                    Literal["preserve", "count", "existence", "list", "detail", "readiness", "default_identity"],
+                    value.account_operation,
+                )
+                if value.account_operation
+                in {"preserve", "count", "existence", "list", "detail", "readiness", "default_identity"}
+                else "preserve"
+            ),
+            bank_scope=(
+                cast(Literal["preserve", "named", "all"], value.account_scope)
+                if value.account_scope in {"preserve", "named", "all"}
+                else "preserve"
+            ),
+            bank_name=value.bank_name if value.account_scope == "named" else None,
+        )
+    decision = ContextFrameFollowupDecision(
+        decision=action,
+        confidence=getattr(value, "confidence", 0.0),
+        detected_language=getattr(value, "detected_language", None),
+        target_text=getattr(value, "context_target", None) or getattr(value, "entity_name", None),
+        requested_field=getattr(value, "context_field", None),
+        rank=getattr(value, "context_rank", None),
+        filters=filters if any(filters.model_dump().values()) else None,
+        selection_index=getattr(value, "context_index", None),
+        read_subject=getattr(value, "read_subject", None),
+        read_response_shape=getattr(value, "response_shape", None),
+        page_action=(
+            getattr(value, "context_page", None)
+            if getattr(value, "context_page", None) in {"next", "previous", "first"}
+            else None
+        ),
+        balance_delta=balance_delta,
+        beneficiary_delta=beneficiary_delta,
+        account_lifecycle_delta=account_delta,
+        set_scope_delta=scope,
+        new_alias=value.new_alias if isinstance(value, BeneficiaryContextRouteLLMDecision) else None,
+        ticket_note=value.ticket_note if isinstance(value, GenericContextRouteLLMDecision) else None,
+        reason="semantic_router_context_followup",
+    )
+    replay_modifier = None
+    if isinstance(value, TransactionContextRouteLLMDecision) and action in {"replay", "replay_tasks"}:
+        replay_modifier = ContextFrameReplayModifier(
+            confidence=value.confidence,
+            detected_language=value.detected_language,
+            amount=value.replay_amount,
+            amount_evidence=value.replay_amount_evidence,
+            source_account_reference=value.replay_source,
+            source_account_evidence=value.replay_source_evidence,
+            narration=value.replay_narration,
+            narration_evidence=value.replay_narration_evidence,
+            reason="semantic_router_context_replay_modifier",
+        )
+    return decision, replay_modifier
+
+
+def _adapt_semantic_route_llm_decision(value: BaseModel) -> SemanticRouteDecision:
     payload = value.model_dump(mode="json", by_alias=True, exclude_none=True)
-    subject = payload.pop("read_subject", None)
-    shape = payload.pop("response_shape", None)
-    entity_name = payload.pop("entity_name", None)
-    bank_name = payload.pop("bank_name", None)
+    subject = payload.pop("read_subject", payload.pop("subject", None))
+    shape = payload.pop("response_shape", payload.pop("shape", None))
+    entity_name = payload.pop("entity_name", payload.pop("entity", None))
+    bank_name = payload.pop("bank_name", payload.pop("bank", None))
     status = payload.pop("status", None)
     reference = payload.pop("reference", None)
-    schedule_mode = payload.pop("sch_mode", None)
-    if subject is None and value.decision == "domain_schedule" and schedule_mode in {"list", "count"}:
-        subject = "schedule"
-        shape = "surface_list" if schedule_mode == "list" else "fact_count"
     if subject is not None and shape is not None:
         payload["read"] = {
             "subject": subject,
@@ -70,7 +284,15 @@ def _adapt_semantic_route_llm_decision(value: SemanticRouteLLMDecision) -> Seman
             "status": status,
             "reference": reference,
         }
-    return SemanticRouteDecision.model_validate(payload)
+    decision = SemanticRouteDecision.model_validate(payload)
+    context_followup, replay_modifier = _context_runtime_decision(value) if isinstance(
+        value, (_ContextRouteDecision, TransactionContextRouteLLMDecision)
+    ) else (None, None)
+    if context_followup is not None:
+        decision = decision.model_copy(
+            update={"context_followup": context_followup, "context_replay_modifier": replay_modifier}
+        )
+    return decision
 
 SCHEDULE_READ_ROUTER_SYSTEM_PROMPT = """Classify whether a user is asking to read scheduled banking instructions.
 Return ONLY JSON for this schema:
@@ -79,19 +301,19 @@ Return ONLY JSON for this schema:
 - lang: English | Pidgin | Yoruba | Hausa | Igbo | null
 - mode: new | continuation | null
 - intent: schedule | null
-- sch_mode: list | count | null
+- read_subject: schedule | null
+- response_shape: fact_count | fact_bool | surface_list | null
 
 Rules:
 1) Use decision=domain_schedule only for read-only scheduled/recurring transaction management questions.
-2) Use sch_mode=count for count/existence asks, including "how many", "do I have any",
-   "any pending scheduled...", and multilingual equivalents.
-3) Use sch_mode=list for asks to show/list/view scheduled transactions,
+2) Use response_shape=fact_count for count asks and fact_bool for existence asks.
+3) Use response_shape=surface_list for asks to show/list/view scheduled transactions,
    payments, airtime, data, or transfers.
 4) Do not route create/edit/cancel/delete/reschedule requests here; return planner_ambiguous.
 5) Do not route normal transaction history, account balance, beneficiaries, or immediate money movement here.
-6) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
-7) If decision=domain_schedule, set intent=schedule and mode=new.
-8) If uncertain, return planner_ambiguous with sch_mode=null.
+6) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed input.
+7) If decision=domain_schedule, set intent=schedule, mode=new, and read_subject=schedule.
+8) If uncertain, return planner_ambiguous without read fields.
 """
 
 SCHEDULE_READ_ROUTER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
@@ -117,9 +339,18 @@ Return ONLY JSON with:
   capability.unsupported_unavailable | meta.melkor_easter_egg | null
 - res: short direct response text or null
 - execs: array of transfer|airtime|data (empty if none)
-- sch_mode: list | count | null
+- read_subject: transaction | balance | linked_account | default_account | beneficiary | schedule | ticket | receipt | null
+- response_shape: fact_count | fact_bool | fact_value | fact_status | fact_recap | surface_list |
+  surface_detail | surface_paginated | surface_actionable | null
 - unsupported_cap: lending | investments | financial_advice | international_transfers |
   pdf_exports | csv_exports | all_time_history | null
+- ctx_act: null or a displayed-frame continuation action. When ctx_act is present, use the matching
+  flat ctx_target, ctx_field, ctx_rank, ctx_index, ctx_page, ctx_direction, ctx_type, ctx_scope,
+  ctx_indices, and ctx_labels fields when needed. Frame-family fields are available only for that
+  family: bal_op/bal_scope/bal_banks; ben_op/ben_type/new_alias; acct_op/acct_scope; or ticket_note.
+  For replay_tasks on a transaction frame, use replay_amount/replay_amount_text, replay_source/
+  replay_source_text, and replay_narration/replay_narration_text only for explicit user edits.
+  These are only valid when the prompt includes Eligible displayed context.
 
 Rules:
 1) This router is authoritative for first-pass semantic routing. Use planner only for explicit mixed asks,
@@ -184,10 +415,8 @@ Rules:
    This includes fresh asks and grounded follow-ups about transactions, debits, credits, inflow/income,
    totals, comparisons, pagination, drill-down, beneficiary spending, and analytics.
    Scheduled/recurring instruction management is not transaction-history query; use domain_schedule.
-   For simple read-only list/count/existence scheduled-transaction asks, set sch_mode=list or count
-   so the gate can skip planner. Existence questions like "do I have any pending scheduled..." are count mode,
-   not list mode. For find/cancel/edit/reschedule, leave sch_mode=null so the planner can resolve
-   the operation.
+   For simple read-only scheduled-transaction asks, set read_subject=schedule and response_shape to
+   surface_list, fact_count, or fact_bool so the gate can skip planner. For mutations, omit read fields.
    If the context shows a pending query clarification, short answers that complete the missing query detail
    should also route to domain_query rather than planner_ambiguous.
    Examples:
@@ -196,7 +425,7 @@ Rules:
    - "Fihan mi awon credit transactions mi fun osu yi" -> domain_query
    - "Nawa na karba a wannan watan" -> domain_query
    - "Ego ole ka m natara n'onwa a" -> domain_query
-   - "Montre mes transactions credit de ce mois" -> domain_query
+   - "Gosi m credit transactions m nke onwa a" -> domain_query
    - "Show my credit transactions for this month" -> domain_query
    - "How much did I spend yesterday" -> domain_query
    - "Top recipients this month" -> domain_query
@@ -206,11 +435,10 @@ Rules:
    - "How much total" after a transaction list -> domain_query with mode=continuation
    - "wetin be total" after a transaction list -> domain_query with mode=continuation
    - "lapapo meloo" after a transaction list -> domain_query with mode=continuation
-   - "How many scheduled transactions are pending" -> domain_schedule, sch_mode=count
-   - "Do I have any pending scheduled transactions?" -> domain_schedule, sch_mode=count
-   - "Do i have any pending scheduled transsction" -> domain_schedule, sch_mode=count
-   - "Wetin be my scheduled payments" -> domain_schedule, sch_mode=list
-   - "Montre mes paiements programmés" -> domain_schedule, sch_mode=list
+   - "How many scheduled transactions are pending" -> domain_schedule, schedule/fact_count
+   - "Do I have any pending scheduled transactions?" -> domain_schedule, schedule/fact_bool
+   - "Wetin be my scheduled payments" -> domain_schedule, schedule/surface_list
+   - "Nuna min scheduled payments dina" -> domain_schedule, schedule/surface_list
 4a) Active query sessions are semantic context, not a forced route.
    If context/hints show an active query session:
    - Query follow-ups route to domain_query with mode=continuation.
@@ -226,9 +454,8 @@ Rules:
    - active query + "show me" after a query summary -> domain_query, mode=continuation
    - active query + "ti ana nko" -> domain_query, mode=continuation
    - active query + "na jiya fa" -> domain_query, mode=continuation
-   - active query + "hier alors" -> domain_query, mode=continuation
    - active query + "When", "When?", or "What time" -> domain_query, mode=continuation
-   - active query + "Quand" (French), "Yaushe" (Hausa), "Igba wo" (Yoruba) -> domain_query, mode=continuation
+   - active query + "Yaushe" (Hausa), "Igba wo" (Yoruba), "kedu mgbe" (Igbo) -> domain_query, mode=continuation
    - active query + "More", "Next", or "Previous" -> domain_query, mode=continuation
    - active query + "is this all?" -> domain_query, mode=continuation
    - active query + "why is Zenith missing?" -> domain_query, mode=continuation
@@ -339,7 +566,29 @@ class SemanticRouterLLM:
     def __init__(self, llm: ChatOpenAI) -> None:
         self.llm = llm
         self.structured_semantic_router = with_structured_output(llm, SemanticRouteLLMDecision)
+        self.structured_direct_reply_router = with_structured_output(llm, SemanticDirectReplyLLMDecision)
+        self.structured_balance_context_router = with_structured_output(llm, BalanceContextRouteLLMDecision)
+        self.structured_beneficiary_context_router = with_structured_output(llm, BeneficiaryContextRouteLLMDecision)
+        self.structured_account_context_router = with_structured_output(llm, AccountContextRouteLLMDecision)
+        self.structured_generic_context_router = with_structured_output(llm, GenericContextRouteLLMDecision)
+        self.structured_transaction_context_router = with_structured_output(llm, TransactionContextRouteLLMDecision)
         self.structured_schedule_read_router = with_structured_output(llm, SemanticRouteLLMDecision)
+
+    def _structured_router_for_context(self, signals: SemanticRouterPromptSignals | None) -> tuple[object, type[BaseModel]]:
+        frame_type = signals.context_frame_type if signals is not None else None
+        if frame_type == "balance":
+            return self.structured_balance_context_router, BalanceContextRouteLLMDecision
+        if frame_type == "beneficiary":
+            return self.structured_beneficiary_context_router, BeneficiaryContextRouteLLMDecision
+        if frame_type in {"account_list", "linked_account", "default_account"}:
+            return self.structured_account_context_router, AccountContextRouteLLMDecision
+        if frame_type in {"transaction_list", "transaction_detail", "receipt"}:
+            return self.structured_transaction_context_router, TransactionContextRouteLLMDecision
+        if frame_type:
+            return self.structured_generic_context_router, GenericContextRouteLLMDecision
+        if signals is not None and signals.direct_reply_candidate:
+            return self.structured_direct_reply_router, SemanticDirectReplyLLMDecision
+        return self.structured_semantic_router, SemanticRouteLLMDecision
 
     async def route_semantic_turn(
         self,
@@ -358,9 +607,10 @@ class SemanticRouterLLM:
         )
         compiled_prompt = compile_semantic_router_prompt(prompt_signals)
         system_prompt = compiled_prompt.system_prompt
+        structured_router, response_type = self._structured_router_for_context(prompt_signals)
         result = await invoke_structured_prompt(
-            self.structured_semantic_router,
-            SemanticRouteLLMDecision,
+            structured_router,
+            response_type,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             logger=logger,
@@ -372,7 +622,7 @@ class SemanticRouterLLM:
                 "context_chars": len(context),
                 "context_mode": "compact" if context == "None" else "full",
                 "prompt_profile": compiled_prompt.profile,
-                "prompt_cache_key_version": "v3",
+                "prompt_cache_key_version": "v6",
             },
             config=build_llm_runnable_config(
                 role="semantic_router",

@@ -35,7 +35,7 @@ def _feature_tokens(requested_features: list[Any] | None) -> set[str]:
 
 def _infer_transfer_switch_action(text: str, feature_tokens: set[str]) -> str:
     if _TRANSFER_CANCEL_SCHEDULE_RE.search(text):
-        return "cancel_scheduled_transfer"
+        return "cancel_scheduled_transaction"
     if _TRANSFER_EDIT_SCHEDULE_RE.search(text):
         return "edit_scheduled_transaction"
     if _TRANSFER_LIST_SCHEDULE_RE.search(text):

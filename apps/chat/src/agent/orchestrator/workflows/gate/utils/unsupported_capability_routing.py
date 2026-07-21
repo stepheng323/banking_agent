@@ -5,14 +5,12 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detect
     detect_unsupported_capability,
     is_same_unsupported_capability_followup,
     normalize_unsupported_text,
-    should_try_semantic_unsupported_capability,
 )
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
     UnsupportedBoundaryTurnOutput,
     UnsupportedCapability,
 )
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_semantic import (
-    validate_semantic_unsupported_capability,
     validate_unsupported_boundary_turn,
 )
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
@@ -133,28 +131,6 @@ def looks_like_boundary_followup(text: str, capability: UnsupportedCapability) -
     if _GENERIC_CONTINUATION_RE.search(normalized) and len(normalized.split()) <= 7:
         return True
     return False
-
-
-async def semantic_unsupported_capability(
-    ctx: GateContext,
-    text: str,
-    *,
-    allow_mixed: bool = False,
-) -> UnsupportedCapability | None:
-    classifier = ctx.capability_classifier_llm
-    if classifier is None or not should_try_semantic_unsupported_capability(text):
-        return None
-    try:
-        decision = await classifier.classify_unsupported_capability(
-            text,
-            locale=ctx.current_locale,
-            context="None",
-            path_label="direct_path",
-        )
-    except Exception:
-        logger.warning("semantic_unsupported_capability_failed")
-        return None
-    return validate_semantic_unsupported_capability(decision, allow_mixed=allow_mixed)
 
 
 async def semantic_boundary_turn(

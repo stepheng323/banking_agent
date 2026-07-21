@@ -115,6 +115,12 @@ class GateStateView:
         return pending_query_clarification if isinstance(pending_query_clarification, dict) else None
 
     @property
+    def recent_query_context(self) -> dict[str, Any] | None:
+        """Short-lived, read-only query context retained after a query closes."""
+        recent_query_context = self.state.recent_query_context
+        return recent_query_context if isinstance(recent_query_context, dict) else None
+
+    @property
     def has_stashed_sessions(self) -> bool:
         return bool(self.stashed_sessions)
 

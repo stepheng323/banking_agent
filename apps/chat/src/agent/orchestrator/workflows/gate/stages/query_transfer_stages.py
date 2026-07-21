@@ -120,7 +120,7 @@ async def _maybe_query_followup_bypass(ctx: GateContext) -> RouteResolution | No
             message_text=ctx.message_text,
             locale=ctx.current_locale,
             has_active_query_session=await ctx.has_active_query_session(),
-            has_context_frames=ctx.state_view.has_context_frames,
+            has_recent_query_context=ctx.state_view.recent_query_context is not None,
             is_pending_clarification=bool(
                 isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("pending_clarification")
             ),

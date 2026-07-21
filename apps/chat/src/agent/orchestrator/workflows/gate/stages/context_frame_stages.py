@@ -34,9 +34,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
     _next_direct_domain_task_id,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
-    build_surface_answer_context_for_state as build_context_frame_followup_context_for_state,
-)
-from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_types import (
@@ -927,57 +924,36 @@ def _display_shortcut_followup(ctx: GateContext) -> ContextFrameFollowupResponse
     )
 
 
-async def _interpret_context_frame_followup(ctx: GateContext) -> ContextFrameFollowupDecision | None:
-    if ctx.task_planner is None:
-        return None
-    try:
-        return await ctx.task_planner.interpret_context_frame_followup(
-            ctx.state_view.phone_number,
-            ctx.message_text,
-            context=build_context_frame_followup_context_for_state(ctx.state),
-            path_label="direct_path",
-        )
-    except Exception as exc:
-        logger.warning("gate_context_frame_followup_interpreter_failed", error=str(exc))
-        return None
-
-
-async def _extract_context_frame_replay_modifier(
+def resolve_semantic_context_followup(
     ctx: GateContext,
     decision: ContextFrameFollowupDecision,
-) -> Any | None:
-    if decision.decision not in {"replay_tasks", "replay"} or ctx.task_planner is None:
+    *,
+    replay_modifier: Any | None = None,
+) -> RouteResolution | None:
+    """Materialize one semantic-router frame decision without another LLM call."""
+    frame = ContextFrameManager().latest_active_frame(ctx.state)
+    if frame is None:
         return None
-    try:
-        replay_modifier = await ctx.task_planner.extract_context_frame_replay_modifiers(
-            ctx.state_view.phone_number,
-            ctx.message_text,
-            context=build_context_frame_followup_context_for_state(ctx.state),
-            path_label="direct_path",
-        )
-    except Exception as exc:
-        logger.warning("gate_context_frame_replay_modifier_extractor_failed", error=str(exc))
-        return None
-    if replay_modifier is not None:
+    balance_followup = _balance_contract_followup_updates(ctx, frame, decision)
+    if balance_followup is not None:
+        return balance_followup
+    read_followup = _read_contract_followup_updates(ctx, frame, decision)
+    if read_followup is not None:
+        return read_followup
+    raw_retained_read = frame.metadata.get("read_request")
+    retained_subject = raw_retained_read.get("subject") if isinstance(raw_retained_read, dict) else None
+    if decision.read_subject is not None and decision.read_subject != retained_subject:
         logger.info(
-            "gate_context_frame_replay_modifier_extracted",
-            confidence=replay_modifier.confidence,
-            detected_language=replay_modifier.detected_language,
-            has_amount=replay_modifier.amount is not None,
-            has_source=bool(replay_modifier.source_account_reference),
-            has_narration=bool(replay_modifier.narration),
-            reason=replay_modifier.reason,
+            "semantic_context_followup_released_for_read_subject_pivot",
+            retained_subject=retained_subject,
+            requested_subject=decision.read_subject,
         )
-    return replay_modifier
-
-
-async def _resolve_context_frame_followup(
-    ctx: GateContext,
-) -> tuple[ContextFrameFollowupDecision, ContextFrameFollowupResponse | None] | None:
-    decision = await _interpret_context_frame_followup(ctx)
-    if decision is None:
         return None
-    replay_modifier = await _extract_context_frame_replay_modifier(ctx, decision)
+    if not frame.items:
+        # Fact-only read frames intentionally retain a normalized contract but
+        # no hidden rows.  They can be rerun through the typed read path above,
+        # but cannot safely answer an item-level selector.
+        return None
     frame_followup = build_context_frame_followup_response(
         ctx.state,
         ctx.message_text,
@@ -985,7 +961,15 @@ async def _resolve_context_frame_followup(
         replay_modifier=replay_modifier,
         locale=ctx.current_locale,
     )
-    return decision, frame_followup
+    logger.info(
+        "semantic_context_followup_decision",
+        decision=decision.decision,
+        confidence=decision.confidence,
+        frame_type=frame.frame_type.value,
+        item_count=len(frame.items),
+        resolved=bool(frame_followup),
+    )
+    return _context_frame_followup_updates(ctx, frame_followup) if frame_followup is not None else None
 
 
 async def _stage_context_frame_followup(ctx: GateContext) -> RouteResolution | None:
@@ -1110,47 +1094,14 @@ async def _stage_context_frame_followup(ctx: GateContext) -> RouteResolution | N
         )
         return _context_frame_followup_updates(ctx, display_followup)
 
-    resolved = await _resolve_context_frame_followup(ctx)
-    if resolved is None:
-        return None
-    decision, frame_followup = resolved
-    balance_followup = _balance_contract_followup_updates(ctx, frame, decision)
-    if balance_followup is not None:
-        return balance_followup
-    read_followup = _read_contract_followup_updates(ctx, frame, decision)
-    if read_followup is not None:
-        return read_followup
-    raw_retained_read = frame.metadata.get("read_request")
-    retained_subject = raw_retained_read.get("subject") if isinstance(raw_retained_read, dict) else None
-    if decision.read_subject is not None and decision.read_subject != retained_subject:
-        logger.info(
-            "gate_context_frame_followup_released_for_read_subject_pivot",
-            retained_subject=retained_subject,
-            requested_subject=decision.read_subject,
-        )
-        return None
+    # Ambiguous follow-ups now proceed to the semantic router.  It returns a
+    # compact typed continuation in the same call that chooses the domain.
     logger.info(
-        "gate_context_frame_followup_decision",
-        decision=decision.decision,
-        confidence=decision.confidence,
-        detected_language=decision.detected_language,
-        requested_field=decision.requested_field,
-        rank=decision.rank,
-        has_filters=bool(decision.filters),
-        reason=decision.reason,
-        resolved=bool(frame_followup),
+        "gate_context_frame_followup_deferred_to_semantic_router",
         frame_type=frame.frame_type.value,
         item_count=len(frame.items),
     )
-    if not frame_followup:
-        return None
-
-    logger.info(
-        "gate_context_frame_followup_hit",
-        frame_type=frame.frame_type.value,
-        item_count=len(frame.items),
-    )
-    return _context_frame_followup_updates(ctx, frame_followup)
+    return None
 
 
-__all__ = ["_stage_context_frame_followup"]
+__all__ = ["_stage_context_frame_followup", "resolve_semantic_context_followup"]

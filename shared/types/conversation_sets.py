@@ -22,8 +22,10 @@ MAX_REVIEWED_MUTATION_TARGETS = 5
 EntitySelectionType: TypeAlias = Literal[
     "beneficiary",
     "schedule",
+    "schedule_run",
     "linked_account",
     "support_reference",
+    "support_ticket",
     "data_plan",
 ]
 SetScopeOperation: TypeAlias = Literal[
@@ -191,6 +193,8 @@ ScheduleOperation: TypeAlias = Literal[
     "recap",
     "cancel_review",
     "edit_review",
+    "pause_review",
+    "resume_review",
 ]
 
 
@@ -200,9 +204,14 @@ class ScheduleQueryContract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     operation: ScheduleOperation = "list"
+    surface: Literal["instructions", "runs"] = "instructions"
     response_shape: ResponseShape = "surface_list"
     recipient_name: str | None = Field(default=None, max_length=120)
     statuses: list[str] = Field(default_factory=list, max_length=8)
+    run_statuses: list[Literal["queued", "processing", "successful", "failed"]] = Field(
+        default_factory=list,
+        max_length=4,
+    )
     domains: list[Literal["transfer", "airtime", "data"]] = Field(default_factory=list, max_length=3)
     recurrence: str | None = Field(default=None, max_length=64)
     starts_at: str | None = Field(default=None, max_length=48)
@@ -271,7 +280,7 @@ class BulkMutationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     domain: MutationSetDomain
-    action: Literal["delete", "cancel", "edit", "unlink"]
+    action: Literal["delete", "cancel", "edit", "pause", "resume", "unlink"]
     targets: list[EntitySelectionRef] = Field(min_length=1, max_length=MAX_REVIEWED_MUTATION_TARGETS)
     patch: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str = Field(min_length=1, max_length=200)
@@ -280,7 +289,7 @@ class BulkMutationRequest(BaseModel):
     def validate_domain_action(self) -> BulkMutationRequest:
         allowed = {
             "beneficiary": {"delete"},
-            "schedule": {"cancel", "edit"},
+            "schedule": {"cancel", "edit", "pause", "resume"},
             "linked_account": {"unlink"},
         }
         if self.action not in allowed[self.domain]:

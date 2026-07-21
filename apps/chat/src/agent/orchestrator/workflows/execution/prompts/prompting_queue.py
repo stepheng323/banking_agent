@@ -8,6 +8,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.task_access import exi
 from banking.presentation.formatters.transaction_copy_context import format_amount_compact
 from banking.presentation.formatters.transaction_intent_lines import format_intent_line
 from banking.presentation.i18n.renderer import render_message
+from shared.money import to_naira
 
 
 def _queued_transaction_tasks_for_focus(
@@ -75,7 +76,10 @@ def _ready_airtime_acknowledgements(
         phone = str(task.payload.get("recipient_phone") or task.payload.get("phone") or "").strip()
         if not phone:
             continue
-        amount = format_amount_compact(task.payload.get("amount"))
+        raw_amount = to_naira(task.payload.get("amount"))
+        if raw_amount is None or raw_amount <= 0:
+            continue
+        amount = format_amount_compact(raw_amount)
         acknowledgements.append(f"I'll also buy {amount} airtime for {phone}.")
     return acknowledgements
 

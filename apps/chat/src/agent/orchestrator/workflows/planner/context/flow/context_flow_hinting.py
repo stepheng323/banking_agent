@@ -17,8 +17,6 @@ _TX_HINT_KEYWORDS = (
     "saya",
     "tura",
     "ziga",
-    "envoye",
-    "envoyer",
 )
 _TX_HINT_PATTERN = re.compile(
     rf"(?<!\w)(?:{'|'.join(re.escape(keyword) for keyword in _TX_HINT_KEYWORDS)})(?!\w)",

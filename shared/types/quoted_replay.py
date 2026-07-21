@@ -83,4 +83,10 @@ class QuotedReplayInterpretation(_StrictModel):
     target_types: list[ReplayTargetType] = Field(default_factory=list)
     target_task_ids: list[str] = Field(default_factory=list)
     clarify_message: str | None = None
+    replay_amount: float | None = Field(default=None, gt=0)
+    replay_amount_evidence: str | None = Field(default=None, max_length=120)
+    replay_source_account: str | None = Field(default=None, max_length=120)
+    replay_source_evidence: str | None = Field(default=None, max_length=120)
+    replay_narration: str | None = Field(default=None, max_length=240)
+    replay_narration_evidence: str | None = Field(default=None, max_length=240)
     reason: str | None = None

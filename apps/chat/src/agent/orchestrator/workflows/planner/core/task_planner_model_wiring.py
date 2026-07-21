@@ -8,8 +8,6 @@ from langchain_openai import ChatOpenAI
 from banking.transactions.shared.confirmation.models import ConfirmationDecisionOutput
 from shared.types.planner import (
     BatchSlotPatchDecision,
-    ContextFrameFollowupDecision,
-    ContextFrameReplayModifier,
     InterruptRouteDecision,
     PendingActionEditDecision,
     PlannerOutput,
@@ -22,8 +20,6 @@ class TaskPlannerStructuredOutputs:
     planner: Any
     interrupt_router: Any
     quoted_replay: Any
-    context_frame_followup: Any
-    context_frame_replay_modifier: Any
     pending_action_edit: Any
     batch_slot_patch: Any
     confirmation_decision: Any
@@ -76,14 +72,6 @@ def build_task_planner_structured_outputs(
         quoted_replay=with_structured_output(
             planner_llm,
             QuotedReplayInterpretation,
-        ),
-        context_frame_followup=with_structured_output(
-            semantic_router_llm,
-            ContextFrameFollowupDecision,
-        ),
-        context_frame_replay_modifier=with_structured_output(
-            semantic_router_llm,
-            ContextFrameReplayModifier,
         ),
         pending_action_edit=with_structured_output(
             interrupt_llm,

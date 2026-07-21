@@ -6,7 +6,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_selection import (
     active_context_frames_for_view,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_search import SEARCHABLE_DATA_KEYS
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_state_view import (
     ContextFrameStateView,
     context_frame_state_view,
@@ -25,7 +24,6 @@ def build_context_frame_followup_context(frame: ContextFrame) -> str:
             "entity_name",
             "bank_name",
             "status",
-            "reference",
             "offset",
             "page_size",
         ):
@@ -70,14 +68,11 @@ def build_context_frame_followup_context(frame: ContextFrame) -> str:
             f"last_result_count={len(set_state.get('last_result_refs', []))}",
         )
     for idx, entity in enumerate(frame.items[:CONTEXT_READ_LIST_LIMIT], 1):
-        data = entity.data if isinstance(entity.data, dict) else {}
-        searchable_values = []
-        for key in SEARCHABLE_DATA_KEYS:
-            value = data.get(key)
-            if value is not None and value != "":
-                searchable_values.append(f"{key}={value}")
-        suffix = f" | {'; '.join(searchable_values[:6])}" if searchable_values else ""
-        lines.append(f"{idx}. {entity.label}{suffix}")
+        # The router gets only what was visibly presented.  Stable identifiers,
+        # account numbers, references, and hidden row payloads stay in the
+        # local frame and are resolved deterministically after the model returns
+        # an ordinal or masked display label.
+        lines.append(f"{idx}. {entity.label}")
     overflow = len(frame.items) - CONTEXT_READ_LIST_LIMIT
     if overflow > 0:
         lines.append(f"... {overflow} more item(s) not shown in interpreter context")

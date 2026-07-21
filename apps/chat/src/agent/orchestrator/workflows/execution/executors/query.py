@@ -102,6 +102,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         "user_id": context.user_id,
         "profile": context.profile,
         "accounts": context.accounts,
+        "beneficiaries": context.beneficiaries,
         "language": _state_locale(ctx.state),
         "inbound_message_id": turn.last_message_id,
         "turn_id": turn.last_message_id,
@@ -164,14 +165,40 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
                     "type": "say",
                     "text": result.response,
                     "actionable_payload": pagination_payload,
+                    "_composition": {
+                        "response_family": "query",
+                        "response_shape": "surface_list",
+                        "merge_mode": "preserve",
+                    },
                 }
                 if body_blocks:
                     outbox_entry["body_blocks"] = body_blocks
                 ctx.accumulator.add_outbox(outbox_entry)
             elif body_blocks:
-                ctx.accumulator.add_outbox({"type": "say", "text": result.response, "body_blocks": body_blocks})
+                ctx.accumulator.add_outbox(
+                    {
+                        "type": "say",
+                        "text": result.response,
+                        "body_blocks": body_blocks,
+                        "_composition": {
+                            "response_family": "query",
+                            "response_shape": "surface_list",
+                            "merge_mode": "preserve",
+                        },
+                    }
+                )
             else:
-                ctx.accumulator.say(result.response)
+                ctx.accumulator.add_outbox(
+                    {
+                        "type": "say",
+                        "text": result.response,
+                        "_composition": {
+                            "response_family": "query",
+                            "response_shape": "fact",
+                            "merge_mode": "preserve",
+                        },
+                    }
+                )
 
         if followup_referent and not handoff_payload:
             push_query_followup_referent_frame(ctx, followup_referent)

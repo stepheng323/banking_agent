@@ -1,7 +1,12 @@
 """Main pipeline logic for the semantic router."""
 
+import inspect
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (
+    detect_unsupported_capability,
+    should_try_semantic_unsupported_capability,
+)
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
     unsupported_capability_params,
 )
@@ -35,6 +40,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_routing.dir
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_routing.domain_dispatch import (
     _handle_semantic_domain_dispatch,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import _effective_response_locale
 from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit import (
     _build_query_session_exit_updates,
 )
@@ -43,6 +49,27 @@ from shared.observability.llm import LLMCallDeadlineExceeded
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+async def _apply_semantic_route_locale(ctx: GateContext, route: Any) -> None:
+    """Apply one detected-language decision before any semantic outcome renders."""
+    locale, locale_updates = await _effective_response_locale(
+        state_view=ctx.state_view,
+        redis_client=ctx.redis_client,
+        detected_language=getattr(route, "detected_language", None),
+        confidence=float(getattr(route, "confidence", 0.0) or 0.0),
+    )
+    if not locale_updates:
+        return
+
+    ctx.current_locale = locale
+    ctx.gate_updates.update(locale_updates)
+    tracker = ctx.progress_tracker
+    set_locale = getattr(tracker, "set_locale", None)
+    if callable(set_locale):
+        result = set_locale(locale)
+        if inspect.isawaitable(result):
+            await result
 
 
 async def _handle_semantic_route(ctx: GateContext, route: Any) -> RouteResolution | None:
@@ -63,6 +90,8 @@ async def _handle_semantic_route(ctx: GateContext, route: Any) -> RouteResolutio
     ):
         return locale_updates
 
+    await _apply_semantic_route_locale(ctx, route)
+
     updates, expected_executors = semantic_route_executor_updates(route)
 
     if ctx.live_pending_interrupt:
@@ -70,9 +99,41 @@ async def _handle_semantic_route(ctx: GateContext, route: Any) -> RouteResolutio
         canonical_decision = None
         canonical_mode = None
 
+    context_followup = getattr(route, "context_followup", None) if route is not None else None
+    if context_followup is not None and not ctx.live_pending_interrupt:
+        # The semantic router has already interpreted this against the compact
+        # displayed-frame bundle.  Ground the returned selector locally rather
+        # than calling the retired context-frame interpreter again.
+        from apps.chat.src.agent.orchestrator.workflows.gate.stages.context_frame_stages import (
+            resolve_semantic_context_followup,
+        )
+
+        context_resolution = resolve_semantic_context_followup(
+            ctx,
+            context_followup,
+            replay_modifier=getattr(route, "context_replay_modifier", None),
+        )
+        if context_resolution is not None:
+            logger.info(
+                "gate_semantic_context_followup_resolved",
+                action=context_followup.decision,
+                confidence=context_followup.confidence,
+            )
+            return context_resolution
+        logger.info(
+            "gate_semantic_context_followup_unresolved",
+            action=context_followup.decision,
+            confidence=context_followup.confidence,
+        )
+
     if route is not None:
         unsupported_cap = getattr(route, "unsupported_capability", None)
-        if unsupported_cap is not None:
+        has_supported_route = bool(
+            getattr(route, "target_intent", None)
+            or getattr(route, "read_request", None)
+            or getattr(route, "expected_transaction_executors", None)
+        )
+        if unsupported_cap is not None and not has_supported_route:
             capability = get_unsupported_capability(unsupported_cap)
             if capability is not None:
                 params = unsupported_capability_params(capability, locale=ctx.current_locale)
@@ -92,6 +153,24 @@ async def _handle_semantic_route(ctx: GateContext, route: Any) -> RouteResolutio
                         **updates,
                     },
                 )
+        elif unsupported_cap is not None:
+            logger.info("gate_semantic_router_unsupported_capability_discarded_for_supported_route")
+
+    if (
+        canonical_decision == "planner_ambiguous"
+        and detect_unsupported_capability(ctx.message_text) is None
+        and should_try_semantic_unsupported_capability(ctx.message_text)
+    ):
+        logger.info("gate_semantic_router_unsupported_candidate_clarified")
+        return direct_response(
+            ctx,
+            response=render_message("conversational.clarify", ctx.current_locale),
+            owner="semantic_router",
+            decision="semantic_unsupported_candidate_clarify",
+            source="semantic_router",
+            path_shape="semantic_unsupported_candidate_clarify",
+            extra_updates={**(ctx.summary_updates or {}), **updates},
+        )
 
     if route is not None:
         cancel_updates = await semantic_cancel_updates(
@@ -116,15 +195,15 @@ async def _handle_semantic_route(ctx: GateContext, route: Any) -> RouteResolutio
             return schedule_updates
 
     if route is not None:
-        direct_response = await _handle_semantic_direct_response(
+        direct_resolution = await _handle_semantic_direct_response(
             ctx,
             route=route,
             updates=updates,
             canonical_decision=canonical_decision,
             canonical_mode=canonical_mode,
         )
-        if direct_response is not None:
-            return direct_response
+        if direct_resolution is not None:
+            return direct_resolution
 
     if route is not None:
         domain_dispatch = await _handle_semantic_domain_dispatch(

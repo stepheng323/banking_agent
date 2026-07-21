@@ -7,6 +7,9 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmat
     _is_explicit_confirmation_approval_text,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _cancel_updates, logger
+from apps.chat.src.agent.orchestrator.workflows.interrupt.input.batch_input_scope import (
+    resolve_batch_input_message_scope,
+)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_continue import _continue_flow_updates
 from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_reprompt import _reprompt_or_reset_updates
 from apps.chat.src.agent.orchestrator.workflows.interrupt.questions.active_flow_questions import (
@@ -39,12 +42,14 @@ async def _apply_interrupt_route_decision(
     redis_client: Any,
 ) -> dict[str, Any]:
     if route.decision == "active_flow_question":
-        return active_flow_question_updates(
+        return await active_flow_question_updates(
             state=state,
             interrupt=interrupt,
             route=route,
             current_task_types=current_task_types,
             path_shape="interrupt_router_only",
+            services=services,
+            message=text,
         )
 
     if route.decision == "status_query":
@@ -87,6 +92,9 @@ async def _apply_interrupt_route_decision(
         return await _reprompt_or_reset_updates(state, interrupt, redis_client)
 
     if route.decision == "continue_flow":
+        batch_scope = resolve_batch_input_message_scope(state=state, interrupt=interrupt, text=text)
+        if batch_scope is not None:
+            return _continue_flow_updates(state, interrupt, input_messages_by_task=batch_scope)
         return _continue_flow_updates(state, interrupt)
 
     if route.decision == "switch_intent":

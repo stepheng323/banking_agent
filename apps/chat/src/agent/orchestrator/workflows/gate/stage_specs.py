@@ -19,7 +19,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.eligibility import (
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.capability_boundary_stages import (
     _stage_capability_boundary_followup,
     _stage_deterministic_unsupported_capability,
-    _stage_semantic_unsupported_capability,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.context_frame_stages import _stage_context_frame_followup
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.contextual_followup_stages import (
@@ -182,17 +181,6 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
         eligibility=all_of(no_live_pending_interrupt, no_gate_blocking_state),
     ),
     GateHandlerSpec(
-        id="semantic_unsupported_capability",
-        layer=GateLayer.CAPABILITY_GUARDS,
-        priority=30,
-        handler=_stage_semantic_unsupported_capability,
-        owner="guardrail",
-        outcome_kind=TurnOutcomeKind.POLICY_BLOCK,
-        may_call_llm=True,
-        description="Use semantic fallback for unsupported capability detection.",
-        eligibility=all_of(no_live_pending_interrupt, no_gate_blocking_state, phrase_heavy_fastpath_allowed),
-    ),
-    GateHandlerSpec(
         id="pending_interrupt",
         layer=GateLayer.SESSION_RESUME,
         priority=1,
@@ -308,8 +296,8 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
         allowed_owners=frozenset({"guardrail", "semantic_router"}),
         outcome_kind=TurnOutcomeKind.TASK_DISPATCH,
         allowed_outcomes=frozenset({TurnOutcomeKind.DIRECT_RESPONSE, TurnOutcomeKind.TASK_DISPATCH}),
-        may_call_llm=True,
-        description="Ground follow-ups against displayed context frames.",
+        may_call_llm=False,
+        description="Handle deterministic displayed-frame selectors; semantic follow-ups use the router call.",
         eligibility=all_of(no_live_pending_interrupt, no_gate_blocking_state),
     ),
     GateHandlerSpec(

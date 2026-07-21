@@ -22,6 +22,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
     _reconcile_multi_transfer_recipient_tasks,
 )
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
+from banking.runtime.operations import operation_spec
 from banking.support.classifier import classify_support_intent_deterministic
 from shared.types.balance import initial_balance_contract
 from shared.types.conversation_sets import (
@@ -38,15 +39,15 @@ from shared.types.planner import (
 )
 from shared.types.read import ReadRequest
 
-_SCHEDULE_ACTION_ALIASES = {
-    "cancel_scheduled_transfer": "cancel_scheduled_transaction",
-    "list_scheduled_transfers": "list_scheduled_transactions",
-}
 _CANONICAL_SCHEDULE_ACTIONS = {
     "list_scheduled_transactions",
     "find_scheduled_transaction",
     "cancel_scheduled_transaction",
     "edit_scheduled_transaction",
+    "pause_scheduled_transaction",
+    "resume_scheduled_transaction",
+    "list_scheduled_runs",
+    "find_scheduled_run",
 }
 
 
@@ -56,7 +57,7 @@ def _canonicalize_switch_planner_task(
     target_intent: str,
     parameters: PlannerTaskParameters,
 ) -> tuple[str, str, PlannerTaskParameters]:
-    planner_action = _SCHEDULE_ACTION_ALIASES.get(action, action)
+    planner_action = action
     if target_intent != "transfer" or planner_action not in _CANONICAL_SCHEDULE_ACTIONS:
         return planner_action, target_intent, parameters
 
@@ -118,7 +119,7 @@ async def _build_enriched_transaction_switch_tasks(
             executor=cast(Any, planner_executor),
             instruction=text,
             parameters=planner_parameters,
-            risk="MONEY_MOVE",
+            risk=operation_spec(planner_executor, planner_action).risk,
         )
     ]
 

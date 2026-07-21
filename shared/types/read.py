@@ -52,7 +52,9 @@ _ALLOWED_SHAPES: dict[str, frozenset[str]] = {
     "schedule": frozenset(
         {"fact_bool", "fact_count", "fact_status", "surface_list", "surface_detail", "surface_paginated"}
     ),
-    "ticket": frozenset({"fact_status", "surface_detail"}),
+    "ticket": frozenset(
+        {"fact_bool", "fact_count", "fact_status", "surface_list", "surface_detail", "surface_paginated"}
+    ),
     "receipt": frozenset({"surface_detail", "surface_actionable"}),
 }
 

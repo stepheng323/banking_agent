@@ -18,10 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.schedule_read_stage 
     _build_direct_schedule_read_updates,
     _semantic_schedule_read_request,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import (
-    _effective_response_locale,
-    _locale_update,
-)
+from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import _locale_update
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.language import (
     _looks_like_language_switch_request,
 )
@@ -138,12 +135,7 @@ async def semantic_cancel_updates(
     if canonical_decision != "cancel":
         return None
 
-    locale, detected_locale_updates = await _effective_response_locale(
-        state_view=ctx.state_view,
-        redis_client=ctx.redis_client,
-        detected_language=getattr(route, "detected_language", None),
-    )
-    updates.update(detected_locale_updates)
+    locale = ctx.current_locale
     if has_cancelable_state(ctx.state):
         text = cancelled_message(ctx.state, locale)
         updates.update(await build_cancellation_reset_updates(ctx.state, ctx.redis_client))

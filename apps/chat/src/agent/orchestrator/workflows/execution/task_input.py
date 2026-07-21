@@ -21,6 +21,9 @@ def _maybe_user_message(task: TaskSpec, state: OrchestratorState) -> str | None:
         last_int=interrupt.task_ids if interrupt.exists else None,
     )
     if task.stage in (TaskStage.DRAFT, TaskStage.EXTRACTED):
+        if pop_task_payload_value(task, "suppress_current_input"):
+            logger.info("task_input_replay_suppressed", task_id=task.id)
+            return None
         # Only tasks that asked for input consume the current user text.
         if interrupt.exists and not interrupt.includes_task(task.id):
             return None

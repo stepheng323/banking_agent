@@ -1,6 +1,7 @@
 """Runtime capability filtering for planner tasks."""
 
 from banking.policy.service import capability_block_message
+from banking.runtime.operations import operation_spec
 from shared.types.planner import PlannedTask, PlannerOutput
 from shared.utils.logging import get_logger
 
@@ -19,12 +20,14 @@ SCHEDULE_ACTIONS = {
     "recurring_airtime",
     "schedule_data",
     "recurring_data",
-    "list_scheduled_transfers",
-    "cancel_scheduled_transfer",
     "list_scheduled_transactions",
     "find_scheduled_transaction",
     "cancel_scheduled_transaction",
     "edit_scheduled_transaction",
+    "pause_scheduled_transaction",
+    "resume_scheduled_transaction",
+    "list_scheduled_runs",
+    "find_scheduled_run",
 }
 
 POLICY_ACTION_ALIASES = {
@@ -45,17 +48,18 @@ def _task_capability_target(task: PlannedTask) -> tuple[str, str] | None:
     action = str(getattr(task, "action", "") or "").strip()
     parameters = getattr(task, "parameters", None)
 
-    if action in SCHEDULE_ACTIONS:
-        return "schedule", action
     if (
         executor == "transfer"
         and action == "send_money"
         and (getattr(parameters, "schedule", None) or getattr(parameters, "scheduled", None))
     ):
         return "schedule", "schedule_transfer"
-
     if action:
-        return executor, POLICY_ACTION_ALIASES.get((executor, action), action)
+        try:
+            operation = operation_spec(executor, action)
+        except ValueError:
+            return None
+        return operation.domain, operation.policy_action
 
     default_action = PLANNER_POLICY_DEFAULT_ACTIONS.get(executor)
     if default_action is None:
@@ -75,10 +79,6 @@ def _filter_capability_blocked_tasks(
     blocked_messages: list[str] = []
     for task in tasks:
         executor = str(getattr(task, "executor", "") or "").strip()
-        if executor not in PLANNER_POLICY_DEFAULT_ACTIONS and executor != "transfer":
-            kept_tasks.append(task)
-            continue
-
         capability_target = _task_capability_target(task)
         if not capability_target:
             kept_tasks.append(task)

@@ -175,6 +175,24 @@ def _looks_like_contextual_worker_acknowledgement(text: str | None, locales: lis
     )
 
 
+def _is_substantive_contextual_reaction(text: str | None, locales: list[LocaleCode]) -> bool:
+    """Whether a reaction can reasonably refine the currently displayed set.
+
+    A bare acknowledgement remains conversational.  A reaction (for example,
+    a correction or an expectation about what was shown) is ambiguous between
+    social commentary and a result-set follow-up, so the semantic router gets
+    one chance to resolve it against the compact frame bundle.
+    """
+    normalized = _normalize_text(text).lower().rstrip("?.!,")
+    if not normalized:
+        return False
+    return any(
+        _CONTEXTUAL_REACTION_RE_BY_LOCALE[locale].search(normalized)
+        and not _CONTEXTUAL_ACK_PREFIX_RE_BY_LOCALE[locale].search(normalized)
+        for locale in locales
+    )
+
+
 async def _support_context_summary(ctx: GateContext) -> dict[str, Any] | None:
     if ctx.redis_client is None:
         return None
@@ -220,6 +238,13 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> RouteResolution
         or ctx.state_view.has_gate_blocking_state
         or not _looks_like_contextual_worker_acknowledgement(ctx.message_text, candidate_locales)
     ):
+        return None
+
+    if (
+        ContextFrameManager().latest_active_frame(ctx.state) is not None
+        and _is_substantive_contextual_reaction(ctx.message_text, candidate_locales)
+    ):
+        logger.info("gate_contextual_worker_followup_deferred_to_semantic_context")
         return None
 
     await ctx.ensure_turn_summary()

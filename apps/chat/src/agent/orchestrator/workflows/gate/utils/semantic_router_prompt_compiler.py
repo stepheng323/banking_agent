@@ -9,10 +9,19 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_
     TurnContextSummary,
 )
 
-_PROMPT_VERSION = "v3"
+_PROMPT_VERSION = "v6"
+
+_DIRECT_REPLY = """You write one direct reply for a multilingual Nigerian banking assistant. Return only JSON.
+The turn is already constrained to direct_reply: do not route a banking task or invent account, amount, recipient,
+transaction, prior result, or completed action. Set res_key and a complete safe res in at most two short sentences.
+Use conversational.greeting, conversational.appreciation, conversational.checkin, conversational.casual_chat,
+conversational.capability_question, conversational.out_of_scope, conversational.clarify,
+capability.unsupported_unavailable, or meta.melkor_easter_egg. For a language-switch request set req_lang.
+For an unsupported request set unsupported_cap only to a supplied registry key. Be semantic across English, Pidgin,
+Yoruba, Hausa, Igbo, and mixed wording; do not rely on exact phrases."""
 
 _BASE = """You route one multilingual turn for a Nigerian banking assistant. Interpret meaning across English,
-Pidgin, Yoruba, Hausa, Igbo, French, and mixed wording; do not depend on exact phrases.
+Pidgin, Yoruba, Hausa, Igbo, and mixed wording; do not depend on exact phrases.
 
 Return only the required JSON. Decisions:
 - direct_reply: greeting, appreciation, check-in, identity, capability/meta, safe casual chat, or unsupported topic.
@@ -22,7 +31,7 @@ Return only the required JSON. Decisions:
 - domain_support: failed/reversed transactions, receipts, disputes, or ticket status.
 - domain_beneficiary: saved-recipient management.
 - domain_transfer/domain_airtime/domain_data: one clear action in that domain.
-- domain_schedule: recurring/scheduled instruction management; sch_mode=list/count only for simple reads.
+- domain_schedule: recurring/scheduled instruction management; emit the canonical read contract for reads.
 - domain_faq: supported banking product information.
 - planner_mixed: multiple actions, batches/splits, or orchestration-heavy work.
 - planner_ambiguous: genuinely unclear banking meaning. cancel: explicit cancellation only.
@@ -84,11 +93,20 @@ _CONTEXT_FRAME = """Context-frame atom:
 - Referential read-only questions can use direct_context_answer only from the supplied frame/memory.
 - Selectors referring to a receipt/support surface may use domain_support continuation.
 - Fresh commands override stale context. Unclear references use planner_ambiguous.
+- When the user is continuing an eligible displayed frame, also return the compact ctx_* fields for that
+  frame family. They contain only action, visible selectors, and sparse contract deltas; never return
+  identifiers, account numbers, or rows. Leave ctx_act as unclear for a fresh command.
 """
 
 _SCHEDULE = """Schedule atom:
-- Simple list/view asks use domain_schedule sch_mode=list; count/existence asks use sch_mode=count.
-- Create, edit, cancel, delete, find, or reschedule leaves sch_mode null for planner/domain handling.
+- Simple list/view asks use schedule/surface_list; counts use schedule/fact_count; existence uses schedule/fact_bool.
+- Mutations omit read fields and use planner/domain handling.
+"""
+
+_UNSUPPORTED_CAPABILITY = """Unsupported-capability atom:
+- Set unsupported_cap only for: lending, investments, financial_advice, international_transfers, csv_exports,
+  pdf_exports, or all_time_history—and only when no supported action is requested.
+- If uncertain, use a normal direct_reply clarification; never invent a capability block.
 """
 
 
@@ -99,7 +117,10 @@ class SemanticRouterPromptSignals:
     active_query: bool = False
     active_flow: bool = False
     context_frame: bool = False
+    context_frame_type: str | None = None
     schedule_context: bool = False
+    unsupported_capability_candidate: bool = False
+    direct_reply_candidate: bool = False
 
     @classmethod
     def from_summary(cls, summary: TurnContextSummary) -> SemanticRouterPromptSignals:
@@ -123,17 +144,33 @@ def compile_semantic_router_prompt(
 ) -> CompiledSemanticRouterPrompt:
     selected: list[tuple[str, str]] = []
     resolved = signals or SemanticRouterPromptSignals()
+    direct_only = (
+        resolved.direct_reply_candidate
+        and not resolved.active_query
+        and not resolved.active_flow
+        and not resolved.context_frame
+    )
     if resolved.active_query:
         selected.append(("query", _ACTIVE_QUERY))
     if resolved.active_flow:
         selected.append(("flow", _ACTIVE_FLOW))
     if resolved.context_frame:
-        selected.append(("frame", _CONTEXT_FRAME))
+        frame_atom = _CONTEXT_FRAME
+        frame_name = "frame"
+        if resolved.context_frame_type:
+            frame_atom = f"{frame_atom}\n- Eligible frame family: {resolved.context_frame_type}."
+            frame_name = f"frame-{resolved.context_frame_type}"
+        selected.append((frame_name, frame_atom))
     if resolved.schedule_context:
         selected.append(("schedule", _SCHEDULE))
+    if resolved.unsupported_capability_candidate:
+        selected.append(("unsupported", _UNSUPPORTED_CAPABILITY))
 
-    profile = "+".join(name for name, _ in selected) or "base"
-    prompt = "\n".join([_BASE, *(atom for _, atom in selected)])
+    if direct_only:
+        profile = "direct" + (f"+{'+'.join(name for name, _ in selected)}" if selected else "")
+    else:
+        profile = "+".join(name for name, _ in selected) or "base"
+    prompt = "\n".join([_DIRECT_REPLY if direct_only else _BASE, *(atom for _, atom in selected)])
     signature = sha256(f"{_PROMPT_VERSION}:{profile}".encode()).hexdigest()[:12]
     return CompiledSemanticRouterPrompt(
         system_prompt=prompt,

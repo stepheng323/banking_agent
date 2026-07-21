@@ -28,10 +28,8 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.unsupported_capabilit
     coerce_boundary,
     is_explicit_supported_banking_request,
     is_live_boundary,
-    is_supported_banking_request,
     looks_like_boundary_followup,
     recent_unsupported_boundary,
-    semantic_unsupported_capability,
 )
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import message_key_exists, render_message
@@ -53,8 +51,21 @@ async def _unsupported_response(
     *,
     fallback_base_key: str,
     followup_count: int = 0,
+    allow_generation: bool = True,
 ) -> str:
     params = unsupported_capability_params(capability, locale=ctx.current_locale)
+    fallback = render_message(
+        _resolve_unsupported_key(fallback_base_key, capability.key, ctx.current_locale),
+        ctx.current_locale,
+        params,
+    )
+    if not allow_generation:
+        logger.info(
+            "unsupported_capability_response_rendered",
+            capability_key=capability.key,
+            response_source="deterministic_registry",
+        )
+        return fallback
     generated = await _build_bounded_conversational_reply(
         ctx,
         ctx.current_locale,
@@ -68,11 +79,12 @@ async def _unsupported_response(
             }
         },
     )
-    return generated or render_message(
-        _resolve_unsupported_key(fallback_base_key, capability.key, ctx.current_locale),
-        ctx.current_locale,
-        params,
+    logger.info(
+        "unsupported_capability_response_rendered",
+        capability_key=capability.key,
+        response_source="boundary_conversation" if generated else "deterministic_registry",
     )
+    return generated or fallback
 
 
 async def _query_can_own_capability_turn(ctx: GateContext) -> bool:
@@ -83,7 +95,7 @@ async def _query_can_own_capability_turn(ctx: GateContext) -> bool:
         message_text=ctx.message_text,
         locale=ctx.current_locale,
         has_active_query_session=await ctx.has_active_query_session(),
-        has_context_frames=ctx.state_view.has_context_frames,
+        has_recent_query_context=ctx.state_view.recent_query_context is not None,
     )
     return bypass_reason is not None
 
@@ -104,41 +116,10 @@ async def _stage_deterministic_unsupported_capability(ctx: GateContext) -> Route
             ctx,
             capability,
             fallback_base_key="capability.unsupported_unavailable",
+            allow_generation=False,
         ),
         decision="deterministic_unsupported_capability",
         path_shape="meta_direct",
-        extra_updates={
-            "capability_boundary": CapabilityBoundary(key=capability.key, label=capability.label),
-        },
-    )
-
-
-async def _stage_semantic_unsupported_capability(ctx: GateContext) -> RouteResolution | None:
-    """Semantic fallback for unsupported capability boundaries not caught by registry phrases."""
-    if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state or not ctx.phrase_heavy_fastpath_allowed:
-        return None
-    if detect_unsupported_capability(ctx.message_text) is not None:
-        return None
-    if await _query_can_own_capability_turn(ctx):
-        logger.info("gate_semantic_unsupported_capability_skipped_for_query_turn")
-        return None
-    if is_supported_banking_request(ctx.message_text):
-        return None
-
-    capability = await semantic_unsupported_capability(ctx, ctx.message_text)
-    if capability is None:
-        return None
-
-    logger.info("gate_semantic_unsupported_capability", capability_key=capability.key)
-    return policy_block(
-        ctx,
-        response=await _unsupported_response(
-            ctx,
-            capability,
-            fallback_base_key="capability.unsupported_unavailable",
-        ),
-        decision="semantic_unsupported_capability",
-        path_shape="semantic_unsupported_capability",
         extra_updates={
             "capability_boundary": CapabilityBoundary(key=capability.key, label=capability.label),
         },

@@ -10,19 +10,22 @@ Goal:
 - decide if the user is asking to replay/modify that quoted action
 - when yes, return executable domain task payloads directly for workers
 
-You must reason semantically across languages (English, Pidgin, Yoruba, Hausa, Igbo, French).
+You must reason semantically across supported languages (English, Pidgin, Yoruba, Hausa, Igbo).
 Do not use brittle keyword-only heuristics.
 
 Return ONLY JSON matching:
 - decision: not_replay | execute | clarify
 - confidence: 0.0-1.0
-- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | null
 - target_statuses: success | processing | failed values when the replay request scopes by outcome, else []
 - target_types: transfer | airtime | data values when the replay request scopes by task type, else []
 - target_task_ids: quoted task ids when the replay request scopes a specific quoted task, else []
 - tasks: list of executable tasks (empty unless decision=execute)
   - each task: {task_type: transfer|airtime|data, payload: object}
 - clarify_message: short user-facing clarification when decision=clarify, else null
+- replay_amount/replay_amount_evidence, replay_source_account/replay_source_evidence, and
+  replay_narration/replay_narration_evidence: explicit modifiers for deterministic replay rebuilding.
+  Keep each null when the user did not explicitly change it; evidence must quote the latest user message.
 - reason: short internal reason
 
 Rules:
@@ -33,6 +36,8 @@ Rules:
    successful, transfer, airtime, data, or another explicit subset, set target_statuses/target_types/target_task_ids.
    For plain resends with no changes, tasks may be empty; deterministic code will rebuild tasks from the quoted payload.
    If the user changes amount, recipient, phone, network, source, or narration, return tasks with the changed payload.
+   Also populate the replay modifier fields for explicit amount, source, or narration changes, even when a plain
+   replay can be rebuilt deterministically from the quoted payload.
    If the user asks to retry/resend "the failed one", "failed transaction", or similar, set target_statuses=["failed"].
    If the user asks to retry/resend "the successful one", set target_statuses=["success"].
    If the user asks to retry/resend airtime/data/transfer, set target_types to that task type.

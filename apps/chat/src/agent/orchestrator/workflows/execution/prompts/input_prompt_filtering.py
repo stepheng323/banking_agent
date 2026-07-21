@@ -20,14 +20,10 @@ def _focus_beneficiary_ambiguity(
         (tid for tid in current_wave if tid in beneficiary_blockers),
         beneficiary_blockers[0],
     )
-    for tid in agg.input_task_ids():
-        if tid != focused_beneficiary_tid:
-            agg.remove_missing_input_request(tid)
-    agg.replace_missing_fields(focused_beneficiary_tid, ["beneficiary_id"])
     logger.info(
-        "beneficiary_ambiguity_blocking_mode",
+        "beneficiary_ambiguity_focus_preserved",
         focused_task_id=focused_beneficiary_tid,
-        suppressed_count=max(len(beneficiary_blockers) - 1, 0),
+        sibling_input_count=max(agg.input_request_count() - 1, 0),
     )
 
 

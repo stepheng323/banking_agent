@@ -14,11 +14,12 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import 
     invalidate_conversation_set_frames,
     push_read_result_frame,
     push_schedule_list_frame,
+    push_schedule_run_list_frame,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import context_surface
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_demands import (
-    _batch_transfer_task_ids_for_wave,
-    _batch_transfer_tasks_not_ready_for_funding,
+    _batch_money_moving_task_ids_for_wave,
+    _batch_money_moving_tasks_not_ready_for_funding,
     _recipient_ready_for_funding,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
@@ -27,6 +28,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import 
     set_loaded_context_value,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.execution.progress import enter_task_progress
 from apps.chat.src.agent.orchestrator.workflows.execution.recipient_review import recipient_review_signature
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import (
     _apply_result_patch,
@@ -420,12 +422,22 @@ def _is_funding_adjustment_result(result: TransactionResult) -> bool:
 
 def _active_batch_task_ids_for_transfer(task_id: str, ctx: ExecutionTurnContext) -> list[str]:
     current_wave = ctx.current_wave_task_ids or []
-    return _batch_transfer_task_ids_for_wave(ctx.state, current_wave, task_id=task_id)
+    return _batch_money_moving_task_ids_for_wave(
+        ctx.state,
+        current_wave,
+        task_id=task_id,
+        task_types={"transfer"},
+    )
 
 
 def _batch_not_ready_task_ids_for_transfer(task_id: str, ctx: ExecutionTurnContext) -> list[str]:
     current_wave = ctx.current_wave_task_ids or []
-    return _batch_transfer_tasks_not_ready_for_funding(ctx.state, current_wave, task_id=task_id)
+    return _batch_money_moving_tasks_not_ready_for_funding(
+        ctx.state,
+        current_wave,
+        task_id=task_id,
+        task_types={"transfer"},
+    )
 
 
 def _result_makes_current_transfer_ready_for_batch(
@@ -448,7 +460,7 @@ def _result_makes_current_transfer_ready_for_batch(
         if not payload.get("recipient_resolved_name"):
             payload["recipient_resolved_name"] = snapshot.get("recipient_name") or snapshot.get("recipientName")
 
-    return _recipient_ready_for_funding(payload)
+    return _recipient_ready_for_funding("transfer", payload)
 
 
 def _should_suppress_single_leg_batch_blocker(
@@ -659,6 +671,7 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         task_id=task_id,
         **_transfer_payload_log_summary(task.payload),
     )
+    await enter_task_progress(ctx, task)
     result = cast(
         TransactionResult,
         await worker.run(
@@ -740,7 +753,11 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
             )
         elif result.read_result is not None:
             push_read_result_frame(ctx, result.read_result)
-    if result.response and not recipient_review_required and not suppress_single_leg_batch_blocker:
+    is_part_of_batch = task.payload.get("async_group_size", 0) > 1
+    suppress_response = suppress_single_leg_batch_blocker or (
+        is_part_of_batch and result.outcome == TransactionOutcome.OK
+    )
+    if result.response and not recipient_review_required and not suppress_response:
         ctx.accumulator.say(result.response)
 
     if result.outcome == TransactionOutcome.OK and result.receipt:
@@ -825,6 +842,7 @@ async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
     }
     user_msg = _maybe_user_message(task, ctx.state)
     logger.info("schedule_worker_start", payload=task.payload, task_id=task_id)
+    await enter_task_progress(ctx, task)
     result = cast(
         TransactionResult,
         await worker.run(
@@ -845,19 +863,37 @@ async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
     if result.outcome == TransactionOutcome.OK and isinstance(invalidated_domain, str):
         invalidate_conversation_set_frames(ctx, invalidated_domain)
     if isinstance(result.patch, dict):
+        schedule_run_items = result.patch.get("schedule_run_context_items")
         schedule_items = result.patch.get("schedule_context_items")
-        if isinstance(schedule_items, list):
+        if isinstance(schedule_run_items, list):
+            schedule_run_metadata = (
+                {
+                    "read_request": result.read_result.request.model_dump(mode="json", exclude_none=True),
+                    "total_count": result.read_result.total_count,
+                    "has_next": result.read_result.has_next,
+                    "has_previous": result.read_result.has_previous,
+                    "schedule_contract": task.payload.get("schedule_contract"),
+                }
+                if result.read_result is not None
+                else None
+            )
+            push_schedule_run_list_frame(
+                ctx,
+                [item for item in schedule_run_items if isinstance(item, dict)],
+                metadata=schedule_run_metadata,
+            )
+        elif isinstance(schedule_items, list):
             raw_schedule_contract = task.payload.get("schedule_contract")
             raw_set_state = task.payload.get("conversation_set_state")
-            metadata: dict[str, Any] = {}
+            schedule_metadata: dict[str, Any] = {}
             if isinstance(raw_schedule_contract, dict):
-                metadata["schedule_contract"] = raw_schedule_contract
+                schedule_metadata["schedule_contract"] = raw_schedule_contract
             if isinstance(raw_set_state, dict):
-                metadata["conversation_set_state"] = raw_set_state
+                schedule_metadata["conversation_set_state"] = raw_set_state
             push_schedule_list_frame(
                 ctx,
                 [item for item in schedule_items if isinstance(item, dict)],
-                metadata=metadata or None,
+                metadata=schedule_metadata or None,
             )
     if result.response:
         body_blocks = _schedule_response_body_blocks(task, result, locale=_state_locale(ctx.state))

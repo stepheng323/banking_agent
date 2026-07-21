@@ -6,6 +6,7 @@ from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import (
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
+from banking.runtime.operations import operation_spec
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -73,22 +74,15 @@ def _approve_confirmation_updates(state: OrchestratorState, interrupt: Any) -> d
         task = new_tasks[tid].model_copy(deep=True)
         task.payload.setdefault("confirmation", {})
         task.payload["confirmation"]["confirmed"] = True
-        confirmation_only_action = (
-            task.type == "schedule"
-            and (
-                str(task.payload.get("action") or "").strip().lower() == "cancel_scheduled_transaction"
-                or (
-                    str(task.payload.get("action") or "").strip().lower() == "edit_scheduled_transaction"
-                    and task.payload.get("schedule_edit_requires_auth") is False
-                )
-            )
-        ) or (
-            task.type == "beneficiary"
-            and str(task.payload.get("action") or "").strip().lower() == "delete_beneficiary"
-        ) or (
-            task.type == "account"
-            and str(task.payload.get("action") or "").strip().lower() == "unlink"
-        )
+        try:
+            operation = operation_spec(task.type, str(task.payload.get("action") or ""))
+        except ValueError:
+            confirmation_only_action = False
+        else:
+            if operation.action == "edit_scheduled_transaction":
+                confirmation_only_action = task.payload.get("schedule_edit_requires_auth") is False
+            else:
+                confirmation_only_action = operation.requires_confirmation and not operation.requires_pin
         task.stage = (
             TaskStage.EXECUTING if state_view.pin_verified or confirmation_only_action else TaskStage.AWAITING_AUTH
         )

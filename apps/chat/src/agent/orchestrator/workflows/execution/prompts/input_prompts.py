@@ -15,6 +15,9 @@ from apps.chat.src.agent.orchestrator.workflows.execution.prompts.input_prompt_f
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.input_prompts_focused import (
     _build_focused_missing_field_updates,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.prompts.input_prompts_guided import (
+    build_guided_batch_input_updates,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.input_prompts_unified import (
     _build_unified_missing_field_prompt,
 )
@@ -40,28 +43,47 @@ def _build_missing_field_interrupt_updates(
     prompt_text = build_batch_source_prompt_if_needed(state=state, agg=agg, locale=locale)
     if prompt_text is None:
         tasks_needing_basic = tasks_needing_basic_fields(agg)
-        focused_tid = None
-        if tasks_needing_basic:
-            for tid in current_wave:
-                if tid in tasks_needing_basic:
-                    focused_tid = tid
-                    break
-
-        if focused_tid is not None:
-            return _build_focused_missing_field_updates(
+        previous_batch_input = getattr(getattr(state, "last_interrupt", None), "batch_input", None)
+        has_structured_selection = any(
+            "beneficiary_id" in agg.input_fields_for(task_id)
+            or (
+                isinstance(agg.details_for_task(task_id), dict)
+                and isinstance(agg.details_for_task(task_id).get("options"), list)  # type: ignore[union-attr]
+            )
+            for task_id in tasks_needing_basic
+        )
+        continuing_guided_batch = bool(previous_batch_input and len(previous_batch_input.slots) > 1)
+        if (len(tasks_needing_basic) > 1 and has_structured_selection) or continuing_guided_batch:
+            return build_guided_batch_input_updates(
                 state=state,
                 current_wave=current_wave,
                 agg=agg,
                 locale=locale,
-                focused_tid=focused_tid,
             )
+        if len(tasks_needing_basic) > 1:
+            prompt_text = _build_unified_missing_field_prompt(
+                state=state,
+                current_wave=current_wave,
+                agg=agg,
+                locale=locale,
+            )
+        else:
+            focused_tid = next((tid for tid in current_wave if tid in tasks_needing_basic), None)
+            if focused_tid is not None:
+                return _build_focused_missing_field_updates(
+                    state=state,
+                    current_wave=current_wave,
+                    agg=agg,
+                    locale=locale,
+                    focused_tid=focused_tid,
+                )
 
-        prompt_text = _build_unified_missing_field_prompt(
-            state=state,
-            current_wave=current_wave,
-            agg=agg,
-            locale=locale,
-        )
+            prompt_text = _build_unified_missing_field_prompt(
+                state=state,
+                current_wave=current_wave,
+                agg=agg,
+                locale=locale,
+            )
 
     fallback_options_entry: dict[str, Any] | None = None
     fallback_queue_meta: dict[str, Any] | None = None
@@ -89,6 +111,8 @@ def _build_missing_field_interrupt_updates(
         if fallback_options_entry:
             prompt_text = _compact_prompt_for_options(prompt_text)
             fallback_options_entry["title"] = prompt_text
+    elif agg.input_request_count() > 1:
+        pass
 
     fallback_outbox_entries: list[dict[str, Any]] = [{"type": "say", "text": prompt_text}]
     if fallback_options_entry:

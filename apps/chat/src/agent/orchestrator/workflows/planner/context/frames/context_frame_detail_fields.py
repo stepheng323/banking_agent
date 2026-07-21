@@ -30,6 +30,16 @@ def frame_noun(frame_type: ContextFrameType, *, plural: bool, locale: str = "en"
     if frame_type == ContextFrameType.SCHEDULE_LIST:
         key = "scheduled_transactions" if plural else "scheduled_transaction"
         return render_message(as_message_key(f"context_frame.noun.{key}"), locale)
+    if frame_type == ContextFrameType.SCHEDULE_RUN_LIST:
+        return render_message(
+            "context_frame.noun.scheduled_runs" if plural else "context_frame.noun.scheduled_run",
+            locale,
+        )
+    if frame_type == ContextFrameType.SUPPORT_TICKET_LIST:
+        return render_message(
+            "context_frame.noun.support_tickets" if plural else "context_frame.noun.support_ticket",
+            locale,
+        )
     if frame_type == ContextFrameType.TRANSACTION_LIST:
         key = "transactions_or_results" if plural else "transaction_or_result"
         return render_message(as_message_key(f"context_frame.noun.{key}"), locale)

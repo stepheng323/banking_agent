@@ -42,6 +42,7 @@ class GateContext:
     gate_updates: dict[str, Any]
     live_pending_interrupt: bool
     phrase_heavy_fastpath_allowed: bool
+    progress_tracker: Any | None = None
     ambiguous_banking_domain: str | None = None
     query_session_snapshot: dict[str, Any] | None = None
     query_session_source: str | None = None

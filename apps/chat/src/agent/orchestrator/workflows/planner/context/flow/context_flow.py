@@ -5,9 +5,6 @@ from typing import Any
 import redis.asyncio as redis
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.planner.context.flow.context_flow_followup import (
-    try_context_frame_followup_shortcut,
-)
 from apps.chat.src.agent.orchestrator.workflows.planner.context.flow.context_flow_mode_decisions import (
     _should_use_minimal_planner_context,
 )
@@ -41,15 +38,6 @@ async def _build_planner_context(
     task_planner: TaskPlanner | None = None,
 ) -> PlannerContextBundle:
     state_view = planner_state_view(state)
-    followup_shortcut = await try_context_frame_followup_shortcut(
-        state_view=state_view,
-        text=text,
-        locale_updates=locale_updates,
-        task_planner=task_planner,
-    )
-    if followup_shortcut is not None:
-        return followup_shortcut
-
     flow_state = await build_context_flow_state(state_view=state_view, text=text, redis_client=redis_client)
     if _should_use_minimal_planner_context(
         state_view=state_view,

@@ -1,7 +1,16 @@
 """Classifier module for the semantic router."""
 
+from dataclasses import replace
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (
+    detect_unsupported_capability,
+    should_try_semantic_unsupported_capability,
+)
+from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.casual import (
+    looks_like_obvious_casual_or_meta_turn,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.router_context import (
     _build_semantic_router_context,
@@ -13,6 +22,9 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_promp
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     _could_be_schedule_interrupt_read_request,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
+    build_surface_answer_context_for_state as build_context_frame_context,
 )
 from banking.intent.routing_signals import (
     looks_like_support_problem_statement,
@@ -78,7 +90,28 @@ async def _classify_semantic_route(ctx: GateContext) -> Any | None:
         route_context = append_routing_hints(route_context, ctx.routing_hints)
         route_kwargs: dict[str, Any] = {"context": route_context, "path_label": "direct_path"}
         if isinstance(router, SemanticRouterLLM):
-            route_kwargs["prompt_signals"] = SemanticRouterPromptSignals.from_summary(ctx.turn_summary)
+            frame = ContextFrameManager().latest_active_frame(ctx.state)
+            signals = SemanticRouterPromptSignals.from_summary(ctx.turn_summary)
+            unsupported_candidate = (
+                detect_unsupported_capability(ctx.message_text) is None
+                and should_try_semantic_unsupported_capability(ctx.message_text)
+            )
+            if unsupported_candidate:
+                signals = replace(signals, unsupported_capability_candidate=True, direct_reply_candidate=True)
+            elif looks_like_obvious_casual_or_meta_turn(ctx.message_text):
+                signals = replace(signals, direct_reply_candidate=True)
+            if frame is not None:
+                # This is a displayed, bounded surface summary.  It carries no
+                # routing authority; the returned selector is still resolved
+                # deterministically against the frame.
+                frame_context = build_context_frame_context(ctx.state)
+                route_context = f"{route_context}\n\nEligible displayed context:\n{frame_context}"
+                route_kwargs["context"] = route_context
+                frame_family = (
+                    "balance" if isinstance(frame.metadata.get("balance_contract"), dict) else frame.frame_type.value
+                )
+                signals = replace(signals, context_frame=True, context_frame_type=frame_family)
+            route_kwargs["prompt_signals"] = signals
         return await router.route_semantic_turn(
             ctx.state_view.phone_number,
             ctx.message_text,
