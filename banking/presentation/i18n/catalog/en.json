@@ -3,7 +3,10 @@
     "safe_capability_fallback": "I can't handle that yet. I can help with transfers, airtime/data purchase, balances, and transaction queries.",
     "cancelled_prompt": "Transaction cancelled, how else can I help you today?",
     "gibberish_prompt": "I didn't catch that. What banking task can I help with?",
-    "pagination": {"more": "More for the next page", "previous": "Previous for the earlier page"}
+    "pagination": {
+      "more": "More for the next page",
+      "previous": "Previous for the earlier page"
+    }
   },
   "conversation_set": {
     "selection_required": "Which item or items do you mean? Reply with the displayed number or name.",
@@ -243,6 +246,23 @@
       "batch_no_completed": "I can't send receipts for that batch yet because none of those transfer legs completed successfully."
     },
     "ticket": {
+      "unavailable": "Ticket service is unavailable right now.",
+      "select": "Which support ticket do you mean? Show your open tickets, then select one.",
+      "count": "You have {count} open or in-progress support ticket(s).",
+      "exists_yes": "Yes, you have an open or in-progress support ticket.",
+      "exists_no": "No, you don't have any open or in-progress support tickets.",
+      "list_empty": "You don't have any open or in-progress support tickets.",
+      "list_header": "Open support tickets",
+      "list_row": "{index}. {code} • {status}\n{summary}",
+      "detail": "Ticket {code}\nStatus: {status}\nPriority: {priority}\n\n{summary}",
+      "status_fact": "Ticket {code} is {status}.",
+      "note_prompt": "What note would you like to add? Keep it under 1,000 characters.",
+      "note_closed": "Notes can only be added to open or in-progress tickets.",
+      "note_added": "Your note was added to ticket {code}.",
+      "close_review": "Close ticket {code}?\n{summary}\n\nReply yes to close it, or cancel.",
+      "already_closed": "Ticket {code} is already closed.",
+      "closed": "Ticket {code} has been closed.",
+      "stale": "That ticket changed after the review. Please open it again before closing it.",
       "not_found": "I couldn't find a ticket with code {ticket_code}.\n\nPlease check the code and try again.",
       "none_open": "I don't see any open support tickets for you.\n\nIs there something I can help you with?",
       "status_open": "Your case is open and queued for review.",
@@ -629,7 +649,9 @@
     }
   },
   "account": {
-    "readiness": {"fact": "{ready_count} of {total_count} linked account(s) are ready to use."},
+    "readiness": {
+      "fact": "{ready_count} of {total_count} linked account(s) are ready to use."
+    },
     "user_not_found": "User not found.",
     "no_linked_accounts": "You don't have any linked accounts.",
     "account_not_found": "I couldn't find an account matching '{identifier}'.",
@@ -794,6 +816,24 @@
       "found_many_need_details": "I found {found_names}. I need account details for {focused_name}.",
       "found_names": "I found {found_names}.",
       "queued_next_notice": "Also in this batch:\n{queued_intents}",
+      "batch_input": {
+        "heading": "I'm setting up your {count} requests.",
+        "first": "First, {item}.",
+        "next": "Next, {item}.",
+        "still_needed": "Still needed: {items}.",
+        "remaining_more": "{items}; and {count} more detail(s)",
+        "choose_transfer_recipient": "choose who should receive {amount}",
+        "choose_transfer_recipient_no_amount": "choose the transfer recipient",
+        "airtime_amount": "the airtime amount for your line",
+        "airtime_amount_network": "the airtime amount for your {network} line",
+        "amount": "the amount",
+        "phone": "the phone number",
+        "network": "the network",
+        "account": "the account details",
+        "detail": "one more detail",
+        "selection_resolved": "Done. {amount} will go to {recipient}.",
+        "next_prompt": "Next, {prompt}"
+      },
       "need_some_details": "I need some details.",
       "auth_reason_transfer": "Transfer Authorization",
       "auth_reason_airtime": "Airtime Purchase",
@@ -833,6 +873,10 @@
       "linked_accounts": "linked accounts",
       "scheduled_transaction": "scheduled transaction",
       "scheduled_transactions": "scheduled transactions",
+      "scheduled_run": "scheduled run",
+      "scheduled_runs": "scheduled runs",
+      "support_ticket": "support ticket",
+      "support_tickets": "support tickets",
       "transaction_or_result": "transaction or result",
       "transactions_or_results": "transactions or results",
       "transaction": "transaction",
@@ -936,6 +980,13 @@
       "missing_target": "Please specify which beneficiary to remove.",
       "not_found": "I couldn't find a beneficiary named '{target}'.",
       "success": "Deleted **{target}** from beneficiaries."
+    },
+    "rename": {
+      "select": "Which saved beneficiary would you like to rename?",
+      "ask_alias": "What new nickname should I use?",
+      "duplicate": "You already have a beneficiary using ‘{alias}’. Choose another nickname.",
+      "review": "Rename ‘{old_alias}’ to ‘{new_alias}’? Reply yes to confirm, or cancel.",
+      "success": "Saved beneficiary renamed to ‘{alias}’."
     },
     "update": {
       "not_supported": "Updating beneficiaries is not yet supported."
@@ -1292,6 +1343,13 @@
       "shortfall_no_options": "Because we can only pool from one additional account, and none of your other accounts have the remaining {shortfall} available, this transfer cannot be completed right now.\n\nYou can reduce the transfer amount, or top up one of your accounts first.",
       "shortfall_reply_hint": "Reply with the number or bank name."
     },
+    "active_question": {
+      "sufficient": "{account} can cover this pending batch. Total required: {total}. Available: {available}. Remaining: {remaining}.",
+      "insufficient": "{account} cannot cover this pending batch. Total required: {total}. Available: {available}. Shortfall: {shortfall}.",
+      "incomplete_cost": "I can check that once the remaining transaction amount is provided.",
+      "account_unresolved": "Which linked account should I check for this pending batch?",
+      "balance_unavailable": "I could not retrieve that account's live balance right now. Your pending transaction is unchanged."
+    },
     "format": {
       "insufficient": {
         "header": "*Insufficient Funds*",
@@ -1409,6 +1467,23 @@
         "details_updated": "details updated"
       }
     },
+    "pause": {
+      "review": "Pause {count} scheduled item(s)?\n{items}\n\nReply yes to pause them, or cancel.",
+      "success": "Paused {count} scheduled item(s)."
+    },
+    "resume": {
+      "review": "Resume {count} scheduled item(s)?\n{items}\n\nReply yes to continue to PIN authorization, or cancel.",
+      "success": "Resumed {count} scheduled item(s).",
+      "expired": "One or more selected schedules can no longer run. Nothing was resumed."
+    },
+    "run": {
+      "count": "I found {count} scheduled run(s).",
+      "exists_yes": "Yes, I found scheduled run history matching that.",
+      "exists_no": "No scheduled run history matches that.",
+      "empty": "There is no scheduled run history matching that.",
+      "header": "Scheduled run history",
+      "row": "{index}. {status} • {due}"
+    },
     "update": {
       "time_pending": "Scheduled time pending"
     },
@@ -1505,7 +1580,7 @@
       "failure_reason": "  Reason: {reason}",
       "other_completed_line": "* {task_type}:* Completed",
       "total_spent": "*Total Spent:* {amount}",
-      "success_footer": "_All transactions completed successfully_",
+      "success_footer": "All {count} transactions completed successfully.",
       "update_header": {
         "transfer": "*Transfer Update*",
         "transfer_plural": "*Transfers Update*",
@@ -1514,14 +1589,14 @@
         "generic": "*Transaction Update*"
       },
       "processing_footer": {
-        "success_failed": "Some transactions completed, some failed, and others are still awaiting provider confirmation. You'll be notified when the final update arrives.",
-        "success": "Some transactions completed successfully. Others are still awaiting provider confirmation. You'll be notified when the final update arrives.",
-        "failed": "Some transactions failed. Others are still awaiting provider confirmation. You'll be notified when the final update arrives.",
-        "all_processing": "Some transactions are still awaiting provider confirmation. You'll be notified when the final update arrives."
+        "success_failed": "Some transactions completed, some failed, and others are still being processed.",
+        "success": "Some transactions completed; others are still being processed.",
+        "failed": "Some transactions failed; others are still being processed.",
+        "all_processing": "Your {count} transactions have been submitted. I'm confirming the debit and delivery now."
       },
       "failed_footer": {
-        "partial": "Some transactions completed, but others failed.",
-        "all_failed": "All transactions failed."
+        "partial": "Some transactions could not be completed.",
+        "all_failed": "All {count} transactions failed."
       }
     },
     "intent": {
@@ -1650,6 +1725,78 @@
         "followup_generic": "Still processing your transfer.",
         "first_scoped": "Processing your {amount} transfer to {recipient_display}.",
         "followup_scoped": "Still processing your {amount} transfer to {recipient_display}."
+      }
+    },
+    "account": {
+      "linking_account": {
+        "first_generic": "Connecting your account now.",
+        "followup_generic": "Still connecting your account."
+      },
+      "reinitiating_mandate": {
+        "first_generic": "Restarting your account connection now.",
+        "followup_generic": "Still restarting your account connection."
+      },
+      "setting_default": {
+        "first_generic": "Updating your default account now.",
+        "followup_generic": "Still updating your default account."
+      },
+      "unlinking_accounts": {
+        "first_generic": "Removing the selected linked accounts now.",
+        "followup_generic": "Still removing the selected linked accounts."
+      }
+    },
+    "beneficiary": {
+      "renaming": {
+        "first_generic": "Updating that saved beneficiary now.",
+        "followup_generic": "Still updating that saved beneficiary."
+      },
+      "deleting": {
+        "first_generic": "Removing the selected saved beneficiaries now.",
+        "followup_generic": "Still removing the selected saved beneficiaries."
+      }
+    },
+    "schedule": {
+      "creating": {
+        "first_generic": "Setting up your scheduled payment now.",
+        "followup_generic": "Still setting up your scheduled payment."
+      },
+      "updating": {
+        "first_generic": "Updating your scheduled payment now.",
+        "followup_generic": "Still updating your scheduled payment."
+      },
+      "cancelling": {
+        "first_generic": "Cancelling the selected scheduled payments now.",
+        "followup_generic": "Still cancelling the selected scheduled payments."
+      },
+      "pausing": {
+        "first_generic": "Pausing the selected scheduled payments now.",
+        "followup_generic": "Still pausing the selected scheduled payments."
+      },
+      "resuming": {
+        "first_generic": "Resuming the selected scheduled payments now.",
+        "followup_generic": "Still resuming the selected scheduled payments."
+      }
+    },
+    "support": {
+      "updating_ticket": {
+        "first_generic": "Updating your support ticket now.",
+        "followup_generic": "Still updating your support ticket."
+      },
+      "closing_ticket": {
+        "first_generic": "Closing your support ticket now.",
+        "followup_generic": "Still closing your support ticket."
+      }
+    },
+    "airtime": {
+      "processing_purchase": {
+        "first_generic": "Processing your airtime purchase now.",
+        "followup_generic": "Still processing your airtime purchase."
+      }
+    },
+    "data": {
+      "processing_purchase": {
+        "first_generic": "Processing your data purchase now.",
+        "followup_generic": "Still processing your data purchase."
       }
     },
     "scope": {
