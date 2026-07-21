@@ -13,7 +13,7 @@ The project focuses on the hard parts of AI-assisted fintech systems: typed task
 - **Account model:** BVN-based onboarding and cross-bank account linking, not a single-wallet flow.
 - **Execution model:** typed planner output, domain workers, durable interrupts, idempotent financial execution, and async notification delivery.
 - **User experience:** mobile-first message bodies, structured WhatsApp/Telegram rendering, typing heartbeats, semantic routing, and deterministic fast paths.
-- **Languages:** English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
+- **Languages:** English, Nigerian Pidgin, Yoruba, Igbo, Hausa, and mixed phrasing.
 
 ## 2. The Request Lifecycle (Top-to-Bottom)
 
@@ -107,6 +107,7 @@ Start with [Glossary](docs/glossary.md) if terms like gate, planner, wave, inter
 |---|---|
 | Project-specific terms and examples | [docs/glossary.md](docs/glossary.md) |
 | Service boundaries, Redis streams, runtime flow | [docs/architecture.md](docs/architecture.md) |
+| End-to-end conversation lifecycle, routing, workers, safety, sessions, and progress | [docs/conversation-runtime.md](docs/conversation-runtime.md) |
 | LangGraph lifecycle, interrupts, task execution | [docs/orchestrator.md](docs/orchestrator.md) |
 | Top-level graph DAG, task waves, blocker arbitration | [docs/dag-and-orchestration-internals.md](docs/dag-and-orchestration-internals.md) |
 | Gate stages, semantic routing, planner handoff | [docs/gate-and-routing.md](docs/gate-and-routing.md) |
