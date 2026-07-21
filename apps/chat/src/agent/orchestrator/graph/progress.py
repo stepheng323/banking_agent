@@ -9,10 +9,13 @@ from banking.presentation.formatters.transaction_copy_context import build_copy_
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 
-FIRST_PROGRESS_DELAY_SECONDS = 5.0
-SECOND_PROGRESS_DELAY_SECONDS = 15.0
+# A visible update is useful once an LLM-backed turn has crossed the normal
+# response window, but should remain late enough that fast paths stay silent.
+FIRST_PROGRESS_DELAY_SECONDS = 2.0
+SECOND_PROGRESS_DELAY_SECONDS = 7.0
 MIN_PROGRESS_STAGE_AGE_SECONDS = 1.0
 PROGRESS_POLL_INTERVAL_SECONDS = 0.25
+PROGRESS_SETTLE_WINDOW_SECONDS = 0.75
 MAX_PROGRESS_MESSAGES = 2
 
 
@@ -35,6 +38,21 @@ _PROGRESS_STAGE_POLICIES: dict[str, ProgressStagePolicy] = {
     "transfer.confirming_details": ProgressStagePolicy(visible_to_user=False),
     "transfer.authorizing_transfer": ProgressStagePolicy(visible_to_user=False),
     "transfer.processing_transfer": ProgressStagePolicy(visible_to_user=True),
+    "account.linking_account": ProgressStagePolicy(visible_to_user=True),
+    "account.reinitiating_mandate": ProgressStagePolicy(visible_to_user=True),
+    "account.setting_default": ProgressStagePolicy(visible_to_user=True),
+    "account.unlinking_accounts": ProgressStagePolicy(visible_to_user=True),
+    "beneficiary.renaming": ProgressStagePolicy(visible_to_user=True),
+    "beneficiary.deleting": ProgressStagePolicy(visible_to_user=True),
+    "schedule.updating": ProgressStagePolicy(visible_to_user=True),
+    "schedule.cancelling": ProgressStagePolicy(visible_to_user=True),
+    "schedule.pausing": ProgressStagePolicy(visible_to_user=True),
+    "schedule.resuming": ProgressStagePolicy(visible_to_user=True),
+    "schedule.creating": ProgressStagePolicy(visible_to_user=True),
+    "support.updating_ticket": ProgressStagePolicy(visible_to_user=True),
+    "support.closing_ticket": ProgressStagePolicy(visible_to_user=True),
+    "airtime.processing_purchase": ProgressStagePolicy(visible_to_user=True),
+    "data.processing_purchase": ProgressStagePolicy(visible_to_user=True),
 }
 
 
@@ -47,6 +65,8 @@ class TurnProgressSnapshot:
     progress_count: int
     stage_metadata: dict[str, Any] | None
     locale: str
+    completed: bool = False
+    completed_at: float | None = None
 
 
 class TurnProgressTracker:
@@ -59,16 +79,28 @@ class TurnProgressTracker:
         self._last_progress_sent_at: float | None = None
         self._progress_count = 0
         self._stage_metadata: dict[str, Any] | None = None
+        self._completed = False
+        self._completed_at: float | None = None
         self._locale = locale
         self._lock = asyncio.Lock()
         self._update_event = asyncio.Event()
 
     async def set_stage(self, stage_key: str, *, stage_metadata: dict[str, Any] | None = None) -> None:
         async with self._lock:
+            if self._completed:
+                return
             if stage_key != self._stage_key:
                 self._stage_started_at = time.monotonic()
             self._stage_key = stage_key
             self._stage_metadata = dict(stage_metadata) if stage_metadata else None
+            self._update_event.set()
+
+    async def set_locale(self, locale: str) -> None:
+        """Use the resolved locale for any later visible update in this turn."""
+        async with self._lock:
+            if self._completed or locale == self._locale:
+                return
+            self._locale = locale
             self._update_event.set()
 
     async def snapshot(self) -> TurnProgressSnapshot:
@@ -82,12 +114,23 @@ class TurnProgressTracker:
                 progress_count=self._progress_count,
                 stage_metadata=metadata,
                 locale=self._locale,
+                completed=self._completed,
+                completed_at=self._completed_at,
             )
 
     async def record_progress_sent(self) -> None:
         async with self._lock:
             self._last_progress_sent_at = time.monotonic()
             self._progress_count += 1
+            self._update_event.set()
+
+    async def mark_turn_complete(self) -> None:
+        """Prevent any not-yet-sent progress from outliving the completed turn."""
+        async with self._lock:
+            if self._completed:
+                return
+            self._completed = True
+            self._completed_at = time.monotonic()
             self._update_event.set()
 
     async def wait_for_update(self, timeout_seconds: float | None = None) -> None:
@@ -132,6 +175,8 @@ def seconds_until_progress_eligible(
     now: float | None = None,
 ) -> float | None:
     """Return seconds until the next progress message becomes useful to send."""
+    if snapshot.completed:
+        return None
     policy = progress_stage_policy(snapshot.stage_key)
     if policy is None or not policy.visible_to_user:
         return None
@@ -258,6 +303,66 @@ def render_progress_message(
         "transfer.processing_transfer": {
             "first": "progress.transfer.processing_transfer.first_generic",
             "followup": "progress.transfer.processing_transfer.followup_generic",
+        },
+        "account.linking_account": {
+            "first": "progress.account.linking_account.first_generic",
+            "followup": "progress.account.linking_account.followup_generic",
+        },
+        "account.reinitiating_mandate": {
+            "first": "progress.account.reinitiating_mandate.first_generic",
+            "followup": "progress.account.reinitiating_mandate.followup_generic",
+        },
+        "account.setting_default": {
+            "first": "progress.account.setting_default.first_generic",
+            "followup": "progress.account.setting_default.followup_generic",
+        },
+        "account.unlinking_accounts": {
+            "first": "progress.account.unlinking_accounts.first_generic",
+            "followup": "progress.account.unlinking_accounts.followup_generic",
+        },
+        "beneficiary.renaming": {
+            "first": "progress.beneficiary.renaming.first_generic",
+            "followup": "progress.beneficiary.renaming.followup_generic",
+        },
+        "beneficiary.deleting": {
+            "first": "progress.beneficiary.deleting.first_generic",
+            "followup": "progress.beneficiary.deleting.followup_generic",
+        },
+        "schedule.updating": {
+            "first": "progress.schedule.updating.first_generic",
+            "followup": "progress.schedule.updating.followup_generic",
+        },
+        "schedule.cancelling": {
+            "first": "progress.schedule.cancelling.first_generic",
+            "followup": "progress.schedule.cancelling.followup_generic",
+        },
+        "schedule.pausing": {
+            "first": "progress.schedule.pausing.first_generic",
+            "followup": "progress.schedule.pausing.followup_generic",
+        },
+        "schedule.resuming": {
+            "first": "progress.schedule.resuming.first_generic",
+            "followup": "progress.schedule.resuming.followup_generic",
+        },
+        "schedule.creating": {
+            "first": "progress.schedule.creating.first_generic",
+            "followup": "progress.schedule.creating.followup_generic",
+        },
+        "support.updating_ticket": {
+            "first": "progress.support.updating_ticket.first_generic",
+            "followup": "progress.support.updating_ticket.followup_generic",
+        },
+        "support.closing_ticket": {
+            "first": "progress.support.closing_ticket.first_generic",
+            "followup": "progress.support.closing_ticket.followup_generic",
+        },
+        "airtime.processing_purchase": {
+            "first": "progress.airtime.processing_purchase.first_generic",
+            "followup": "progress.airtime.processing_purchase.followup_generic",
+        },
+        "data.processing_purchase": {
+            "first": "progress.data.processing_purchase.first_generic",
+            "followup": "progress.data.processing_purchase.followup_generic",
         },
     }
 

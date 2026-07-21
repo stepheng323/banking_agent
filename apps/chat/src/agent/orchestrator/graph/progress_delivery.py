@@ -8,6 +8,8 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.graph.progress import (
     MAX_PROGRESS_MESSAGES,
     PROGRESS_POLL_INTERVAL_SECONDS,
+    PROGRESS_SETTLE_WINDOW_SECONDS,
+    TurnProgressSnapshot,
     TurnProgressTracker,
     is_progress_stage_user_visible,
     next_progress_delay_seconds,
@@ -21,6 +23,10 @@ from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _stage_identity(snapshot: TurnProgressSnapshot) -> tuple[str | None, float | None]:
+    return snapshot.stage_key, snapshot.stage_started_at
 
 
 class OrchestratorProgressDelivery:
@@ -89,6 +95,8 @@ class OrchestratorProgressDelivery:
         try:
             while True:
                 snapshot = await tracker.snapshot()
+                if snapshot.completed:
+                    return
                 if snapshot.progress_count >= MAX_PROGRESS_MESSAGES:
                     return
 
@@ -110,6 +118,50 @@ class OrchestratorProgressDelivery:
                 if not should_emit_progress(snapshot):
                     await tracker.wait_for_update(min(PROGRESS_POLL_INTERVAL_SECONDS, wait_seconds))
                     continue
+
+                candidate_identity = _stage_identity(snapshot)
+                settle_deadline = asyncio.get_running_loop().time() + PROGRESS_SETTLE_WINDOW_SECONDS
+                while True:
+                    remaining = settle_deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        break
+                    await tracker.wait_for_update(remaining)
+                    settled_snapshot = await tracker.snapshot()
+                    if settled_snapshot.completed:
+                        logger.info(
+                            "suppressed_final_ready",
+                            stage_key=snapshot.stage_key,
+                            progress_count=snapshot.progress_count,
+                        )
+                        return
+                    if _stage_identity(settled_snapshot) != candidate_identity:
+                        logger.info(
+                            "stage_replaced",
+                            prior_stage_key=snapshot.stage_key,
+                            current_stage_key=settled_snapshot.stage_key,
+                            progress_count=snapshot.progress_count,
+                        )
+                        break
+                settled_snapshot = await tracker.snapshot()
+                if settled_snapshot.completed:
+                    logger.info(
+                        "suppressed_final_ready",
+                        stage_key=snapshot.stage_key,
+                        progress_count=snapshot.progress_count,
+                    )
+                    return
+                if _stage_identity(settled_snapshot) != candidate_identity:
+                    continue
+                if not should_emit_progress(settled_snapshot):
+                    continue
+                snapshot = settled_snapshot
+                assert snapshot.stage_key is not None
+                logger.info(
+                    "progress_settled",
+                    stage_key=snapshot.stage_key,
+                    progress_count=snapshot.progress_count,
+                    settle_window_ms=round(PROGRESS_SETTLE_WINDOW_SECONDS * 1000),
+                )
 
                 text = render_progress_message(
                     stage_key=snapshot.stage_key,
@@ -143,12 +195,30 @@ class OrchestratorProgressDelivery:
                 try:
                     delivery_result = await asyncio.shield(delivery_task)
                 except asyncio.CancelledError:
-                    await delivery_task
+                    # Completion must not wait for a progress outbox call that
+                    # has already started. Cancellation cannot retract a call
+                    # the transport has already accepted, but it keeps the
+                    # final response path independent of that rare race.
+                    delivery_task.cancel()
                     raise
                 if delivery_result.delivered:
                     await tracker.record_progress_sent()
                     continue
                 if delivery_result.status in {"deduped_completed", "deduped_resumed"}:
                     deduped_progress_keys.add(dedupe_key)
+                    await tracker.record_progress_sent()
+                    logger.info(
+                        "progress_delivery_deduped_consumed",
+                        stage_key=snapshot.stage_key,
+                        progress_count=snapshot.progress_count,
+                    )
+                    continue
+                logger.warning(
+                    "delivery_failed",
+                    stage_key=snapshot.stage_key,
+                    progress_count=snapshot.progress_count,
+                    delivery_status=delivery_result.status,
+                )
+                return
         except asyncio.CancelledError:
             raise

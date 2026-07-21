@@ -44,6 +44,9 @@ def start_progress_delivery(
 
 
 async def stop_progress_delivery(run: ProgressDeliveryRun) -> TurnProgressSnapshot:
+    mark_complete = getattr(run.tracker, "mark_turn_complete", None)
+    if callable(mark_complete):
+        await mark_complete()
     run.task.cancel()
     try:
         await run.task

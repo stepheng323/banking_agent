@@ -15,6 +15,7 @@ class EntityType(str, Enum):
     SCHEDULE = "schedule"
     DATA_PLAN = "data_plan"
     SUPPORT_TICKET = "support_ticket"
+    SCHEDULE_RUN = "schedule_run"
     GENERIC = "generic"
 
 
@@ -27,6 +28,8 @@ class ContextFrameType(str, Enum):
     BENEFICIARY_LIST = "beneficiary_list"
     ACCOUNT_LIST = "account_list"
     SCHEDULE_LIST = "schedule_list"
+    SCHEDULE_RUN_LIST = "schedule_run_list"
+    SUPPORT_TICKET_LIST = "support_ticket_list"
     DATA_PLAN_LIST = "data_plan_list"
     GENERIC = "generic"
 

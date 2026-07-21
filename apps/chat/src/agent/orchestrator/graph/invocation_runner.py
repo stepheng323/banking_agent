@@ -189,6 +189,11 @@ class GraphInvocationRunner:
                 if progress_snapshot.last_progress_sent_at is not None
                 else None
             )
+            progress_to_completion_ms = (
+                (progress_snapshot.completed_at - progress_snapshot.last_progress_sent_at) * 1000
+                if progress_snapshot.completed_at is not None and progress_snapshot.last_progress_sent_at is not None
+                else None
+            )
             final_response_ready_ms = h_duration + g_duration
             result["turn_timing"] = {
                 "turn_total_ms": round(total_duration, 2),
@@ -208,7 +213,18 @@ class GraphInvocationRunner:
                 if heartbeat_first_visible_ms is not None
                 else None,
                 "heartbeat_count": progress_snapshot.progress_count,
+                "progress_to_completion_ms": round(progress_to_completion_ms, 2)
+                if progress_to_completion_ms is not None
+                else None,
             }
+            log_orchestrator_diagnostic(
+                self.logger,
+                "progress_final_completion_gap",
+                progress_count=progress_snapshot.progress_count,
+                progress_to_completion_ms=round(progress_to_completion_ms, 2)
+                if progress_to_completion_ms is not None
+                else None,
+            )
             log_latency_span(
                 self.logger,
                 span="orchestrator_turn_total",

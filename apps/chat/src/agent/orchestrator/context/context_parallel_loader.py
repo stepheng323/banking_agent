@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 import apps.chat.src.agent.orchestrator.context.context_redis_state as context_redis_state
 from apps.chat.src.agent.orchestrator.context.context_user_data import hydrate_user_context_from_cache_snapshot
+from banking.presentation.i18n.locale import LocaleManager
 from shared.cache.redis_client import RedisClient
 from shared.utils.logging import log_fingerprint, log_orchestrator_diagnostic
 
@@ -126,7 +127,10 @@ async def load_context_parallel(
 
         last_response = results[1] if results[1] else None
         suggestion_data = results[2] if results[2] else None
-        language = results[3] if results[3] else None
+        language_raw = results[3] if results[3] else None
+        if isinstance(language_raw, bytes):
+            language_raw = language_raw.decode("utf-8", errors="ignore")
+        language = LocaleManager.parse_locale_name(language_raw)
 
         history_raw = results[4] if results[4] else []
         history = []
@@ -135,8 +139,8 @@ async def load_context_parallel(
         except Exception:
             pass
 
-        user_ctx["language"] = language
-        user_ctx["detected_language"] = language
+        user_ctx["language"] = language.value if language is not None else None
+        user_ctx["detected_language"] = language.value if language is not None else None
         user_ctx["history"] = history
 
         return user_ctx, conversation_state, last_response, suggestion_data
