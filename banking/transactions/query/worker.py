@@ -447,6 +447,7 @@ class QueryWorker:
             "account_id": payload.get("account_id"),
             "account_ids": payload.get("account_ids"),
             "accounts": context.get("accounts", []),
+            "beneficiaries": context.get("beneficiaries", []),
             "language": locale,
             "turn_id": context.get("turn_id") or context.get("inbound_message_id"),
             "inbound_message_id": context.get("inbound_message_id") or context.get("turn_id"),

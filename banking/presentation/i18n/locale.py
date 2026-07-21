@@ -9,7 +9,7 @@ from typing import ClassVar
 
 from banking.presentation.i18n.models import LanguageDetectionSignal, LocaleCode
 from shared.cache.redis_client import RedisClient
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -115,7 +115,7 @@ class LocaleManager:
                 return None
             return cls.normalize(str(value))
         except Exception as exc:
-            logger.warning("locale_read_failed", phone_number=phone_number, error=str(exc))
+            logger.warning("locale_read_failed", phone_hash=log_fingerprint(phone_number), error=str(exc))
             return None
 
     @classmethod
@@ -125,7 +125,7 @@ class LocaleManager:
             value = await redis_client.get(cls._explicit_key(phone_number))
             return str(value).strip().lower() == "1"
         except Exception as exc:
-            logger.warning("locale_explicit_read_failed", phone_number=phone_number, error=str(exc))
+            logger.warning("locale_explicit_read_failed", phone_hash=log_fingerprint(phone_number), error=str(exc))
             return False
 
     @classmethod
@@ -148,14 +148,14 @@ class LocaleManager:
             await redis_client.delete(cls._candidate_key(phone_number))
             logger.info(
                 "locale_switched_explicit" if explicit_override else "locale_updated_detected",
-                phone_number=phone_number,
+                phone_hash=log_fingerprint(phone_number),
                 locale=resolved.value,
                 source=source,
             )
         except Exception as exc:
             logger.warning(
                 "locale_write_failed",
-                phone_number=phone_number,
+                phone_hash=log_fingerprint(phone_number),
                 error=str(exc),
                 locale=resolved.value,
                 explicit_override=explicit_override,
@@ -185,7 +185,7 @@ class LocaleManager:
             payload = json.dumps({"locale": locale.value, "count": count})
             await redis_client.set(cls._candidate_key(phone_number), payload, ex=cls.CANDIDATE_TTL_SECONDS)
         except Exception as exc:
-            logger.warning("locale_candidate_write_failed", phone_number=phone_number, error=str(exc))
+            logger.warning("locale_candidate_write_failed", phone_hash=log_fingerprint(phone_number), error=str(exc))
 
     @classmethod
     async def update_locale(cls, phone_number: str, signal: LanguageDetectionSignal) -> LocaleCode:
@@ -233,13 +233,53 @@ class LocaleManager:
             )
             logger.info(
                 "locale_switched_auto",
-                phone_number=phone_number,
+                phone_hash=log_fingerprint(phone_number),
                 locale=resolved.value,
                 previous=current.value,
             )
             return resolved
 
         return current
+
+    @classmethod
+    async def resolve_turn_locale(
+        cls,
+        *,
+        phone_number: str,
+        current_locale: str | LocaleCode | None,
+        detected_language: str | None,
+        confidence: float,
+        source: str,
+        persist_detection: bool,
+    ) -> LocaleCode:
+        """Resolve locale for this response and optionally persist a detection signal.
+
+        The turn should answer in a confidently detected supported language even
+        before the persisted preference crosses the auto-switch hysteresis
+        threshold.  An explicit preference always wins.  This keeps response
+        language coherent while still avoiding preference flapping.
+        """
+        current = cls.normalize(current_locale)
+        detected = cls.parse_locale_name(detected_language)
+        if detected is None:
+            return current
+
+        if not persist_detection:
+            return detected
+
+        if await cls.is_explicit_locale(phone_number):
+            return current
+
+        await cls.update_locale(
+            phone_number,
+            LanguageDetectionSignal(
+                locale=detected,
+                confidence=confidence,
+                source=source,
+                explicit=False,
+            ),
+        )
+        return detected
 
     @classmethod
     async def get_effective_locale(
@@ -249,13 +289,28 @@ class LocaleManager:
     ) -> LocaleCode:
         stored = await cls.get_locale(phone_number)
         if stored is not None:
-            logger.info("locale_resolved", phone_number=phone_number, locale=stored.value, source="stored")
+            logger.info(
+                "locale_resolved",
+                phone_hash=log_fingerprint(phone_number),
+                locale=stored.value,
+                source="stored",
+            )
             return stored
 
         if detected_language:
             detected = cls.from_detection(detected_language)
-            logger.info("locale_resolved", phone_number=phone_number, locale=detected.value, source="detected")
+            logger.info(
+                "locale_resolved",
+                phone_hash=log_fingerprint(phone_number),
+                locale=detected.value,
+                source="detected",
+            )
             return detected
 
-        logger.info("locale_resolved", phone_number=phone_number, locale=cls.DEFAULT_LOCALE.value, source="default")
+        logger.info(
+            "locale_resolved",
+            phone_hash=log_fingerprint(phone_number),
+            locale=cls.DEFAULT_LOCALE.value,
+            source="default",
+        )
         return cls.DEFAULT_LOCALE

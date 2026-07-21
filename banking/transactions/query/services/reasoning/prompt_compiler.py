@@ -6,10 +6,10 @@ from dataclasses import dataclass
 
 from banking.transactions.query.services.reasoning.models import ReasonerPromptProfileType
 
-_VERSION = "v2"
+_VERSION = "v3"
 
 _BASE = """You interpret one follow-up inside a multilingual banking transaction-query session. Return only JSON
-matching the supplied schema. Understand English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed wording.
+matching the supplied schema. Understand English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed wording.
 
 Decisions: continuation for a grounded follow-up; new_query for a different transaction-query shape; reinterpret_query
 for an explicit restatement; end_session only for thanks/cancel/stop. Fresh replacement queries include extraction.
@@ -45,6 +45,12 @@ _LIST = """Transaction-list rules:
 - Populate typed target_index (1-based), target_amount, target_text, requested_field, or rank for visible references.
 - Pagination uses show_more and next/previous semantics. Completeness and missing-data concerns use coverage.
 - Time/filter changes preserve the existing contract unless the user clearly replaces the query.
+- A request to summarize, rank, group, compare, or total the displayed transaction scope is an aggregate refinement,
+  not coverage or a clarification. Set decision=continuation, continuation_type=aggregate,
+  followup_intent=refine_existing, and extraction with the requested analytics intent/aggregation. Preserve the active
+  filters and period unless the user explicitly changes them. For example, spending by account uses
+  analytics_summary with aggregation=breakdown/group_by=account and debit filtering.
+- Use coverage only for whether rows are complete, pages remain, account synchronization, or missing-data questions.
 """
 
 _SUMMARY = """Grouped-summary rules:

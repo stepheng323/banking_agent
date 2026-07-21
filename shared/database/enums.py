@@ -146,6 +146,7 @@ class ScheduledInstructionStatusEnum(str, Enum):
     """Status enum for scheduled instructions."""
 
     ACTIVE = "active"
+    PAUSED = "paused"
     CANCELLED = "cancelled"
     COMPLETED = "completed"
 

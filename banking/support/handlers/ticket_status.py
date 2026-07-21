@@ -53,7 +53,7 @@ async def handle_ticket_status(
 
     # Priority 1: Explicit ticket code
     if ticket_code:
-        ticket = await ticket_service.get_ticket(ticket_code)
+        ticket = await ticket_service.get_ticket(user_id, ticket_code)
         if not ticket:
             return SupportResponse(
                 message=render_message(
@@ -65,7 +65,7 @@ async def handle_ticket_status(
 
     # Priority 2: Last ticket from context
     elif last_ticket_id:
-        ticket = await ticket_service.get_ticket(last_ticket_id)
+        ticket = await ticket_service.get_ticket(user_id, last_ticket_id)
 
     # Priority 3: Most recent open ticket
     if not ticket:

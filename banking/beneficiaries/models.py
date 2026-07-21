@@ -7,9 +7,8 @@ class BeneficiaryIntent(str, Enum):
     """Intent for beneficiary operations."""
 
     LIST = "list_beneficiaries"
-    ADD = "add_beneficiary"
     DELETE = "delete_beneficiary"
-    UPDATE = "update_beneficiary"
+    RENAME = "rename_beneficiary"
 
 
 class BeneficiaryPayload(BaseModel):

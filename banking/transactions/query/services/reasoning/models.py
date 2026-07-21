@@ -274,7 +274,7 @@ class FocusedItemDecision(_NarrowActiveDecision):
 
 
 class TransactionListDecision(_NarrowActiveDecision):
-    """Selection, pagination, coverage, and refinement over a visible list."""
+    """Selection, pagination, aggregation, coverage, and refinement over a visible list."""
 
     target_index: int | None = None
     target_amount: float | None = None
@@ -286,9 +286,11 @@ class TransactionListDecision(_NarrowActiveDecision):
     drill_down_index: int | None = None
     drill_down_action: DrillDownActionType | None = None
     fact_field: FactFieldType | None = None
+    answer_mode: AnswerModeType | None = None
     delta_type: DeltaType | None = None
     time_range: TimeRange | None = None
     filters: Filters | None = None
+    recipient_name: str | None = None
     result_limit: int | None = None
     result_reference: ResultReferenceType | None = None
 

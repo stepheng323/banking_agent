@@ -18,7 +18,7 @@ Scheduling and recurrence are parsed deterministically by the caller. Ignore tho
 single-transfer changes, and do not mark the turn broad merely because scheduling is also present. Set
 requires_broad_interpretation=true for batch or multi-recipient edits, mixed requests, image interpretation,
 unsupported fields, or anything else that needs broader orchestration. Acknowledgment is optional and under eight
-words. Understand English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed wording semantically.
+words. Understand English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed wording semantically.
 """
 
 __all__ = ["TRANSFER_AMENDMENT_PROMPT"]

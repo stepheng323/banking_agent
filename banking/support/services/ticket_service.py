@@ -118,10 +118,95 @@ class TicketService:
 
         return ticket
 
-    async def get_ticket(self, ticket_code: str) -> SupportTicket | None:
-        """Get a ticket by its code."""
+    async def get_ticket(self, user_id: str, ticket_code: str) -> SupportTicket | None:
+        """Get a ticket by code only inside its owner's scope."""
         async with self._repo_scope() as (repo, _commit_on_exit):
-            return await repo.get_by_ticket_code(ticket_code)
+            return await repo.get_for_user(user_id, ticket_code=ticket_code)
+
+    async def get_user_ticket(
+        self,
+        user_id: str,
+        *,
+        ticket_id: str | None = None,
+        ticket_code: str | None = None,
+        for_update: bool = False,
+    ) -> SupportTicket | None:
+        async with self._repo_scope() as (repo, _commit_on_exit):
+            return await repo.get_for_user(
+                user_id,
+                ticket_id=ticket_id,
+                ticket_code=ticket_code,
+                for_update=for_update,
+            )
+
+    async def list_open_page(
+        self,
+        user_id: str,
+        *,
+        limit: int = 6,
+        offset: int = 0,
+    ) -> tuple[list[SupportTicket], int]:
+        async with self._repo_scope() as (repo, _commit_on_exit):
+            return await repo.get_open_page(user_id, limit=limit, offset=offset), await repo.count_open(user_id)
+
+    async def append_user_note(
+        self,
+        user_id: str,
+        *,
+        note: str,
+        channel: str,
+        ticket_id: str | None = None,
+        ticket_code: str | None = None,
+    ) -> SupportTicket | None:
+        async with self._repo_scope() as (repo, _commit_on_exit):
+            ticket = await repo.get_for_user(
+                user_id,
+                ticket_id=ticket_id,
+                ticket_code=ticket_code,
+                for_update=True,
+            )
+            if ticket is None or ticket.status not in {
+                SupportTicketStatusEnum.OPEN.value,
+                SupportTicketStatusEnum.IN_PROGRESS.value,
+            }:
+                return None
+            details = dict(ticket.details or {})
+            raw_notes = details.get("user_notes")
+            notes = [item for item in raw_notes if isinstance(item, dict)] if isinstance(raw_notes, list) else []
+            notes.append(
+                {
+                    "text": note,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "channel": channel,
+                }
+            )
+            details["user_notes"] = notes[-20:]
+            return await repo.update(ticket, details=details)
+
+    async def close_user_ticket(
+        self,
+        user_id: str,
+        *,
+        ticket_id: str | None = None,
+        ticket_code: str | None = None,
+        expected_version: str | None = None,
+    ) -> tuple[SupportTicket | None, bool, bool]:
+        async with self._repo_scope() as (repo, _commit_on_exit):
+            ticket = await repo.get_for_user(
+                user_id,
+                ticket_id=ticket_id,
+                ticket_code=ticket_code,
+                for_update=True,
+            )
+            if ticket is None:
+                return None, False, False
+            if ticket.status == SupportTicketStatusEnum.CLOSED.value:
+                return ticket, True, False
+            actual_version = ticket.updated_at.isoformat() if ticket.updated_at else None
+            if expected_version is not None and actual_version != expected_version:
+                return ticket, False, True
+            ticket = await repo.update(ticket, status=SupportTicketStatusEnum.CLOSED.value)
+            return ticket, False, False
 
     async def get_user_open_tickets(self, user_id: str) -> list[SupportTicket]:
         """Get all open tickets for a user."""
@@ -135,12 +220,13 @@ class TicketService:
 
     async def update_status(
         self,
+        user_id: str,
         ticket_code: str,
         status: SupportTicketStatusEnum,
     ) -> SupportTicket | None:
         """Update ticket status."""
         async with self._repo_scope() as (repo, _commit_on_exit):
-            ticket = await repo.get_by_ticket_code(ticket_code)
+            ticket = await repo.get_for_user(user_id, ticket_code=ticket_code, for_update=True)
             if not ticket:
                 return None
 
@@ -157,10 +243,10 @@ class TicketService:
 
         return ticket
 
-    async def resolve_ticket(self, ticket_code: str) -> SupportTicket | None:
+    async def resolve_ticket(self, user_id: str, ticket_code: str) -> SupportTicket | None:
         """Mark a ticket as resolved."""
-        return await self.update_status(ticket_code, SupportTicketStatusEnum.RESOLVED)
+        return await self.update_status(user_id, ticket_code, SupportTicketStatusEnum.RESOLVED)
 
-    async def close_ticket(self, ticket_code: str) -> SupportTicket | None:
+    async def close_ticket(self, user_id: str, ticket_code: str) -> SupportTicket | None:
         """Close a ticket."""
-        return await self.update_status(ticket_code, SupportTicketStatusEnum.CLOSED)
+        return await self.update_status(user_id, ticket_code, SupportTicketStatusEnum.CLOSED)

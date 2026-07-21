@@ -91,6 +91,14 @@ def _parse_amount_reply(message: str) -> float | None:
         amount *= 1000
     elif suffix == "h":
         amount *= 100
+
+    # Prevent menu selections (1, 2, 3...) from being parsed as tiny amounts
+    has_currency_marker = bool(
+        re.search(r"(?:₦|ngn|naira)", message, re.IGNORECASE) or suffix
+    )
+    if amount <= 10 and not has_currency_marker:
+        return None
+
     return amount if amount > 0 else None
 
 

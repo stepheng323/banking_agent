@@ -3,7 +3,10 @@
     "safe_capability_fallback": "Ba zan iya yin wannan yanzu ba. Zan iya taimakawa da tura kudi, sayen airtime/data, duba balance, da tambayoyin transaction.",
     "cancelled_prompt": "An soke transaction, me kuma zan taimaka maka da shi yau?",
     "gibberish_prompt": "Ban gane wannan ba. Wane aikin banking kake so in taimaka da shi?",
-    "pagination": {"more": "Karin sakamako a shafi na gaba", "previous": "Koma shafin baya"}
+    "pagination": {
+      "more": "Karin sakamako a shafi na gaba",
+      "previous": "Koma shafin baya"
+    }
   },
   "conversation_set": {
     "selection_required": "Wanne abu ko abubuwa kake nufi? Amsa da lamba ko sunan da aka nuna.",
@@ -17,11 +20,11 @@
     "blocked_no_alternative": "Ba zan iya yin {action} a nan ba. Zan iya taimakawa da ayyukan banking da ake goyon baya kawai. Ka fada abin da kake son yi na gaba.",
     "generic_blocked": "Wannan aikin bai samu ba tukuna. Zan iya taimakawa da ayyukan banking da ake goyon baya. Me kake son yi na gaba?",
     "unsupported_unavailable": "Ba zan iya taimakawa da {capability} ba. Zan iya taimakawa da {supported}.",
-    "unsupported_unavailable_lending": "Na fahimci kana bu\u0199atar tallafin ku\u0257i, amma ba zan iya taimaka maka da bashi ko lamuni ba. Zan iya taimaka maka ka duba balance \u0257inka ko bincika transactions \u0257inka na baya.",
+    "unsupported_unavailable_lending": "Na fahimci kana buƙatar tallafin kuɗi, amma ba zan iya taimaka maka da bashi ko lamuni ba. Zan iya taimaka maka ka duba balance ɗinka ko bincika transactions ɗinka na baya.",
     "unsupported_unavailable_followup": "Na gane, amma ba zan iya taimakawa da {capability} ba. Zan iya taimakawa da {supported}.",
-    "unsupported_unavailable_followup_lending": "Na ji ka, kuma na fahimci cewa yana da muhimmanci, amma ba zan iya ba da bashi ba. Zan iya taimaka maka ka duba balance ko bincika transactions \u0257inka.",
+    "unsupported_unavailable_followup_lending": "Na ji ka, kuma na fahimci cewa yana da muhimmanci, amma ba zan iya ba da bashi ba. Zan iya taimaka maka ka duba balance ko bincika transactions ɗinka.",
     "unsupported_unavailable_firm": "Ba zan iya taimakawa da {capability} ba. Mu koma banking: {supported}.",
-    "unsupported_unavailable_firm_lending": "Ba zan iya taimakawa da maganar bashi ba. Bari mu koma kan duba balance ko bincika transactions \u0257inka."
+    "unsupported_unavailable_firm_lending": "Ba zan iya taimakawa da maganar bashi ba. Bari mu koma kan duba balance ko bincika transactions ɗinka."
   },
   "planner": {
     "policy_notice_with_alternative": "Zan iya ci gaba da {supported}. Ba zan iya yin {unsupported} a nan ba. Zan iya taimakawa da {alternative} maimakon haka. Ka amsa zabinka.",
@@ -166,11 +169,11 @@
       "reply_with_range": "Amsa da 1 ko {count}."
     },
     "failure": {
-      "success_no_failure": "\u2022 This transfer was actually yi nasara. No failure occurred.",
+      "success_no_failure": "• This transfer was actually yi nasara. No failure occurred.",
       "reason_not_provided": "Banki bai bada dalili takamaimai ba.",
-      "marked_processing": "I found the \u20a6{amount} transfer to {recipient}, but our records currently show it as {status}, not gaza.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
-      "debited_failed": "\u00d7 This \u20a6{amount} transfer gaza after your account an cire kudi.\nReason: {reason}\nA refund ana processed.",
-      "not_debited_failed": "\u00d7 This \u20a6{amount} transfer gaza.\nReason: {reason}\nNo money an cire kudi from your account.",
+      "marked_processing": "I found the ₦{amount} transfer to {recipient}, but our records currently show it as {status}, not gaza.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
+      "debited_failed": "× This ₦{amount} transfer gaza after your account an cire kudi.\nReason: {reason}\nA refund ana processed.",
+      "not_debited_failed": "× This ₦{amount} transfer gaza.\nReason: {reason}\nNo money an cire kudi from your account.",
       "unknown_reason_contact": "Ba a iya determine failure reason. Please contact support.",
       "guidance": {
         "provider_unavailable": "Za ka iya sake gwadawa yanzu, ko ka jira kadan idan provider bai daidaita ba.",
@@ -182,26 +185,26 @@
       }
     },
     "wrong_debit": {
-      "success_debit_correct": "\u2022 This transfer was yi nasara. The debit was correct.",
-      "failed_but_debited": "Your account an cire kudi \u20a6{amount}, but the transfer did not complete.\nThis ana reversed automatically.\nCurrent status: Reversal in progress",
-      "failed_not_debited": "\u00d7 The transfer gaza, but no money an cire kudi from your account.",
-      "pending_processing": "\u25cb This transfer har yanzu sarrafawa.\nIf it fails, any debit za a mayar automatically.",
+      "success_debit_correct": "• This transfer was yi nasara. The debit was correct.",
+      "failed_but_debited": "Your account an cire kudi ₦{amount}, but the transfer did not complete.\nThis ana reversed automatically.\nCurrent status: Reversal in progress",
+      "failed_not_debited": "× The transfer gaza, but no money an cire kudi from your account.",
+      "pending_processing": "○ This transfer har yanzu sarrafawa.\nIf it fails, any debit za a mayar automatically.",
       "investigating": "Muna binciken wannan debit issue."
     },
     "reversal": {
-      "success_no_reversal": "\u2022 Wannan transfer ya yi nasara. Ba za a iya reversal ko refund daga nan ba.",
-      "reversed": "\u2022 Your \u20a6{amount} an reversed to your account.",
+      "success_no_reversal": "• Wannan transfer ya yi nasara. Ba za a iya reversal ko refund daga nan ba.",
+      "reversed": "• Your ₦{amount} an reversed to your account.",
       "no_refund_needed": "No money an cire kudi, so no refund is needed.",
-      "completed": "\u2022 The \u20a6{amount} refund an kammala.",
-      "processing": "\u25cb The \u20a6{amount} reversal ana processed.\nRefunds typically return to your account within 24-48 hours.",
-      "needs_escalation": "An cire maka \u20a6{amount}, kuma ana bukatar reversal.\nIna tura wannan zuwa support team.",
+      "completed": "• The ₦{amount} refund an kammala.",
+      "processing": "○ The ₦{amount} reversal ana processed.\nRefunds typically return to your account within 24-48 hours.",
+      "needs_escalation": "An cire maka ₦{amount}, kuma ana bukatar reversal.\nIna tura wannan zuwa support team.",
       "unknown": "Ba a iya determine refund status."
     },
     "retry": {
-      "already_success": "\u2022 This transfer was already yi nasara.\nKana so to send another \u20a6{amount} to {recipient}?",
-      "pending_wait": "\u25cb This transfer har yanzu sarrafawa.\nPlease wait for it to complete before retrying.",
-      "ready": "Ready to retry \u20a6{amount} to {recipient}.\nAmsa 'yes' to confirm.",
-      "not_retryable": "\u00d7 Ba za a iya retry this transfer: {error}\nPlease resolve the issue first.",
+      "already_success": "• This transfer was already yi nasara.\nKana so to send another ₦{amount} to {recipient}?",
+      "pending_wait": "○ This transfer har yanzu sarrafawa.\nPlease wait for it to complete before retrying.",
+      "ready": "Ready to retry ₦{amount} to {recipient}.\nAmsa 'yes' to confirm.",
+      "not_retryable": "× Ba za a iya retry this transfer: {error}\nPlease resolve the issue first.",
       "unknown_status": "Ba za a iya determine if this transfer can be retried. Matsayi: {status}",
       "block": {
         "insufficient_funds": "Yi amfani da wani source account ko ka rage amount kafin retry.",
@@ -210,29 +213,29 @@
       }
     },
     "status": {
-      "success_no_time": "\u2022 Transfer na \u20a6{amount} zuwa {recipient} ya yi nasara.",
-      "success_with_time": "\u2022 This transfer of \u20a6{amount} to {recipient} was successful on {time}.",
-      "pending": "\u25cb This transfer of \u20a6{amount} to {recipient} har yanzu pending.\nWe're awaiting confirmation from the bank.",
-      "failed": "\u00d7 This transfer of \u20a6{amount} to {recipient} gaza.",
+      "success_no_time": "• Transfer na ₦{amount} zuwa {recipient} ya yi nasara.",
+      "success_with_time": "• This transfer of ₦{amount} to {recipient} was successful on {time}.",
+      "pending": "○ This transfer of ₦{amount} to {recipient} har yanzu pending.\nWe're awaiting confirmation from the bank.",
+      "failed": "× This transfer of ₦{amount} to {recipient} gaza.",
       "raw_status": "Matsayin transfer: {status}"
     },
     "pending": {
-      "pending": "\u25cb Your transfer of \u20a6{amount} to {recipient} har yanzu being processed.\nBank confirmations can take a few minutes.",
-      "success_completed": "\u2022 Good news! This transfer actually kammala yi nasaraly.",
-      "failed_no_longer_pending": "\u00d7 This transfer gaza and is no longer pending.",
+      "pending": "○ Your transfer of ₦{amount} to {recipient} har yanzu being processed.\nBank confirmations can take a few minutes.",
+      "success_completed": "• Good news! This transfer actually kammala yi nasaraly.",
+      "failed_no_longer_pending": "× This transfer gaza and is no longer pending.",
       "raw_status": "Matsayi yanzu: {status}"
     },
     "receipt": {
-      "unavailable_for_status": "\u00d7 Ba za a iya provide receipt. This transfer {status}.",
+      "unavailable_for_status": "× Ba za a iya provide receipt. This transfer {status}.",
       "title": "*Transfer Receipt*",
-      "divider": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
-      "amount": "Amount: \u20a6{amount}",
+      "divider": "─────────────────",
+      "amount": "Amount: ₦{amount}",
       "to": "Zuwa: {recipient}",
       "bank": "Bank: {bank}",
       "account": "Account: {account}",
       "ref": "Ref: {reference}",
       "date": "Rana: {date}",
-      "status_success": "Matsayi: \u2022 Successful",
+      "status_success": "Matsayi: • Successful",
       "batch_sending_one": "Ina aika receipt yanzu.",
       "batch_sending_many": "Ina aika receipts na transfers da suka yi nasara yanzu.",
       "batch_skipped_failed": "{count} gaza",
@@ -243,6 +246,23 @@
       "batch_no_completed": "Ba zan iya aika receipts na wannan batch yanzu ba saboda babu transfer leg da ya kammala successfully."
     },
     "ticket": {
+      "unavailable": "Sabis ɗin tikiti ba ya samuwa yanzu.",
+      "select": "Wane tikitin tallafi kake nufi? Nuna buɗaɗɗun tikitinka sannan ka zaɓi ɗaya.",
+      "count": "Kana da tikitin tallafi {count} da aka buɗe ko ake aiki a kai.",
+      "exists_yes": "Eh, kana da tikitin tallafi da aka buɗe ko ake aiki a kai.",
+      "exists_no": "A'a, ba ka da tikitin tallafi da aka buɗe ko ake aiki a kai.",
+      "list_empty": "Ba ka da tikitin tallafi da aka buɗe ko ake aiki a kai.",
+      "list_header": "Buɗaɗɗun tikitin tallafi",
+      "list_row": "{index}. {code} • {status}\n{summary}",
+      "detail": "Tikiti {code}\nMatsayi: {status}\nMuhimmanci: {priority}\n\n{summary}",
+      "status_fact": "Tikiti {code} yana da matsayin {status}.",
+      "note_prompt": "Wane bayani kake son ƙarawa? Kada ya wuce haruffa 1,000.",
+      "note_closed": "Ana iya ƙara bayani ne kawai ga tikitin da aka buɗe ko ake aiki a kai.",
+      "note_added": "An ƙara bayaninka zuwa tikiti {code}.",
+      "close_review": "A rufe tikiti {code}?\n{summary}\n\nAmsa eh don rufewa, ko soke.",
+      "already_closed": "An riga an rufe tikiti {code}.",
+      "closed": "An rufe tikiti {code}.",
+      "stale": "Tikitin ya canza bayan dubawa. Sake buɗe shi kafin rufewa.",
       "not_found": "Ban iya samun a ticket with code {ticket_code}.\n\nDa fatan duba the code and try again.",
       "none_open": "Ba na see any open support tickets for you.\n\nIs there something I can help you with?",
       "status_open": "Case dinka yana open kuma yana jiran review.",
@@ -285,32 +305,32 @@
       "transaction": "transaction"
     },
     "drill_down": {
-      "details_intro": "Ga bayanan transaction \u0257in:",
-      "no_items": "Ba ni da wannan transaction \u0257in yanzu. Ka ce in sake yin search.",
-      "invalid_selection": "Ban gane za\u0253in ba. Za\u0253i \u0257aya daga cikin transactions {count} da na nuna."
+      "details_intro": "Ga bayanan transaction ɗin:",
+      "no_items": "Ba ni da wannan transaction ɗin yanzu. Ka ce in sake yin search.",
+      "invalid_selection": "Ban gane zaɓin ba. Zaɓi ɗaya daga cikin transactions {count} da na nuna."
     },
     "pagination": {
       "already_first_page": "Kana kan page na farko tuni.",
       "end_of_results": "Wannan shi ne cikakken list na wannan search."
     },
     "coverage_copy": {
-      "result_more": "A'a. Na nuna transactions {count}, kuma akwai \u0199ari.",
-      "result_complete": "Wannan shi ne duk matched results: transactions {count}. Wannan ka\u0257ai bai tabbatar da bank-data coverage ba.",
-      "result_empty": "Ban sami transaction da ya dace ba. Wannan ka\u0257ai bai tabbatar da coverage ba.",
+      "result_more": "A'a. Na nuna transactions {count}, kuma akwai ƙari.",
+      "result_complete": "Wannan shi ne duk matched results: transactions {count}. Wannan kaɗai bai tabbatar da bank-data coverage ba.",
+      "result_empty": "Ban sami transaction da ya dace ba. Wannan kaɗai bai tabbatar da coverage ba.",
       "no_metadata": "Zan iya nuna local transactions, amma ba ni da linked-account metadata don tabbatar da coverage.",
-      "account_not_found": "Ban ga {account} cikin linked accounts \u0257inka ba.",
+      "account_not_found": "Ban ga {account} cikin linked accounts ɗinka ba.",
       "multiple_accounts": "Linked accounts da yawa sun dace da {account}: {options}. Wanne kake nufi?",
-      "single_pending": "{account} bai gama sync ba saboda authorization {status} ne. Kammala shi kafin \u0257aukar results a matsayin complete.",
+      "single_pending": "{account} bai gama sync ba saboda authorization {status} ne. Kammala shi kafin ɗaukar results a matsayin complete.",
       "single_covered": "{account} yana da transaction coverage da aka tabbatar{period}.{sync}",
-      "single_gap": "{account} yana da coverage gap{period}. Zan nuna local transactions, amma ba zan ce list \u0257in complete ba.",
+      "single_gap": "{account} yana da coverage gap{period}. Zan nuna local transactions, amma ba zan ce list ɗin complete ba.",
       "single_unknown": "Zan iya nuna local transactions na {account}, amma ba zan iya tabbatar da full coverage yanzu ba.",
-      "all_covered": "Na tabbatar da transaction coverage{period} ga linked accounts \u0257inka.",
+      "all_covered": "Na tabbatar da transaction coverage{period} ga linked accounts ɗinka.",
       "partial": "Zan iya nuna local transactions{period}, amma ba zan iya tabbatar da duka ga kowane account ba.",
       "status_covered": "{account}: an tabbatar da coverage. Last sync: {sync}.",
-      "status_pending": "\u25cb {account}: authorization {status} ne, don haka sync bai cika ba.",
-      "status_gap": "\u25cb {account}: coverage bai cika ba a wannan period.",
+      "status_pending": "○ {account}: authorization {status} ne, don haka sync bai cika ba.",
+      "status_gap": "○ {account}: coverage bai cika ba a wannan period.",
       "status_unknown": "? {account}: ba a iya tabbatar da coverage yanzu ba.",
-      "best_local": "\u018aauki wannan a matsayin best local view, ba guaranteed complete statement ba."
+      "best_local": "Ɗauki wannan a matsayin best local view, ba guaranteed complete statement ba."
     },
     "receipt": {
       "only_transfer": "Receipts suna samuwa ne kawai ga bank transfers. Wannan {transaction_type} ne.",
@@ -326,30 +346,30 @@
       "user_account": "Account na user"
     },
     "report_issue": {
-      "template": "I understand you have an issue with this transaction:\n\n*{description}* - \u20a6{amount}\n\nPlease describe the issue:\n1\ufe0f\u20e3 Transaction gaza but I an cire kudi\n2\ufe0f\u20e3 Ba na recognize this transaction\n3\ufe0f\u20e3 Wrong amount was charged\n4\ufe0f\u20e3 Other issue\n\n_Amsa da the number or describe your issue._"
+      "template": "I understand you have an issue with this transaction:\n\n*{description}* - ₦{amount}\n\nPlease describe the issue:\n1️⃣ Transaction gaza but I an cire kudi\n2️⃣ Ba na recognize this transaction\n3️⃣ Wrong amount was charged\n4️⃣ Other issue\n\n_Amsa da the number or describe your issue._"
     },
     "reply": {
       "date": {
         "debit_named": "Ka biya {counterparty} a ranar {date}.",
-        "credit_named": "Ka kar\u0253i ku\u0257i daga {counterparty} a ranar {date}.",
+        "credit_named": "Ka karɓi kuɗi daga {counterparty} a ranar {date}.",
         "generic": "Ya faru ne a ranar {date}."
       },
       "counterparty": {
         "debit_named": "Ka biya {amount} zuwa {counterparty} a ranar {date}.",
-        "credit_named": "Ka kar\u0253i {amount} daga {counterparty} a ranar {date}.",
+        "credit_named": "Ka karɓi {amount} daga {counterparty} a ranar {date}.",
         "generic": "Ya kasance tare da {counterparty}.",
-        "unavailable": "Na gano transaction \u0257in, amma ban iya tabbatar da wanda aka yi da shi ba."
+        "unavailable": "Na gano transaction ɗin, amma ban iya tabbatar da wanda aka yi da shi ba."
       },
       "amount": {
         "debit_named": "Ka biya {amount} zuwa {counterparty}.",
-        "credit_named": "Ka kar\u0253i {amount} daga {counterparty}.",
+        "credit_named": "Ka karɓi {amount} daga {counterparty}.",
         "generic": "Ya kasance {amount}."
       },
       "bank": {
         "debit_named": "Ka tura shi zuwa {counterparty} ta {bank_name}.",
-        "credit_named": "Ka kar\u0253e shi daga {counterparty} ta {bank_name}.",
+        "credit_named": "Ka karɓe shi daga {counterparty} ta {bank_name}.",
         "generic": "Ya bi ta {bank_name}.",
-        "unavailable": "Na gano transaction \u0257in, amma sunan banki bai samu ba."
+        "unavailable": "Na gano transaction ɗin, amma sunan banki bai samu ba."
       },
       "status": {
         "posted": "Transaction din ya shiga history.",
@@ -365,24 +385,24 @@
       },
       "latest": {
         "date": {
-          "debit_named": "Lokaci na \u0199arshe da ka biya {counterparty} shi ne {date}.",
-          "credit_named": "Lokaci na \u0199arshe da ka kar\u0253i ku\u0257i daga {counterparty} shi ne {date}.",
-          "generic": "Na \u0199arshe ya faru ne a {date}."
+          "debit_named": "Lokaci na ƙarshe da ka biya {counterparty} shi ne {date}.",
+          "credit_named": "Lokaci na ƙarshe da ka karɓi kuɗi daga {counterparty} shi ne {date}.",
+          "generic": "Na ƙarshe ya faru ne a {date}."
         },
         "counterparty": {
-          "debit_named": "Mutumin \u0199arshe da ka aika wa ku\u0257i shi ne {counterparty}.",
-          "credit_named": "Mutumin \u0199arshe da ya aiko maka ku\u0257i shi ne {counterparty}.",
-          "generic": "Na \u0199arshe ya kasance tare da {counterparty}."
+          "debit_named": "Mutumin ƙarshe da ka aika wa kuɗi shi ne {counterparty}.",
+          "credit_named": "Mutumin ƙarshe da ya aiko maka kuɗi shi ne {counterparty}.",
+          "generic": "Na ƙarshe ya kasance tare da {counterparty}."
         },
         "amount": {
-          "debit_named": "Canjin ku\u0257i na \u0199arshe zuwa {counterparty} shi ne {amount}.",
-          "credit_named": "Biyan ku\u0257i na \u0199arshe daga {counterparty} shi ne {amount}.",
-          "generic": "Na \u0199arshe shi ne {amount}."
+          "debit_named": "Canjin kuɗi na ƙarshe zuwa {counterparty} shi ne {amount}.",
+          "credit_named": "Biyan kuɗi na ƙarshe daga {counterparty} shi ne {amount}.",
+          "generic": "Na ƙarshe shi ne {amount}."
         },
         "bank": {
-          "debit_named": "Canjin ku\u0257i na \u0199arshe zuwa {counterparty} ya bi ta {bank_name}.",
-          "credit_named": "Biyan ku\u0257i na \u0199arshe daga {counterparty} ya zo ta {bank_name}.",
-          "generic": "Na \u0199arshe ya bi ta {bank_name}."
+          "debit_named": "Canjin kuɗi na ƙarshe zuwa {counterparty} ya bi ta {bank_name}.",
+          "credit_named": "Biyan kuɗi na ƙarshe daga {counterparty} ya zo ta {bank_name}.",
+          "generic": "Na ƙarshe ya bi ta {bank_name}."
         }
       },
       "description": {
@@ -411,11 +431,11 @@
       },
       "aggregate": {
         "scope": "Wannan jimillar ta shafi {scope_label} kawai{period_suffix}.{total_suffix}",
-        "scope_hint": "Ta ha\u0257a {count} {transaction_label} a cikin wannan scope.",
+        "scope_hint": "Ta haɗa {count} {transaction_label} a cikin wannan scope.",
         "total_suffix": "Jimillar ita ce {total}"
       },
       "no_result": {
-        "debit_named": "Ban sami biyan ku\u0257i zuwa {counterparty} {time_suffix} ba.",
+        "debit_named": "Ban sami biyan kuɗi zuwa {counterparty} {time_suffix} ba.",
         "credit_named": "Ban sami credit daga {counterparty} {time_suffix} ba.",
         "debit_generic": "Ban sami debit da ya dace {time_suffix} ba.",
         "credit_generic": "Ban sami credit da ya dace {time_suffix} ba.",
@@ -441,17 +461,17 @@
       "time_vague": "Menene time period did you mean by '{context}'? You can say something like '{suggestion}'.",
       "unsure_rephrase": "Ban tabbatar da abin da kake nufi ba. Za ka iya sake bayani?",
       "multiple_matches": "Na sami transactions da yawa masu dacewa. Wanne kake nufi?\n\n{options}",
-      "cancelled": "To, na soke wannan za\u0253in.",
-      "exhausted": "Har yanzu ban iya gane za\u0253in ba. Ka sake bayyana transaction \u0257in.",
-      "recent_read_only": "Zan iya amfani da closed result \u0257in don read-only question kawai. Ka fara sabon transfer ko support request.",
+      "cancelled": "To, na soke wannan zaɓin.",
+      "exhausted": "Har yanzu ban iya gane zaɓin ba. Ka sake bayyana transaction ɗin.",
+      "recent_read_only": "Zan iya amfani da closed result ɗin don read-only question kawai. Ka fara sabon transfer ko support request.",
       "missing_scope": "Wanne earlier result ko transaction kake nufi?",
-      "memory_unavailable": "Ba ni da isasshen bayani daga earlier result \u0257in. Ka ce in sake search.",
-      "grounded_query_failed": "Na gane earlier result \u0257in, amma ina bukatar account, transaction, ko time scope mai kyau.",
+      "memory_unavailable": "Ba ni da isasshen bayani daga earlier result ɗin. Ka ce in sake search.",
+      "grounded_query_failed": "Na gane earlier result ɗin, amma ina bukatar account, transaction, ko time scope mai kyau.",
       "which_one": "Ban tabbatar da wanne kake nufi ba{context_suffix}.",
       "are_you_referring": "Kana nufin:",
       "reply_number_or_rephrase": "Amsa da nomba ko ka sake bayani.",
       "context_suffix": "({context})",
-      "option_line": "{index}\ufe0f\u20e3 {amount} \u2014 {description}"
+      "option_line": "{index}️⃣ {amount} — {description}"
     },
     "notice": {
       "clamped_days": "Ana nuna kwanaki {days_back} na karshe (max available)."
@@ -467,10 +487,10 @@
     },
     "format": {
       "no_results_display": "Babu sakamako da za a nuna.",
-      "accounts_header": "\ud83d\udcb0 *Accounts Dinka*",
+      "accounts_header": "💰 *Accounts Dinka*",
       "total_line": "*Total: {total}*",
-      "breakdown_item": "{amount} \u2014 {name} ({percentage}, {count} txns)",
-      "total_spent_month": "Jimillar abin da ka kashe wannan watan: \u20a6{amount}",
+      "breakdown_item": "{amount} — {name} ({percentage}, {count} txns)",
+      "total_spent_month": "Jimillar abin da ka kashe wannan watan: ₦{amount}",
       "no_matching_transactions": "Ba a samu transaction da ya dace da search dinka ba.",
       "no_transactions_today": "Ba ka da transactions yau.",
       "no_transactions_yesterday": "Ba ka da transactions jiya.",
@@ -485,13 +505,13 @@
       "heading_transactions_type": "*{transaction_type} Transactions*",
       "heading_transactions_category": "*{category} Transactions*",
       "heading_spending_category": "*{category} Spending*",
-      "heading_suffix_account": "{heading} \u2014 {account}",
-      "heading_suffix_period": "{heading} \u2014 {period}",
+      "heading_suffix_account": "{heading} — {account}",
+      "heading_suffix_period": "{heading} — {period}",
       "heading_type_credit": "Credit mai shigowa",
       "heading_type_debit": "Debit mai fita",
       "heading_period_today": "Today",
       "heading_period_this_month": "Wannan watan",
-      "heading_period_range": "{start}\u2013{end}",
+      "heading_period_range": "{start}–{end}",
       "transaction_details_title": "Transaction Details",
       "last_transaction_title": "Your last transaction was:",
       "last_transaction_type_title": "Your last {transaction_type} transaction was:",
@@ -528,25 +548,25 @@
       },
       "type_incoming_credit": "Mai shigowa (Credit)",
       "type_outgoing_debit": "Mai fita (Debit)",
-      "accounts_item": "{amount} \u2014 {bank_name}",
+      "accounts_item": "{amount} — {bank_name}",
       "breakdown_heading": "*{summary}*",
       "ranked_heading": "*{summary}*",
-      "ranked_item": "{rank}. *{amount}* \u2014 {name} {date}{bank_suffix}",
-      "transaction_item_with_bank": "{amount} \u2022 {label} \u2014 {narration} _({bank_name})_",
-      "transaction_item": "{amount} \u2022 {label} \u2014 {narration}",
+      "ranked_item": "{rank}. *{amount}* — {name} {date}{bank_suffix}",
+      "transaction_item_with_bank": "{amount} • {label} — {narration} _({bank_name})_",
+      "transaction_item": "{amount} • {label} — {narration}",
       "direct_answer_grouped_lead": "Wannan shine {name}.",
       "evidence_lead_single": "Ga cinikin da ya samar da wannan jimillar.",
       "evidence_lead_plural": "Ga cinikoki {count} da suka samar da wannan jimillar.",
-      "show_more_hint": "_Fa\u0257i 'show more' don ci gaba._"
+      "show_more_hint": "_Faɗi 'show more' don ci gaba._"
     },
     "affordability": {
       "balance_unavailable": "Ba a iya samun balance ba.",
-      "can_afford": "Na ka balance (\u20a6{balance}) covers \u20a6{amount}. Remaining: \u20a6{remaining}",
-      "cannot_afford": "\u20a6{amount} exceeds kar balance (\u20a6{balance}). Shortfall: \u20a6{shortfall}"
+      "can_afford": "Na ka balance (₦{balance}) covers ₦{amount}. Remaining: ₦{remaining}",
+      "cannot_afford": "₦{amount} exceeds kar balance (₦{balance}). Shortfall: ₦{shortfall}"
     },
     "balance": {
       "unavailable": "Ba a iya samun balance ba.",
-      "single_account": "Na ka {bank_name} balance: \u20a6{balance}",
+      "single_account": "Na ka {bank_name} balance: ₦{balance}",
       "account_fallback": "Account"
     },
     "analytics": {
@@ -560,10 +580,10 @@
       "target_counterparty": "da {counterparty}",
       "target_counterparty_debit": "zuwa {counterparty}",
       "target_counterparty_credit": "daga {counterparty}",
-      "summary_spent": "Ka kashe *\u20a6{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
-      "summary_sent": "Ka aika *\u20a6{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
-      "summary_received": "Ka karba *\u20a6{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
-      "summary_average": "Matsakaicin transaction dinka shine *\u20a6{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' zuwa see details_",
+      "summary_spent": "Ka kashe *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_sent": "Ka aika *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_received": "Ka karba *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_average": "Matsakaicin transaction dinka shine *₦{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' zuwa see details_",
       "summary_count": "Ka yi *{count}* {transaction_label}{timeframe}.",
       "summary_count_zero": "Ba ka yi any transactions{timeframe}.",
       "transaction_singular": "transaction",
@@ -592,10 +612,10 @@
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",
       "heading_top": "Top",
-      "timeframe_range": "{start} \u2013 {end}",
+      "timeframe_range": "{start} – {end}",
       "timeframe_last_30_days": "timeframe last 30 days: last 30 days",
       "summary_header": "*{heading_type} Recipients* ({timeframe})",
-      "summary_line": "{name} \u2022 \u20a6{total} ({count}x)",
+      "summary_line": "{name} • ₦{total} ({count}x)",
       "no_outgoing_transfers": "Babu outgoing transfers found.",
       "reply_name_hint": "_Amsa da a name to see those transactions_",
       "summary_heading": "Ga {summary} naku:"
@@ -609,9 +629,9 @@
       "verb_spent_more": "ya kashe fiye",
       "verb_spent_less": "ya kashe kasa",
       "same_spending": "Na ka spending in {current_label} is the same as {comparison_label}.",
-      "summary": "You {verb} (\u20a6{amount}) in {current_label} compared zuwa {comparison_label}.",
-      "summary_spent_more": "Ka kashe ku\u0257i da yawa {current_label}.\n{comparison_label}: \u20a6{comparison_amount}\n{current_label}: \u20a6{current_amount}\nBambanci: \u20a6{amount}",
-      "summary_spent_less": "Ka kashe ku\u0257i ka\u0257an {current_label}.\n{comparison_label}: \u20a6{comparison_amount}\n{current_label}: \u20a6{current_amount}\nBambanci: \u20a6{amount}"
+      "summary": "You {verb} (₦{amount}) in {current_label} compared zuwa {comparison_label}.",
+      "summary_spent_more": "Ka kashe kuɗi da yawa {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nBambanci: ₦{amount}",
+      "summary_spent_less": "Ka kashe kuɗi kaɗan {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nBambanci: ₦{amount}"
     },
     "fetch": {
       "counterparty": {
@@ -630,7 +650,9 @@
     }
   },
   "account": {
-    "readiness": {"fact": "Asusu {ready_count} cikin {total_count} sun shirya don amfani."},
+    "readiness": {
+      "fact": "Asusu {ready_count} cikin {total_count} sun shirya don amfani."
+    },
     "user_not_found": "Ba a samu user ba.",
     "no_linked_accounts": "Ba ka da linked account.",
     "account_not_found": "Ban iya samun an account matching '{identifier}'.",
@@ -646,7 +668,7 @@
       "item_failed": "✗ {item} — ba a iya cirewa ba",
       "bulk_result": "Sakamakon cire asusu:\n{items}",
       "success": "success: *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
-      "only_account": "\ufe0f Kai can't unlink kar only account. Link another one first."
+      "only_account": "️ Kai can't unlink kar only account. Link another one first."
     },
     "mandate_reinitiated_success": "Na sake aika maka da umarnin setup zuwa wayarka. Don Allah bi su don kammala linking naka!",
     "list": {
@@ -665,13 +687,13 @@
       "none_available": "Babu bayanin balance yanzu.",
       "header_single": "*Balance dinka*",
       "header_multi": "*Balances dinka*",
-      "total": "Jimlar ku\u0257in ka shine **\u20a6{total_balance}**.",
+      "total": "Jimlar kuɗin ka shine **₦{total_balance}**.",
       "total_label": "Jimilla",
       "unavailable": "Ban iya retrieve your balance at the moment.",
-      "natural_single": "Asusun {bank_name} ({masked}) yana da ku\u0257i **\u20a6{amount}**.",
-      "natural_multi_intro": "Ga nan ne ku\u0257in da ke cikin asusun ka:",
-      "natural_multi_item": "\u2022 {bank_name} ({masked}): **\u20a6{amount}**",
-      "scope_clarify": "Wa\u0257anne asusu zan yi amfani da su don wannan tambayar balance?"
+      "natural_single": "Asusun {bank_name} ({masked}) yana da kuɗi **₦{amount}**.",
+      "natural_multi_intro": "Ga nan ne kuɗin da ke cikin asusun ka:",
+      "natural_multi_item": "• {bank_name} ({masked}): **₦{amount}**",
+      "scope_clarify": "Waɗanne asusu zan yi amfani da su don wannan tambayar balance?"
     },
     "prompt": {
       "unlink_identifier": "Wane account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'.",
@@ -770,9 +792,9 @@
       }
     },
     "execution": {
-      "source_account_info": "Daga: {bank} (\u00b7\u00b7\u00b7{last4})",
-      "source_account_info_with_balance": "Daga: {bank} (\u00b7\u00b7\u00b7{last4}) \u2022 Ma'auni: \u20a6{balance}",
-      "recipient_resolved_with_bank": "{label} an warware: {resolved} ({bank} \u2022 {account})",
+      "source_account_info": "Daga: {bank} (···{last4})",
+      "source_account_info_with_balance": "Daga: {bank} (···{last4}) • Ma'auni: ₦{balance}",
+      "recipient_resolved_with_bank": "{label} an warware: {resolved} ({bank} • {account})",
       "recipient_resolved": "{label} an warware: {resolved}",
       "recipient_resolved_generic": "{label} an warware",
       "input_attempts_exhausted": "Ban iya fahimtar bayanan da nake bukata ba, saboda haka na soke wannan transaction. Mu fara sabo. Me kake son yi?",
@@ -795,13 +817,31 @@
       "found_many_need_details": "Na samu {found_names}. Ina bukatar account details for {focused_name}.",
       "found_names": "Na samu {found_names}.",
       "queued_next_notice": "Also in this batch:\n{queued_intents}",
+      "batch_input": {
+        "heading": "I'm setting up your {count} requests.",
+        "first": "First, {item}.",
+        "next": "Next, {item}.",
+        "still_needed": "Har yanzu ana bukata: {items}.",
+        "remaining_more": "{items}; da wasu bayanai {count}",
+        "choose_transfer_recipient": "zabi wanda zai karbi {amount}",
+        "choose_transfer_recipient_no_amount": "zabi mai karbar canjin",
+        "airtime_amount": "adadin airtime na layinka",
+        "airtime_amount_network": "adadin airtime na layin {network}",
+        "amount": "adadin",
+        "phone": "lambar waya",
+        "network": "cibiyar sadarwa",
+        "account": "bayanan asusu",
+        "detail": "wani bayani",
+        "selection_resolved": "Done. {amount} will go to {recipient}.",
+        "next_prompt": "Next, {prompt}"
+      },
       "need_some_details": "Ina bukatar some details.",
       "auth_reason_transfer": "Authorization na Transfer",
       "auth_reason_airtime": "Siyan Airtime",
       "auth_reason_data": "Siyan Data",
       "auth_reason_default": "Authorize transaction",
       "source_repair_header": "Na gane - {count} action{plural_suffix}:",
-      "source_repair_bullet": "\u2022 {intent}",
+      "source_repair_bullet": "• {intent}",
       "source_repair_discrepancy": "Kai said from kar **{failed_hint}**, but I can't see an **{failed_hint}** account linked.",
       "source_repair_question": "Do ka want to:",
       "source_repair_use_bank": "Use **{bank}**",
@@ -820,9 +860,9 @@
       "resume_prompt_data_specific": "Kana da sayen data da ke jira: {amount} ga {phone}. A ci gaba?",
       "resume_prompt_data_generic": "Kana da sayen data da ke jira. A ci gaba?",
       "recipient_fallback": "recipient",
-      "transfer_processing": "Transfer of \u20a6{amount} to {display_name} ana processed.",
+      "transfer_processing": "Transfer of ₦{amount} to {display_name} ana processed.",
       "transaction_completed": "Transaction kammala",
-      "async_status_message": "\u2022 *{status}*: {message}",
+      "async_status_message": "• *{status}*: {message}",
       "na": "N/A"
     }
   },
@@ -834,6 +874,10 @@
       "linked_accounts": "linked accounts",
       "scheduled_transaction": "scheduled transaction",
       "scheduled_transactions": "scheduled transactions",
+      "scheduled_run": "scheduled run",
+      "scheduled_runs": "scheduled runs",
+      "support_ticket": "support ticket",
+      "support_tickets": "support tickets",
       "transaction_or_result": "transaction or result",
       "transactions_or_results": "transactions or results",
       "transaction": "transaction",
@@ -868,7 +912,7 @@
       "pending_scheduled_count": "Kai have {count} pending {noun}.",
       "only_found": "Yes. That's the only {noun} Na samu.",
       "count_found": "Yes. Those are the {count} {noun} Na samu.",
-      "count_preview_clarification": "Na nuna misalai {shown_count} ne don a ta\u0199aita. Kana da {total_count} {noun} gaba \u0257aya.",
+      "count_preview_clarification": "Na nuna misalai {shown_count} ne don a taƙaita. Kana da {total_count} {noun} gaba ɗaya.",
       "comparison_header": "Comparison",
       "explain_count": "I showed {count} {noun} from the last result.",
       "and_more_suffix": ", and {count} more",
@@ -938,6 +982,13 @@
       "not_found": "Ban iya samun a beneficiary named '{target}'.",
       "success": "An share **{target}** from beneficiaries."
     },
+    "rename": {
+      "select": "Wane mai amfana kake son sake wa suna?",
+      "ask_alias": "Wane sabon laƙabi zan yi amfani da shi?",
+      "duplicate": "Wani mai amfana yana amfani da ‘{alias}’. Zaɓi wani laƙabi.",
+      "review": "Canza ‘{old_alias}’ zuwa ‘{new_alias}’? Amsa eh, ko soke.",
+      "success": "An sake sunan mai amfana zuwa ‘{alias}’."
+    },
     "update": {
       "not_supported": "Update beneficiaries is not yet supported."
     },
@@ -948,7 +999,7 @@
       "no_recent": "Ban tuna da wani beneficiary suggestion kwanan nan ba. Transaction dole ya kasance na baya-bayan nan kafin a iya ajiye shi.",
       "user_not_found": "Ba a sami user ba.",
       "default_alias": "My Beneficiary",
-      "saved": "An ajiye **{alias}** cikin beneficiaries \u0257inka.",
+      "saved": "An ajiye **{alias}** cikin beneficiaries ɗinka.",
       "save_failed": "Yi hakuri, ban iya ajiye wannan beneficiary yanzu ba."
     },
     "format": {
@@ -958,10 +1009,10 @@
   "transfer": {
     "confirmation": {
       "name_mismatch_warning": "Ka ce a tura zuwa {requested_name}, amma an warware account din a matsayin {resolved_name}.",
-      "high_risk_unsaved_warning": "\ufe0f Wannan transfer mai hadari ne: {amount} zuwa wanda ba a ajiye ba. Don Allah ka tabbatar da cikakkun bayanai sosai.",
+      "high_risk_unsaved_warning": "️ Wannan transfer mai hadari ne: {amount} zuwa wanda ba a ajiye ba. Don Allah ka tabbatar da cikakkun bayanai sosai.",
       "high_risk_unsaved_warning_variants": {
-        "standard": "\ufe0f Wannan transfer mai hadari ne: {amount} zuwa wanda ba a ajiye ba. Don Allah ka tabbatar da cikakkun bayanai sosai.",
-        "careful": "\ufe0f Don Allah ka duba wannan transfer mai hadari sosai: {amount} zai tafi ga wanda ba a ajiye ba."
+        "standard": "️ Wannan transfer mai hadari ne: {amount} zuwa wanda ba a ajiye ba. Don Allah ka tabbatar da cikakkun bayanai sosai.",
+        "careful": "️ Don Allah ka duba wannan transfer mai hadari sosai: {amount} zai tafi ga wanda ba a ajiye ba."
       },
       "change": {
         "join_two": "{first} da {second}",
@@ -1008,16 +1059,16 @@
       "summary": {
         "recipient_fallback": "Recipient",
         "last4_fallback": "????",
-        "title": "*{amount} \u2192 {recipient_name}*",
+        "title": "*{amount} → {recipient_name}*",
         "title_variants": {
-          "standard": "*{amount} \u2192 {recipient_name}*",
+          "standard": "*{amount} → {recipient_name}*",
           "warm": "*Shirye: {amount} zuwa {recipient_name}*",
           "careful": "*Duba sosai: {amount} zuwa {recipient_name}*",
           "trusted_careful": "*Shirye, don Allah ka duba: {amount} zuwa {recipient_name}*"
         },
-        "recipient_line": "{recipient_bank} \u2022 {recipient_account}",
+        "recipient_line": "{recipient_bank} • {recipient_account}",
         "user_note": "Narration: {user_note}",
-        "source_line": "From: {source_bank} (\u00b7\u00b7\u00b7{last4})"
+        "source_line": "From: {source_bank} (···{last4})"
       },
       "multi_source_summary": {
         "field_amount": "*Amount:* {amount}",
@@ -1027,30 +1078,30 @@
         "narration": "narration: Narration: {narration}",
         "funding_header": "*Funding from:*",
         "bank_fallback": "Account",
-        "funding_item": "\u2022 {bank} (\u00b7\u00b7\u00b7{last4}): {amount}",
+        "funding_item": "• {bank} (···{last4}): {amount}",
         "fee": "fee: *Fee:* {fee}",
         "total": "total: *Total:* {total}",
         "authorize": "Tap *Authorize* to enter kar PIN."
       },
       "multi_source_receipt": {
         "success_header": "*Transfer ya yi nasara!*",
-        "title": "*{amount}* \u2192 {recipient_name}",
+        "title": "*{amount}* → {recipient_name}",
         "location_line": "{recipient_bank} (`{recipient_account}`)",
         "funded_header": "*Funded from:*",
-        "from_line": "*From:* {bank} (\u00b7\u00b7\u00b7{last4})",
+        "from_line": "*From:* {bank} (···{last4})",
         "ref": "*Ref:* `{reference}`",
         "time": "time: *Time:* {time}"
       },
       "funding_plan": {
         "secondary_bank_fallback": "another account",
         "bank_fallback": "Account",
-        "recipient_title": "*{amount} \u2192 {recipient_display} ({recipient_bank})*",
+        "recipient_title": "*{amount} → {recipient_display} ({recipient_bank})*",
         "account_line": "Account: {recipient_account}",
-        "primary_balance": "Na ka {primary_bank} has *{balance}* \u2014 not enough for this transfer.",
+        "primary_balance": "Na ka {primary_bank} has *{balance}* — not enough for this transfer.",
         "ask_use_secondary": "Kana so to use *{amount}* from your {secondary_bank} to complete it?",
         "suggested_header": "*Suggested breakdown:*",
-        "suggested_item": "\u2022 {bank}: *{amount}*",
-        "divider": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+        "suggested_item": "• {bank}: *{amount}*",
+        "divider": "─────────────",
         "total_line": "*Total:* {amount}",
         "credit_after_debits": "Recipient zai karbi kudin once duk funding debits sun succeed."
       },
@@ -1116,7 +1167,7 @@
       "join_many": "{head}, da {last}",
       "invalid_phone": "Da fatan za ka shigar da sahihiyar lambar waya ta Najeriya.",
       "amount_gt_zero": "Adadin kudin dole ya fi zero.",
-      "max_amount": "Matsakaicin airtime purchase na \u20a650,000. Da fatan ka shigar da karamin amount.",
+      "max_amount": "Matsakaicin airtime purchase na ₦50,000. Da fatan ka shigar da karamin amount.",
       "network_not_identified": "Ban iya gano network na {recipient_phone} ba. Da fatan ka duba number din."
     },
     "format": {
@@ -1136,11 +1187,11 @@
     "execution": {
       "recipient_fallback": "Airtime Beneficiary",
       "date_now": "Now",
-      "message_queued": "Airtime \u20a6{amount} don {recipient_target} ({network}) yana processing.",
+      "message_queued": "Airtime ₦{amount} don {recipient_target} ({network}) yana processing.",
       "message_queued_variants": {
-        "standard": "Airtime \u20a6{amount} don {recipient_target} ({network}) yana processing.",
-        "warm": "Na karba. Airtime \u20a6{amount} don {recipient_target} ({network}) yana processing.",
-        "reassuring": "Airtime \u20a6{amount} don {recipient_target} ({network}) yana processing. Confirmation daga provider na iya daukar mintoci kadan."
+        "standard": "Airtime ₦{amount} don {recipient_target} ({network}) yana processing.",
+        "warm": "Na karba. Airtime ₦{amount} don {recipient_target} ({network}) yana processing.",
+        "reassuring": "Airtime ₦{amount} don {recipient_target} ({network}) yana processing. Confirmation daga provider na iya daukar mintoci kadan."
       },
       "processing_status": "Wannan airtime purchase yana processing har yanzu.",
       "system_error": "Kuskuren system during execution."
@@ -1152,11 +1203,11 @@
     },
     "executor": {
       "reference_fallback": "N/A",
-      "success_message": "Airtime ya yi nasara\n\nAmount: \u20a6{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+      "success_message": "Airtime ya yi nasara\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
       "success_message_variants": {
-        "standard": "Airtime ya yi nasara\n\nAmount: \u20a6{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
-        "warm": "An gama. Airtime \u20a6{amount} ya tafi zuwa {recipient_target} ({network}).\nRef: {reference}",
-        "celebratory": "An daidaita. Airtime \u20a6{amount} ya tafi zuwa {recipient_target} ({network}).\nRef: {reference}"
+        "standard": "Airtime ya yi nasara\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+        "warm": "An gama. Airtime ₦{amount} ya tafi zuwa {recipient_target} ({network}).\nRef: {reference}",
+        "celebratory": "An daidaita. Airtime ₦{amount} ya tafi zuwa {recipient_target} ({network}).\nRef: {reference}"
       },
       "failure_message": "Airtime purchase ya kasa don {recipient_target} ({network}).\nDalili: {reason}",
       "failure_message_variants": {
@@ -1173,7 +1224,7 @@
     "confirmation": {
       "buy_network_for_phone": "Saya data {network} wa {target_phone}?",
       "buy_plan_for_phone": "Saya {plan_name} wa {target_phone}?",
-      "buy_amount_network_for_phone": "Saya data {network} na \u20a6{amount} wa {target_phone}?",
+      "buy_amount_network_for_phone": "Saya data {network} na ₦{amount} wa {target_phone}?",
       "change": {
         "amount_to": "To, ina sabunta budget din data zuwa {amount}.",
         "phone_to": "To, zan saya wannan data wa {phone}.",
@@ -1195,24 +1246,24 @@
       "ask_preference_target_network": "To. Wane budget ko girman data zan yi amfani da shi wa {target_phone} a {network}?",
       "ask_preference_target_unknown_network": "To. Wane network ne {target_phone} yake amfani da shi, kuma wane budget ko girman data kake so?",
       "choose_plan": "Na samo wasu data plans da suka dace:\n{options}\n{reply_hint}",
-      "recommendation_ask_phone": "Na samo {plan_name} a \u20a6{amount}, yana aiki na {validity}. Wace layin {network} zan saya wa?",
+      "recommendation_ask_phone": "Na samo {plan_name} a ₦{amount}, yana aiki na {validity}. Wace layin {network} zan saya wa?",
       "reply_with_one": "Amsa da 1.",
       "reply_with_two": "Amsa da 1 ko 2.",
       "reply_with_range": "Amsa da 1, 2, ko {count}.",
-      "option": "{index}. {plan_name} \u2014 \u20a6{amount} ({validity})",
+      "option": "{index}. {plan_name} — ₦{amount} ({validity})",
       "missing_plan": "Don Allah zabi ingantaccen data plan kafin mu ci gaba.",
       "invalid_plan_code": "Ban sami wannan data plan ba. Don Allah zabi daga options da ke akwai.",
       "catalog_unavailable": "Ban iya dauko data plans yanzu ba. Don Allah sake gwadawa nan gaba kadan.",
-      "no_budget_match": "Ban sami data plan na {network} cikin \u20a6{budget} ba. Kana iya kara budget ko zabi karamin plan.",
-      "size_budget_conflict": "Ban sami {size} cikin \u20a6{budget} ba. Plan {size} mafi kusa na \u20a6{amount}.",
+      "no_budget_match": "Ban sami data plan na {network} cikin ₦{budget} ba. Kana iya kara budget ko zabi karamin plan.",
+      "size_budget_conflict": "Ban sami {size} cikin ₦{budget} ba. Plan {size} mafi kusa na ₦{amount}.",
       "validity_unknown": "validity bai bayyana ba"
     },
     "plan_query": {
       "ask_network": "Wane network zan duba?",
-      "exact_match": "{plan_name} na \u20a6{amount}, yana aiki na {validity}.",
+      "exact_match": "{plan_name} na ₦{amount}, yana aiki na {validity}.",
       "multiple_matches": "Na samo wasu options da suka dace:\n{options}",
       "nearest_matches": "Ban sami wannan size din daidai ba. Options mafi kusa sune:\n{options}",
-      "budget_matches": "Da \u20a6{budget} a {network}, wadannan ne options mafi karfi:\n{options}",
+      "budget_matches": "Da ₦{budget} a {network}, wadannan ne options mafi karfi:\n{options}",
       "validity_matches": "Wadannan options sun fi kusa da validity da ka tambaya:\n{options}",
       "generic_matches": "Ga wasu data plans na {network}:\n{options}"
     },
@@ -1226,13 +1277,13 @@
     "format": {
       "validity_days": "{days} days",
       "suggestion": {
-        "repeat": "You usually buy *{size} {network}* ({validity}) for \u20a6{amount}.\nWant me to get that again?\n\nAmsa *yes* to continue or *show plans* to see other options.",
-        "budget": "With \u20a6{amount}, the best option is:\n\u2022 *{network} {size}* \u2014 valid {validity}\n\nAmsa *yes* to continue or *show plans* to choose.",
-        "default": "I recommend:\n\u2022 *{network} {size}* \u2014 \u20a6{amount} ({validity})\n\nAmsa *yes* to continue or *show plans* to see other options."
+        "repeat": "You usually buy *{size} {network}* ({validity}) for ₦{amount}.\nWant me to get that again?\n\nAmsa *yes* to continue or *show plans* to see other options.",
+        "budget": "With ₦{amount}, the best option is:\n• *{network} {size}* — valid {validity}\n\nAmsa *yes* to continue or *show plans* to choose.",
+        "default": "I recommend:\n• *{network} {size}* — ₦{amount} ({validity})\n\nAmsa *yes* to continue or *show plans* to see other options."
       },
       "plan_list": {
         "header": "header: *{network} Data Plans:*",
-        "item": "\u2022 *{size}* \u2014 \u20a6{amount} ({validity})",
+        "item": "• *{size}* — ₦{amount} ({validity})",
         "reply_show_more": "Amsa da plan size (e.g. *5GB*) or *show more*.",
         "reply_select": "Amsa da plan size (e.g. *5GB*) to select."
       },
@@ -1247,21 +1298,21 @@
           "careful": "*Duba data purchase: {plan_name} don {target_display}*",
           "trusted_careful": "*Don Allah duba: {plan_name} don {target_display}*"
         },
-        "network_amount": "Network: {network} \u2022 Amount: \u20a6{amount}"
+        "network_amount": "Network: {network} • Amount: ₦{amount}"
       }
     },
     "completion": {
-      "success_message": "Data purchase ya yi nasara\n\nPlan: {plan_name}\nAmount: \u20a6{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
+      "success_message": "Data purchase ya yi nasara\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
       "success_message_variants": {
-        "standard": "Data purchase ya yi nasara\n\nPlan: {plan_name}\nAmount: \u20a6{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
-        "warm": "An gama. Data {plan_name} yana active don {recipient_phone} ({network}).\nAmount: \u20a6{amount}\nTransaction ID: {transaction_id}",
-        "celebratory": "An daidaita. Data {plan_name} yana active don {recipient_phone} ({network}).\nAmount: \u20a6{amount}\nTransaction ID: {transaction_id}"
+        "standard": "Data purchase ya yi nasara\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
+        "warm": "An gama. Data {plan_name} yana active don {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}",
+        "celebratory": "An daidaita. Data {plan_name} yana active don {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}"
       },
-      "pending_message": "{plan_name} purchase (\u20a6{amount}) don {recipient_phone} yana processing.\n\nZa ka samu confirmation nan bada jimawa ba. Idan bai shigo cikin minti 5 ba, tuntubi support.",
+      "pending_message": "{plan_name} purchase (₦{amount}) don {recipient_phone} yana processing.\n\nZa ka samu confirmation nan bada jimawa ba. Idan bai shigo cikin minti 5 ba, tuntubi support.",
       "pending_message_variants": {
-        "standard": "{plan_name} purchase (\u20a6{amount}) don {recipient_phone} yana processing.\n\nZa ka samu confirmation nan bada jimawa ba. Idan bai shigo cikin minti 5 ba, tuntubi support.",
-        "warm": "Na karba. {plan_name} purchase (\u20a6{amount}) don {recipient_phone} yana processing.\n\nZa ka samu confirmation nan bada jimawa ba.",
-        "reassuring": "{plan_name} purchase (\u20a6{amount}) don {recipient_phone} yana processing. Confirmation daga provider na iya daukar mintoci kadan."
+        "standard": "{plan_name} purchase (₦{amount}) don {recipient_phone} yana processing.\n\nZa ka samu confirmation nan bada jimawa ba. Idan bai shigo cikin minti 5 ba, tuntubi support.",
+        "warm": "Na karba. {plan_name} purchase (₦{amount}) don {recipient_phone} yana processing.\n\nZa ka samu confirmation nan bada jimawa ba.",
+        "reassuring": "{plan_name} purchase (₦{amount}) don {recipient_phone} yana processing. Confirmation daga provider na iya daukar mintoci kadan."
       },
       "processing_status": "Wannan data purchase yana processing har yanzu.",
       "failed_message": "Data purchase ya kasa: {error_message}. Don Allah sake gwadawa.",
@@ -1280,12 +1331,12 @@
     }
   },
   "pre_onboarding": {
-    "greeting": "Barka da zuwa {app_name}. Zan iya taimakawa da transfers, airtime/data, balances, da transaction history. Da farko, mu kammala account setup \u0257inka.",
-    "inquiry": "Setup yana taimaka min tabbatar da kai da ha\u0257a bank accounts \u0257inka cikin aminci. Bayananka suna encrypted kuma ana amfani da su don verification kawai.",
-    "compliance": "Madalla. Danna maballin da ke sama don ci gaba da account setup \u0257inka.",
+    "greeting": "Barka da zuwa {app_name}. Zan iya taimakawa da transfers, airtime/data, balances, da transaction history. Da farko, mu kammala account setup ɗinka.",
+    "inquiry": "Setup yana taimaka min tabbatar da kai da haɗa bank accounts ɗinka cikin aminci. Bayananka suna encrypted kuma ana amfani da su don verification kawai.",
+    "compliance": "Madalla. Danna maballin da ke sama don ci gaba da account setup ɗinka.",
     "objection": "Na fahimci damuwarka. Setup ya zama dole kafin in iya duba banking information ko taimaka da transactions.",
-    "banking_request": "Zan iya taimakawa da hakan idan setup ya kammala. Da farko, mu gama account setup \u0257inka.",
-    "out_of_scope": "Ina mayar da hankali kan banking. Don amfani da Nenya, da fatan za ka kammala account setup \u0257inka tukunna.",
+    "banking_request": "Zan iya taimakawa da hakan idan setup ya kammala. Da farko, mu gama account setup ɗinka.",
+    "out_of_scope": "Ina mayar da hankali kan banking. Don amfani da Nenya, da fatan za ka kammala account setup ɗinka tukunna.",
     "cooldown": "Zan kasance a nan idan ka shirya. Danna maballin a kowane lokaci don ci gaba da setup.",
     "telegram_share_contact_hint": "Danna Share Contact a kasa don ci gaba."
   },
@@ -1328,7 +1379,7 @@
       "with_timezone": "{time} WAT"
     },
     "row": {
-      "basic": "{index}. {domain}: {amount} {target} \u2022 {recurrence} da {time} WAT",
+      "basic": "{index}. {domain}: {amount} {target} • {recurrence} da {time} WAT",
       "with_id": "{row} (ID: {schedule_id})"
     },
     "list": {
@@ -1368,6 +1419,23 @@
         "narration_updated": "narration an update",
         "details_updated": "details an update"
       }
+    },
+    "pause": {
+      "review": "A dakatar da jadawali {count}?\n{items}\n\nAmsa eh, ko soke.",
+      "success": "An dakatar da jadawali {count}."
+    },
+    "resume": {
+      "review": "A ci gaba da jadawali {count}?\n{items}\n\nAmsa eh don zuwa tantance PIN, ko soke.",
+      "success": "An ci gaba da jadawali {count}.",
+      "expired": "Ɗaya ko fiye daga jadawalin ba za su iya gudana ba. Ba a ci gaba da komai ba."
+    },
+    "run": {
+      "count": "Na sami tarihin gudu {count}.",
+      "exists_yes": "Eh, akwai tarihin gudun jadawali.",
+      "exists_no": "Babu tarihin gudun jadawali da ya dace.",
+      "empty": "Babu tarihin gudun jadawali da ya dace.",
+      "header": "Tarihin gudun jadawali",
+      "row": "{index}. {status} • {due}"
     },
     "update": {
       "time_pending": "Scheduled time yana pending"
@@ -1455,7 +1523,7 @@
       "recipient_unknown": "Ba a sani ba",
       "recipient_fallback": "recipient",
       "transfer_single_line": "*Transfer:* {amount} to {recipient}",
-      "transfer_compact_line": "{icon} {amount} \u2192 {recipient} \u2022 {bank} \u2022 {account}",
+      "transfer_compact_line": "{icon} {amount} → {recipient} • {bank} • {account}",
       "bank_fallback": "Bank",
       "account_fallback": "N/A",
       "phone_fallback": "N/A",
@@ -1498,11 +1566,11 @@
     "planner": {
       "no_active_mandates": "Babu accounts with active mandates.",
       "preferred_account_not_eligible": "Specified account ba a samu ba or not eligible for direct debit.",
-      "preferred_insufficient": "Na ka {bank_name} has \u20a6{balance}. Need \u20a6{shortfall} more.",
+      "preferred_insufficient": "Na ka {bank_name} has ₦{balance}. Need ₦{shortfall} more.",
       "unable_to_create": "Ba a iya create funding plan."
     },
     "batch": {
-      "shortfall_header": "\ufe0f Kudi bai isa wannan batch ba",
+      "shortfall_header": "️ Kudi bai isa wannan batch ba",
       "shortfall_body": "Wannan batch yana bukatar {demanded}, but only {available} is currently available.",
       "task_covered": "{task_id}: {amount} available from {bank}.",
       "task_short": "{task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
@@ -1516,31 +1584,38 @@
       "shortfall_no_options": "[HA] Because we can only pool from one additional account, and none of your other accounts have the remaining {shortfall} available, this transfer cannot be completed right now.\n\nYou can reduce the transfer amount, or top up one of your accounts first.",
       "shortfall_reply_hint": "[HA] Reply with the number or bank name."
     },
+    "active_question": {
+      "sufficient": "{account} zai iya biyan wannan batch da ke jira. Jimillar da ake bukata: {total}. Akwai: {available}. Za a rage: {remaining}.",
+      "insufficient": "{account} ba zai iya biyan wannan batch da ke jira ba. Jimillar da ake bukata: {total}. Akwai: {available}. Abin da ya rage: {shortfall}.",
+      "incomplete_cost": "Zan iya duba hakan bayan ka bayar da sauran adadin transaction.",
+      "account_unresolved": "Wane linked account kake so in duba don wannan batch da ke jira?",
+      "balance_unavailable": "Ban iya samun live balance na wannan account yanzu ba. Pending transaction dinka bai canza ba."
+    },
     "format": {
       "insufficient": {
         "header": "*Kudi Bai Isa Ba*",
         "recipient_fallback": "Recipient",
         "body": "Kana kokarin aika *{transfer_amount}* zuwa {recipient_display}, amma balance na *{bank_name}* dinka *{balance}* ne kawai.",
         "options_header": "*Options:*",
-        "option_send_instead": "\u2022 Send *{amount}* instead",
-        "option_add_funds_retry": "\u2022 Kara kudi ka sake gwadawa",
-        "option_cancel": "\u2022 Soke transaction"
+        "option_send_instead": "• Send *{amount}* instead",
+        "option_add_funds_retry": "• Kara kudi ka sake gwadawa",
+        "option_cancel": "• Soke transaction"
       },
       "plan": {
         "bank_fallback_lower": "account",
         "bank_fallback": "Account",
         "single_source_debit": "{amount} will be debited from kar {bank} account.",
         "multi_source_header": "Don aika {amount}, I'll combine:",
-        "multi_source_item": "\u2022 {amount} from {bank}"
+        "multi_source_item": "• {amount} from {bank}"
       }
     }
   },
   "mandate": {
     "expired_reinitiate": "Authorization na account dinka ya kare. Da fatan sake farawa don ci gaba.",
-    "pending_with_destinations": "Na ka account authorization is pending.\n\nTransfer \u20a650 to any of these accounts:\n{destinations}\n\n {minutes_left} minutes remaining",
-    "pending_complete_transfer": "Your account authorization is pending. Da fatan kammala the \u20a650 transfer to activate your account.",
+    "pending_with_destinations": "Na ka account authorization is pending.\n\nTransfer ₦50 to any of these accounts:\n{destinations}\n\n {minutes_left} minutes remaining",
+    "pending_complete_transfer": "Your account authorization is pending. Da fatan kammala the ₦50 transfer to activate your account.",
     "bank_fallback": "kar bank",
-    "approved_awaiting_nibss": "Your \u20a650 authorization transfer was received!\n\nYour {bank_name} account {account_suffix} ana verified by NIBSS. This usually takes a few minutes but can take up to 24 hours.\n\nWe'll notify you as soon as it's ready!",
+    "approved_awaiting_nibss": "Your ₦50 authorization transfer was received!\n\nYour {bank_name} account {account_suffix} ana verified by NIBSS. This usually takes a few minutes but can take up to 24 hours.\n\nWe'll notify you as soon as it's ready!",
     "status_paused": "Your account an temporarily paused.\nPlease contact support to reinstate it.",
     "status_rejected": "Na ka account authorization was rejected.\nDa fatan contact support to resolve this.",
     "status_cancelled": "Your account authorization was cancelled.\nKana so to reinitiate? Say *'reinitiate'* to start again.",
@@ -1557,8 +1632,8 @@
       "invalid_format": "Bai dace ba amount format. Da fatan enter a valid number.",
       "invalid_format_short": "Bai dace ba amount format",
       "gt_zero": "Amount must be greater than zero.",
-      "minimum": "Mafi karanci {transaction_type} amount is \u20a6{amount}.",
-      "maximum": "Mafi yawa {transaction_type} amount is \u20a6{amount}."
+      "minimum": "Mafi karanci {transaction_type} amount is ₦{amount}.",
+      "maximum": "Mafi yawa {transaction_type} amount is ₦{amount}."
     },
     "percentage": {
       "invalid_format": "Bai dace ba percentage format. Da fatan enter a valid number.",
@@ -1653,6 +1728,78 @@
         "followup_scoped": "Har yanzu muna ci gaba da sarrafa tura {amount} zuwa ga {recipient_display}."
       }
     },
+    "account": {
+      "linking_account": {
+        "first_generic": "Ina haɗa asusunka yanzu.",
+        "followup_generic": "Har yanzu ina haɗa asusunka."
+      },
+      "reinitiating_mandate": {
+        "first_generic": "Ina sake fara haɗin asusunka yanzu.",
+        "followup_generic": "Har yanzu ina sake fara haɗin asusunka."
+      },
+      "setting_default": {
+        "first_generic": "Ina sabunta asusun tsoho naka yanzu.",
+        "followup_generic": "Har yanzu ina sabunta asusun tsoho naka."
+      },
+      "unlinking_accounts": {
+        "first_generic": "Ina cire asusun da ka zaɓa yanzu.",
+        "followup_generic": "Har yanzu ina cire asusun da ka zaɓa."
+      }
+    },
+    "beneficiary": {
+      "renaming": {
+        "first_generic": "Ina sabunta wanda ka ajiye yanzu.",
+        "followup_generic": "Har yanzu ina sabunta wanda ka ajiye."
+      },
+      "deleting": {
+        "first_generic": "Ina cire waɗanda ka zaɓa yanzu.",
+        "followup_generic": "Har yanzu ina cire waɗanda ka zaɓa."
+      }
+    },
+    "schedule": {
+      "creating": {
+        "first_generic": "Ina saita biyan da ka tsara yanzu.",
+        "followup_generic": "Har yanzu ina saita biyan da ka tsara."
+      },
+      "updating": {
+        "first_generic": "Ina sabunta biyan da ka tsara yanzu.",
+        "followup_generic": "Har yanzu ina sabunta biyan da ka tsara."
+      },
+      "cancelling": {
+        "first_generic": "Ina soke biyan da ka zaɓa yanzu.",
+        "followup_generic": "Har yanzu ina soke biyan da ka zaɓa."
+      },
+      "pausing": {
+        "first_generic": "Ina dakatar da biyan da ka zaɓa yanzu.",
+        "followup_generic": "Har yanzu ina dakatar da biyan da ka zaɓa."
+      },
+      "resuming": {
+        "first_generic": "Ina ci gaba da biyan da ka zaɓa yanzu.",
+        "followup_generic": "Har yanzu ina ci gaba da biyan da ka zaɓa."
+      }
+    },
+    "support": {
+      "updating_ticket": {
+        "first_generic": "Ina sabunta tikitin taimakonka yanzu.",
+        "followup_generic": "Har yanzu ina sabunta tikitin taimakonka."
+      },
+      "closing_ticket": {
+        "first_generic": "Ina rufe tikitin taimakonka yanzu.",
+        "followup_generic": "Har yanzu ina rufe tikitin taimakonka."
+      }
+    },
+    "airtime": {
+      "processing_purchase": {
+        "first_generic": "Ina sarrafa sayen airtime naka yanzu.",
+        "followup_generic": "Har yanzu ina sarrafa sayen airtime naka."
+      }
+    },
+    "data": {
+      "processing_purchase": {
+        "first_generic": "Ina sarrafa sayen data naka yanzu.",
+        "followup_generic": "Har yanzu ina sarrafa sayen data naka."
+      }
+    },
     "scope": {
       "transactions": "transactions dinka",
       "outgoing_transactions": "transactions da ka aika",
@@ -1680,7 +1827,7 @@
       "error_occurred": "Kuskure ya faru"
     },
     "format": {
-      "candidate_item": "\u2022 {name} ({bank_name} \u2022 \u2026{last4})"
+      "candidate_item": "• {name} ({bank_name} • …{last4})"
     },
     "fallback": {
       "generic": "Yi hakuri, wani abu bai yi daidai ba. Da fatan sake gwadawa."
@@ -1718,10 +1865,10 @@
       "invalid_phone_number": "Bai dace ba phone number. Da fatan enter a valid Nigerian number (e.g., 08012345678).",
       "invalid_network": "Bai dace ba network. Da fatan choose from: MTN, Airtel, Glo, or 9mobile.",
       "cancelled": "An soke transaction.",
-      "mandate_required": "\ufe0f {error_message}",
+      "mandate_required": "️ {error_message}",
       "account_selection_required": "Wane account would you like to use?",
       "greeting": "Sannu{user_greeting}! Me zan taimaka maka da shi yau?",
-      "help": "I can help you with:\n\u2022 Sending money\n\u2022 Buying airtime\n\u2022 Buying data\n\u2022 Checking your balance\n\nMenene would you like to do?",
+      "help": "I can help you with:\n• Sending money\n• Buying airtime\n• Buying data\n• Checking your balance\n\nMenene would you like to do?",
       "beneficiary_saved": "An adana {recipient_name} as a beneficiary.",
       "recipient_changed": "Na gane, ana update the recipient to {recipient_name}.",
       "amount_changed": "Na gane, ana update the amount to {formatted_amount}.",

@@ -1,11 +1,12 @@
 """Scheduled transfer requirements and management actions."""
 
 import time
-from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from datetime import UTC, date, datetime
+from typing import Any, Literal, Protocol, cast
 
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.presentation.formatters.currency import format_naira
+from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.scheduling.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
@@ -43,15 +44,19 @@ from shared.types.read import ReadRequest, ReadResult
 SCHEDULING_ACTIONS = {
     "schedule_transfer",
     "recurring_transfer",
-    "list_scheduled_transfers",
-    "cancel_scheduled_transfer",
     "list_scheduled_transactions",
     "find_scheduled_transaction",
     "cancel_scheduled_transaction",
     "edit_scheduled_transaction",
+    "pause_scheduled_transaction",
+    "resume_scheduled_transaction",
+    "list_scheduled_runs",
+    "find_scheduled_run",
 }
-CANCEL_SCHEDULE_ACTIONS = {"cancel_scheduled_transfer", "cancel_scheduled_transaction"}
+CANCEL_SCHEDULE_ACTIONS = {"cancel_scheduled_transaction"}
 EDIT_SCHEDULE_ACTIONS = {"edit_scheduled_transaction"}
+PAUSE_SCHEDULE_ACTIONS = {"pause_scheduled_transaction"}
+RESUME_SCHEDULE_ACTIONS = {"resume_scheduled_transaction"}
 
 
 def _schedule_version_token(schedule: Any) -> str | None:
@@ -60,6 +65,15 @@ def _schedule_version_token(schedule: Any) -> str | None:
         return None
     isoformat = getattr(updated_at, "isoformat", None)
     return str(isoformat() if callable(isoformat) else updated_at)
+
+
+def _schedule_end_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 class TransferPipelineBuilder(Protocol):
@@ -253,9 +267,7 @@ class TransferSchedulingHandler:
             )
 
         lines = [render_message("schedule.list.header", locale)]
-        lines.extend(
-            format_schedule_row(idx, schedule, locale=locale) for idx, schedule in enumerate(page, start=1)
-        )
+        lines.extend(format_schedule_row(idx, schedule, locale=locale) for idx, schedule in enumerate(page, start=1))
         if has_next:
             lines.extend(["", render_message("common.pagination.more", locale)])
 
@@ -305,6 +317,269 @@ class TransferSchedulingHandler:
                 "is_scheduled_operation": True,
                 "skip_finalize_summary": True,
                 "schedule_context_items": build_schedule_context_items(matches, locale=locale),
+            },
+        )
+
+    async def list_runs(
+        self,
+        *,
+        data: TransferPayload,
+        user_id: str,
+        locale: str,
+        find_one: bool = False,
+    ) -> TransactionResult:
+        """Return user-scoped, read-only schedule execution history."""
+        request = data.read_request or ReadRequest(subject="schedule", response_shape="surface_list")
+        contract = data.schedule_contract or ScheduleQueryContract(
+            surface="runs",
+            operation="detail" if find_one else "list",
+            response_shape=request.response_shape,
+        )
+
+        def parsed_boundary(value: str | None) -> datetime | None:
+            if not value:
+                return None
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            return parsed.astimezone(UTC).replace(tzinfo=None) if parsed.tzinfo else parsed
+
+        async with UnitOfWork() as uow:
+            repo = uow.scheduled_runs
+            if not repo:
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message(
+                        "transfer.error.pipeline_failed", locale, {"error": "schedule_run_repo_missing"}
+                    ),
+                )
+            if find_one and data.schedule_id:
+                run = await repo.get_for_user(data.schedule_id, user_id)
+                runs = [run] if run is not None else []
+                total_count = len(runs)
+            else:
+                runs = await repo.get_filtered_by_user(
+                    user_id,
+                    schedule_ids=data.selected_entity_ids,
+                    domains=contract.domains,
+                    statuses=contract.run_statuses,
+                    starts_at=parsed_boundary(contract.starts_at),
+                    ends_at=parsed_boundary(contract.ends_at),
+                    limit=request.page_size + 1,
+                    offset=request.offset,
+                )
+                total_count = await repo.count_filtered_by_user(
+                    user_id,
+                    schedule_ids=data.selected_entity_ids,
+                    domains=contract.domains,
+                    statuses=contract.run_statuses,
+                    starts_at=parsed_boundary(contract.starts_at),
+                    ends_at=parsed_boundary(contract.ends_at),
+                )
+
+        page = runs[: request.page_size]
+        read_result = ReadResult(
+            request=request,
+            total_count=total_count,
+            returned_count=0 if request.response_shape.startswith("fact_") else len(page),
+            has_next=len(runs) > request.page_size or request.offset + request.page_size < total_count,
+            has_previous=request.offset > 0,
+        )
+        if request.response_shape == "fact_count":
+            response = render_message("schedule.run.count", locale, {"count": total_count})
+        elif request.response_shape == "fact_bool":
+            response = render_message(
+                "schedule.run.exists_yes" if total_count else "schedule.run.exists_no",
+                locale,
+            )
+        elif not page:
+            response = render_message("schedule.run.empty", locale)
+        else:
+            lines = [render_message("schedule.run.header", locale)]
+            context_items: list[dict[str, str]] = []
+            for index, run in enumerate(page, start=1):
+                due = format_lagos_schedule_datetime(run.due_at_utc)
+                lines.append(
+                    render_message(
+                        "schedule.run.row",
+                        locale,
+                        {"index": index, "status": str(run.status), "due": due},
+                    )
+                )
+                token = _schedule_version_token(run)
+                if token:
+                    context_items.append(
+                        {
+                            "id": str(run.id),
+                            "version_token": token,
+                            "display_label": f"{run.status} · {due}",
+                        }
+                    )
+            if read_result.has_next:
+                lines.extend(["", render_message("common.pagination.more", locale)])
+            response = "\n".join(lines)
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                response=response,
+                patch={
+                    "is_scheduled_operation": True,
+                    "skip_finalize_summary": True,
+                    "schedule_run_context_items": context_items,
+                    "schedule_contract": contract.model_dump(mode="json", exclude_none=True),
+                },
+                read_result=read_result,
+            )
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response=response,
+            patch={
+                "is_scheduled_operation": True,
+                "skip_finalize_summary": True,
+                "schedule_contract": contract.model_dump(mode="json", exclude_none=True),
+            },
+            read_result=read_result,
+        )
+
+    async def transition_schedule_state(
+        self,
+        *,
+        data: TransferPayload,
+        user_id: str,
+        locale: str,
+        user_message: str | None,
+        target_status: str,
+        gates: TransferGates,
+        phone_number: str | None,
+        worker_context: Any,
+    ) -> TransactionResult:
+        """Pause or resume one reviewed, versioned schedule set atomically."""
+        is_resume = target_status == ScheduledInstructionStatusEnum.ACTIVE.value
+        current_status = (
+            ScheduledInstructionStatusEnum.PAUSED.value if is_resume else ScheduledInstructionStatusEnum.ACTIVE.value
+        )
+        action: Literal["resume", "pause"] = "resume" if is_resume else "pause"
+        async with UnitOfWork() as uow:
+            repo = uow.scheduled_instructions
+            schedules = await repo.get_by_statuses_for_user(user_id, [current_status], limit=20)
+            request = data.bulk_mutation
+            if request is None or request.domain != "schedule" or request.action != action:
+                selection = resolve_schedule_selection(schedules, data=data, user_message=user_message)
+                selected = selection.selected
+                if selected is None:
+                    return disambiguation_result(selection.schedules, action_label=action, locale=locale)
+                version_token = _schedule_version_token(selected)
+                if not version_token:
+                    return TransactionResult(
+                        outcome=TransactionOutcome.FAILED,
+                        error=render_message("conversation_set.stale_selection", locale),
+                    )
+                from shared.types.conversation_sets import EntitySelectionRef
+
+                request = BulkMutationRequest(
+                    domain="schedule",
+                    action=action,
+                    targets=[
+                        EntitySelectionRef(
+                            entity_type="schedule",
+                            entity_id=str(selected.id),
+                            frame_id="direct_schedule_selection",
+                            display_label=format_schedule_row(1, selected, locale=locale),
+                            version_token=version_token,
+                        )
+                    ],
+                    idempotency_key=str(data.idempotency_key or f"{action}:{selected.id}"),
+                )
+
+            assert request is not None
+
+            locked = await repo.get_ids_for_user_for_update(
+                [ref.entity_id for ref in request.targets],
+                user_id,
+                statuses=[current_status],
+            )
+            by_id = {str(schedule.id): schedule for schedule in locked}
+            if any(
+                ref.entity_id not in by_id or _schedule_version_token(by_id[ref.entity_id]) != ref.version_token
+                for ref in request.targets
+            ):
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message("conversation_set.stale_selection", locale),
+                )
+
+            snapshot = BulkMutationReviewSnapshot(request=request, created_at_ts=time.time())
+            summary_key: MessageKey = "schedule.resume.review" if is_resume else "schedule.pause.review"
+            summary = render_message(
+                summary_key,
+                locale,
+                {"count": len(request.targets), "items": "\n".join(ref.display_label for ref in request.targets)},
+            )
+            patch = {
+                "is_scheduled_operation": True,
+                "skip_finalize_summary": True,
+                "bulk_mutation": request.model_dump(mode="json", exclude_none=True),
+            }
+            if not data.confirmation.confirmed:
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+                    confirmation_summary=summary,
+                    confirmation_snapshot=snapshot.model_dump(mode="json", exclude_none=True),
+                    patch=patch,
+                )
+            if is_resume and not gates.pin_verified:
+                if phone_number:
+                    await persist_schedule_pin_token(
+                        idempotency_key=data.idempotency_key,
+                        phone_number=phone_number,
+                        worker_context=worker_context,
+                    )
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_AUTH,
+                    confirmation_summary=summary,
+                    confirmation_snapshot=snapshot.model_dump(mode="json", exclude_none=True),
+                    patch=patch,
+                )
+
+            now = datetime.now(UTC).replace(tzinfo=None)
+            for schedule in locked:
+                end_date = _schedule_end_date(schedule.end_date)
+                if is_resume and schedule.end_date is not None and (end_date is None or end_date < now.date()):
+                    return TransactionResult(
+                        outcome=TransactionOutcome.FAILED,
+                        error=render_message("schedule.resume.expired", locale),
+                    )
+                if is_resume and schedule.next_run_at_utc < now:
+                    next_run = compute_initial_next_run_utc(
+                        recurrence_type=schedule.recurrence_type,
+                        start_date=schedule.start_date,
+                        local_time=schedule.local_time,
+                        day_of_week=schedule.day_of_week,
+                        day_of_month=schedule.day_of_month,
+                        timezone=schedule.timezone,
+                        now_utc=now.replace(tzinfo=UTC),
+                    )
+                    if next_run is None or (
+                        end_date is not None and next_run.date() > end_date
+                    ):
+                        return TransactionResult(
+                            outcome=TransactionOutcome.FAILED,
+                            error=render_message("schedule.resume.expired", locale),
+                        )
+                    schedule.next_run_at_utc = next_run
+                schedule.status = target_status
+            await uow.commit()
+
+        assert request is not None
+        success_key: MessageKey = "schedule.resume.success" if is_resume else "schedule.pause.success"
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response=render_message(success_key, locale, {"count": len(request.targets)}),
+            patch={
+                "is_scheduled_operation": True,
+                "skip_finalize_summary": True,
+                "bulk_mutation": None,
+                "invalidate_conversation_set_domain": "schedule",
             },
         )
 
@@ -844,7 +1119,7 @@ class TransferSchedulingHandler:
                 error=render_message("transfer.error.pipeline_failed", locale, {"error": "missing_user_id"}),
             )
 
-        if action in {"list_scheduled_transfers", "list_scheduled_transactions"}:
+        if action == "list_scheduled_transactions":
             return await self.list_schedules(data=data, user_id=user_id, locale=locale)
 
         if action == "find_scheduled_transaction":
@@ -862,6 +1137,38 @@ class TransferSchedulingHandler:
                 gates=gates,
                 phone_number=ctx.phone_number,
                 worker_context=worker_context,
+            )
+
+        if action in PAUSE_SCHEDULE_ACTIONS:
+            return await self.transition_schedule_state(
+                data=data,
+                user_id=user_id,
+                locale=locale,
+                user_message=user_message,
+                target_status=ScheduledInstructionStatusEnum.PAUSED.value,
+                gates=gates,
+                phone_number=ctx.phone_number,
+                worker_context=worker_context,
+            )
+
+        if action in RESUME_SCHEDULE_ACTIONS:
+            return await self.transition_schedule_state(
+                data=data,
+                user_id=user_id,
+                locale=locale,
+                user_message=user_message,
+                target_status=ScheduledInstructionStatusEnum.ACTIVE.value,
+                gates=gates,
+                phone_number=ctx.phone_number,
+                worker_context=worker_context,
+            )
+
+        if action in {"list_scheduled_runs", "find_scheduled_run"}:
+            return await self.list_runs(
+                data=data,
+                user_id=user_id,
+                locale=locale,
+                find_one=action == "find_scheduled_run",
             )
 
         pipeline = self._build_pipeline(user_message, include_execution=False, require_schedule_fields=True)

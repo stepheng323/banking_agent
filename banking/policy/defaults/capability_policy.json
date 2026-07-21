@@ -39,12 +39,6 @@
         "recurring_data": {
           "supported": true
         },
-        "cancel_scheduled_transfer": {
-          "supported": true
-        },
-        "list_scheduled_transfers": {
-          "supported": true
-        },
         "list_scheduled_transactions": {
           "supported": true
         },
@@ -55,6 +49,18 @@
           "supported": true
         },
         "edit_scheduled_transaction": {
+          "supported": true
+        },
+        "pause_scheduled_transaction": {
+          "supported": true
+        },
+        "resume_scheduled_transaction": {
+          "supported": true
+        },
+        "list_scheduled_runs": {
+          "supported": true
+        },
+        "find_scheduled_run": {
           "supported": true
         }
       }
@@ -167,6 +173,28 @@
         }
       }
     },
+    "beneficiary": {
+      "domain": "beneficiary",
+      "enabled": true,
+      "actions": {
+        "list_beneficiaries": {
+          "supported": true
+        },
+        "delete_beneficiary": {
+          "supported": true
+        },
+        "rename_beneficiary": {
+          "supported": true
+        },
+        "save_verified_beneficiary": {
+          "supported": true
+        },
+        "manual_add_beneficiary": {
+          "supported": false,
+          "limitation_message": "For safety, save a beneficiary after a verified payment instead of entering bank details manually."
+        }
+      }
+    },
     "support": {
       "domain": "support",
       "enabled": true,
@@ -188,6 +216,12 @@
           "supported": true
         },
         "escalate": {
+          "supported": true
+        },
+        "update_ticket": {
+          "supported": true
+        },
+        "close_ticket": {
           "supported": true
         },
         "retry_payout": {
@@ -252,7 +286,7 @@
     {
       "id": "scheduled_payments",
       "domain": "schedule",
-      "action": "list_scheduled_transfers",
+      "action": "list_scheduled_transactions",
       "label_key": "suggestions.scheduled_payments"
     }
   ]

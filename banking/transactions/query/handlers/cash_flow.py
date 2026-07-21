@@ -2,11 +2,13 @@
 
 from typing import Literal
 
+from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
     CashFlowSummaryResult,
     QueryExecutionContract,
     QueryResult,
 )
+from banking.transactions.query.presentation.time_format import build_timeframe_suffix
 from banking.transactions.query.services.fetching.fetch import fetch_transactions_base
 from banking.transactions.query.utils.totals import calculate_financial_totals
 from shared.clients.abstractions.banking import BankDataProvider
@@ -87,7 +89,22 @@ async def handle_cash_flow(
             )
         summary_text = "\n".join(lines)
     elif totals.total_inflow == 0 and totals.total_outflow == 0:
-        summary_text = "No cash flow activity found for this period."
+        direction = contract.filters.transaction_type if contract.filters is not None else None
+        timeframe = build_timeframe_suffix(contract, language)
+        if direction == "credit":
+            summary_text = render_message(
+                "query.analytics.no_income",
+                language,
+                {"target_description": "", "timeframe": timeframe},
+            )
+        elif direction == "debit":
+            summary_text = render_message(
+                "query.analytics.no_spending",
+                language,
+                {"target_description": "", "timeframe": timeframe},
+            )
+        else:
+            summary_text = render_message("query.format.no_matching_transactions", language)
     elif totals.net_flow > 0:
         summary_text = (
             f"₦{totals.total_inflow:,.0f} came in and ₦{totals.total_outflow:,.0f} went out. "

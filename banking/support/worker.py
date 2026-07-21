@@ -41,6 +41,7 @@ from banking.support.results import (
     ticket_code_from_message,
 )
 from banking.support.services.ticket_service import TicketService
+from shared.types.read import ReadRequest, ReadResult, normalize_read_request
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -104,6 +105,20 @@ class SupportWorker:
         user_id = context.get("user_id") or phone_number
         locale = LocaleManager.normalize(context.get("language")).value
         message = (user_message or "").strip()
+        action = str(payload.get("action") or "handle_request").strip().lower()
+        if action in {
+            "list_support_tickets",
+            "find_support_ticket",
+            "append_support_ticket_note",
+            "close_support_ticket",
+        }:
+            return await self._run_ticket_operation(
+                action=action,
+                payload=payload,
+                user_id=str(user_id),
+                locale=locale,
+                channel=str(context.get("channel") or "unknown"),
+            )
         if policy_message := capability_block_message(domain="support", action="collect_details", locale=locale):
             logger.info("support_worker_capability_blocked")
             return SupportResult(
@@ -413,3 +428,220 @@ class SupportWorker:
         except Exception as e:
             logger.error(f"Support worker failed: {e}", exc_info=True)
             return SupportResult(outcome=SupportOutcome.FAILED, error=str(e))
+
+    async def _run_ticket_operation(
+        self,
+        *,
+        action: str,
+        payload: dict[str, Any],
+        user_id: str,
+        locale: str,
+        channel: str,
+    ) -> SupportResult:
+        if self._ticket_service is None:
+            return SupportResult(
+                outcome=SupportOutcome.FAILED,
+                error=render_message("support.ticket.unavailable", locale),
+            )
+        policy_action = {
+            "list_support_tickets": "lookup_ticket",
+            "find_support_ticket": "lookup_ticket",
+            "append_support_ticket_note": "update_ticket",
+            "close_support_ticket": "close_ticket",
+        }[action]
+        if message := capability_block_message(domain="support", action=policy_action, locale=locale):
+            return SupportResult(outcome=SupportOutcome.OK, response=message)
+
+        ticket_id = str(payload.get("ticket_id") or "").strip() or None
+        ticket_code = str(payload.get("ticket_code") or "").strip() or None
+        request = normalize_read_request(payload)
+        if action == "list_support_tickets":
+            request = request or ReadRequest(subject="ticket", response_shape="surface_list")
+            tickets, total_count = await self._ticket_service.list_open_page(
+                user_id,
+                limit=request.page_size + 1,
+                offset=request.offset,
+            )
+            page = tickets[: request.page_size]
+            read_result = ReadResult(
+                request=request,
+                total_count=total_count,
+                returned_count=0 if request.response_shape.startswith("fact_") else len(page),
+                has_next=len(tickets) > request.page_size or request.offset + request.page_size < total_count,
+                has_previous=request.offset > 0,
+            )
+            if request.response_shape == "fact_count":
+                response = render_message("support.ticket.count", locale, {"count": total_count})
+            elif request.response_shape == "fact_bool":
+                response = render_message(
+                    "support.ticket.exists_yes" if total_count else "support.ticket.exists_no",
+                    locale,
+                )
+            elif not page:
+                response = render_message("support.ticket.list_empty", locale)
+            else:
+                lines = [render_message("support.ticket.list_header", locale)]
+                items: list[dict[str, Any]] = []
+                for index, ticket in enumerate(page, start=1):
+                    lines.append(
+                        render_message(
+                            "support.ticket.list_row",
+                            locale,
+                            {
+                                "index": index,
+                                "code": ticket.ticket_code,
+                                "status": ticket.status,
+                                "summary": ticket.summary,
+                            },
+                        )
+                    )
+                    items.append(
+                        {
+                            "id": str(ticket.id),
+                            "code": ticket.ticket_code,
+                            "status": ticket.status,
+                            "summary": ticket.summary,
+                            "priority": ticket.priority,
+                            "version_token": ticket.updated_at.isoformat(),
+                            "display_label": f"{ticket.ticket_code} · {ticket.status}",
+                        }
+                    )
+                if read_result.has_next:
+                    lines.extend(["", render_message("common.pagination.more", locale)])
+                response = "\n".join(lines)
+                return SupportResult(
+                    outcome=SupportOutcome.OK,
+                    response=response,
+                    details={"viewed_support_tickets": items},
+                    read_result=read_result,
+                )
+            return SupportResult(outcome=SupportOutcome.OK, response=response, read_result=read_result)
+
+        if not ticket_id and not ticket_code:
+            return SupportResult(
+                outcome=SupportOutcome.NEEDS_INPUT,
+                response=render_message("support.ticket.select", locale),
+            )
+        selected_ticket = await self._ticket_service.get_user_ticket(
+            user_id,
+            ticket_id=ticket_id,
+            ticket_code=ticket_code,
+        )
+        if selected_ticket is None:
+            return SupportResult(
+                outcome=SupportOutcome.OK,
+                response=render_message(
+                    "support.ticket.not_found",
+                    locale,
+                    {"ticket_code": ticket_code or ""},
+                ),
+            )
+        ticket = selected_ticket
+
+        if action == "find_support_ticket":
+            request = request or ReadRequest(subject="ticket", response_shape="surface_detail")
+            if request.response_shape == "fact_status":
+                response = render_message(
+                    "support.ticket.status_fact",
+                    locale,
+                    {"code": ticket.ticket_code, "status": ticket.status},
+                )
+            else:
+                response = render_message(
+                    "support.ticket.detail",
+                    locale,
+                    {
+                        "code": ticket.ticket_code,
+                        "status": ticket.status,
+                        "summary": ticket.summary,
+                        "priority": ticket.priority,
+                    },
+                )
+            return SupportResult(
+                outcome=SupportOutcome.OK,
+                response=response,
+                read_result=ReadResult(
+                    request=request,
+                    total_count=1,
+                    returned_count=0 if request.response_shape.startswith("fact_") else 1,
+                ),
+            )
+
+        if action == "append_support_ticket_note":
+            note = str(payload.get("ticket_note") or "").strip()
+            if not note or len(note) > 1000:
+                return SupportResult(
+                    outcome=SupportOutcome.NEEDS_INPUT,
+                    response=render_message("support.ticket.note_prompt", locale),
+                )
+            updated = await self._ticket_service.append_user_note(
+                user_id,
+                ticket_id=str(ticket.id),
+                note=note,
+                channel=channel,
+            )
+            if updated is None:
+                return SupportResult(
+                    outcome=SupportOutcome.OK,
+                    response=render_message("support.ticket.note_closed", locale),
+                )
+            return SupportResult(
+                outcome=SupportOutcome.OK,
+                response=render_message("support.ticket.note_added", locale, {"code": updated.ticket_code}),
+            )
+
+        if ticket.status == "closed":
+            return SupportResult(
+                outcome=SupportOutcome.OK,
+                response=render_message("support.ticket.already_closed", locale, {"code": ticket.ticket_code}),
+            )
+        confirmation = payload.get("confirmation")
+        confirmed = isinstance(confirmation, dict) and confirmation.get("confirmed") is True
+        version_token = ticket.updated_at.isoformat()
+        snapshot = {
+            "ticket_id": str(ticket.id),
+            "ticket_code": ticket.ticket_code,
+            "version_token": version_token,
+        }
+        if not confirmed:
+            return SupportResult(
+                outcome=SupportOutcome.NEEDS_CONFIRMATION,
+                confirmation_summary=render_message(
+                    "support.ticket.close_review",
+                    locale,
+                    {"code": ticket.ticket_code, "summary": ticket.summary},
+                ),
+                confirmation_snapshot=snapshot,
+            )
+        expected_version = None
+        if isinstance(confirmation, dict):
+            raw_snapshot = confirmation.get("snapshot")
+            if isinstance(raw_snapshot, dict):
+                expected_version = str(raw_snapshot.get("version_token") or "") or None
+        closed, already_closed, stale = await self._ticket_service.close_user_ticket(
+            user_id,
+            ticket_id=str(ticket.id),
+            expected_version=expected_version or version_token,
+        )
+        if stale:
+            return SupportResult(
+                outcome=SupportOutcome.FAILED,
+                error=render_message("support.ticket.stale", locale),
+            )
+        if closed is None:
+            return SupportResult(
+                outcome=SupportOutcome.OK,
+                response=render_message(
+                    "support.ticket.not_found",
+                    locale,
+                    {"ticket_code": ticket_code or ""},
+                ),
+            )
+        return SupportResult(
+            outcome=SupportOutcome.OK,
+            response=render_message(
+                "support.ticket.already_closed" if already_closed else "support.ticket.closed",
+                locale,
+                {"code": closed.ticket_code},
+            ),
+        )

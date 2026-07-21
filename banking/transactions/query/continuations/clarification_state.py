@@ -9,7 +9,7 @@ from typing import Any
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.contracts import SelectionPayload
-from banking.transactions.query.models.domain import QueryExecutionContract, QueryIntent
+from banking.transactions.query.models.domain import Filters, QueryExecutionContract, QueryIntent
 from banking.transactions.query.models.extraction import (
     ClarificationCandidate,
     ClarificationOperation,
@@ -113,6 +113,26 @@ def resolve_selection_clarification(
             candidate_source="frame" if candidate.frame_id else "active",
             operation_restored=bool(pending.original_operation),
         )
+        if operation.grounded_operation == "recipient_filter":
+            contract = _recipient_filter_contract(pending, candidate.payload)
+            if contract is None:
+                return {
+                    "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+                    "response": render_message("query.clarify.unsure_rephrase", locale),
+                    "session_active": True,
+                    "flow_state": "parsing",
+                    "pending_clarification": None,
+                }
+            return {
+                "query_contract": contract,
+                "flow_state": "executing",
+                "session_active": True,
+                "pending_clarification": None,
+                "current_page": 0,
+                "show_expanded": False,
+                "continuation_type": "recipient_filter",
+                "resolver_message": None,
+            }
         return {
             "flow_state": "executing",
             "session_active": True,
@@ -171,6 +191,25 @@ def _match_candidate(candidates: list[ClarificationCandidate], normalized: str) 
     if len(strong) > 1 and abs(strong[0][0] - strong[1][0]) < 0.05:
         return None
     return strong[0][1]
+
+
+def _recipient_filter_contract(
+    pending: PendingClarificationState,
+    payload: SelectionPayload,
+) -> QueryExecutionContract | None:
+    if not isinstance(pending.query_contract, dict):
+        return None
+    try:
+        contract = QueryExecutionContract.model_validate(pending.query_contract)
+    except Exception:
+        return None
+    raw_counterparties = payload.filters_patch.get("counterparty") if isinstance(payload.filters_patch, dict) else None
+    counterparties = [str(value).strip() for value in raw_counterparties or [] if str(value).strip()]
+    if not counterparties:
+        return None
+    filters = contract.filters.model_copy(deep=True) if contract.filters is not None else Filters()
+    filters.counterparty = counterparties
+    return contract.model_copy(update={"filters": filters})
 
 
 def clarification_candidate(

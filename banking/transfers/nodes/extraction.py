@@ -327,6 +327,25 @@ class ExtractionStep(TransferStep):
                         ],
                     },
                 )
+            # A monetary reply belongs to a sibling task in a unified mixed
+            # interrupt; it is never a beneficiary ordinal.  Keep the
+            # selection open and do not let the broad extractor invent a
+            # recipient binding from an amount such as "2k".
+            if parse_amount_input(self.user_message) is not None:
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["beneficiary_id"],
+                    prompt=render_beneficiary_retry_prompt(
+                        recipient_name=data.recipient_name,
+                        candidates=data.beneficiary_candidates,
+                        locale=context.language,
+                    ),
+                    patch=_with_skip_patch({"beneficiary_candidates": data.beneficiary_candidates}),
+                    details={
+                        "ambiguity": "MULTIPLE_BENEFICIARIES",
+                        "candidates": data.beneficiary_candidates,
+                    },
+                )
 
         # [DETERMINISTIC FALLBACK] Numeric index selection
         # If user replies with "1" or "2" while selecting source account, map directly.

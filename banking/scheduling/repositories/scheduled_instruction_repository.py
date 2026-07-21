@@ -229,3 +229,46 @@ class ScheduledInstructionRepository(BaseRepository[ScheduledInstruction]):
             .with_for_update(nowait=True)
         )
         return list(result.scalars().all())
+
+    async def get_by_statuses_for_user(
+        self,
+        user_id: str,
+        statuses: list[str],
+        *,
+        limit: int = 20,
+    ) -> list[ScheduledInstruction]:
+        """Return a bounded set for reviewed state transitions."""
+        lookup_user_id = self._uuid_or_str(user_id)
+        result = await self.db.execute(
+            select(ScheduledInstruction)
+            .filter(
+                ScheduledInstruction.user_id == lookup_user_id,
+                ScheduledInstruction.status.in_([value.casefold() for value in statuses]),
+            )
+            .order_by(ScheduledInstruction.next_run_at_utc.asc(), ScheduledInstruction.created_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def get_ids_for_user_for_update(
+        self,
+        schedule_ids: list[str],
+        user_id: str,
+        *,
+        statuses: list[str],
+    ) -> list[ScheduledInstruction]:
+        """Lock a bounded, user-owned set in one transaction."""
+        if not schedule_ids:
+            return []
+        lookup_ids = [self._uuid_or_str(value) for value in schedule_ids]
+        lookup_user_id = self._uuid_or_str(user_id)
+        result = await self.db.execute(
+            select(ScheduledInstruction)
+            .filter(
+                ScheduledInstruction.id.in_(lookup_ids),
+                ScheduledInstruction.user_id == lookup_user_id,
+                ScheduledInstruction.status.in_([value.casefold() for value in statuses]),
+            )
+            .with_for_update(nowait=True)
+        )
+        return list(result.scalars().all())

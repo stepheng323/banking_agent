@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from banking.support.models import SupportHandoff
 from shared.queue.models import ReceiptJobPayload
 from shared.types.read import ReadResult
 
@@ -108,6 +109,7 @@ class SupportOutcome(str, Enum):
 
     OK = "ok"
     NEEDS_INPUT = "needs_input"
+    NEEDS_CONFIRMATION = "needs_confirmation"
     FAILED = "failed"
 
 
@@ -116,10 +118,13 @@ class SupportResult(BaseModel):
 
     outcome: SupportOutcome
     response: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
     receipt_jobs: list[ReceiptJobPayload] | list[dict[str, object]] = Field(default_factory=list)
-    handoff: dict[str, Any] | None = None
+    handoff: SupportHandoff | None = None
     escalation: Any | None = None
     ticket_code: str | None = None
     final_message: str | None = None
     read_result: ReadResult | None = None
+    confirmation_snapshot: dict[str, Any] | None = None
+    confirmation_summary: str | None = None
     error: str | None = None

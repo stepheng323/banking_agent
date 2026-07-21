@@ -1,9 +1,11 @@
 """Support models for v2 micro-resolver architecture."""
 
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, Field
+
+from shared.money import MoneyAmount
 
 SCHEMA_VERSION = 1
 EPHEMERAL_CONTEXT_TTL_SECONDS = 600
@@ -185,6 +187,37 @@ class EscalationResult(BaseModel):
     context: dict = Field(default_factory=dict)
 
 
+class RetryTransferPayload(BaseModel):
+    """Financial fields that must be revalidated by the transfer worker."""
+
+    amount: MoneyAmount | None = None
+    recipient_name: str | None = None
+    recipient_account_number: str | None = None
+    recipient_bank_code: str | None = None
+    recipient_bank_name: str | None = None
+    narration: str | None = None
+    source_bank_name: str | None = None
+
+    def __getitem__(self, key: str):  # type: ignore[no-untyped-def]
+        """Keep read-only mapping access for existing presentation adapters."""
+        return getattr(self, key)
+
+
+class RetryTransferHandoff(BaseModel):
+    """Typed, non-authorizing handoff from support to transfer."""
+
+    type: Literal["retry_transfer"] = "retry_transfer"
+    payload: RetryTransferPayload
+    requires_confirmation: Literal[True] = True
+
+    def __getitem__(self, key: str):  # type: ignore[no-untyped-def]
+        """Keep read-only mapping access without returning an untyped handoff."""
+        return getattr(self, key)
+
+
+SupportHandoff: TypeAlias = Annotated[RetryTransferHandoff, Field(discriminator="type")]
+
+
 class SupportResponse(BaseModel):
     """Response from support handler."""
 
@@ -194,7 +227,7 @@ class SupportResponse(BaseModel):
     offer_receipt: bool = False
     offer_retry: bool = False
     transaction_data: dict | None = None
-    handoff: dict | None = None
+    handoff: SupportHandoff | None = None
 
 
 class ClassificationResult(BaseModel):

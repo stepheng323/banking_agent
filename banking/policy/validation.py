@@ -22,12 +22,14 @@ REQUIRED_DOMAIN_ACTIONS: dict[str, set[str]] = {
         "recurring_airtime",
         "schedule_data",
         "recurring_data",
-        "cancel_scheduled_transfer",
-        "list_scheduled_transfers",
         "list_scheduled_transactions",
         "find_scheduled_transaction",
         "cancel_scheduled_transaction",
         "edit_scheduled_transaction",
+        "pause_scheduled_transaction",
+        "resume_scheduled_transaction",
+        "list_scheduled_runs",
+        "find_scheduled_run",
     },
     "account": {
         "list_accounts",
@@ -37,6 +39,13 @@ REQUIRED_DOMAIN_ACTIONS: dict[str, set[str]] = {
         "close_account",
         "change_bvn",
         "add_joint_holder",
+    },
+    "beneficiary": {
+        "list_beneficiaries",
+        "delete_beneficiary",
+        "rename_beneficiary",
+        "save_verified_beneficiary",
+        "manual_add_beneficiary",
     },
     "support": {
         "lookup_transaction",
@@ -48,6 +57,8 @@ REQUIRED_DOMAIN_ACTIONS: dict[str, set[str]] = {
         "collect_details",
         "create_ticket",
         "escalate",
+        "update_ticket",
+        "close_ticket",
     },
     "faq": {
         "answer_question",
@@ -79,6 +90,13 @@ def validate_policy_coverage(policy: CapabilityPolicy) -> None:
     """
     errors: list[str] = []
 
+    from banking.runtime.operations import WORKER_OPERATIONS
+
+    registered_policy_targets = {
+        (spec.domain, spec.policy_action) for spec in WORKER_OPERATIONS.values()
+        if spec.domain not in {"orchestrator"}
+    }
+
     for domain, required_actions in REQUIRED_DOMAIN_ACTIONS.items():
         domain_policy = policy.capability_matrix.get(domain)
         if not domain_policy:
@@ -103,6 +121,13 @@ def validate_policy_coverage(policy: CapabilityPolicy) -> None:
                     "capability_matrix."
                     f"{domain}.actions.{action_name} alternative '{rule.alternative}' must be supported"
                 )
+
+    for domain, action_name in sorted(registered_policy_targets):
+        domain_policy = policy.capability_matrix.get(domain)
+        if domain_policy is None or action_name not in domain_policy.actions:
+            errors.append(
+                f"worker operation policy target capability_matrix.{domain}.actions.{action_name} is missing"
+            )
 
     if errors:
         raise ValueError("Invalid capability policy: " + " | ".join(errors))

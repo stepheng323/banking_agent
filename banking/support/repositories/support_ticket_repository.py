@@ -22,6 +22,64 @@ class SupportTicketRepository(BaseRepository[SupportTicket]):
         result = await self.db.execute(select(SupportTicket).filter(SupportTicket.ticket_code == ticket_code))
         return result.scalars().first()
 
+    @staticmethod
+    def _user_lookup(user_id: str) -> UUID | str:
+        try:
+            return UUID(user_id)
+        except ValueError:
+            return user_id
+
+    async def get_for_user(
+        self,
+        user_id: str,
+        *,
+        ticket_id: str | None = None,
+        ticket_code: str | None = None,
+        for_update: bool = False,
+    ) -> SupportTicket | None:
+        """Resolve a ticket only inside its owner's scope."""
+        query = select(SupportTicket).filter(SupportTicket.user_id == self._user_lookup(user_id))
+        if ticket_id:
+            try:
+                lookup_ticket_id: UUID | str = UUID(ticket_id)
+            except ValueError:
+                lookup_ticket_id = ticket_id
+            query = query.filter(SupportTicket.id == lookup_ticket_id)
+        elif ticket_code:
+            query = query.filter(SupportTicket.ticket_code == ticket_code)
+        else:
+            return None
+        if for_update:
+            query = query.with_for_update(nowait=True)
+        result = await self.db.execute(query)
+        return result.scalars().first()
+
+    async def get_open_page(self, user_id: str, *, limit: int = 6, offset: int = 0) -> list[SupportTicket]:
+        result = await self.db.execute(
+            select(SupportTicket)
+            .filter(
+                SupportTicket.user_id == self._user_lookup(user_id),
+                SupportTicket.status.in_(
+                    [SupportTicketStatusEnum.OPEN.value, SupportTicketStatusEnum.IN_PROGRESS.value]
+                ),
+            )
+            .order_by(SupportTicket.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def count_open(self, user_id: str) -> int:
+        result = await self.db.execute(
+            select(func.count(SupportTicket.id)).filter(
+                SupportTicket.user_id == self._user_lookup(user_id),
+                SupportTicket.status.in_(
+                    [SupportTicketStatusEnum.OPEN.value, SupportTicketStatusEnum.IN_PROGRESS.value]
+                ),
+            )
+        )
+        return int(result.scalar_one())
+
     async def get_by_user(self, user_id: str, limit: int = 20, include_closed: bool = False) -> list[SupportTicket]:
         """Get all tickets for a user, ordered by created_at descending."""
         lookup_id: UUID | str = user_id

@@ -91,13 +91,9 @@ def _filter_selected_accounts(accounts: list[Any], selected_ids: set[str]) -> li
     ]
 
 ACTION_CAPABILITY_MAP: dict[str, AccountCapability] = {
-    "list": AccountCapability.LIST_ACCOUNTS,
     "list_accounts": AccountCapability.LIST_ACCOUNTS,
     "count": AccountCapability.LIST_ACCOUNTS,
     "check_balance": AccountCapability.LIST_ACCOUNTS,
-    "show_balance": AccountCapability.LIST_ACCOUNTS,
-    "balance": AccountCapability.LIST_ACCOUNTS,
-    "overall_balance": AccountCapability.LIST_ACCOUNTS,
     "get_default": AccountCapability.LIST_ACCOUNTS,
     "set_default": AccountCapability.SET_DEFAULT,
     "unlink": AccountCapability.UNLINK_ACCOUNT,
@@ -191,13 +187,9 @@ class AccountWorker:
                 error=render_message("account.error.status_check_failed", locale),
             )
         if read_request is None and action in {
-            "list",
             "list_accounts",
             "count",
             "check_balance",
-            "balance",
-            "show_balance",
-            "overall_balance",
             "get_default",
         }:
             return AccountResult(
@@ -538,7 +530,7 @@ class AccountWorker:
                     locale=locale,
                     patch=patch,
                 )
-            elif action in ("check_balance", "balance", "show_balance", "overall_balance"):
+            elif action == "check_balance":
                 bank_name = payload.get("bank_name")
                 account_identifiers = identifiers or (
                     [str(identifier)] if identifier else ([str(bank_name)] if bank_name else None)
@@ -620,7 +612,7 @@ class AccountWorker:
 
             read_result = None
             if read_request is not None:
-                if action in ("check_balance", "balance", "show_balance", "overall_balance"):
+                if action == "check_balance":
                     total = len(viewed_accounts)
                     returned = 0 if response_shape.startswith("fact_") else total
                     read_result = ReadResult(request=read_request, total_count=total, returned_count=returned)

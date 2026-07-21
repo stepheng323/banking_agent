@@ -8,8 +8,13 @@ from banking.policy.service import capability_block_message
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import SupportOutcome, SupportResult
 from banking.support.handlers.escalation import handle_escalation
-from banking.support.handlers.retry import build_retry_quoted_data
-from banking.support.models import SupportIntent, SupportResponse
+from banking.support.models import (
+    RetryTransferHandoff,
+    RetryTransferPayload,
+    SupportHandoff,
+    SupportIntent,
+    SupportResponse,
+)
 from banking.support.services.ticket_service import TicketService
 from shared.queue.models import ReceiptJobPayload, ReceiptTransferData
 
@@ -23,19 +28,23 @@ def _optional_text(value: Any) -> str | None:
     return normalized or None
 
 
-def build_retry_handoff(response: SupportResponse, intent: SupportIntent) -> dict[str, Any] | None:
+def build_retry_handoff(response: SupportResponse, intent: SupportIntent) -> SupportHandoff | None:
     if intent != SupportIntent.RETRY_TRANSFER or not response.offer_retry:
         return response.handoff
     transaction = response.transaction_data
     if not isinstance(transaction, dict):
         return response.handoff
-    quoted_data = build_retry_quoted_data(transaction)
-    return {
-        "type": "retry_transfer",
-        "payload": quoted_data.get("data", {}),
-        "quoted_data": quoted_data,
-        "requires_confirmation": True,
-    }
+    return RetryTransferHandoff(
+        payload=RetryTransferPayload(
+            amount=transaction.get("amount"),
+            recipient_name=transaction.get("recipient_name"),
+            recipient_account_number=transaction.get("recipient_account_number"),
+            recipient_bank_code=transaction.get("recipient_bank_code"),
+            recipient_bank_name=transaction.get("recipient_bank_name"),
+            narration=transaction.get("narration"),
+            source_bank_name=transaction.get("source_bank_name"),
+        )
+    )
 
 
 def result_from_support_response(

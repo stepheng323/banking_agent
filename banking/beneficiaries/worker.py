@@ -11,6 +11,7 @@ from typing import Any
 from banking.beneficiaries.formatter import BeneficiaryFormatter
 from banking.beneficiaries.models import BeneficiaryIntent
 from banking.persistence.unit_of_work import UnitOfWork
+from banking.policy.service import capability_block_message
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
@@ -18,6 +19,7 @@ from shared.types.conversation_sets import (
     BeneficiaryQueryContract,
     BulkMutationRequest,
     BulkMutationReviewSnapshot,
+    EntitySelectionRef,
 )
 from shared.types.read import ReadRequest, ReadResult, normalize_read_request
 from shared.utils.logging import get_logger
@@ -92,15 +94,14 @@ class BeneficiaryWorker:
             if intent == BeneficiaryIntent.LIST or payload.get("list_intent"):
                 return await self._list_beneficiaries(user_id, context)
 
-            if intent == BeneficiaryIntent.ADD:
-                return await self._add_beneficiary(user_id, payload, context)
-
             if intent == BeneficiaryIntent.DELETE:
                 return await self._delete_beneficiary(user_id, payload, context)
 
-            if intent == BeneficiaryIntent.UPDATE:
-                # Default to list if ambiguous but routed here.
-                return await self._list_beneficiaries(user_id, context)
+            if intent == BeneficiaryIntent.RENAME:
+                return await self._rename_beneficiary(user_id, payload, context)
+
+            if str(intent or "").strip().lower() in {"add_beneficiary", "update_beneficiary"}:
+                return await self._add_beneficiary(user_id, payload, context)
 
             return await self._list_beneficiaries(user_id, context)
 
@@ -133,9 +134,7 @@ class BeneficiaryWorker:
         async with UnitOfWork() as uow:
             beneficiaries = await uow.beneficiaries.get_by_user(user_id)
             selected_ids = {
-                str(value)
-                for value in payload.get("selected_entity_ids", [])
-                if isinstance(value, str) and value
+                str(value) for value in payload.get("selected_entity_ids", []) if isinstance(value, str) and value
             }
             beneficiaries = [
                 beneficiary
@@ -229,6 +228,22 @@ class BeneficiaryWorker:
             error=render_message("beneficiary.error.process_failed", locale),
         )
 
+    async def _add_beneficiary(
+        self,
+        user_id: str,
+        payload: dict[str, Any],
+        context: dict[str, Any],
+    ) -> TransactionResult:
+        """Reject manual creation without touching recipient-resolution services."""
+        del user_id, payload
+        locale = LocaleManager.normalize(context.get("language")).value
+        message = render_message("beneficiary.add.manual_disabled", locale)
+        return TransactionResult(
+            outcome=TransactionOutcome.FAILED,
+            response=message,
+            error=message,
+        )
+
     @staticmethod
     def _beneficiary_preview_lines(beneficiaries: list[Any]) -> list[str]:
         lines: list[str] = []
@@ -256,23 +271,11 @@ class BeneficiaryWorker:
                 lines.append(f"• {display}{details}")
         return lines
 
-    async def _add_beneficiary(self, user_id: str, payload: dict, context: dict) -> TransactionResult:
-        del user_id, payload
-        locale = LocaleManager.normalize(context.get("language")).value
-        return TransactionResult(
-            outcome=TransactionOutcome.FAILED,
-            error=render_message("beneficiary.add.manual_disabled", locale),
-        )
-
     async def _delete_beneficiary(self, user_id: str, payload: dict, context: dict[str, Any]) -> TransactionResult:
         locale = LocaleManager.normalize(context.get("language")).value
         raw_request = payload.get("bulk_mutation")
         try:
-            request = (
-                BulkMutationRequest.model_validate(raw_request)
-                if isinstance(raw_request, dict)
-                else None
-            )
+            request = BulkMutationRequest.model_validate(raw_request) if isinstance(raw_request, dict) else None
         except ValueError:
             request = None
         if request is None or request.domain != "beneficiary" or request.action != "delete":
@@ -381,10 +384,128 @@ class BeneficiaryWorker:
             },
         )
 
-    async def _update_beneficiary(self, user_id: str, payload: dict, context: dict[str, Any]) -> TransactionResult:
-        del user_id, payload
+    async def _rename_beneficiary(
+        self,
+        user_id: str,
+        payload: dict[str, Any],
+        context: dict[str, Any],
+    ) -> TransactionResult:
         locale = LocaleManager.normalize(context.get("language")).value
+        if limitation := capability_block_message(
+            domain="beneficiary",
+            action="rename_beneficiary",
+            locale=locale,
+        ):
+            return TransactionResult(outcome=TransactionOutcome.FAILED, response=limitation, error=limitation)
+
+        raw_ref = payload.get("beneficiary_selection_ref")
+        try:
+            selection_ref = (
+                raw_ref
+                if isinstance(raw_ref, EntitySelectionRef)
+                else EntitySelectionRef.model_validate(raw_ref)
+                if isinstance(raw_ref, dict)
+                else None
+            )
+        except ValueError:
+            selection_ref = None
+        new_alias = str(payload.get("new_alias") or "").strip()
+        if selection_ref is None or selection_ref.entity_type != "beneficiary":
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
+                required_fields=["beneficiary_selection_ref"],
+                prompt=render_message("beneficiary.rename.select", locale),
+            )
+        if not new_alias or not _normalized_match_text(new_alias) or len(new_alias) > 80:
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
+                required_fields=["new_alias"],
+                prompt=render_message("beneficiary.rename.ask_alias", locale),
+            )
+
+        async with UnitOfWork() as uow:
+            matches = await uow.beneficiaries.get_by_ids_for_update(user_id, [selection_ref.entity_id])
+            selected = matches[0] if len(matches) == 1 else None
+            if selected is None or _version_token(selected) != selection_ref.version_token:
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message("conversation_set.stale_selection", locale),
+                )
+
+            normalized_alias = _normalized_match_text(new_alias)
+            existing = await uow.beneficiaries.get_by_user(user_id, selected.beneficiary_type)
+            if any(
+                str(candidate.id) != selection_ref.entity_id
+                and _normalized_match_text(candidate.alias) == normalized_alias
+                for candidate in existing
+                if candidate.alias
+            ):
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["new_alias"],
+                    prompt=render_message("beneficiary.rename.duplicate", locale, {"alias": new_alias}),
+                )
+
+            old_alias = str(selected.alias or selected.account_name)
+            confirmation = payload.get("confirmation")
+            confirmed = isinstance(confirmation, dict) and confirmation.get("confirmed") is True
+            request_payload = {
+                "beneficiary_selection_ref": selection_ref.model_dump(mode="json"),
+                "old_alias": old_alias,
+                "new_alias": new_alias,
+            }
+            if not confirmed:
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+                    confirmation_summary=render_message(
+                        "beneficiary.rename.review",
+                        locale,
+                        {"old_alias": old_alias, "new_alias": new_alias},
+                    ),
+                    confirmation_snapshot=request_payload,
+                    patch={
+                        "beneficiary_selection_ref": selection_ref.model_dump(mode="json"),
+                        "new_alias": new_alias,
+                    },
+                )
+
+            selected.alias = new_alias
+            await uow.commit()
+
+        phone_number = context.get("phone_number")
+        if phone_number:
+            from shared.cache.redis_client import RedisClient
+            from shared.cache.user_data import UserDataCache
+
+            await UserDataCache(redis_client=RedisClient.get_client()).invalidate_beneficiaries(phone_number)
+
+        async with UnitOfWork() as refresh_uow:
+            remaining = await refresh_uow.beneficiaries.get_by_user(user_id)
+        viewed = [
+            {
+                "id": str(item.id),
+                "version_token": _version_token(item),
+                "name": item.account_name,
+                "alias": item.alias,
+                "bank": item.bank_name,
+                "account": item.account_number,
+                "beneficiary_type": item.beneficiary_type,
+            }
+            for item in remaining[:5]
+        ]
+        request = ReadRequest(subject="beneficiary", response_shape="surface_list")
         return TransactionResult(
-            outcome=TransactionOutcome.FAILED,
-            error=render_message("beneficiary.update.not_supported", locale),
+            outcome=TransactionOutcome.OK,
+            response=render_message("beneficiary.rename.success", locale, {"alias": new_alias}),
+            details={"viewed_beneficiaries": viewed},
+            read_result=ReadResult(
+                request=request,
+                total_count=len(remaining),
+                returned_count=min(5, len(remaining)),
+                has_next=len(remaining) > 5,
+            ),
+            patch={
+                "invalidate_conversation_set_domain": "beneficiary",
+                "beneficiary_contract": BeneficiaryQueryContract().model_dump(mode="json"),
+            },
         )

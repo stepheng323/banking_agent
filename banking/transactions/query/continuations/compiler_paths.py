@@ -10,8 +10,14 @@ from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.compiler.lexical_recovery import looks_like_support_problem_statement
+from banking.transactions.query.continuations.beneficiary_grounding import (
+    ground_unique_saved_recipient,
+    recipient_clarification_candidates,
+)
+from banking.transactions.query.continuations.clarification_state import build_selection_clarification_updates
 from banking.transactions.query.models.domain import QueryExecutionContract
 from banking.transactions.query.models.extraction import (
+    ClarificationOperation,
     PendingClarificationState,
     ResolverOutcome,
 )
@@ -86,14 +92,46 @@ async def parse_reasoner_extraction_to_updates(
 
     extraction = getattr(decision, "extraction", None)
     confidence = getattr(decision, "confidence", None)
-    if extraction is None and getattr(decision, "decision", None) in {"fresh_query", "new_query", "reinterpret_query"}:
-        return await parse_new_query(step, state)
+    started_at = perf_counter()
+    if (
+        extraction is None
+        and getattr(decision, "semantic_llm_used", False)
+        and getattr(decision, "decision", None) in {"fresh_query", "new_query", "reinterpret_query"}
+    ):
+        # An active-query reasoner has already consumed this turn's sole LLM
+        # budget.  Re-parsing raw text here both adds latency and lets an
+        # incomplete semantic decision silently change the user's query.
+        logger.info(
+            "query_reasoner_to_parser_suppressed",
+            semantic_decision=getattr(decision, "decision", None),
+            reason="missing_reasoner_extraction",
+        )
+        step._log_query_trace(
+            state=state,
+            phase="semantic_compile",
+            latency_ms=(perf_counter() - started_at) * 1000.0,
+            outcome="clarify",
+            resolution_source="reasoner_to_parser_suppressed",
+            semantic_decision=getattr(decision, "decision", None),
+            continuation_type=getattr(decision, "continuation_type", None),
+            llm_calls_used=1 if getattr(decision, "semantic_llm_used", False) else 0,
+            single_llm_invariant=True,
+            reasoner_schema=getattr(decision, "semantic_reasoner_schema", None),
+        )
+        return {
+            "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+            "response": render_message("query.clarify.unsure_rephrase", language),
+            "flow_state": "parsing",
+            "session_active": True,
+            "pending_clarification": None,
+            "show_expanded": False,
+            "current_page": 0,
+            "_query_reasoner_to_parser_suppressed": True,
+        }
     compiler_safe_extraction, compiler_safe_reason = step._compiler_safe_extraction_decision(
         extraction=extraction,
         confidence=confidence,
     )
-    started_at = perf_counter()
-
     if extraction is not None:
         compile_target = extraction
         if not compile_target.raw_query:
@@ -126,6 +164,12 @@ async def parse_reasoner_extraction_to_updates(
             reasoner_schema=getattr(decision, "semantic_reasoner_schema", None),
         )
         return parse_result_to_updates(step, result, state=state, today=today, language=language)
+
+    if not getattr(decision, "semantic_llm_used", False):
+        # A deterministic continuation marker has not spent the turn's model
+        # budget.  Preserve the established fresh-query behavior, including
+        # explicit-period scope replacement, by letting the parser own it.
+        return await parse_new_query(step, state)
 
     logger.info(
         "query_reasoner_parser_fallback",
@@ -167,7 +211,7 @@ def parse_result_to_updates(
     message_override: str | None = None,
 ) -> dict[str, Any]:
     """Translate parser outcomes into extraction-step state updates."""
-    del state, message_override
+    del message_override
 
     if result.outcome == ResolverOutcome.NEEDS_INPUT:
         clarify_fallback = render_message("query.clarify.default", language)
@@ -212,6 +256,22 @@ def parse_result_to_updates(
     if query_contract is None:
         query_ir = step.parser.build_query_ir_from_extraction(result.extraction, today=today, language=language)
         query_contract = step.parser.build_execution_contract_from_ir(query_ir)
+
+    raw_beneficiaries = state.get("beneficiaries")
+    beneficiaries: list[Any] = raw_beneficiaries if isinstance(raw_beneficiaries, list) else []
+    query_contract = ground_unique_saved_recipient(query_contract, beneficiaries)
+    candidates = recipient_clarification_candidates(query_contract, beneficiaries)
+    if candidates:
+        raw_session = state.get("query_session")
+        session: dict[str, Any] = raw_session if isinstance(raw_session, dict) else {}
+        return build_selection_clarification_updates(
+            candidates=candidates,
+            operation=ClarificationOperation(grounded_operation="recipient_filter"),
+            query_contract=query_contract,
+            locale=language,
+            session=session,
+            turn_id=state.get("turn_id"),
+        )
 
     return {
         "query_contract": query_contract,
