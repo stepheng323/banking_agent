@@ -15,12 +15,14 @@ from banking.transactions.shared.scheduling import parse_schedule_date
 
 SCHEDULE_DATE_PATTERN = r"(?:tomorrow|tommorow|today|later|next\s+\w+|on\s+\d{4}-\d{2}-\d{2})"
 SCHEDULE_MANAGEMENT_ACTIONS = {
-    "list_scheduled_transfers",
-    "cancel_scheduled_transfer",
     "list_scheduled_transactions",
     "find_scheduled_transaction",
     "cancel_scheduled_transaction",
     "edit_scheduled_transaction",
+    "pause_scheduled_transaction",
+    "resume_scheduled_transaction",
+    "list_scheduled_runs",
+    "find_scheduled_run",
 }
 _WEEKDAY_NAME_TO_INDEX = {
     "monday": 0,

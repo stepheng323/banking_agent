@@ -28,7 +28,7 @@ from banking.presentation.formatters.multi_action_summary import (
     format_multi_action_summary,
     format_multi_action_summary_blocks,
 )
-from banking.presentation.i18n.renderer import render_message, render_text
+from banking.presentation.i18n.renderer import render_message
 from banking.receipts.choice import build_receipt_choice_intent
 from shared.utils.logging import get_logger
 
@@ -236,7 +236,17 @@ async def handle_completed_tasks(
             count=len(async_transaction_tasks),
             task_ids=[task.id for task in async_transaction_tasks],
         )
-        outbox.append({"type": "say", "text": render_text("Your transactions are being processed.", locale)})
+        outbox.append(
+            {
+                "type": "say",
+                "text": render_message(
+                    "transaction_summary.multi.processing_footer.all_processing",
+                    locale,
+                    {"count": str(len(async_transaction_tasks))},
+                ),
+            }
+        )
+        outbox.append({"type": "typing"})
 
     elif async_transfer_tasks:
         logger.info(

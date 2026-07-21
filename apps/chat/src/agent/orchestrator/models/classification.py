@@ -30,7 +30,7 @@ class ClassificationResult(BaseModel):
     )
     detected_language: str | None = Field(
         default=None,
-        description="The detected language of the user's message (e.g., English, Yoruba, Hausa, Igbo, Pidgin, French). Only set this if you are confident about the language.",
+        description="The detected language of the user's message (English, Yoruba, Hausa, Igbo, or Pidgin). Only set this if you are confident about the language.",
     )
 
     @property

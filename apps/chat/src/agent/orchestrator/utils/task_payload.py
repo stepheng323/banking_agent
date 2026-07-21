@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import (
     infer_schedule_action_from_text,
 )
 from apps.chat.src.agent.orchestrator.utils.waves import build_dependency_waves
+from banking.runtime.operations import operation_spec
 from shared.types.balance import BalanceConversationState, BalanceQueryContract
 from shared.types.planner import BaseTaskParameters, dump_task_parameters
 from shared.types.read import normalize_read_request
@@ -455,6 +456,23 @@ def build_task_spec_from_plan_item(
     apply_source_account_fields(payload, plan_item)
 
     task_type = "schedule" if str(payload.get("action") or "") in SCHEDULE_MANAGEMENT_ACTIONS else plan_item.executor
+    operation = operation_spec(str(task_type), str(payload.get("action") or ""))
+    declared_risk = str(getattr(plan_item, "risk", "") or "")
+    if declared_risk and declared_risk != operation.risk:
+        raise ValueError(
+            f"Planner risk {declared_risk!r} does not match operation "
+            f"{operation.action!r} risk {operation.risk!r}"
+        )
+    operation.parameter_model.model_validate(_dump_plan_parameters(plan_item.parameters))
+    logger.info(
+        "worker_operation_materialized",
+        domain=operation.domain,
+        executor=operation.executor,
+        canonical_action=operation.action,
+        risk=operation.risk,
+        requires_confirmation=operation.requires_confirmation,
+        requires_pin=operation.requires_pin,
+    )
 
     return TaskSpec(
         id=plan_item.task_id,

@@ -156,6 +156,22 @@ class AuthorizationContext(BaseModel):
 # --- 3. Interrupts (One distinct blocker at a time) ---
 
 
+class BatchInputSlot(BaseModel):
+    """One unresolved user-provided value in an active batch."""
+
+    task_id: str
+    field: str
+    kind: Literal["selection", "amount", "account", "phone", "network", "other"]
+
+
+class BatchInputContract(BaseModel):
+    """Complete, ordered input state for a multi-task transaction batch."""
+
+    slots: list[BatchInputSlot] = Field(default_factory=list)
+    focused_slot: BatchInputSlot
+    completed_slot_count: int = 0
+
+
 class PendingInterrupt(BaseModel):
     """A blocking state that requires user intervention.
 
@@ -171,6 +187,7 @@ class PendingInterrupt(BaseModel):
     fields_by_task: dict[str, list[str]] = Field(default_factory=dict)
     prompt: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    batch_input: BatchInputContract | None = None
 
     # confirmation specific
     confirmation_token: str | None = None
