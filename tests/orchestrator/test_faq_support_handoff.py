@@ -9,7 +9,10 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
-from apps.chat.src.agent.orchestrator.workflows.execution.executors.support import FAQTaskExecutor
+from apps.chat.src.agent.orchestrator.workflows.execution.executors.support import (
+    FAQTaskExecutor,
+    SupportTaskExecutor,
+)
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.policy.loader import get_cached_policy
 from banking.runtime.results import (
@@ -18,6 +21,7 @@ from banking.runtime.results import (
     SupportOutcome,
     SupportResult,
 )
+from banking.support.models import RetryTransferHandoff, RetryTransferPayload
 from banking.support.worker import SupportWorker
 
 CAPABILITY_POLICY_PATH = "banking/policy/defaults/capability_policy.json"
@@ -51,6 +55,25 @@ class _SupportOKWorker:
             }
         )
         return SupportResult(outcome=SupportOutcome.OK, response="Support handled this.")
+
+
+class _SupportRetryWorker:
+    async def run(self, payload, context, user_message=None, pin_verified=False):
+        del payload, context, user_message, pin_verified
+        return SupportResult(
+            outcome=SupportOutcome.OK,
+            response="I found the failed transfer. Review it before retrying.",
+            handoff=RetryTransferHandoff(
+                payload=RetryTransferPayload(
+                    amount=5000,
+                    recipient_name="Tolu",
+                    recipient_account_number="8162511023",
+                    recipient_bank_name="OPay",
+                    recipient_bank_code="999992",
+                    source_bank_name="GTBank",
+                )
+            ),
+        )
 
 
 def _ctx(*, support_worker) -> tuple[TaskSpec, ExecutionTurnContext]:
@@ -121,3 +144,44 @@ async def test_faq_handoff_respects_disabled_support_policy(tmp_path: Path) -> N
         assert ctx.accumulator.to_updates()["outbox"] == [{"type": "say", "text": SUPPORT_DISABLED_MESSAGE}]
     finally:
         get_cached_policy(path=CAPABILITY_POLICY_PATH, force_reload=True)
+
+
+@pytest.mark.asyncio
+async def test_support_retry_handoff_creates_fresh_transfer_draft_without_authorization() -> None:
+    task = TaskSpec(
+        id="support_1",
+        type="support",
+        stage=TaskStage.DRAFT,
+        payload={"action": "handle_request"},
+    )
+    state = OrchestratorState(
+        user_id="user-1",
+        phone_number="2348000000000",
+        channel="whatsapp",
+        last_message_text="Retry that failed transfer",
+        tasks={task.id: task},
+        waves=[[task.id]],
+        current_wave_index=0,
+        loaded_context={"language": "en", "user_id": "user-1"},
+    )
+    accumulator = ExecutionAccumulator(state.tasks)
+    ctx = ExecutionTurnContext(
+        state=state,
+        config={"configurable": {}},
+        services=OrchestrationServices.from_mapping({"support": _SupportRetryWorker()}),
+        current_wave_len=1,
+        accumulator=accumulator,
+    )
+
+    await SupportTaskExecutor().execute(task, task.id, ctx)
+
+    updates = accumulator.to_updates()
+    retry_task = updates["tasks"]["query_handoff_transfer_1"]
+    assert task.stage == TaskStage.COMPLETED
+    assert retry_task.type == "transfer"
+    assert retry_task.stage == TaskStage.DRAFT
+    assert retry_task.payload["action"] == "send_money"
+    assert retry_task.payload["recipient_account"] == "8162511023"
+    assert retry_task.payload.get("confirmation", {}).get("confirmed") is not True
+    assert "authorization" not in retry_task.payload
+    assert updates["waves"] == [["support_1"], ["query_handoff_transfer_1"]]

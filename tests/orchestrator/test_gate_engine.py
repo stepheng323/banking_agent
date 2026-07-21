@@ -37,7 +37,6 @@ _GATE_STAGE_NAMES = (
     "_stage_mixed_supported_unsupported_capability",
     "_stage_capability_boundary_followup",
     "_stage_deterministic_unsupported_capability",
-    "_stage_semantic_unsupported_capability",
     "_stage_pending_interrupt",
     "_stage_schedule_read_router",
     "_stage_resume_prompt_action",

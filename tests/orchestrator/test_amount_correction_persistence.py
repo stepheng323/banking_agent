@@ -62,6 +62,7 @@ async def test_plan_tasks_updates_amount_on_same_intent() -> None:
                 executor="transfer",
                 instruction="Send 15000 to Mum",
                 parameters=TransferTaskParameters(amount=15000),
+                risk="MONEY_MOVE",
             )
         ],
     )

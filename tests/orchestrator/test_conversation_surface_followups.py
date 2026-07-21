@@ -9,14 +9,21 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.context_frame_stages import _stage_context_frame_followup
+from apps.chat.src.agent.orchestrator.workflows.gate.core.runtime import build_gate_runtime
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.context_frame_stages import (
+    _stage_context_frame_followup,
+    resolve_semantic_context_followup,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.state.state_view import gate_state_view
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_focus import (
     context_frames_after_surface_answer,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
+    build_surface_answer_context_for_state,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks as _plan_tasks
 from shared.types.balance import BalanceFollowupDelta, BalanceOperation
 from shared.types.conversation_sets import (
     AccountLifecycleContract,
@@ -93,6 +100,23 @@ class _SurfaceFollowupPlanner:
         return self.planner_output
 
 
+async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, object]:
+    """Materialize typed frame decisions without reintroducing the retired LLM shortcut."""
+    configurable = config.get("configurable", {})
+    planner = configurable.get("task_planner") if isinstance(configurable, dict) else None
+    if isinstance(planner, _SurfaceFollowupPlanner):
+        runtime = build_gate_runtime(state, config)
+        resolution = resolve_semantic_context_followup(
+            runtime.build_context(),
+            planner.decision,
+            replay_modifier=planner.replay_modifier,
+        )
+        if resolution is not None:
+            planner.last_frame_context = build_surface_answer_context_for_state(state)
+            return resolution.materialize()
+    return await _plan_tasks(state, config)
+
+
 def _config(planner: _SurfaceFollowupPlanner) -> RunnableConfig:
     return {
         "configurable": {
@@ -113,25 +137,31 @@ async def _run_context_frame_gate_stage(
     *,
     query_session_snapshot: dict[str, object] | None = None,
 ) -> dict[str, object] | None:
-    return await _stage_context_frame_followup(
-        GateContext(
-            state=state,
-            config=_config(planner),
-            redis_client=None,
-            task_planner=planner,
-            semantic_router_llm=cast(SemanticRouterLLM, planner),
-            capability_classifier_llm=cast(CapabilityClassifierLLM, planner),
-            conversation_responder=None,
-            state_view=gate_state_view(state),
-            message_text=state.last_message_text,
-            current_locale="en",
-            gate_updates={},
-            live_pending_interrupt=False,
-            phrase_heavy_fastpath_allowed=True,
-            query_session_snapshot=query_session_snapshot,
-            _query_loaded=query_session_snapshot is not None,
-        )
+    ctx = GateContext(
+        state=state,
+        config=_config(planner),
+        redis_client=None,
+        task_planner=planner,
+        semantic_router_llm=cast(SemanticRouterLLM, planner),
+        capability_classifier_llm=cast(CapabilityClassifierLLM, planner),
+        conversation_responder=None,
+        state_view=gate_state_view(state),
+        message_text=state.last_message_text,
+        current_locale="en",
+        gate_updates={},
+        live_pending_interrupt=False,
+        phrase_heavy_fastpath_allowed=True,
+        query_session_snapshot=query_session_snapshot,
+        _query_loaded=query_session_snapshot is not None,
     )
+    deterministic = await _stage_context_frame_followup(ctx)
+    if deterministic is not None:
+        return deterministic.materialize()
+    resolution = resolve_semantic_context_followup(ctx, planner.decision, replay_modifier=planner.replay_modifier)
+    if resolution is None:
+        return None
+    planner.last_frame_context = build_surface_answer_context_for_state(state)
+    return resolution.materialize()
 
 
 def _transaction_list_frame() -> ContextFrame:
@@ -2889,7 +2919,7 @@ async def test_completed_transfer_replay_applies_structured_modifier_extraction(
     assert transfer_task.payload["authored_narration"] == "loyer"
     assert transfer_task.payload["user_note"] == "loyer"
     assert transfer_task.payload["recipient_account"] == "2010000001"
-    assert planner.last_replay_modifier_context is not None
+    assert planner.last_frame_context is not None
 
 
 @pytest.mark.asyncio
@@ -3106,7 +3136,7 @@ async def test_gate_context_frame_replay_applies_structured_modifier_extraction(
         phrase_heavy_fastpath_allowed=True,
     )
 
-    updates = await _stage_context_frame_followup(ctx)
+    updates = resolve_semantic_context_followup(ctx, planner.decision, replay_modifier=planner.replay_modifier)
 
     assert updates is not None
     transfer_task = next(iter(updates["tasks"].values()))
@@ -3118,7 +3148,7 @@ async def test_gate_context_frame_replay_applies_structured_modifier_extraction(
     assert transfer_task.payload["narration"] == "loyer"
     assert transfer_task.payload["authored_narration"] == "loyer"
     assert transfer_task.payload["user_note"] == "loyer"
-    assert planner.last_replay_modifier_context is not None
+    assert planner.last_frame_context is None
 
 
 @pytest.mark.asyncio

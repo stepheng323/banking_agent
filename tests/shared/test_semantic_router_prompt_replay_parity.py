@@ -26,7 +26,6 @@ def test_semantic_router_replay_case_set_covers_query_first_and_guardrails() -> 
     assert "query_credits_yoruba" in case_ids
     assert "query_income_hausa" in case_ids
     assert "query_income_igbo" in case_ids
-    assert "query_credits_french" in case_ids
     assert "query_followup_pending_last_3_days" in case_ids
     assert "query_followup_total_en" in case_ids
     assert "query_followup_total_pidgin" in case_ids

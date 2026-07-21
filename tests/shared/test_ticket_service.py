@@ -44,6 +44,30 @@ class _RepoStub:
     async def get_by_ticket_code(self, ticket_code: str) -> SimpleNamespace | None:
         return self.__class__.store.get(ticket_code)
 
+    async def get_for_user(
+        self,
+        user_id: str,
+        *,
+        ticket_id: str | None = None,
+        ticket_code: str | None = None,
+        for_update: bool = False,
+    ) -> SimpleNamespace | None:
+        del for_update
+        ticket = self.__class__.store.get(ticket_code or "")
+        if ticket is None and ticket_id is not None:
+            ticket = next(
+                (item for item in self.__class__.store.values() if str(getattr(item, "id", "")) == ticket_id),
+                None,
+            )
+        return ticket if ticket is not None and ticket.user_id == user_id else None
+
+    async def get_open_page(self, user_id: str, *, limit: int, offset: int) -> list[SimpleNamespace]:
+        tickets = await self.get_open_tickets(user_id)
+        return tickets[offset : offset + limit]
+
+    async def count_open(self, user_id: str) -> int:
+        return len(await self.get_open_tickets(user_id))
+
     async def get_open_tickets(self, user_id: str) -> list[SimpleNamespace]:
         return [ticket for ticket in self.__class__.store.values() if ticket.user_id == user_id]
 
@@ -94,7 +118,7 @@ async def test_ticket_service_session_factory_updates_ticket_status() -> None:
         intent="general_tx_issue",
         summary="Need help",
     )
-    updated = await service.update_status(created.ticket_code, SupportTicketStatusEnum.RESOLVED)
+    updated = await service.update_status("user-1", created.ticket_code, SupportTicketStatusEnum.RESOLVED)
 
     assert updated is not None
     assert updated.status == SupportTicketStatusEnum.RESOLVED.value
@@ -103,3 +127,45 @@ async def test_ticket_service_session_factory_updates_ticket_status() -> None:
     assert create_session.close_calls == 1
     assert update_session.commit_calls == 1
     assert update_session.close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_ticket_note_and_close_are_owner_scoped() -> None:
+    sessions = iter([_SessionStub(), _SessionStub(), _SessionStub(), _SessionStub()])
+    service = TicketService(session_factory=lambda: next(sessions))
+    created = await service.create_ticket(
+        user_id="user-1",
+        intent="general_tx_issue",
+        summary="Need help",
+        details={},
+    )
+    created.id = "ticket-1"
+    created.updated_at = SimpleNamespace(isoformat=lambda: "v1")
+
+    assert (
+        await service.append_user_note(
+            "other-user",
+            ticket_id="ticket-1",
+            note="not mine",
+            channel="telegram",
+        )
+        is None
+    )
+    updated = await service.append_user_note(
+        "user-1",
+        ticket_id="ticket-1",
+        note="Please call me after 4pm",
+        channel="telegram",
+    )
+    assert updated is created
+    assert created.details["user_notes"][0]["text"] == "Please call me after 4pm"
+
+    closed, already_closed, stale = await service.close_user_ticket(
+        "user-1",
+        ticket_id="ticket-1",
+        expected_version="v1",
+    )
+    assert closed is created
+    assert already_closed is False
+    assert stale is False
+    assert created.status == SupportTicketStatusEnum.CLOSED.value

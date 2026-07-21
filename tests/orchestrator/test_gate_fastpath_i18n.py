@@ -988,7 +988,7 @@ async def test_gate_localized_unsupported_request_uses_locale_params() -> None:
     assert updates["capability_boundary"].key == "investments"
 
 
-async def test_gate_semantic_unsupported_request_sets_capability_boundary_without_router() -> None:
+async def test_gate_semantic_unsupported_request_uses_router_capability_output() -> None:
     planner = _UnsupportedCapabilityPlanner(
         UnsupportedCapabilitySemanticOutput(
             action="unsupported",
@@ -996,7 +996,11 @@ async def test_gate_semantic_unsupported_request_sets_capability_boundary_withou
             confidence=0.93,
             reason="wealth_growth_in_stocks",
         ),
-        route_decision=SemanticRouteDecision(decision="direct_reply", response="should not be used"),
+        route_decision=SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.93,
+            unsupported_capability="investments",
+        ),
     )
     state = OrchestratorState(
         user_id="u_gate_semantic_unsupported",
@@ -1012,8 +1016,8 @@ async def test_gate_semantic_unsupported_request_sets_capability_boundary_withou
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.unsupported_calls == 1
-    assert planner.route_calls == 0
+    assert planner.unsupported_calls == 0
+    assert planner.route_calls == 1
     assert updates["turn_directive"].path_shape == "semantic_unsupported_capability"
     assert updates["final_response"] == render_message(
         "capability.unsupported_unavailable",
@@ -1053,11 +1057,45 @@ async def test_gate_low_confidence_semantic_unsupported_falls_through_to_router(
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.unsupported_calls == 1
+    assert planner.unsupported_calls == 0
     assert planner.route_calls == 1
     assert updates["turn_directive"].path_shape == "semantic_router_direct"
     assert updates["final_response"] == "semantic path"
     assert "capability_boundary" not in updates
+
+
+async def test_gate_ambiguous_unsupported_candidate_clarifies_without_planner() -> None:
+    planner = _UnsupportedCapabilityPlanner(
+        UnsupportedCapabilitySemanticOutput(
+            action="unsupported",
+            capability_key="investments",
+            confidence=0.62,
+            reason="unused_standalone_classifier",
+        ),
+        route_decision=SemanticRouteDecision(
+            decision="planner_ambiguous",
+            confidence=0.4,
+            expected_transaction_executors=[],
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_semantic_unsupported_ambiguous",
+        phone_number="2348777777749",
+        channel="whatsapp",
+        last_message_text="can you help me grow my money somehow",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.unsupported_calls == 0
+    assert planner.route_calls == 1
+    assert updates["turn_directive"].path_shape == "semantic_unsupported_candidate_clarify"
+    assert updates["final_response"] == render_message("conversational.clarify", "en")
 
 
 async def test_gate_mixed_transfer_and_investment_routes_supported_transfer_with_policy_notice() -> None:
@@ -2866,7 +2904,6 @@ async def test_gate_assertive_time_correction_bypasses_planner_without_context_f
         "yesterday nko",
         "ti ana nko",
         "na jiya fa",
-        "hier alors",
     ],
 )
 async def test_gate_multilingual_active_query_time_followups_bypass_semantic_router(message_text: str) -> None:
@@ -3661,6 +3698,7 @@ async def test_gate_schedule_terse_followup_uses_context_frame_before_router() -
             reason="router should not be called",
         ),
         frame_followup_decision=ContextFrameFollowupDecision(decision="show_details", confidence=0.91),
+        inject_context_followup=True,
     )
     state = OrchestratorState(
         user_id="u_gate_schedule_terse_followup_1",
@@ -3684,8 +3722,8 @@ async def test_gate_schedule_terse_followup_uses_context_frame_before_router() -
     assert "Scheduled Transaction Details" in updates["final_response"]
     assert "FATIMA ZAHRA MUSA" in updates["final_response"]
     assert "Target:" not in updates["final_response"]
-    assert planner.frame_followup_calls == 1
-    assert planner.route_calls == 0
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 1
     assert planner.plan_calls == 0
 
 
@@ -3743,6 +3781,7 @@ async def test_gate_schedule_edit_followup_uses_context_frame_task() -> None:
             detected_language="Pidgin",
             schedule_edit_delta=ScheduleSetEditDelta(schedule_time_local="09:00"),
         ),
+        inject_context_followup=True,
     )
     state = OrchestratorState(
         user_id="u_gate_schedule_edit_followup_1",
@@ -3762,8 +3801,8 @@ async def test_gate_schedule_edit_followup_uses_context_frame_task() -> None:
     assert "direct_path_triggered" not in updates
     assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert updates["turn_directive"].target_domain == "schedule"
-    assert planner.frame_followup_calls == 1
-    assert planner.route_calls == 0
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 1
     task = updates["tasks"]["context_schedule_set_mutation_1"]
     assert task.type == "schedule"
     assert task.payload["action"] == "edit_scheduled_transaction"
@@ -4110,6 +4149,53 @@ async def test_gate_account_list_uses_canonical_semantic_read_contract() -> None
     assert task.payload["read_request"]["response_shape"] == "surface_list"
 
 
+async def test_semantic_domain_dispatch_applies_detected_locale_to_task_and_progress() -> None:
+    class _ProgressTracker:
+        def __init__(self) -> None:
+            self.locales: list[str] = []
+
+        async def set_locale(self, locale: str) -> None:
+            self.locales.append(locale)
+
+    progress_tracker = _ProgressTracker()
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_account",
+            mode="new",
+            target_intent="account",
+            confidence=0.97,
+            detected_language="Yoruba",
+            read_request=ReadRequest(subject="balance", response_shape="fact_value", bank_name="Access Bank"),
+            balance_contract=BalanceQueryContract(
+                account_scope="named", bank_names=["Access Bank"], operation="value"
+            ),
+            reason="localized account read",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_locale_domain",
+        phone_number="2348999999925",
+        channel="whatsapp",
+        last_message_text="Elo ni owo inu Access mi",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "progress_tracker": progress_tracker,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["loaded_context"]["language"] == "yo"
+    assert updates["tasks"]["direct_account"].type == "account"
+    assert progress_tracker.locales == ["yo"]
+
+
 async def test_gate_account_count_preserves_canonical_response_shape() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -4294,6 +4380,7 @@ async def test_gate_context_frame_completeness_preempts_beneficiary_reroute() ->
             confidence=0.96,
             detected_language="English",
         ),
+        inject_context_followup=True,
     )
     state = OrchestratorState(
         user_id="u_gate_frame_followup_1",
@@ -4337,8 +4424,8 @@ async def test_gate_context_frame_completeness_preempts_beneficiary_reroute() ->
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.frame_followup_calls == 1
-    assert planner.route_calls == 0
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 1
     assert "direct_path_triggered" not in updates
     assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert updates["final_response"] == "Yes. Those are the 3 saved beneficiaries I found."
@@ -4424,6 +4511,7 @@ async def test_gate_context_frame_lookup_preempts_beneficiary_reroute() -> None:
             detected_language="English",
             target_text="gaines",
         ),
+        inject_context_followup=True,
     )
     state = OrchestratorState(
         user_id="u_gate_frame_followup_2",
@@ -4461,9 +4549,9 @@ async def test_gate_context_frame_lookup_preempts_beneficiary_reroute() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.frame_followup_calls == 1
-    assert planner.route_calls == 0
-    assert "Frame type: beneficiary_list" in (planner.last_frame_context or "")
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 1
+    assert "beneficiary_list" in (planner.last_context or "")
     assert "direct_path_triggered" not in updates
     assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert updates["final_response"] == "I don't see Gaines in the saved beneficiaries I showed."
@@ -4490,6 +4578,7 @@ async def test_gate_context_frame_expected_missing_entity_preempts_beneficiary_r
             target_text="gaines",
             reason="user expected a named beneficiary in the displayed list",
         ),
+        inject_context_followup=True,
     )
     state = OrchestratorState(
         user_id="u_gate_frame_followup_expected_missing",
@@ -4533,8 +4622,8 @@ async def test_gate_context_frame_expected_missing_entity_preempts_beneficiary_r
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.frame_followup_calls == 1
-    assert planner.route_calls == 0
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 1
     assert "direct_path_triggered" not in updates
     assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert updates["final_response"] == "I don't see Gaines in the saved beneficiaries I showed."
@@ -4691,6 +4780,7 @@ async def test_gate_context_frame_unclear_followup_returns_frame_specific_clarif
             detected_language="English",
             reason="ambiguous but likely related to visible frame",
         ),
+        inject_context_followup=True,
     )
     state = OrchestratorState(
         user_id="u_gate_frame_followup_unclear_beneficiary",
@@ -4722,8 +4812,8 @@ async def test_gate_context_frame_unclear_followup_returns_frame_specific_clarif
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.frame_followup_calls == 1
-    assert planner.route_calls == 0
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 1
     assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert updates["final_response"] == "Are you asking about the saved beneficiaries I just showed?"
     assert "tasks" not in updates
@@ -4749,6 +4839,7 @@ async def test_gate_context_frame_filter_operation_preempts_account_reroute() ->
             target_text="gtbank",
             reason="user wants only the GTBank item from the displayed frame",
         ),
+        inject_context_followup=True,
     )
     state = OrchestratorState(
         user_id="u_gate_frame_followup_filter_account",
@@ -4786,8 +4877,8 @@ async def test_gate_context_frame_filter_operation_preempts_account_reroute() ->
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.frame_followup_calls == 1
-    assert planner.route_calls == 0
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 1
     assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "GTBank (...0002)" in updates["final_response"]
     assert "First Bank (...0001)" not in updates["final_response"]
@@ -4809,6 +4900,7 @@ async def test_gate_context_frame_compare_operation_answers_from_frame() -> None
             detected_language="English",
             reason="user wants to compare the displayed account items",
         ),
+        inject_context_followup=True,
     )
     state = OrchestratorState(
         user_id="u_gate_frame_followup_compare_account",
@@ -4846,8 +4938,8 @@ async def test_gate_context_frame_compare_operation_answers_from_frame() -> None
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.frame_followup_calls == 1
-    assert planner.route_calls == 0
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 1
     assert updates["turn_directive"].path_shape == "context_frame_followup"
     assert "Comparison" in updates["final_response"]
     assert "First Bank (...0001)" in updates["final_response"]
@@ -7268,9 +7360,11 @@ class _RouteTurnPlanner:
         decision: SemanticRouteDecision,
         *,
         frame_followup_decision: ContextFrameFollowupDecision | None = None,
+        inject_context_followup: bool = False,
     ) -> None:
         self._decision = decision
         self._frame_followup_decision = frame_followup_decision
+        self._inject_context_followup = inject_context_followup
         self.route_calls = 0
         self.frame_followup_calls = 0
         self.plan_calls = 0
@@ -7288,22 +7382,9 @@ class _RouteTurnPlanner:
         del phone_number, text, path_label
         self.route_calls += 1
         self.last_context = context
-        return self._decision
-
-    async def interpret_context_frame_followup(
-        self,
-        phone_number: str,
-        text: str,
-        context: str = "None",
-        *,
-        path_label: str = "direct_path",
-    ) -> ContextFrameFollowupDecision:
-        del phone_number, text, path_label
-        self.frame_followup_calls += 1
-        self.last_frame_context = context
-        if self._frame_followup_decision is None:
-            return ContextFrameFollowupDecision(decision="new_task", confidence=0.99)
-        return self._frame_followup_decision
+        if not self._inject_context_followup or self._frame_followup_decision is None:
+            return self._decision
+        return self._decision.model_copy(update={"context_followup": self._frame_followup_decision})
 
     async def plan_tasks(self, *args: object, **kwargs: object) -> None:
         del args, kwargs

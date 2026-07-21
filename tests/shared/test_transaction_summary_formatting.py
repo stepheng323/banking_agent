@@ -147,7 +147,7 @@ def test_multi_action_summary_blocks_space_failed_transfers_for_mobile() -> None
     assert "Transfers failed" in rendered
     assert "✗ ₦30,000 → Mom (Fatima Zahra Musa)\nWema • 8067892221\nReason: Transfer creation failed" in rendered
     assert "\n\n✗ ₦30,000 → Ay (Emmanuel Tunde Bakare)\nOpay • 7750145200" in rendered
-    assert "All transactions failed." in rendered
+    assert "All 2 transactions failed." in rendered
     assert "✗ ₦30,000 → Mom (Fatima Zahra Musa) • Wema • 8067892221" not in rendered
 
 
@@ -241,7 +241,7 @@ def test_multi_action_summary_mixed_batch_keeps_neutral_wrapper_copy() -> None:
     summary = format_multi_action_summary(tasks, locale="en")
 
     assert "*Transaction Summary*" in summary
-    assert "_All transactions completed successfully_" in summary
+    assert "All 2 transactions completed successfully." in summary
 
 
 def test_multi_action_summary_processing_transfer_uses_update_copy() -> None:
@@ -275,8 +275,7 @@ def test_multi_action_summary_processing_transfer_uses_update_copy() -> None:
     assert "✓ ₦10,000 → Mum (Mercy Johnson) • Opay • 8162511023" in summary
     assert "… ₦7,000 → Tolu (Tolu Adedayo) • First Bank • 0760505261" in summary
     assert "*Total Spent:* ₦10,000" in summary
-    assert "awaiting provider confirmation" in summary
-    assert "You'll be notified when the final update arrives." in summary
+    assert "Some transactions completed; others are still being processed." in summary
 
 
 def test_multi_action_summary_processing_footer_uses_locale_catalog() -> None:
@@ -303,7 +302,6 @@ def test_multi_action_summary_processing_footer_uses_locale_catalog() -> None:
 
     assert "*Transaction Update*" in summary
     assert "Others still dey wait for provider confirmation" in summary
-    assert "I go notify you when final update land." in summary
 
 
 def test_multi_action_summary_failed_footer_uses_locale_catalog() -> None:

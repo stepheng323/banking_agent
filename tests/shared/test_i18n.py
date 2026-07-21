@@ -363,6 +363,65 @@ async def test_locale_hysteresis_auto_switch(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_turn_locale_uses_detected_language_before_preference_hysteresis(monkeypatch):
+    fake_redis = _FakeRedis()
+
+    from shared.cache.redis_client import RedisClient
+
+    monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls: fake_redis))
+
+    phone = "2348333333333"
+    fake_redis._store[f"user:{phone}:language"] = "en"
+
+    first = await LocaleManager.resolve_turn_locale(
+        phone_number=phone,
+        current_locale="en",
+        detected_language="Yoruba",
+        confidence=0.95,
+        source="semantic_router",
+        persist_detection=True,
+    )
+
+    assert first == LocaleCode.YO
+    assert fake_redis._store[f"user:{phone}:language"] == "en"
+
+    second = await LocaleManager.resolve_turn_locale(
+        phone_number=phone,
+        current_locale="en",
+        detected_language="Yoruba",
+        confidence=0.95,
+        source="semantic_router",
+        persist_detection=True,
+    )
+
+    assert second == LocaleCode.YO
+    assert fake_redis._store[f"user:{phone}:language"] == "yo"
+
+
+@pytest.mark.asyncio
+async def test_turn_locale_keeps_explicit_preference_over_detection(monkeypatch):
+    fake_redis = _FakeRedis()
+
+    from shared.cache.redis_client import RedisClient
+
+    monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls: fake_redis))
+
+    phone = "2348444444444"
+    await LocaleManager.set_locale(phone, "pcm", source="user_command")
+
+    resolved = await LocaleManager.resolve_turn_locale(
+        phone_number=phone,
+        current_locale="pcm",
+        detected_language="Yoruba",
+        confidence=0.99,
+        source="planner",
+        persist_detection=True,
+    )
+
+    assert resolved == LocaleCode.PCM
+
+
+@pytest.mark.asyncio
 async def test_explicit_locale_switch_overrides(monkeypatch):
     fake_redis = _FakeRedis()
 

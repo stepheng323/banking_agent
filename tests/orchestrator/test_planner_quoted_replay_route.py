@@ -14,30 +14,28 @@ class _QuotedPlannerStub:
         interpretation: QuotedReplayInterpretation,
         replay_modifier: ContextFrameReplayModifier | None = None,
     ) -> None:
+        if replay_modifier is not None:
+            interpretation = interpretation.model_copy(
+                update={
+                    "replay_amount": replay_modifier.amount,
+                    "replay_amount_evidence": replay_modifier.amount_evidence,
+                    "replay_source_account": replay_modifier.source_account_reference,
+                    "replay_source_evidence": replay_modifier.source_account_evidence,
+                    "replay_narration": replay_modifier.narration,
+                    "replay_narration_evidence": replay_modifier.narration_evidence,
+                }
+            )
         self.interpretation = interpretation
         self.replay_modifier = replay_modifier
         self.quoted_called = False
         self.plan_called = False
         self.last_quoted_context: str | None = None
-        self.last_replay_modifier_context: str | None = None
 
     async def interpret_quoted_replay(self, phone_number: str, text: str, context: str = "None") -> Any:
         del phone_number, text
         self.quoted_called = True
         self.last_quoted_context = context
         return self.interpretation
-
-    async def extract_context_frame_replay_modifiers(
-        self,
-        phone_number: str,
-        text: str,
-        context: str = "None",
-        *,
-        path_label: str = "planner_path",
-    ) -> ContextFrameReplayModifier | None:
-        del phone_number, text, path_label
-        self.last_replay_modifier_context = context
-        return self.replay_modifier
 
     async def plan_tasks(
         self,
@@ -561,7 +559,7 @@ async def test_quoted_replay_modifier_applies_source_account_override() -> None:
 
     assert planner.quoted_called is True
     assert planner.plan_called is False
-    assert planner.last_replay_modifier_context is not None
+    assert planner.last_quoted_context is not None
     task = next(iter(updates["tasks"].values()))
     assert task.type == "transfer"
     assert task.payload["amount"] == 5000

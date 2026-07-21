@@ -28,8 +28,11 @@ async def test_reset_redis_session_clears_checkpoint_latest() -> None:
         user_id="user-1",
     )
 
-    assert deleted == 9
+    assert deleted == 12
     assert "checkpoint_latest:whatsapp:2348000000001:*" in redis.scanned_patterns
+    assert "checkpoint_ttl_refresh:whatsapp:2348000000001" in redis.scanned_patterns
+    assert "chat:thread-lock:whatsapp:2348000000001" in redis.scanned_patterns
+    assert "user:2348000000001:*" in redis.scanned_patterns
     assert "support_context:2348000000001" in redis.scanned_patterns
     assert "support_context:user-1" in redis.scanned_patterns
     assert any(key.startswith("checkpoint_latest:whatsapp:2348000000001:") for key in redis.deleted_keys)

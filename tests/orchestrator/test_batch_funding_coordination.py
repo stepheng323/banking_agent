@@ -58,6 +58,28 @@ class _TransferWorkerNoDD:
         return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
 
+class _AirtimeNeedsConfirmation:
+    """Minimal purchase worker used to assert preflight happens before queueing."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, user_message, pin_verified
+        self.calls.append(payload.copy())
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+            confirmation_summary="Confirm airtime",
+            confirmation_snapshot={"amount": payload["amount"]},
+        )
+
+
 class _TransferNeedsConfirmationWithDD:
     def __init__(self, dd_provider: _MockDirectDebitProvider, source_account: dict) -> None:
         self.dd_provider = dd_provider
@@ -369,6 +391,103 @@ async def test_batch_funding_infeasible_blocks_wave_with_input_interrupt() -> No
     assert updates["outbox"][0]["type"] == "say"
     assert "Insufficient funds for this batch" in updates["outbox"][0]["text"]
     assert worker.calls == []
+
+
+@pytest.mark.parametrize(
+    ("task_type", "action", "recipient_field"),
+    [
+        ("airtime", "buy_airtime", "recipient_phone"),
+        ("data", "buy_data", "target_phone"),
+    ],
+)
+async def test_single_bill_preflight_blocks_insufficient_source_before_purchase_worker(
+    task_type: str,
+    action: str,
+    recipient_field: str,
+) -> None:
+    gtb = _account("GTBank", "acc_gtb", is_default=True)
+    provider = _MockDirectDebitProvider({"acc_gtb": 1_000.0})
+    transfer_worker = _TransferWorkerWithDD(provider)
+    airtime_worker = _AirtimeNeedsConfirmation()
+    state = OrchestratorState(
+        turn_directive=execution_test_directive(),
+        user_id="u_single_airtime_preflight",
+        phone_number="2348000001002",
+        channel="whatsapp",
+        waves=[["a1"]],
+        current_wave_index=0,
+        tasks={
+            "a1": TaskSpec(
+                id="a1",
+                type="airtime",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "action": action,
+                    "amount": 2_000.0,
+                    recipient_field: "08162511023",
+                    "network": "MTN",
+                    "source_account_id": gtb["id"],
+                    "source_bank_name": "GTBank",
+                },
+            )
+        },
+        loaded_context={"language": "en", "accounts": [gtb]},
+    )
+    config: RunnableConfig = {
+        "configurable": {"services": {"transfer": transfer_worker, task_type: airtime_worker}},
+        "recursion_limit": 50,
+    }
+
+    updates = await advance_wave(state, config)
+
+    assert updates["pending_interrupt"].kind == "input"
+    assert airtime_worker.calls == []
+    assert updates["tasks"]["a1"].stage == TaskStage.AWAITING_FUNDING_ADJUSTMENT
+
+
+async def test_single_airtime_preflight_binds_the_approved_source_before_confirmation() -> None:
+    gtb = _account("GTBank", "acc_gtb", is_default=True)
+    provider = _MockDirectDebitProvider({"acc_gtb": 3_000.0})
+    transfer_worker = _TransferWorkerWithDD(provider)
+    airtime_worker = _AirtimeNeedsConfirmation()
+    state = OrchestratorState(
+        turn_directive=execution_test_directive(),
+        user_id="u_single_airtime_funded",
+        phone_number="2348000001003",
+        channel="whatsapp",
+        waves=[["a1"]],
+        current_wave_index=0,
+        tasks={
+            "a1": TaskSpec(
+                id="a1",
+                type="airtime",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "action": "buy_airtime",
+                    "amount": 2_000.0,
+                    "recipient_phone": "08162511023",
+                    "network": "MTN",
+                    "source_account_id": gtb["id"],
+                    "source_bank_name": "GTBank",
+                },
+            )
+        },
+        loaded_context={"language": "en", "accounts": [gtb]},
+    )
+    config: RunnableConfig = {
+        "configurable": {"services": {"transfer": transfer_worker, "airtime": airtime_worker}},
+        "recursion_limit": 50,
+    }
+
+    updates = await advance_wave(state, config)
+
+    assert len(airtime_worker.calls) == 1
+    payload = airtime_worker.calls[0]
+    assert payload["source_account_id"] == gtb["id"]
+    assert payload["source_affinity_mode"] == "explicit"
+    assert payload["funding_plan"]["is_single_source"] is True
+    assert payload["funding_plan"]["steps"][0]["account_id"] == gtb["id"]
+    assert updates["tasks"]["a1"].stage == TaskStage.AWAITING_CONFIRMATION
 
 
 async def test_batch_funding_skips_when_transfer_worker_has_no_dd_provider() -> None:

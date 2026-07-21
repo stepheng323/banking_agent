@@ -79,7 +79,6 @@ def test_query_parser_prompt_covers_recipient_summary_and_ranking() -> None:
     assert "tani mo ran owo si ni osu yi" in QUERY_PARSER_PROMPT
     assert "onye ka m zigara ego n'onwa a" in QUERY_PARSER_PROMPT
     assert "wa na tura wa kudi a wannan watan" in QUERY_PARSER_PROMPT
-    assert "qui ai je envoye de l argent ce mois ci" in QUERY_PARSER_PROMPT
 
 
 def test_query_parser_prompt_covers_time_normalization() -> None:
@@ -124,7 +123,6 @@ def test_query_prompts_require_typed_multilingual_fact_semantics() -> None:
     assert "bank wo ni mo lo fun last transfer" in QUERY_PARSER_PROMPT
     assert "nawa ne bank din last transaction dina" in QUERY_PARSER_PROMPT
     assert "ole ego ka m zigara tolu ikpeazu" in QUERY_PARSER_PROMPT
-    assert "quelle banque pour ma derniere transaction" in QUERY_PARSER_PROMPT
     assert "did I send money to mum this month" in QUERY_PARSER_PROMPT
     assert "what was the reference for that payment" in QUERY_PARSER_PROMPT
     assert "single focused item" in QUERY_SEMANTIC_REASONER_SYSTEM

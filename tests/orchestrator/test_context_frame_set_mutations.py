@@ -30,15 +30,17 @@ def _frame(domain: str, count: int = 3, *, include_set_state: bool = True) -> Co
         "beneficiary": EntityType.BENEFICIARY,
         "schedule": EntityType.SCHEDULE,
         "linked_account": EntityType.ACCOUNT,
+        "support": EntityType.SUPPORT_TICKET,
     }[domain]
     frame_type = {
         "beneficiary": ContextFrameType.BENEFICIARY_LIST,
         "schedule": ContextFrameType.SCHEDULE_LIST,
         "linked_account": ContextFrameType.ACCOUNT_LIST,
+        "support": ContextFrameType.SUPPORT_TICKET_LIST,
     }[domain]
     refs = [
         EntitySelectionRef(
-            entity_type=domain,
+            entity_type="support_ticket" if domain == "support" else domain,
             entity_id=f"{domain}-{index}",
             frame_id=frame_id,
             display_label=f"Item {index} · ···{index:04d}",
@@ -183,3 +185,92 @@ def test_multi_beneficiary_transfer_requires_explicit_allocation_for_each_target
         "beneficiary-1",
         "beneficiary-2",
     ]
+
+
+def test_schedule_pause_and_resume_materialize_reviewed_bulk_requests() -> None:
+    frame = _frame("schedule")
+    state = OrchestratorState(user_id="user-1", phone_number="2348000000000", context_frames=[frame])
+
+    for decision_name, expected_action, expected_bulk_action in (
+        ("pause_schedule", "pause_scheduled_transaction", "pause"),
+        ("resume_schedule", "resume_scheduled_transaction", "resume"),
+    ):
+        decision = ContextFrameFollowupDecision(
+            decision=decision_name,
+            confidence=0.95,
+            set_scope_delta=SetScopeDelta(operation="replace", selection_indices=[1, 2]),
+        )
+        result = build_set_mutation_result_for_view(
+            context_frame_state_view(state),
+            frame,
+            decision,
+            f"{expected_bulk_action} the first two",
+            locale="en",
+        )
+
+        assert result is not None and result.tasks is not None
+        task = next(iter(result.tasks.values()))
+        assert task.payload["action"] == expected_action
+        assert task.payload["bulk_mutation"]["action"] == expected_bulk_action
+        assert len(task.payload["bulk_mutation"]["targets"]) == 2
+
+
+def test_beneficiary_rename_requires_one_stable_reference_and_new_alias() -> None:
+    frame = _frame("beneficiary")
+    state = OrchestratorState(user_id="user-1", phone_number="2348000000000", context_frames=[frame])
+    decision = ContextFrameFollowupDecision(
+        decision="rename_beneficiary",
+        confidence=0.95,
+        selection_index=2,
+        new_alias="Tolu Work",
+    )
+
+    result = build_set_mutation_result_for_view(
+        context_frame_state_view(state),
+        frame,
+        decision,
+        "rename the second one Tolu Work",
+        locale="en",
+    )
+
+    assert result is not None and result.tasks is not None
+    task = next(iter(result.tasks.values()))
+    assert task.payload["action"] == "rename_beneficiary"
+    assert task.payload["new_alias"] == "Tolu Work"
+    assert task.payload["beneficiary_selection_ref"]["entity_id"] == "beneficiary-2"
+
+
+def test_ticket_note_and_close_use_owner_scoped_stable_ticket_reference() -> None:
+    frame = _frame("support", count=1, include_set_state=False)
+    frame.items[0].data["ticket_code"] = "SUP-123"
+    state = OrchestratorState(user_id="user-1", phone_number="2348000000000", context_frames=[frame])
+
+    note_result = build_set_mutation_result_for_view(
+        context_frame_state_view(state),
+        frame,
+        ContextFrameFollowupDecision(
+            decision="append_ticket_note",
+            confidence=0.95,
+            selection_index=1,
+            ticket_note="The transfer is still missing.",
+        ),
+        "add that the transfer is still missing",
+        locale="en",
+    )
+    assert note_result is not None and note_result.tasks is not None
+    note_task = next(iter(note_result.tasks.values()))
+    assert note_task.payload["action"] == "append_support_ticket_note"
+    assert note_task.payload["ticket_id"] == "support-1"
+    assert note_task.payload["ticket_note"] == "The transfer is still missing."
+
+    close_result = build_set_mutation_result_for_view(
+        context_frame_state_view(state),
+        frame,
+        ContextFrameFollowupDecision(decision="close_ticket", confidence=0.95, selection_index=1),
+        "close it",
+        locale="en",
+    )
+    assert close_result is not None and close_result.tasks is not None
+    close_task = next(iter(close_result.tasks.values()))
+    assert close_task.payload["action"] == "close_support_ticket"
+    assert close_task.payload["ticket_code"] == "SUP-123"

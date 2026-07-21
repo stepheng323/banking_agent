@@ -44,7 +44,10 @@
     "text": "Send 10k to Mum and buy 5k airtime",
     "context": "None",
     "signals": {
-      "expected_transaction_executors": ["transfer", "airtime"]
+      "expected_transaction_executors": [
+        "transfer",
+        "airtime"
+      ]
     }
   },
   {
@@ -53,7 +56,9 @@
     "context": "None",
     "signals": {
       "has_transaction_intent_hint": true,
-      "expected_transaction_executors": ["transfer"]
+      "expected_transaction_executors": [
+        "transfer"
+      ]
     }
   },
   {
@@ -163,14 +168,6 @@
     }
   },
   {
-    "id": "oneshot_transfer_french",
-    "text": "Envoie 5k a 0760505261 First Bank",
-    "context": "None",
-    "signals": {
-      "has_transaction_intent_hint": true
-    }
-  },
-  {
     "id": "oneshot_airtime_en",
     "text": "Buy 2k airtime for 08031234567 mtn",
     "context": "None",
@@ -211,14 +208,6 @@
     }
   },
   {
-    "id": "oneshot_airtime_french",
-    "text": "Acheter 2k airtime pour 08031234567 mtn",
-    "context": "None",
-    "signals": {
-      "has_transaction_intent_hint": true
-    }
-  },
-  {
     "id": "oneshot_data_en",
     "text": "Buy 1gb data for 08031234567 mtn",
     "context": "None",
@@ -253,14 +242,6 @@
   {
     "id": "oneshot_data_igbo",
     "text": "Biko buy data 1gb for 08031234567 mtn",
-    "context": "None",
-    "signals": {
-      "has_transaction_intent_hint": true
-    }
-  },
-  {
-    "id": "oneshot_data_french",
-    "text": "Acheter data 1gb pour 08031234567 mtn",
     "context": "None",
     "signals": {
       "has_transaction_intent_hint": true

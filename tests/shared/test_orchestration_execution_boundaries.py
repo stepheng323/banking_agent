@@ -238,7 +238,6 @@ PLANNER_CONTEXT_READ_STATE_VIEW_MODULES = (
     PLANNER_ROOT / "execution_flow.py",
 )
 PLANNER_CONTEXT_FRAME_STATE_VIEW_MODULES = (
-    PLANNER_ROOT / "context" / "flow" / "context_flow_followup.py",
     PLANNER_ROOT / "context" / "frames" / "context_frame_followup_context_builder.py",
     PLANNER_ROOT / "context" / "frames" / "context_frame_followup_focus.py",
     PLANNER_ROOT / "context" / "frames" / "context_frame_followup_response_builder.py",

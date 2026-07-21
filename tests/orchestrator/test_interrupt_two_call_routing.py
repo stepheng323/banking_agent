@@ -598,7 +598,7 @@ async def test_transaction_switch_transfer_cancel_schedule_action_preserved_with
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
     task_id = list(updates["tasks"].keys())[0]
-    assert updates["tasks"][task_id].payload.get("action") == "cancel_scheduled_transfer"
+    assert updates["tasks"][task_id].payload.get("action") == "cancel_scheduled_transaction"
     assert updates["tasks"][task_id].payload.get("schedule_selector") == "2"
 
 

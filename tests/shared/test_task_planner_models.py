@@ -10,7 +10,12 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import (
+    BalanceContextRouteLLMDecision,
+    SemanticRouterLLM,
+    TransactionContextRouteLLMDecision,
+    _adapt_semantic_route_llm_decision,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_llm_models import (
     PlannerAmbiguousPlan,
@@ -445,7 +450,9 @@ def test_planner_output_schema_uses_executor_specific_parameter_union() -> None:
     assert task.model_dump().get("executor") is None
     assert "network" not in schema["$defs"]["TransferTaskParameters"]["properties"]
     assert "recipient_account" not in schema["$defs"]["AirtimeTaskParameters"]["properties"]
-    assert schema_size < 25000
+    # The canonical worker-operation cutover adds bounded schedule-history,
+    # beneficiary-rename, and ticket-lifecycle fields to the planner contract.
+    assert schema_size < 28000
 
 
 def test_narrow_planner_output_schemas_limit_llm_facing_task_contracts() -> None:
@@ -500,3 +507,66 @@ def test_old_universal_task_parameters_constructor_is_not_reintroduced() -> None
                 offenders.append(str(path.relative_to(repo_root)))
 
     assert offenders == []
+
+
+def test_context_followup_llm_paths_are_not_reintroduced() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    forbidden = (
+        "interpret_context_frame_followup",
+        "extract_context_frame_replay_modifiers",
+        "context_frame_followup_llm_call",
+        "context_frame_replay_modifier_llm_call",
+    )
+    source = "\n".join(
+        path.read_text()
+        for directory_name in ("apps", "banking", "shared")
+        for path in (repo_root / directory_name).rglob("*.py")
+    )
+
+    assert all(token not in source for token in forbidden)
+
+
+def test_semantic_router_adapts_balance_context_in_its_single_response() -> None:
+    route = _adapt_semantic_route_llm_decision(
+        BalanceContextRouteLLMDecision(
+            decision="domain_account",
+            conf=0.94,
+            lang="English",
+            mode="continuation",
+            intent="account",
+            subject="balance",
+            shape="fact_value",
+            bank="GTBank",
+            ctx_act="show_details",
+            bal_scope="replace",
+            bal_banks=["GTBank"],
+            bal_op="value",
+        )
+    )
+
+    assert route.context_followup is not None
+    assert route.context_followup.balance_delta is not None
+    assert route.context_followup.balance_delta.scope_operation == "replace"
+    assert route.context_followup.balance_delta.bank_names == ["GTBank"]
+    assert route.context_replay_modifier is None
+
+
+def test_semantic_router_keeps_explicit_replay_patch_in_the_same_response() -> None:
+    route = _adapt_semantic_route_llm_decision(
+        TransactionContextRouteLLMDecision(
+            decision="domain_transfer",
+            conf=0.93,
+            lang="English",
+            mode="continuation",
+            intent="transfer",
+            ctx_act="replay_tasks",
+            replay_amount=10_000,
+            replay_amount_text="10k",
+        )
+    )
+
+    assert route.context_followup is not None
+    assert route.context_followup.decision == "replay_tasks"
+    assert route.context_replay_modifier is not None
+    assert route.context_replay_modifier.amount == 10_000
+    assert route.context_replay_modifier.amount_evidence == "10k"

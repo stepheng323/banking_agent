@@ -489,6 +489,7 @@ def test_transfer_payload_builder_keeps_percentage_and_transfer_all_fields() -> 
             transfer_percentage=50,
             transfer_all=False,
         ),
+        risk="MONEY_MOVE",
     )
 
     spec = build_task_spec_from_plan_item(
@@ -517,6 +518,7 @@ def test_transfer_payload_builder_coerces_symbolic_all_amount_to_transfer_all() 
             recipient="Mum",
             source_bank_name="First Bank",
         ),
+        risk="MONEY_MOVE",
     )
 
     spec = build_task_spec_from_plan_item(
@@ -544,6 +546,7 @@ def test_transfer_payload_builder_coerces_symbolic_half_amount_to_percentage() -
             recipient="Mum",
             source_bank_name="Zenith Bank",
         ),
+        risk="MONEY_MOVE",
     )
 
     spec = build_task_spec_from_plan_item(

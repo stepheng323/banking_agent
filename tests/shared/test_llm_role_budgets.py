@@ -1,6 +1,13 @@
 """Static prompt/schema budget guards for interactive LLM roles."""
 
-from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouteLLMDecision
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import (
+    AccountContextRouteLLMDecision,
+    BalanceContextRouteLLMDecision,
+    BeneficiaryContextRouteLLMDecision,
+    GenericContextRouteLLMDecision,
+    SemanticRouteLLMDecision,
+    TransactionContextRouteLLMDecision,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_prompt_compiler import (
     SemanticRouterPromptSignals,
     compile_semantic_router_prompt,
@@ -22,15 +29,30 @@ from shared.observability.llm_call_metrics import estimated_tokens_from_chars, r
 def test_semantic_router_compiler_selects_only_state_atoms_within_prompt_budget() -> None:
     base = compile_semantic_router_prompt(SemanticRouterPromptSignals())
     active = compile_semantic_router_prompt(
-        SemanticRouterPromptSignals(active_query=True, active_flow=True, context_frame=True, schedule_context=True)
+        SemanticRouterPromptSignals(
+            active_query=True,
+            active_flow=True,
+            context_frame=True,
+            schedule_context=True,
+            unsupported_capability_candidate=True,
+        )
     )
 
     assert "Active-query atom" not in base.system_prompt
     assert "Active-query atom" in active.system_prompt
-    assert active.profile == "query+flow+frame+schedule"
+    assert active.profile == "query+flow+frame+schedule+unsupported"
+    assert "Unsupported-capability atom" in active.system_prompt
     assert active.cache_key != base.cache_key
     assert estimated_tokens_from_chars(len(active.system_prompt)) <= 1600
     assert response_schema_metrics(SemanticRouteLLMDecision)["response_schema_token_estimate"] <= 750
+    context_schemas = (
+        BalanceContextRouteLLMDecision,
+        BeneficiaryContextRouteLLMDecision,
+        AccountContextRouteLLMDecision,
+        GenericContextRouteLLMDecision,
+        TransactionContextRouteLLMDecision,
+    )
+    assert all(response_schema_metrics(schema)["response_schema_token_estimate"] <= 750 for schema in context_schemas)
 
 
 def test_known_planner_schemas_fit_role_budget() -> None:

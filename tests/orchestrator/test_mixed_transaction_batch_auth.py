@@ -2846,7 +2846,7 @@ async def test_added_airtime_batch_overwrites_stale_single_transfer_async_group_
     final_updates = await finalize(state, config)
 
     final_text = "\n".join(entry.get("text", "") for entry in final_updates["outbox"])
-    assert "Your transactions are being processed." in final_text
+    assert "Your 2 transactions have been submitted. I'm confirming the debit and delivery now." in final_text
     assert "Transfer of" not in final_text
 
 
@@ -3028,7 +3028,7 @@ async def test_multi_transfer_batch_pin_callback_executes_all_tasks_and_emits_pr
     final_updates = await finalize(state, config)
 
     final_text = "\n".join(entry.get("text", "") for entry in final_updates["outbox"])
-    assert "Your transactions are being processed." in final_text
+    assert "Your 2 transactions have been submitted. I'm confirming the debit and delivery now." in final_text
 
 
 @pytest.mark.asyncio

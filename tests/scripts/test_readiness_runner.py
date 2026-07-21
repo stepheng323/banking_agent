@@ -530,14 +530,15 @@ def test_planner_scenario_is_dry_run_planner_probe_set() -> None:
     )
 
 
-def test_llm_latency_catalog_covers_bounded_and_observed_call_paths() -> None:
+def test_llm_latency_catalog_covers_bounded_call_paths() -> None:
     scenarios = resolve_scenarios("llm-latency")
     by_id = {scenario.id: scenario for scenario in scenarios}
 
     assert {"llm-single-transfer-edit", "llm-batch-edit", "llm-context-display"}.issubset(by_id)
     single_edit_budget = by_id["llm-single-transfer-edit"].turns[1].expectation.llm_call_budget
     batch_edit_budget = by_id["llm-batch-edit"].turns[1].expectation.llm_call_budget
-    context_budget = by_id["llm-context-display"].turns[1].expectation.llm_call_budget
+    context_display_budget = by_id["llm-context-display"].turns[0].expectation.llm_call_budget
+    context_selection_budget = by_id["llm-context-display"].turns[1].expectation.llm_call_budget
 
     assert single_edit_budget is not None
     assert single_edit_budget.max_calls == 1
@@ -545,8 +546,11 @@ def test_llm_latency_catalog_covers_bounded_and_observed_call_paths() -> None:
     assert batch_edit_budget is not None
     assert batch_edit_budget.max_calls == 2
     assert dict(batch_edit_budget.max_event_counts)["semantic_router_llm_call"] == 1
-    assert context_budget is not None
-    assert context_budget.observe is True
+    assert context_display_budget is not None
+    assert context_display_budget.max_calls == 1
+    assert dict(context_display_budget.max_event_counts)["semantic_router_llm_call"] == 1
+    assert context_selection_budget is not None
+    assert context_selection_budget.max_calls == 0
 
 
 def test_readiness_cli_parses_expected_flags() -> None:

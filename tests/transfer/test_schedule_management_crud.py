@@ -103,10 +103,35 @@ class _FakeScheduleRepo:
             if str(schedule.id) in schedule_ids and schedule.status == "active"
         ]
 
+    async def get_by_statuses_for_user(
+        self,
+        user_id: str,
+        statuses: list[str],
+        *,
+        limit: int = 20,
+    ) -> list[SimpleNamespace]:
+        del user_id
+        return [schedule for schedule in self.schedules if schedule.status in statuses][:limit]
+
+    async def get_ids_for_user_for_update(
+        self,
+        schedule_ids: list[str],
+        user_id: str,
+        *,
+        statuses: list[str],
+    ) -> list[SimpleNamespace]:
+        del user_id
+        return [
+            schedule
+            for schedule in self.schedules
+            if str(schedule.id) in schedule_ids and schedule.status in statuses
+        ]
+
 
 class _FakeUnitOfWork:
-    def __init__(self, repo: _FakeScheduleRepo) -> None:
+    def __init__(self, repo: _FakeScheduleRepo, run_repo: object | None = None) -> None:
         self.scheduled_instructions = repo
+        self.scheduled_runs = run_repo
         self.committed = False
 
     async def __aenter__(self) -> "_FakeUnitOfWork":
@@ -374,6 +399,206 @@ async def test_schedule_management_cancel_requires_review_before_disabling_activ
     assert schedule.status == "cancelled"
     assert schedule.cancelled_at is not None
     assert uow.committed is True
+
+
+@pytest.mark.asyncio
+async def test_schedule_pause_requires_confirmation_and_preserves_next_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedule = _schedule(
+        "sch-transfer",
+        domain="transfer",
+        payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
+    )
+    original_next_run = schedule.next_run_at_utc
+    uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
+
+    review = await _scheduling().transition_schedule_state(
+        data=TransferPayload(schedule_selector="1"),
+        user_id="user-1",
+        locale="en",
+        user_message="pause it",
+        target_status="paused",
+        gates=TransferGates(),
+        phone_number=None,
+        worker_context=None,
+    )
+    assert review.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert schedule.status == "active"
+
+    result = await _scheduling().transition_schedule_state(
+        data=TransferPayload(
+            bulk_mutation=review.patch["bulk_mutation"],
+            confirmation={"confirmed": True},
+        ),
+        user_id="user-1",
+        locale="en",
+        user_message="yes",
+        target_status="paused",
+        gates=TransferGates(confirmation_confirmed=True),
+        phone_number=None,
+        worker_context=None,
+    )
+    assert result.outcome == TransactionOutcome.OK
+    assert schedule.status == "paused"
+    assert schedule.next_run_at_utc == original_next_run
+
+
+@pytest.mark.asyncio
+async def test_schedule_resume_requires_confirmation_then_pin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedule = _schedule(
+        "sch-transfer",
+        domain="transfer",
+        payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
+    )
+    schedule.status = "paused"
+    uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
+    handler = _scheduling()
+
+    review = await handler.transition_schedule_state(
+        data=TransferPayload(schedule_selector="1"),
+        user_id="user-1",
+        locale="en",
+        user_message="resume it",
+        target_status="active",
+        gates=TransferGates(),
+        phone_number=None,
+        worker_context=None,
+    )
+    assert review.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+
+    auth = await handler.transition_schedule_state(
+        data=TransferPayload(
+            bulk_mutation=review.patch["bulk_mutation"],
+            confirmation={"confirmed": True},
+        ),
+        user_id="user-1",
+        locale="en",
+        user_message="yes",
+        target_status="active",
+        gates=TransferGates(confirmation_confirmed=True),
+        phone_number=None,
+        worker_context=None,
+    )
+    assert auth.outcome == TransactionOutcome.NEEDS_AUTH
+    assert schedule.status == "paused"
+
+    result = await handler.transition_schedule_state(
+        data=TransferPayload(
+            bulk_mutation=review.patch["bulk_mutation"],
+            confirmation={"confirmed": True},
+        ),
+        user_id="user-1",
+        locale="en",
+        user_message="123456",
+        target_status="active",
+        gates=TransferGates(pin_verified=True, confirmation_confirmed=True),
+        phone_number=None,
+        worker_context=None,
+    )
+    assert result.outcome == TransactionOutcome.OK
+    assert schedule.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_overdue_one_time_schedule_cannot_resume(monkeypatch: pytest.MonkeyPatch) -> None:
+    schedule = _schedule(
+        "sch-transfer",
+        domain="transfer",
+        payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
+    )
+    schedule.status = "paused"
+    schedule.start_date = (today_lagos() - timedelta(days=1)).isoformat()
+    schedule.next_run_at_utc = datetime.now() - timedelta(days=1)
+    uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
+    ref = EntitySelectionRef(
+        entity_type="schedule",
+        entity_id=str(schedule.id),
+        frame_id="schedule-list-1",
+        display_label="Transfer to Mum",
+        version_token=schedule.updated_at.isoformat(),
+    )
+    request = BulkMutationRequest(
+        domain="schedule",
+        action="resume",
+        targets=[ref],
+        idempotency_key="resume-expired",
+    )
+
+    result = await _scheduling().transition_schedule_state(
+        data=TransferPayload(
+            bulk_mutation=request,
+            confirmation={"confirmed": True},
+        ),
+        user_id="user-1",
+        locale="en",
+        user_message="resume it",
+        target_status="active",
+        gates=TransferGates(pin_verified=True, confirmation_confirmed=True),
+        phone_number=None,
+        worker_context=None,
+    )
+    assert result.outcome == TransactionOutcome.FAILED
+    assert schedule.status == "paused"
+    assert uow.committed is False
+
+
+class _FakeRunRepo:
+    def __init__(self, runs: list[SimpleNamespace]) -> None:
+        self.runs = runs
+
+    async def get_filtered_by_user(self, user_id: str, **kwargs) -> list[SimpleNamespace]:
+        del user_id
+        offset = kwargs["offset"]
+        limit = kwargs["limit"]
+        statuses = kwargs["statuses"]
+        rows = [run for run in self.runs if not statuses or run.status in statuses]
+        return rows[offset : offset + limit]
+
+    async def count_filtered_by_user(self, user_id: str, **kwargs) -> int:
+        del user_id
+        statuses = kwargs["statuses"]
+        return len([run for run in self.runs if not statuses or run.status in statuses])
+
+    async def get_for_user(self, run_id: str, user_id: str) -> SimpleNamespace | None:
+        del user_id
+        return next((run for run in self.runs if str(run.id) == run_id), None)
+
+
+@pytest.mark.asyncio
+async def test_schedule_run_history_is_bounded_and_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    runs = [
+        SimpleNamespace(
+            id=f"run-{index}",
+            status="successful",
+            due_at_utc=datetime(2026, 7, 17, 7, index),
+            updated_at=datetime(2026, 7, 17, 8, index),
+        )
+        for index in range(6)
+    ]
+    uow = _FakeUnitOfWork(_FakeScheduleRepo([]), _FakeRunRepo(runs))
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
+    data = TransferPayload(
+        read_request=ReadRequest(subject="schedule", response_shape="surface_list"),
+        schedule_contract=ScheduleQueryContract(
+            surface="runs",
+            operation="list",
+            response_shape="surface_list",
+        ),
+    )
+
+    result = await _scheduling().list_runs(data=data, user_id="user-1", locale="en")
+    assert result.outcome == TransactionOutcome.OK
+    assert result.read_result is not None
+    assert result.read_result.returned_count == 5
+    assert result.read_result.has_next is True
+    assert len(result.patch["schedule_run_context_items"]) == 5
+    assert "bulk_mutation" not in result.patch
 
 
 @pytest.mark.asyncio

@@ -8,7 +8,7 @@ def test_recent_query_context_routes_referential_read_only_followup() -> None:
         message_text="actually show the second one",
         locale="en",
         has_active_query_session=False,
-        has_context_frames=True,
+        has_recent_query_context=True,
     )
     assert reason == "recent_query_context"
     assert detail
@@ -19,6 +19,6 @@ def test_recent_query_context_does_not_capture_unrelated_request() -> None:
         message_text="what is the weather",
         locale="en",
         has_active_query_session=False,
-        has_context_frames=True,
+        has_recent_query_context=True,
     )
     assert reason is None

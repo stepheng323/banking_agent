@@ -20,8 +20,10 @@ class _FakeBeneficiaryRepo:
         self.created = kwargs
         return SimpleNamespace(**kwargs)
 
-    async def get_by_user(self, user_id: str) -> list[Any]:
+    async def get_by_user(self, user_id: str, beneficiary_type: str | None = None) -> list[Any]:
         del user_id
+        if beneficiary_type is not None:
+            return [item for item in self.existing if item.beneficiary_type == beneficiary_type]
         return self.existing
 
     async def delete(self, instance: Any) -> None:
@@ -77,6 +79,51 @@ async def test_add_beneficiary_is_disabled_and_does_not_resolve_or_create(monkey
     assert "successful transfer" in result.error
     assert repo.created is None
     assert uow.commit_calls == 0
+
+
+async def test_rename_beneficiary_is_id_backed_reviewed_and_alias_only(monkeypatch) -> None:
+    updated_at = datetime(2026, 7, 17, 8, 0, 0)
+    existing = SimpleNamespace(
+        id="bene-1",
+        alias="Tolu",
+        account_name="Tolu Adebayo",
+        bank_name="Access Bank",
+        account_number="2010000001",
+        beneficiary_type="transfer",
+        updated_at=updated_at,
+    )
+    repo = _FakeBeneficiaryRepo(existing=[existing])
+    uow = _FakeUnitOfWork(repo)
+    monkeypatch.setattr(worker_module, "UnitOfWork", lambda: uow)
+    ref = EntitySelectionRef(
+        entity_type="beneficiary",
+        entity_id="bene-1",
+        frame_id="beneficiary-list-1",
+        display_label="Tolu · Access Bank · ···0001",
+        version_token=updated_at.isoformat(),
+    )
+
+    review = await BeneficiaryWorker()._rename_beneficiary(
+        "user-1",
+        {"beneficiary_selection_ref": ref.model_dump(mode="json"), "new_alias": "School Fees"},
+        {"language": "en"},
+    )
+    assert review.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert existing.alias == "Tolu"
+
+    result = await BeneficiaryWorker()._rename_beneficiary(
+        "user-1",
+        {
+            "beneficiary_selection_ref": ref.model_dump(mode="json"),
+            "new_alias": "School Fees",
+            "confirmation": {"confirmed": True},
+        },
+        {"language": "en"},
+    )
+    assert result.outcome == TransactionOutcome.OK
+    assert existing.alias == "School Fees"
+    assert existing.account_name == "Tolu Adebayo"
+    assert existing.account_number == "2010000001"
 
 
 async def test_delete_beneficiary_is_id_backed_and_reviewed_before_atomic_delete(monkeypatch) -> None:

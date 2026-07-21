@@ -168,11 +168,11 @@ def test_transfer_scheduling_rules_present() -> None:
     assert "R21_TRANSFER_SCHEDULING" in runtime_prompt
     assert "schedule_transfer" in runtime_prompt
     assert "recurring_transfer" in runtime_prompt
-    assert "schedule actions" in runtime_prompt
-    assert "list_scheduled_transactions" in runtime_prompt
-    assert "cancel_scheduled_transaction" in runtime_prompt
-    assert "schedule reads require read_request" in runtime_prompt
-    assert "subject=schedule" in runtime_prompt
+    assert "Schedule canonical actions" in runtime_prompt
+    assert "*_scheduled_transaction" in runtime_prompt
+    assert "*_scheduled_run" in runtime_prompt
+    assert "Reads include read_request" in runtime_prompt
+    assert "surface=runs" in runtime_prompt
 
 
 def test_money_move_fallback_examples_present() -> None:
@@ -320,7 +320,8 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
     assert "domain_account" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "planner_mixed" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "execs: array of" in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert "sch_mode" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "read_subject" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "response_shape" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "explicit mixed transaction requests" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "include every mentioned executor" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '["transfer","airtime"]' in SEMANTIC_ROUTER_SYSTEM_PROMPT
@@ -344,19 +345,16 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
         SEMANTIC_ROUTER_SYSTEM_PROMPT
     )
     assert '"How many scheduled transactions are pending" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert '"How many scheduled transactions are pending" -> domain_schedule, sch_mode=count' in (
+    assert '"How many scheduled transactions are pending" -> domain_schedule, schedule/fact_count' in (
         SEMANTIC_ROUTER_SYSTEM_PROMPT
     )
-    assert '"Do I have any pending scheduled transactions?" -> domain_schedule, sch_mode=count' in (
-        SEMANTIC_ROUTER_SYSTEM_PROMPT
-    )
-    assert '"Do i have any pending scheduled transsction" -> domain_schedule, sch_mode=count' in (
+    assert '"Do I have any pending scheduled transactions?" -> domain_schedule, schedule/fact_bool' in (
         SEMANTIC_ROUTER_SYSTEM_PROMPT
     )
     assert '"How many scheduled transaction is pending" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Wetin be my scheduled payments" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Elo ni scheduled payments mi" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert '"Montre mes paiements programmés" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Nuna min scheduled payments dina" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Show my beneficiaries" -> domain_beneficiary' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Send 5k to Mum" -> domain_transfer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Buy 2k airtime for 08031234567" -> domain_airtime' in SEMANTIC_ROUTER_SYSTEM_PROMPT
@@ -404,7 +402,7 @@ def test_semantic_router_multilingual_query_examples_present() -> None:
     assert '"Fihan mi awon credit transactions mi fun osu yi" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Nawa na karba a wannan watan" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Ego ole ka m natara n\'onwa a" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert '"Montre mes transactions credit de ce mois" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Gosi m credit transactions m nke onwa a" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"wetin be total" after a transaction list -> domain_query with mode=continuation' in (
         SEMANTIC_ROUTER_SYSTEM_PROMPT
     )
@@ -428,12 +426,12 @@ def test_runtime_planner_prompt_is_compact_for_generic_turns() -> None:
         ),
     )
     assert "## RULE IDS" in runtime_prompt
-    assert "TARGETED EXAMPLES (COMMON)" in runtime_prompt
+    assert "TARGETED EXAMPLES (COMMON)" not in runtime_prompt
     assert "TARGETED EXAMPLES (MONEY_MOVE)" not in runtime_prompt
     assert "TARGETED EXAMPLES (QUERY)" not in runtime_prompt
     assert "TARGETED EXAMPLES (CONTEXT)" not in runtime_prompt
     assert "schema" in profile
-    assert "ex_common" in profile
+    assert "ex_common" not in profile
     assert not bundles
     assert set(expanded_bundles) == {"money_move", "context", "executor_coverage_guard"}
     assert len(runtime_prompt) <= PLANNER_PROMPT_BASELINE_RESULT.char_count

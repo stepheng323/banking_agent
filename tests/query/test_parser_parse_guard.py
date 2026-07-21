@@ -194,7 +194,6 @@ async def test_plain_people_query_is_recovered_to_beneficiary_summary_without_pe
         ("tani mo ran owo si ni osu yi", "yo", "eniyan"),
         ("onye ka m zigara ego n'onwa a", "ig", "nnata"),
         ("wa na tura wa kudi a wannan watan", "ha", "mutanen"),
-        ("qui ai je envoye de l argent ce mois ci", "fr", "personnes"),
         ("tani mo send money to this month", "yo", "eniyan"),
     ],
 )

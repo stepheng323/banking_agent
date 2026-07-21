@@ -47,6 +47,27 @@ class _RoutePlanner:
         return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
 
 
+class _BalanceResult:
+    def __init__(self, available_balance: int) -> None:
+        self.available_balance = available_balance
+
+
+class _BalanceProvider:
+    def __init__(self, available_balance: int) -> None:
+        self.available_balance = available_balance
+        self.calls: list[str] = []
+
+    async def get_balance(self, account_id: str, *, real_time: bool = False) -> _BalanceResult:
+        assert real_time is True
+        self.calls.append(account_id)
+        return _BalanceResult(self.available_balance)
+
+
+class _TransferService:
+    def __init__(self, provider: _BalanceProvider) -> None:
+        self.dd_provider = provider
+
+
 def _route(
     question_type: ActiveFlowQuestionType,
     *,
@@ -126,6 +147,16 @@ def _config(planner: object | None = None) -> RunnableConfig:
     if planner is not None:
         configurable["task_planner"] = planner
     return {"configurable": configurable, "recursion_limit": 50}
+
+
+def _funding_config(planner: object, provider: _BalanceProvider) -> RunnableConfig:
+    return {
+        "configurable": {
+            "task_planner": planner,
+            "services": {"transfer": _TransferService(provider)},
+        },
+        "recursion_limit": 50,
+    }
 
 
 def _say_text(updates: dict[str, object]) -> str:
@@ -497,6 +528,69 @@ async def test_active_flow_question_faq_unknown_preserves_interrupt() -> None:
     response = _say_text(updates)
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert "cannot answer that safely" in response
+
+
+@pytest.mark.asyncio
+async def test_active_flow_funding_affordability_checks_entire_pending_batch_without_mutating() -> None:
+    state = _state(
+        task_type="transfer",
+        kind="confirmation",
+        text="Does my GTB have enough for these transactions?",
+        required_fields=[],
+        payload={
+            "action": "send_money",
+            "amount": 20_000,
+            "recipient_name": "Mum",
+            "source_account_id": "acct-gtb",
+            "source_bank_name": "GTBank",
+        },
+    )
+    state.tasks["airtime_1"] = TaskSpec(
+        id="airtime_1",
+        type="airtime",
+        stage=TaskStage.AWAITING_CONFIRMATION,
+        payload={"action": "buy_airtime", "amount": 2_000, "recipient_phone": "08162511023"},
+    )
+    state.waves = [["transfer_1", "airtime_1"]]
+    state.pending_interrupt = PendingInterrupt(kind="confirmation", task_ids=["transfer_1", "airtime_1"])
+    state.loaded_context["accounts"] = [
+        {"id": "acct-gtb", "mono_account_id": "mono-gtb", "bank_name": "GTBank", "account_number": "0002"}
+    ]
+    provider = _BalanceProvider(30_000)
+    planner = _RoutePlanner(_route("funding_affordability"))
+
+    updates = await handle_pending_interrupt(state, _funding_config(planner, provider))
+
+    response = _say_text(updates)
+    assert "GTBank (...0002) can cover this pending batch" in response
+    assert "₦22,000" in response
+    assert provider.calls == ["mono-gtb"]
+    assert updates["pending_interrupt"] == state.pending_interrupt
+    assert updates["tasks"] == state.tasks
+
+
+@pytest.mark.asyncio
+async def test_active_flow_funding_affordability_preserves_batch_when_cost_is_incomplete() -> None:
+    state = _state(
+        task_type="transfer",
+        kind="confirmation",
+        text="Can GTB cover this?",
+        required_fields=[],
+        payload={"action": "send_money", "amount": 20_000, "source_account_id": "acct-gtb"},
+    )
+    state.tasks["airtime_1"] = TaskSpec(
+        id="airtime_1",
+        type="airtime",
+        stage=TaskStage.DRAFT,
+        payload={"action": "buy_airtime", "amount": None},
+    )
+    state.pending_interrupt = PendingInterrupt(kind="confirmation", task_ids=["transfer_1", "airtime_1"])
+    planner = _RoutePlanner(_route("funding_affordability"))
+
+    updates = await handle_pending_interrupt(state, _funding_config(planner, _BalanceProvider(30_000)))
+
+    assert "remaining transaction amount" in _say_text(updates)
+    assert updates["pending_interrupt"] == state.pending_interrupt
 
 
 @pytest.mark.asyncio

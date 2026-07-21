@@ -747,7 +747,7 @@ async def test_progress_delivery_does_not_publish_initial_typing_when_flag_is_tr
 
 
 @pytest.mark.asyncio
-async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_progress_update_does_not_block_when_progress_task_is_cancelled(monkeypatch: pytest.MonkeyPatch) -> None:
     graph = _GraphStub()
     monkeypatch.setattr(
         "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
@@ -766,6 +766,9 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
     monkeypatch.setattr(
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
+    )
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0
     )
 
     delivery_events: list[str] = []
@@ -823,7 +826,7 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
     with pytest.raises(asyncio.CancelledError):
         await progress_task
 
-    assert delivery_events == ["started", "finished"]
+    assert delivery_events == ["started"]
 
 
 @pytest.mark.asyncio
@@ -848,6 +851,9 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
     monkeypatch.setattr(
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
+    )
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0
     )
 
     delivery_events: list[str] = []
@@ -974,6 +980,9 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0
+    )
 
     dedupe_keys: list[str] = []
 
@@ -1055,7 +1064,7 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
 
 
 @pytest.mark.asyncio
-async def test_deduped_progress_attempt_does_not_advance_progress(
+async def test_deduped_progress_attempt_consumes_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph = _GraphStub()
@@ -1077,10 +1086,15 @@ async def test_deduped_progress_attempt_does_not_advance_progress(
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0
+    )
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.MAX_PROGRESS_MESSAGES", 1)
 
     class _SingleSnapshotTracker:
         def __init__(self) -> None:
             self.record_calls = 0
+            self.progress_count = 0
 
         async def snapshot(self) -> TurnProgressSnapshot:
             return TurnProgressSnapshot(
@@ -1088,7 +1102,7 @@ async def test_deduped_progress_attempt_does_not_advance_progress(
                 started_at=0.0,
                 stage_started_at=0.0,
                 last_progress_sent_at=None,
-                progress_count=0,
+                progress_count=self.progress_count,
                 stage_metadata={"scope_label": "what you sent to mum"},
                 locale="en",
             )
@@ -1099,6 +1113,7 @@ async def test_deduped_progress_attempt_does_not_advance_progress(
 
         async def record_progress_sent(self) -> None:
             self.record_calls += 1
+            self.progress_count += 1
 
     async def _enqueue_outbox_say(*args, **kwargs) -> DeliveryAttemptResult:
         del args, kwargs
@@ -1144,8 +1159,6 @@ async def test_deduped_progress_attempt_does_not_advance_progress(
             enable_initial_typing=True,
         )
     )
-    await asyncio.sleep(0.01)
-    progress_task.cancel()
-    await asyncio.gather(progress_task, return_exceptions=True)
+    await asyncio.wait_for(progress_task, timeout=0.1)
 
-    assert tracker.record_calls == 0
+    assert tracker.record_calls == 1

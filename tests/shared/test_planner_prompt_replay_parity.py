@@ -264,7 +264,7 @@ def test_replay_case_set_covers_core_planner_shapes() -> None:
     assert "beneficiary_top_recipients" in case_ids
     assert "beneficiary_save_after_suggestion" in case_ids
     for prefix in ("oneshot_transfer_", "oneshot_airtime_", "oneshot_data_"):
-        for locale in ("en", "pidgin", "yoruba", "hausa", "igbo", "french"):
+        for locale in ("en", "pidgin", "yoruba", "hausa", "igbo"):
             assert f"{prefix}{locale}" in case_ids
 
 

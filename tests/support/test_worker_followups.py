@@ -136,7 +136,8 @@ class _TicketServiceStub:
         self.ticket = ticket
         self.created: list[dict[str, Any]] = []
 
-    async def get_ticket(self, ticket_code: str):
+    async def get_ticket(self, user_id: str, ticket_code: str):
+        del user_id
         if self.ticket and getattr(self.ticket, "ticket_code", None) == ticket_code:
             return self.ticket
         return None
@@ -148,6 +149,38 @@ class _TicketServiceStub:
     async def get_user_open_tickets(self, user_id: str):
         del user_id
         return [self.ticket] if self.ticket else []
+
+    async def list_open_page(self, user_id: str, *, limit: int, offset: int):
+        del user_id
+        tickets = [self.ticket] if self.ticket else []
+        return tickets[offset : offset + limit], len(tickets)
+
+    async def get_user_ticket(
+        self,
+        user_id: str,
+        *,
+        ticket_id: str | None = None,
+        ticket_code: str | None = None,
+        for_update: bool = False,
+    ):
+        del user_id, for_update
+        if self.ticket is None:
+            return None
+        if ticket_id and str(getattr(self.ticket, "id", "")) != ticket_id:
+            return None
+        if ticket_code and getattr(self.ticket, "ticket_code", None) != ticket_code:
+            return None
+        return self.ticket
+
+    async def append_user_note(self, user_id: str, **kwargs):
+        del user_id, kwargs
+        return self.ticket
+
+    async def close_user_ticket(self, user_id: str, **kwargs):
+        del user_id, kwargs
+        if self.ticket is not None:
+            self.ticket.status = "closed"
+        return self.ticket, False, False
 
     async def create_ticket(
         self,
@@ -553,6 +586,69 @@ async def test_support_worker_returns_retry_handoff_when_policy_allows_retry(
     assert result.handoff["requires_confirmation"] is True
     assert result.handoff["payload"]["amount"] == 10000
     assert result.handoff["payload"]["recipient_name"] == "Mercy Johnson"
+
+
+@pytest.mark.asyncio
+async def test_support_worker_lists_open_tickets_with_canonical_page_metadata() -> None:
+    ticket = SimpleNamespace(
+        id="ticket-1",
+        ticket_code="SUP-20260718-0001",
+        status="open",
+        priority="medium",
+        summary="Transfer is pending",
+        updated_at=datetime(2026, 7, 18, 8, 0),
+    )
+    worker = _worker(_RedisStub(), {}, _TicketServiceStub(ticket))
+
+    result = await worker.run(
+        payload={
+            "action": "list_support_tickets",
+            "read_request": {"subject": "ticket", "response_shape": "surface_list"},
+        },
+        context={"user_id": "user-1", "language": "en"},
+    )
+    assert result.outcome == SupportOutcome.OK
+    assert result.read_result is not None
+    assert result.read_result.total_count == 1
+    assert result.details["viewed_support_tickets"][0]["id"] == "ticket-1"
+
+
+@pytest.mark.asyncio
+async def test_support_worker_close_requires_confirmation_and_is_idempotent() -> None:
+    ticket = SimpleNamespace(
+        id="ticket-1",
+        ticket_code="SUP-20260718-0001",
+        status="open",
+        priority="medium",
+        summary="Transfer is pending",
+        updated_at=datetime(2026, 7, 18, 8, 0),
+    )
+    service = _TicketServiceStub(ticket)
+    worker = _worker(_RedisStub(), {}, service)
+    review = await worker.run(
+        payload={"action": "close_support_ticket", "ticket_id": "ticket-1"},
+        context={"user_id": "user-1", "language": "en"},
+    )
+    assert review.outcome == SupportOutcome.NEEDS_CONFIRMATION
+    assert ticket.status == "open"
+
+    closed = await worker.run(
+        payload={
+            "action": "close_support_ticket",
+            "ticket_id": "ticket-1",
+            "confirmation": {"confirmed": True, "snapshot": review.confirmation_snapshot},
+        },
+        context={"user_id": "user-1", "language": "en"},
+    )
+    assert closed.outcome == SupportOutcome.OK
+    assert ticket.status == "closed"
+
+    replay = await worker.run(
+        payload={"action": "close_support_ticket", "ticket_id": "ticket-1"},
+        context={"user_id": "user-1", "language": "en"},
+    )
+    assert replay.outcome == SupportOutcome.OK
+    assert "already closed" in str(replay.response)
 
 
 @pytest.mark.asyncio

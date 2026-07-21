@@ -1868,3 +1868,45 @@ async def test_extraction_step_active_result_new_query_compiles_without_parser_p
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["flow_state"] == "executing"
+
+
+@pytest.mark.asyncio
+async def test_extraction_step_active_result_incomplete_new_query_does_not_reparse() -> None:
+    step = ExtractionStep(_FailingLLM())
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 13)),
+        )
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="new_query",
+            confidence=0.8,
+            reason="incomplete replacement",
+            semantic_llm_used=True,
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    result = await step.run(
+        {
+            "message": "Which account did I spend from most this month?",
+            "language": "en",
+            "today": date(2026, 3, 13),
+            "query_session": {
+                "session_active": True,
+                "query_contract": session_contract,
+                "query_result": {
+                    "summary_text": "Transactions",
+                    "items": [],
+                    "surface_view": _transaction_list_surface_view().model_dump(mode="json"),
+                },
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.patch["_query_reasoner_to_parser_suppressed"] is True

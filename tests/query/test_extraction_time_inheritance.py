@@ -2485,7 +2485,6 @@ async def test_semantic_unclear_time_signal_recovers_scoped_gtbank_no_result_fol
         ("yesterday nko", "pcm"),
         ("ti ana nko", "yo"),
         ("na jiya fa", "ha"),
-        ("hier alors", "fr"),
     ],
 )
 @pytest.mark.asyncio
@@ -3304,7 +3303,6 @@ async def test_income_vs_spending_followup_compiles_transaction_type_breakdown()
         ("Bawo ni owo to wole?", "yo"),
         ("Yaya batun kudin shiga?", "ha"),
         ("Kedu maka ego batara?", "ig"),
-        ("Et les revenus ?", "fr"),
         ("Switch that same summary to money coming in", "en"),
     ],
 )

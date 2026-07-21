@@ -1,10 +1,40 @@
+import pytest
+
 from apps.chat.src.agent.orchestrator.graph.progress import (
+    FIRST_PROGRESS_DELAY_SECONDS,
+    SECOND_PROGRESS_DELAY_SECONDS,
     TurnProgressSnapshot,
+    TurnProgressTracker,
     is_progress_stage_user_visible,
     render_progress_message,
     seconds_until_progress_eligible,
     should_emit_progress,
 )
+
+
+@pytest.mark.asyncio
+async def test_completed_tracker_is_not_eligible_and_ignores_later_stages() -> None:
+    tracker = TurnProgressTracker(locale="en")
+    await tracker.set_stage("query.fetching_transactions")
+    await tracker.mark_turn_complete()
+    await tracker.set_stage("query.comparing_periods")
+
+    snapshot = await tracker.snapshot()
+
+    assert snapshot.completed is True
+    assert snapshot.completed_at is not None
+    assert snapshot.stage_key == "query.fetching_transactions"
+    assert seconds_until_progress_eligible(snapshot) is None
+    assert should_emit_progress(snapshot) is False
+
+
+@pytest.mark.asyncio
+async def test_tracker_uses_locale_resolved_during_the_active_turn() -> None:
+    tracker = TurnProgressTracker(locale="en")
+
+    await tracker.set_locale("yo")
+
+    assert (await tracker.snapshot()).locale == "yo"
 
 
 def test_progress_waits_for_stage_age_even_after_global_threshold() -> None:
@@ -35,25 +65,45 @@ def test_progress_waits_until_earlier_first_threshold() -> None:
         locale="en",
     )
 
-    wait_seconds = seconds_until_progress_eligible(snapshot, now=2.0)
+    assert FIRST_PROGRESS_DELAY_SECONDS == 2.0
+    assert SECOND_PROGRESS_DELAY_SECONDS == 7.0
+
+    wait_seconds = seconds_until_progress_eligible(snapshot, now=1.9)
     assert wait_seconds is not None
     assert wait_seconds > 0.0
-    assert should_emit_progress(snapshot, now=2.0) is False
+    assert should_emit_progress(snapshot, now=1.9) is False
 
 
 def test_progress_emits_once_execution_stage_has_been_active_long_enough() -> None:
     snapshot = TurnProgressSnapshot(
         stage_key="query.fetching_transactions",
         started_at=0.0,
-        stage_started_at=3.0,
+        stage_started_at=0.0,
         last_progress_sent_at=None,
         progress_count=0,
         stage_metadata=None,
         locale="en",
     )
 
-    assert seconds_until_progress_eligible(snapshot, now=5.1) == 0.0
-    assert should_emit_progress(snapshot, now=5.1) is True
+    assert seconds_until_progress_eligible(snapshot, now=2.1) == 0.0
+    assert should_emit_progress(snapshot, now=2.1) is True
+
+
+def test_second_progress_uses_the_seven_second_total_threshold() -> None:
+    snapshot = TurnProgressSnapshot(
+        stage_key="query.fetching_transactions",
+        started_at=0.0,
+        stage_started_at=0.0,
+        last_progress_sent_at=2.0,
+        progress_count=1,
+        stage_metadata=None,
+        locale="en",
+    )
+
+    assert seconds_until_progress_eligible(snapshot, now=6.9) == pytest.approx(0.1)
+    assert should_emit_progress(snapshot, now=6.9) is False
+    assert seconds_until_progress_eligible(snapshot, now=7.0) == 0.0
+    assert should_emit_progress(snapshot, now=7.0) is True
 
 
 def test_progress_non_visible_stage_never_emits_visible_progress() -> None:
@@ -177,3 +227,20 @@ def test_progress_falls_back_to_generic_when_scope_missing() -> None:
     )
 
     assert text == "Checking that now."
+
+
+@pytest.mark.parametrize(
+    ("stage_key", "expected"),
+    [
+        ("account.unlinking_accounts", "Removing the selected linked accounts now."),
+        ("beneficiary.deleting", "Removing the selected saved beneficiaries now."),
+        ("schedule.pausing", "Pausing the selected scheduled payments now."),
+        ("schedule.creating", "Setting up your scheduled payment now."),
+        ("support.closing_ticket", "Closing your support ticket now."),
+        ("airtime.processing_purchase", "Processing your airtime purchase now."),
+        ("data.processing_purchase", "Processing your data purchase now."),
+    ],
+)
+def test_domain_mutation_progress_stages_are_visible_and_localized(stage_key: str, expected: str) -> None:
+    assert is_progress_stage_user_visible(stage_key) is True
+    assert render_progress_message(stage_key=stage_key, progress_count=0, locale="en") == expected
