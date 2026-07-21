@@ -230,7 +230,14 @@ async def reset_redis_session(
         f"checkpoint_write:{channel}:{phone}:*",
         f"write_keys_zset:{channel}:{phone}:*",
         f"checkpoint_latest:{channel}:{phone}:*",
+        f"checkpoint_ttl_refresh:{channel}:{phone}",
+        f"chat:thread-lock:{channel}:{phone}",
         f"user:{phone}:chat_history",
+        # The graph owns the durable turn state, while these user-scoped keys
+        # hold ephemeral conversation and delivery state.  Clear both so a
+        # repeated readiness scenario starts as an actually fresh turn rather
+        # than inheriting a background history write or an old flow marker.
+        f"user:{phone}:*",
         f"query:session:{phone}",
         f"context_frames:{phone}",
         f"support_context:{phone}",

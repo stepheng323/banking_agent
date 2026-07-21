@@ -689,7 +689,9 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                                 max_event_counts=(
                                     ("semantic_router_llm_call", 0),
                                     ("query_direct_answer_llm_call", 0),
+                                    ("query_parser_llm_call", 0),
                                 ),
+                                required_event_counts=(("query_reasoner_llm_call", 1),),
                             ),
                         ),
                         modes=("dry-run",),
@@ -774,7 +776,11 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         "Send 2k to Tolu Access and 3k to Mum First Bank",
                         ReadinessExpectation(
                             expect_any=("transfer", "tolu", "mum", "confirm", "review"),
-                            llm_call_budget=LLMCallBudget(observe=True),
+                            llm_call_budget=LLMCallBudget(
+                                max_calls=1,
+                                max_event_counts=(("planner_llm_call", 1),),
+                                required_event_counts=(("planner_llm_call", 1),),
+                            ),
                         ),
                         modes=("dry-run",),
                     ),
@@ -798,7 +804,11 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         "Show my beneficiaries",
                         ReadinessExpectation(
                             expect_any=("beneficiar", "saved", "tolu"),
-                            llm_call_budget=LLMCallBudget(observe=True),
+                            llm_call_budget=LLMCallBudget(
+                                max_calls=1,
+                                max_event_counts=(("semantic_router_llm_call", 1),),
+                                required_event_counts=(("semantic_router_llm_call", 1),),
+                            ),
                         ),
                         modes=("dry-run",),
                     ),
@@ -806,7 +816,7 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         "Show the first one",
                         ReadinessExpectation(
                             expect_any=("beneficiar", "tolu", "account", "bank"),
-                            llm_call_budget=LLMCallBudget(observe=True),
+                            llm_call_budget=LLMCallBudget(max_calls=0),
                         ),
                         modes=("dry-run",),
                     ),
@@ -820,13 +830,39 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         "Can you help me invest in crypto?",
                         ReadinessExpectation(
                             expect_any=("crypto", "investment", "invest", "unsupported"),
-                            llm_call_budget=LLMCallBudget(observe=True),
+                            llm_call_budget=LLMCallBudget(
+                                max_calls=0,
+                                max_event_counts=(
+                                    ("semantic_router_llm_call", 0),
+                                    ("unsupported_capability_semantic_llm_call", 0),
+                                    ("conversation_responder_llm_call", 0),
+                                ),
+                            ),
                         ),
                         modes=("dry-run",),
                     ),
                     ReadinessTurn(
                         "What if it is just a tiny amount for learning?",
                         ReadinessExpectation(llm_call_budget=LLMCallBudget(observe=True)),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+            ReadinessScenario(
+                id="llm-unsupported-semantic",
+                description="Unfamiliar unsupported wording must use only the semantic router.",
+                turns=(
+                    ReadinessTurn(
+                        "Can you help my money yield better returns?",
+                        ReadinessExpectation(
+                            llm_call_budget=LLMCallBudget(
+                                max_calls=1,
+                                max_event_counts=(
+                                    ("semantic_router_llm_call", 1),
+                                    ("unsupported_capability_semantic_llm_call", 0),
+                                ),
+                            )
+                        ),
                         modes=("dry-run",),
                     ),
                 ),
