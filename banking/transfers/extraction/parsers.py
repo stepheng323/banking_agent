@@ -253,7 +253,14 @@ def parse_amount_input(user_message: str) -> float | None:
         return None
 
     suffix = match.group("suffix").lower()
-    multiplier = 1000.0 if suffix == "k" else 100.0 if suffix == "h" else 1.0
+
+    if suffix == "k":
+        multiplier = 1000.0
+    elif suffix == "h":
+        multiplier = 1.0 if value >= 100 else 100.0
+    else:
+        multiplier = 1.0
+
     amount = value * multiplier
     if amount <= 0:
         return None
