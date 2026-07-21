@@ -37,6 +37,8 @@ This glossary defines project-specific terms used across the Nenya AI banking ag
 | Edge | A route from one graph node to another. Conditional edges choose the next node from current state. |
 | `END` | LangGraph's terminal marker for the current invocation. It does not end the conversation; it ends this processing pass. |
 | Gate | The first routing layer inside the chat graph. It handles guardrails, deterministic fast paths, semantic routing, and planner handoff decisions. |
+| `TurnDirective` | The authoritative routing contract for one turn. It records the owner, semantic decision, outcome kind, and the only graph transition instruction, `next_step`. |
+| `RouteResolution` | The atomic pair of a validated `TurnDirective` and its non-routing state patch. It is the only supported way for routing producers to commit a directive. |
 | Deterministic fast path | A rule-based route used when the system can decide safely without an LLM, such as a clear balance request. |
 | Semantic router | A lightweight LLM classifier that chooses route shape when deterministic rules are not enough. It does not build detailed task payloads. |
 | Planner | The LLM-backed task builder for ambiguous, mixed, or multi-step work. It produces typed task plans for execution. |

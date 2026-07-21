@@ -1,6 +1,6 @@
 # Orchestrator
 
-The chat runtime uses LangGraph to coordinate message ingestion, routing, planning, task execution, durable interrupts, and user-visible replies.
+The chat runtime uses LangGraph to coordinate message ingestion, routing, planning, task execution, durable interrupts, and user-visible replies. For the current end-to-end model—including workers, sessions, authorization, localization, and progress—start with [Conversation Runtime Guide](conversation-runtime.md).
 
 For the detailed graph and task-DAG internals, see [DAG And Orchestration Internals](dag-and-orchestration-internals.md). For service boundaries and queues, see [Architecture](architecture.md). For gate and semantic-router detail, see [Gate And Semantic Routing](gate-and-routing.md). For money movement, see [Money Movement](money-movement.md).
 
@@ -54,7 +54,7 @@ Typical gate responsibilities:
 
 Stage order is part of the routing contract. The gate is a layered, first-match engine; broad deterministic stages must decline when confidence is not high enough, otherwise they can steal turns from semantic routing or planner fallback. The full stage registry, semantic-router rules, route metadata, and debugging checklist are documented in [Gate And Semantic Routing](gate-and-routing.md).
 
-Gate workflow code starts under `apps/chat/src/agent/orchestrator/workflows/gate/`. In the top-level graph, the gate routes to `advance`, `handle_interrupt`, or `plan`; see [DAG And Orchestration Internals](dag-and-orchestration-internals.md#top-level-graph).
+Gate workflow code starts under `apps/chat/src/agent/orchestrator/workflows/gate/`. The gate commits a `TurnDirective`; the graph follows only its `next_step` (`advance`, `handle_interrupt`, `plan`, `finalize`, or `end`). See [DAG And Orchestration Internals](dag-and-orchestration-internals.md#top-level-graph).
 
 ## Planner And Semantic Router
 
@@ -67,7 +67,7 @@ Important behavior:
 - semantic fallback is used when deterministic parsing is not enough, especially for active query sessions, stale context, multilingual turns, and mixed intents;
 - planner quality checks and normalizers can repair or mark dirty output before execution.
 
-Planner code starts under `apps/chat/src/agent/orchestrator/workflows/planner/`. Semantic-router prompt and model code lives there, while gate-stage integration lives under `apps/chat/src/agent/orchestrator/workflows/gate/stages/semantic_router_stage.py`. Planner task output is converted into `TaskSpec`s and dependency waves before execution; see [Planner To Task DAG](dag-and-orchestration-internals.md#planner-to-task-dag).
+Planner code starts under `apps/chat/src/agent/orchestrator/workflows/planner/`. Semantic-router prompt/model code and gate-stage integration live under `apps/chat/src/agent/orchestrator/workflows/gate/stages/semantic_routing/`. Planner task output is converted into `TaskSpec`s and dependency waves before execution; see [Planner To Task DAG](dag-and-orchestration-internals.md#planner-to-task-dag).
 
 ## Execution Waves
 

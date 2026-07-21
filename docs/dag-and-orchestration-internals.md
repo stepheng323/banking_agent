@@ -5,7 +5,7 @@ This document explains the two DAGs inside the chat orchestrator:
 - the fixed LangGraph control-flow DAG that decides which orchestrator node runs next;
 - the per-turn task dependency DAG that groups planned tasks into execution waves.
 
-For the higher-level lifecycle, see [Orchestrator](orchestrator.md). For route classification and gate stage order, see [Gate And Semantic Routing](gate-and-routing.md).
+For the current end-to-end lifecycle, see [Conversation Runtime Guide](conversation-runtime.md). For the higher-level graph lifecycle, see [Orchestrator](orchestrator.md). For route classification and gate stage order, see [Gate And Semantic Routing](gate-and-routing.md).
 
 ## Terms Before You Read
 
@@ -18,6 +18,7 @@ See [Glossary](glossary.md) for the full vocabulary. This page uses these terms 
 | Node | A graph step such as `gate`, `plan`, or `advance`. |
 | Edge | A route from one node to another. Conditional edges choose the route from current state. |
 | `END` | The end of the current graph invocation, not the end of the conversation. |
+| `TurnDirective` | The authoritative route committed for this turn; its `next_step` is the only graph transition control. |
 | Wave | A group of task ids that can run after earlier dependency waves have completed. |
 | Blocker | Something that stops execution until the user responds or approves. |
 | `PendingInterrupt` | The saved blocker state, such as missing input, confirmation, or auth. |
@@ -51,21 +52,23 @@ flowchart TD
 
     ingest --> gate
 
-    gate -- "direct_path_triggered" --> advance
-    gate -- "pending_interrupt" --> interrupt
-    gate -- "default" --> plan
+    gate -- "directive: advance" --> advance
+    gate -- "directive: handle_interrupt" --> interrupt
+    gate -- "directive: plan" --> plan
+    gate -- "directive: finalize" --> finalize
+    gate -- "directive: end" --> done
 
-    interrupt -- "final_response" --> done
-    interrupt -- "pending_interrupt remains" --> done
-    interrupt -- "waves remain" --> advance
-    interrupt -- "no waves" --> plan
+    interrupt -- "directive: advance" --> advance
+    interrupt -- "directive: plan" --> plan
+    interrupt -- "directive: finalize" --> finalize
+    interrupt -- "directive: end" --> done
 
-    plan -- "final_response" --> done
-    plan -- "otherwise" --> advance
+    plan -- "directive: advance" --> advance
+    plan -- "directive: finalize/end" --> done
 
-    advance -- "pending_interrupt" --> done
-    advance -- "more waves" --> advance
-    advance -- "all waves consumed" --> finalize
+    advance -- "directive: advance" --> advance
+    advance -- "directive: finalize" --> finalize
+    advance -- "directive: end" --> done
 
     finalize --> done
 ```
@@ -89,22 +92,18 @@ These examples are intentionally simplified; they show route shape, not every st
 | Node | Main responsibility | Typical next node |
 |---|---|---|
 | `ingest` | Normalize inbound message/callback state into `OrchestratorState` | `gate` |
-| `gate` | Run deterministic guardrails, fast paths, context follow-ups, semantic routing, and planner handoff decisions | `advance`, `handle_interrupt`, or `plan` |
-| `handle_interrupt` | Apply the user reply to the live `PendingInterrupt` before normal planning/execution continues | `advance`, `plan`, or `END` |
-| `plan` | Produce non-task responses or build typed task specs and dependency waves from planner output | `advance` or `END` |
-| `advance` | Execute one pass over the current task wave, then either loop, park on an interrupt, or finalize | `advance`, `finalize`, or `END` |
+| `gate` | Run deterministic guardrails, fast paths, context follow-ups, semantic routing, and planner handoff decisions | directive-selected `advance`, `handle_interrupt`, `plan`, `finalize`, or `END` |
+| `handle_interrupt` | Apply the user reply to the live `PendingInterrupt` before normal planning/execution continues | directive-selected `advance`, `plan`, `finalize`, or `END` |
+| `plan` | Produce non-task responses or build typed task specs and dependency waves from planner output | directive-selected `advance`, `finalize`, or `END` |
+| `advance` | Execute one pass over the current task wave, then either loop, park on an interrupt, or finalize | directive-selected `advance`, `finalize`, or `END` |
 | `finalize` | Reduce completed work into the final turn response/outbox behavior | `END` |
 
 Important route checks:
 
-- `gate` sends direct paths to `advance` when `direct_path_triggered` is true.
-- `gate` sends live interrupts to `handle_interrupt` unless the gate already resolved them.
-- `handle_interrupt` stops if it produced `final_response` or left a `pending_interrupt`.
-- `handle_interrupt` resumes execution if waves remain; otherwise it falls back to planning.
-- `plan` stops on direct final responses and otherwise enters execution.
-- `advance` loops while `current_wave_index < len(waves)`.
-- `advance` stops immediately when a `pending_interrupt` is created.
-- `advance` finalizes when all waves are consumed.
+- Every conditional graph edge reads only `turn_directive.next_step`.
+- A missing or invalid directive is a routing-contract error; the graph never infers a route from `final_response`, tasks, waves, or `pending_interrupt`.
+- Each node can replace the directive only through the canonical route-resolution/materialization path.
+- Execution may emit `advance` for another wave, `finalize` for a visible result, or `end`; the worker result itself does not control a graph edge.
 
 ## Durable State Surface
 
@@ -122,10 +121,10 @@ Important route checks:
 | `outbox`, `final_response`, `policy_notice` | User-visible output and policy notice staging |
 | `pin_verified`, `authorization_context` | Auth state; real authorization is bound to idempotency keys |
 | `context_frames`, `referent_memory` | Read/context surfaces used for follow-ups and references |
-| `direct_path_triggered` | Signals that gate built direct work and planner should be bypassed |
+| `turn_directive` | Authoritative owner, decision, outcome kind, and sole graph transition instruction for the current turn |
 | `session_stack`, `active_domain`, `stashed_sessions`, `stashed_query_session` | Active and suspended flow/session context |
 | `loaded_context`, `turn_context_summary` | Hydrated user/account context and compact turn summary |
-| route metadata fields | `routing_owner`, `routing_decision`, `routing_target_domain`, `routing_mode`, `route_source`, `semantic_path_shape`, and related debug fields |
+| routing telemetry fields | Derived log/dashboard projections of the directive; not graph-control state |
 | planner quality fields | `planner_used`, `planner_clean`, `planner_dirty_reasons`, `preplanner_expected_transaction_executors` |
 
 The state object intentionally mixes long-lived conversation context with short-lived turn controls. The checkpoint serializer and lifecycle code are responsible for making old checkpoints survivable as schemas evolve.
@@ -274,8 +273,8 @@ Start with the graph cursor and blocker state before reading prompts:
 1. Check whether `pending_interrupt` exists and whether its `kind` matches the user-visible prompt.
 2. Check `current_wave_index`, `waves`, and the task ids in the current wave.
 3. Check each current-wave task's `stage`, `depends_on`, and key payload fields.
-4. Check whether `direct_path_triggered` bypassed planner task construction.
-5. Check route metadata: `routing_owner`, `routing_decision`, `routing_target_domain`, `routing_mode`, `route_source`, and `semantic_path_shape`.
+4. Check `turn_directive.next_step` to see why planner was bypassed or selected.
+5. Check directive owner, decision, outcome kind, target domain, mode, source, and path shape.
 6. Check `planner_output`, `planner_clean`, and `planner_dirty_reasons` when planner-owned work was expected.
 7. Check `context_frames`, `referent_memory`, `stashed_query_session`, and stale context arbitration logs for context follow-up bugs.
 8. Check `outbox`, `final_response`, and `suppress_empty_fallback` for turns that appear to finish silently.

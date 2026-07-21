@@ -2,7 +2,7 @@
 
 This document explains how an inbound turn is routed once the chat-worker has invoked the orchestrator graph. It focuses on the gate and the semantic router because they are the highest-complexity parts of the conversation runtime.
 
-For the full graph lifecycle, see [Orchestrator](orchestrator.md). For the exact LangGraph edges around the gate node and the task-DAG execution loop, see [DAG And Orchestration Internals](dag-and-orchestration-internals.md). For service and queue boundaries, see [Architecture](architecture.md).
+For the current end-to-end model, see [Conversation Runtime Guide](conversation-runtime.md). For the full graph lifecycle, see [Orchestrator](orchestrator.md). For the exact LangGraph edges around the gate node and the task-DAG execution loop, see [DAG And Orchestration Internals](dag-and-orchestration-internals.md). For service and queue boundaries, see [Architecture](architecture.md).
 
 ## Terms Before You Read
 
@@ -30,19 +30,23 @@ The gate is a layered, first-match router. It receives the current typed graph s
 | Planner handoff | Let the planner build one or more typed tasks |
 | Semantic-router domain dispatch | Use the LLM router to classify the turn, then build the matching direct task |
 | Policy block | Stop unsupported or unsafe capability requests |
-| Continue-only update | Mutate transient state and keep routing |
+| Interrupt handoff | Send a live durable interrupt to the interrupt handler |
 
-The semantic router is not the same thing as the planner. It is a lightweight LLM classifier used before planner fallback when deterministic routing is not reliable enough. Its job is to decide the route shape: query continuation, account request, fresh transfer, mixed planner request, support follow-up, unsupported capability, and similar top-level intents.
+Every selected outcome is committed through a `TurnDirective` plus `RouteResolution`. `TurnDirective.next_step` is the sole graph-control instruction; a stage cannot independently steer the graph by writing a response, task list, or interrupt field.
+
+The semantic router is not the same thing as the planner. It is a lightweight LLM classifier used before planner fallback when deterministic routing is not reliable enough. Its job is to decide the route shape: query continuation, account request, fresh transfer, mixed planner request, support follow-up, unsupported capability, and similar top-level intents. When a bounded displayed context frame is eligible, the same call also returns a sparse continuation selector; local code resolves that selector against stable frame references. There is no second context-arbitration LLM call.
 
 The planner owns task construction for mixed or ambiguous transactional work. The semantic router owns top-level route arbitration.
 
-Inside the top-level LangGraph DAG, the gate node has only three graph-level exits:
+Inside the top-level LangGraph DAG, the gate can commit these graph-level exits:
 
 | Exit | Condition | Meaning |
 |---|---|---|
-| `advance` | `direct_path_triggered` is true | Gate already built direct work or a direct task, so planner task construction is bypassed |
-| `handle_interrupt` | `pending_interrupt` exists | The turn must be applied to the live durable interrupt |
-| `plan` | default | Planner owns the next step |
+| `advance` | `turn_directive.next_step=advance` | A validated task dispatch has a current wave |
+| `handle_interrupt` | `turn_directive.next_step=handle_interrupt` | A live pending interrupt is handed to its resolver |
+| `plan` | `turn_directive.next_step=plan` | Planner owns typed task construction |
+| `finalize` | `turn_directive.next_step=finalize` | A direct response or policy block is ready for the outbox |
+| `end` | `turn_directive.next_step=end` | The current turn is intentionally complete |
 
 The detailed graph route table is documented in [Top-Level Graph](dag-and-orchestration-internals.md#top-level-graph).
 
@@ -109,7 +113,7 @@ The exact stage list changes as routing evolves, but the current registry is:
 | `context_followups` | `stale_context_arbitration` | semantic_router | yes | Arbitrate non-terse turns while stale context exists |
 | `context_followups` | `recent_transaction_support_request` | guardrail | no | Route support requests against a recent transaction |
 | `context_followups` | `support_issue_request` | guardrail | no | Route clear transaction/ticket problem statements |
-| `context_followups` | `context_frame_followup` | semantic_router | yes | Ground follow-ups against displayed context frames |
+| `context_followups` | `context_frame_followup` | semantic_router | no | Resolve deterministic selectors; defer ambiguous frame language to the semantic router |
 | `context_followups` | `receipt_thread_followup` | guardrail | no | Route active receipt-thread selectors |
 | `context_followups` | `support_context_followup` | guardrail | no | Route follow-ups using recent support context |
 | `context_followups` | `receipt_request` | guardrail | no | Route recent batch receipt requests |
@@ -217,6 +221,8 @@ The stale-context arbitration rule is:
 
 - strict terse selectors can remain deterministic;
 - non-terse, slot-bearing, multilingual, or fresh-intent messages go to semantic routing first;
+- an eligible context-frame summary is appended to that router call, and it returns a typed action plus visible ordinal or masked-label selectors;
+- frame IDs, database IDs, full account numbers, and hidden result rows are never sent to the router; deterministic materialization performs the final lookup;
 - when semantic routing chooses a fresh banking flow, ephemeral receipt/support state is cleared;
 - long-lived useful references can remain if they are not controlling the current route.
 
@@ -238,18 +244,17 @@ After planner handoff, planner output is converted into `TaskSpec`s and topologi
 
 ## Route Metadata
 
-Route metadata is the primary debugging surface. Common fields include:
+`TurnDirective` is the primary routing/debugging surface. Its fields are:
 
 | Field | Meaning |
 |---|---|
-| `routing_owner` | Which layer owns the route, such as `guardrail`, `semantic_router`, or `planner` |
-| `routing_decision` | The normalized decision, such as `domain_transfer`, `planner_handoff`, or `capability_blocked` |
-| `routing_target_domain` | Domain selected for direct dispatch |
-| `routing_mode` | New request vs continuation when available |
-| `route_source` | Specific source of the route decision |
-| `semantic_path_shape` | Compact path label for readiness/debug reports |
-| `direct_path_triggered` | Whether gate bypassed planner task construction |
-| `preplanner_expected_transaction_executors` | Executor hints preserved for planner-owned mixed turns |
+| `owner` | Which layer owns the route, such as `guardrail`, `semantic_router`, or `planner` |
+| `decision` | The normalized semantic reason, such as `domain_transfer`, `planner_handoff`, or `capability_blocked` |
+| `outcome_kind` | Direct response, task dispatch, planner handoff, interrupt handoff, or policy block |
+| `next_step` | The sole graph transition instruction |
+| `target_domain`, `mode`, `source`, `path_shape` | Domain, continuation semantics, origin, and readiness/debug label |
+
+Flat `routing_*` labels are derived telemetry projections only. `direct_path_triggered` and `semantic_path_shape` are not routing state.
 
 When debugging a bad route, start with these fields before reading prompts.
 
@@ -259,7 +264,7 @@ For a routing bug, inspect in this order:
 
 1. Confirm whether a live `PendingInterrupt` existed.
 2. Check `matched_handler_id` and `matched_layer` in the gate trace.
-3. Check route metadata: `routing_owner`, `routing_decision`, `routing_target_domain`, and `semantic_path_shape`.
+3. Check `turn_directive`: owner, decision, outcome kind, target domain, and especially `next_step`.
 4. If a deterministic stage matched, verify whether it should have declined.
 5. If semantic routing ran, inspect `semantic_router_llm_call`, the compact router context, and any routing hints.
 6. If planner fallback ran, inspect planner prompt profile, expected executors, and planner quality/dirty reasons.
@@ -303,14 +308,14 @@ Relevant test areas include:
 | Area | Path |
 |---|---|
 | Gate registry | `apps/chat/src/agent/orchestrator/workflows/gate/stage_specs.py` |
-| Gate engine | `apps/chat/src/agent/orchestrator/workflows/gate/engine.py` |
-| Gate contracts | `apps/chat/src/agent/orchestrator/workflows/gate/contracts.py` |
-| Gate context/state view | `apps/chat/src/agent/orchestrator/workflows/gate/context.py`, `state_view.py` |
-| Routing metadata | `apps/chat/src/agent/orchestrator/workflows/gate/routing.py` |
-| Semantic-router stage | `apps/chat/src/agent/orchestrator/workflows/gate/stages/semantic_router_stage.py` |
-| Semantic route controls | `apps/chat/src/agent/orchestrator/workflows/gate/stages/semantic_route_control.py` |
-| Semantic domain dispatch | `apps/chat/src/agent/orchestrator/workflows/gate/stages/semantic_domain_dispatch.py` |
-| Router context | `apps/chat/src/agent/orchestrator/workflows/gate/router_context.py` |
-| Semantic-router prompt | `apps/chat/src/agent/orchestrator/workflows/planner/core/task_planner_semantic_router_prompts.py` |
+| Gate engine | `apps/chat/src/agent/orchestrator/workflows/gate/core/engine.py` |
+| Gate contracts | `apps/chat/src/agent/orchestrator/workflows/gate/core/contracts.py` |
+| Gate context/state view | `apps/chat/src/agent/orchestrator/workflows/gate/core/context.py`, `state/state_view.py` |
+| Canonical routing contract | `apps/chat/src/agent/orchestrator/models/turn_directive.py` |
+| Semantic-router stage | `apps/chat/src/agent/orchestrator/workflows/gate/stages/semantic_routing/pipeline.py` |
+| Semantic route controls | `apps/chat/src/agent/orchestrator/workflows/gate/stages/semantic_routing/control_handlers.py` |
+| Semantic domain dispatch | `apps/chat/src/agent/orchestrator/workflows/gate/stages/semantic_routing/domain_dispatch.py` |
+| Router context | `apps/chat/src/agent/orchestrator/workflows/gate/utils/router_context.py` |
+| Semantic-router prompt | `apps/chat/src/agent/orchestrator/workflows/gate/utils/semantic_router_prompt_compiler.py` |
 | Planner core | `apps/chat/src/agent/orchestrator/workflows/planner/` |
 | Graph and task-DAG internals | `docs/dag-and-orchestration-internals.md` |
