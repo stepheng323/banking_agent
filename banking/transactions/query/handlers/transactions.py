@@ -4,14 +4,9 @@ import time
 from typing import Any, cast
 
 from banking.presentation.i18n.renderer import render_message
-from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
-    QueryResult,
-    QueryResultItem,
-)
+from banking.transactions.query.models.domain import QueryResult, QueryResultItem
+from banking.transactions.query.models.operations import AllAccounts, QueryRequest, RetrieveOperation
 from banking.transactions.query.services.fetching.fetch import (
-    apply_filters,
-    apply_time_window,
     build_cache_fingerprint,
     build_cache_scope_fingerprint,
     decide_transaction_cache_reuse,
@@ -19,6 +14,7 @@ from banking.transactions.query.services.fetching.fetch import (
     is_settled_transaction,
     parse_date,
 )
+from banking.transactions.query.services.fetching.semantic_filters import apply_query_scope
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.utils.logging import get_logger
 
@@ -81,7 +77,7 @@ def _log_query_trace(
 
 async def handle_transaction_list(
     provider: BankDataProvider,
-    contract: QueryExecutionContract,
+    request: QueryRequest,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -95,9 +91,12 @@ async def handle_transaction_list(
     trace_context: dict[str, Any] | None = None,
 ) -> QueryResult:
     """Handle transaction list queries."""
+    operation = request.operation
+    if not isinstance(operation, RetrieveOperation):
+        raise TypeError("transaction list handler requires a retrieve operation")
     started_at = time.perf_counter()
-    cache_fingerprint = build_cache_fingerprint(contract, account_id, account_ids, user_id=user_id)
-    cache_scope_fingerprint = build_cache_scope_fingerprint(contract, account_id, account_ids, user_id=user_id)
+    cache_fingerprint = build_cache_fingerprint(request, account_id, account_ids, user_id=user_id)
+    cache_scope_fingerprint = build_cache_scope_fingerprint(request, account_id, account_ids, user_id=user_id)
     (
         cached_transactions,
         cache_fetched_at,
@@ -107,8 +106,8 @@ async def handle_transaction_list(
         cache_window_end,
     ) = _coerce_session_cache(session_cache)
     cache_age_seconds = (time.time() - cache_fetched_at) if cache_fetched_at is not None else None
-    current_window_start = contract.time_range.start.isoformat() if contract.time_range is not None else None
-    current_window_end = contract.time_range.end.isoformat() if contract.time_range is not None else None
+    current_window_start = operation.scope.period.start.isoformat()
+    current_window_end = operation.scope.period.end.isoformat()
     cache_reuse = decide_transaction_cache_reuse(
         continuation_type=continuation_type,
         continuation_delta_type=continuation_delta_type,
@@ -126,14 +125,14 @@ async def handle_transaction_list(
     )
     can_reuse_cache = cache_reuse.can_reuse
     cache_strategy = cache_reuse.strategy
-    fetch_account_count = len(account_ids) if contract.accounts_scope == "all" and account_ids else 1
+    fetch_account_count = len(account_ids) if isinstance(operation.scope.accounts, AllAccounts) and account_ids else 1
 
     if can_reuse_cache and cached_transactions is not None:
         base_transactions: list[dict[str, Any]] = cached_transactions
     else:
         base_transactions = await fetch_transactions_base(
             provider,
-            contract,
+            request,
             account_id,
             account_ids,
             accounts_info,
@@ -141,23 +140,22 @@ async def handle_transaction_list(
             trace_context=trace_context,
         )
     cache_fetched_at_value = cache_fetched_at if can_reuse_cache and cache_fetched_at is not None else time.time()
-    scoped_transactions = apply_time_window(
-        base_transactions,
-        window_start=current_window_start,
-        window_end=current_window_end,
-    )
-    if not (contract.filters and contract.filters.status):
+    scoped_transactions = apply_query_scope(base_transactions, operation.scope)
+    if not operation.scope.predicate.statuses:
         scoped_transactions = [t for t in scoped_transactions if is_settled_transaction(t)]
-    transactions = (
-        apply_filters(scoped_transactions, contract.filters) if contract.filters else list(scoped_transactions)
-    )
+    transactions = list(scoped_transactions)
 
-    reverse_sort = contract.result_reference != "oldest"
-    transactions = sorted(transactions, key=_transaction_sort_key, reverse=reverse_sort)
+    result_order = operation.selection.order
+    reverse_sort = result_order not in {"oldest", "smallest"}
+    if result_order in {"largest", "smallest"}:
+        transactions = sorted(transactions, key=lambda item: abs(item.get("amount", 0)), reverse=reverse_sort)
+    else:
+        transactions = sorted(transactions, key=_transaction_sort_key, reverse=reverse_sort)
 
     # Apply result_limit if specified (e.g., "last transaction" → 1)
-    if contract.result_limit:
-        transactions = transactions[: contract.result_limit]
+    result_limit = operation.selection.limit
+    if result_limit:
+        transactions = transactions[:result_limit]
 
     offset = current_page * page_size
     paginated = transactions[offset : offset + page_size]
@@ -230,7 +228,7 @@ async def handle_transaction_list(
 
 async def handle_transaction_search(
     provider: BankDataProvider,
-    contract: QueryExecutionContract,
+    request: QueryRequest,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -246,7 +244,7 @@ async def handle_transaction_search(
     """Handle transaction search (same as list but with merchant filter)."""
     return await handle_transaction_list(
         provider,
-        contract,
+        request,
         account_id,
         account_ids,
         accounts_info,

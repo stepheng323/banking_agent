@@ -13,8 +13,8 @@ from banking.presentation.formatters.query_transaction_copy import (
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
     QueryAnswerContext,
-    QueryExecutionContract,
     QueryFactField,
+    QueryRequest,
     QueryResultItem,
 )
 
@@ -45,7 +45,7 @@ class DirectAnswerFact:
 def build_direct_fact_answer(
     item: QueryResultItem,
     *,
-    query_contract: QueryExecutionContract | None,
+    query_request: QueryRequest | None,
     fact_field: str,
     locale: str = "en",
     is_followup: bool = False,
@@ -56,7 +56,7 @@ def build_direct_fact_answer(
     fact = DirectAnswerFact(
         fact_kind=_normalize_fact_kind(fact_field),
         direction=direction,
-        counterparty=_counterparty_label(item, query_contract=query_contract),
+        counterparty=_counterparty_label(item, query_request=query_request),
         bank_name=str(metadata.get("recipient_bank_name") or metadata.get("bank_name") or "").strip() or None,
         amount_text=format_naira(item.amount, absolute=True),
         date_text=item.date.strftime("%B %d, %Y"),
@@ -69,19 +69,19 @@ def build_direct_fact_answer(
         account_text=_account_label(metadata),
         direction_text=_direction_label(metadata),
         category_text=_category_label(metadata),
-        result_reference=query_contract.result_reference if query_contract is not None else None,
+        result_reference=query_request.result_reference if query_request is not None else None,
     )
     primary, used_fields = _compose_direct_reply(fact, locale=locale)
 
     if is_followup:
         secondary = None
     else:
-        secondary = _build_evidence_line(item, query_contract=query_contract, used_fields=used_fields, locale=locale)
+        secondary = _build_evidence_line(item, query_request=query_request, used_fields=used_fields, locale=locale)
 
     return QueryAnswerContext(primary_text=primary, secondary_text=secondary)
 
 
-def _counterparty_label(item: QueryResultItem, *, query_contract: QueryExecutionContract | None) -> str | None:
+def _counterparty_label(item: QueryResultItem, *, query_request: QueryRequest | None) -> str | None:
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
     for candidate in (
         metadata.get("recipient_name"),
@@ -89,7 +89,7 @@ def _counterparty_label(item: QueryResultItem, *, query_contract: QueryExecution
         metadata.get("counterparty"),
         metadata.get("recipient_phone"),
         metadata.get("phone_number"),
-        _first_filter_value(query_contract.filters.counterparty if query_contract and query_contract.filters else None),
+        _first_filter_value(query_request.filters.counterparty if query_request and query_request.filters else None),
         item.description,
     ):
         if isinstance(candidate, str):
@@ -98,11 +98,11 @@ def _counterparty_label(item: QueryResultItem, *, query_contract: QueryExecution
                 lowered = cleaned.lower()
                 for prefix in ("sent to ", "transfer to ", "payment to ", "to "):
                     if lowered.startswith(prefix):
-                        cleaned = cleaned[len(prefix):].strip()
+                        cleaned = cleaned[len(prefix) :].strip()
                         lowered = cleaned.lower()
                 for prefix in ("received from ", "transfer from ", "payment from ", "from "):
                     if lowered.startswith(prefix):
-                        cleaned = cleaned[len(prefix):].strip()
+                        cleaned = cleaned[len(prefix) :].strip()
                         lowered = cleaned.lower()
 
                 if cleaned.startswith("TRF/") or cleaned.startswith("TRF "):
@@ -475,13 +475,13 @@ def _compose_latest_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tupl
 def _build_evidence_line(
     item: QueryResultItem,
     *,
-    query_contract: QueryExecutionContract | None,
+    query_request: QueryRequest | None,
     used_fields: set[str],
     locale: str,
 ) -> str | None:
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
     bank_name = str(metadata.get("recipient_bank_name") or metadata.get("bank_name") or "").strip()
-    counterparty = _counterparty_label(item, query_contract=query_contract)
+    counterparty = _counterparty_label(item, query_request=query_request)
     return format_transaction_evidence_line(
         amount=item.amount,
         date_value=item.date,

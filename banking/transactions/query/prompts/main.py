@@ -199,6 +199,16 @@ INTENTS
 - time_comparison: compare periods ("this month vs last month")
 - cash_flow_summary: strict bidirectional comparisons only - net cash, inflow vs outflow (e.g. "did I spend more than I earned/received", "cash flow")
 - affordability: "can I afford", "do I have enough"
+- insight: explain a financial change or driver (for example why spending, income, or revenue changed). Set
+  `insight.insight_type=variance_drivers`, preserve the requested period/filters. Default to
+  `analysis_basis=economic_events`; only use `ledger_transactions` if the user explicitly says
+  "transactions", "ledger", or asks for raw bank movements. Infer `insight.measure`:
+    - explicit spending/outflow question → "spending"
+    - explicit income/inflow question → "income"
+    - explicit net/cash-flow question → "net_cash_flow"
+    - broad "how did my finances change" / "what drove the change" → "cash_flow_overview"
+  Default `insight.dimensions` to ["category", "counterparty"]; honor explicit requests like
+  "by account", "by event type", "by cash flow class". Remove duplicate dimensions.
 
 FILTERS
 - recipient: merchant/person name when user refers to a sender, payee, or merchant
@@ -295,6 +305,12 @@ EXAMPLES
 "what was the reference for that payment" → transaction_detail, fact, fact_query_kind=reference, answer_fact_field=reference
 "what was it for" → transaction_detail, fact, fact_query_kind=description, answer_fact_field=description
 "what's my highest single transfer this month" → analytics_summary, largest, limit=1, debit, explicit this_month
+"why did my spending increase this month" → insight, variance_drivers, measure=spending, dimensions=[category, counterparty], explicit this_month
+"what drove my income change last month" → insight, variance_drivers, measure=income, dimensions=[category, counterparty], explicit last_month
+"how did my finances change this month" → insight, variance_drivers, measure=cash_flow_overview, dimensions=[category, counterparty], explicit this_month
+"what caused my net cash flow to drop" → insight, variance_drivers, measure=net_cash_flow, dimensions=[category, counterparty]
+"which counterparties drove my spending up" → insight, variance_drivers, measure=spending, dimensions=[counterparty]
+"which account changed the most" → insight, variance_drivers, measure=cash_flow_overview, dimensions=[account]
 
 TODAY: {today}
 USER MESSAGE: {question}

@@ -166,9 +166,7 @@ async def handle_pending_clarification(step: Any, state: dict[str, Any], session
     return updates
 
 
-def _apply_clarification_patch(
-    extraction: QueryExtractionResult, patch: ClarificationPatch
-) -> QueryExtractionResult:
+def _apply_clarification_patch(extraction: QueryExtractionResult, patch: ClarificationPatch) -> QueryExtractionResult:
     """Apply only explicit typed fields and retain unrelated ambiguities."""
     updated = extraction.model_copy(deep=True)
     resolved_codes: set[AmbiguityCode] = set()

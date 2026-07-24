@@ -10,15 +10,17 @@ from banking.transactions.query.compiler.lexical_recovery import (
     month_token,
     resolve_month_period_with_year_hint,
 )
-from banking.transactions.query.models.domain import (
-    ComparisonDirective,
-    QueryFactField,
-    QueryIntent,
-    TimeRange,
-)
+from banking.transactions.query.models.domain import QueryFactField, QueryIntent, TimeRange
 from banking.transactions.query.models.extraction import (
     QueryExtractionResult,
     TimeReference,
+)
+from banking.transactions.query.models.operations import (
+    ComparisonBaseline,
+    ExplicitBaseline,
+    PreviousEquivalentBaseline,
+    ResolvedPeriod,
+    YearAgoBaseline,
 )
 
 
@@ -92,26 +94,32 @@ def resolve_period_to_range(period: str, *, today: date, current_range: TimeRang
     return None
 
 
-def build_comparison_directive(
+def build_comparison_baseline(
     extraction: QueryExtractionResult,
     *,
     intent: QueryIntent,
     current_range: TimeRange,
     today: date,
-) -> ComparisonDirective | None:
+) -> ComparisonBaseline | None:
     if intent != QueryIntent.TIME_COMPARISON:
         return None
     comparison = extraction.comparison
     if comparison is None:
-        return ComparisonDirective(mode="previous_equivalent")
+        return PreviousEquivalentBaseline()
     if comparison.mode == "year_ago":
-        return ComparisonDirective(mode="year_ago")
+        return YearAgoBaseline()
     if comparison.mode == "explicit_period" and comparison.period:
         explicit_range = resolve_period_to_range(comparison.period, today=today, current_range=current_range)
         if explicit_range is not None:
-            return ComparisonDirective(mode="explicit_range", explicit_range=explicit_range)
-        return ComparisonDirective(mode="previous_equivalent")
-    return ComparisonDirective(mode="previous_equivalent")
+            return ExplicitBaseline(
+                period=ResolvedPeriod(
+                    start=explicit_range.start,
+                    end=explicit_range.end,
+                    granularity=explicit_range.granularity,
+                )
+            )
+        return PreviousEquivalentBaseline()
+    return PreviousEquivalentBaseline()
 
 
 def build_time_range(
@@ -164,10 +172,9 @@ def build_time_range(
         days_back = 1
     if days_back is None:
         days_back = max(int(QUERY_LIMITS["default_lookback_days"]) - 1, 0)
-    elif (
-        period_lower == "recent_30_days"
-        or reference_type == TimeReference.VAGUE
-    ) and days_back == QUERY_LIMITS["default_lookback_days"]:
+    elif (period_lower == "recent_30_days" or reference_type == TimeReference.VAGUE) and days_back == QUERY_LIMITS[
+        "default_lookback_days"
+    ]:
         days_back = max(days_back - 1, 0)
     range_start = today - timedelta(days=days_back)
     range_end = today

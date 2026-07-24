@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from enum import Enum
-from typing import Any, Literal, cast
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -93,13 +93,6 @@ class Aggregation(BaseModel):
     )
 
 
-class ComparisonDirective(BaseModel):
-    """Structured comparison behavior for time-comparison execution."""
-
-    mode: Literal["previous_equivalent", "year_ago", "explicit_range"] = Field(default="previous_equivalent")
-    explicit_range: TimeRange | None = None
-
-
 class QueryObjective(str, Enum):
     """Semantic objective of a query before execution."""
 
@@ -108,8 +101,8 @@ class QueryObjective(str, Enum):
     GROUPED_SUMMARY = "grouped_summary"
     COMPARISON = "comparison"
     AFFORDABILITY = "affordability"
-    INSIGHT = "insight"
     ACTION_HANDOFF = "action_handoff"
+    INSIGHT = "insight"
 
 
 class QuerySubject(str, Enum):
@@ -127,160 +120,6 @@ class UserRequestShape(str, Enum):
     SUMMARY = "summary"
     LIST = "list"
     CLARIFY = "clarify"
-
-
-class QueryIntentSpec(BaseModel):
-    """Structured semantic query meaning before execution planning."""
-
-    objective: QueryObjective
-    subject: QuerySubject
-    filters: Filters | None = None
-    grouping: Literal["category", "merchant", "day", "account", "transaction_type", "none"] = "none"
-    fact_field: QueryFactField | Literal["none"] = "none"
-    ranking: Literal["none", "largest", "smallest", "count", "amount"] = "none"
-    user_request_shape: UserRequestShape = UserRequestShape.SUMMARY
-
-
-class QueryExecutionPlan(BaseModel):
-    """Canonical execution plan compiled from a query intent spec."""
-
-    intent_spec: QueryIntentSpec
-    time_range: TimeRange | None = None
-    filters: Filters | None = None
-    aggregation: Aggregation | None = None
-    result_limit: int | None = None
-    result_reference: Literal["latest", "oldest"] | None = None
-    comparison: ComparisonDirective | None = None
-    drill_down_template: dict[str, Any] = Field(default_factory=dict)
-
-
-class QueryIR(BaseModel):
-    """LLM-facing interpretation model before runtime contract compilation."""
-
-    intent: QueryIntent
-    raw_query: str | None = None
-    language: str = "en"
-    timezone: str = "Africa/Lagos"
-    time_range: TimeRange
-    filters: Filters | None = None
-    aggregation: Aggregation | None = None
-    accounts_scope: Literal["single", "all"] = Field(default="all")
-    account_name: str | None = None
-    amount_check: float | None = None
-    item_name: str | None = None
-    analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
-    result_limit: int | None = Field(default=None, ge=1, le=100)
-    result_reference: Literal["latest", "oldest"] | None = None
-    answer_fact_field: QueryFactField | None = None
-    request_shape: QueryContractRequestShape | None = None
-    comparison: ComparisonDirective | None = None
-    continuation_type: str | None = None
-    continuation_delta_type: str | None = None
-    conversational_prefix: str | None = None
-    intent_spec: QueryIntentSpec | None = None
-
-
-class QueryExecutionContract(BaseModel):
-    """Runtime-facing contract consumed by query handlers."""
-
-    intent: QueryIntent
-    time_start: date
-    time_end: date
-    timezone: str = "Africa/Lagos"
-    filters: Filters | None = None
-    aggregation: Aggregation | None = None
-    accounts_scope: Literal["single", "all"] = Field(default="all")
-    account_name: str | None = None
-    amount_check: float | None = None
-    item_name: str | None = None
-    analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
-    result_limit: int | None = Field(default=None, ge=1, le=100)
-    result_reference: Literal["latest", "oldest"] | None = None
-    answer_fact_field: QueryFactField | None = None
-    resolution_policy: Literal["strict_single", "latest_if_ambiguous", "ask_if_ambiguous"] = "ask_if_ambiguous"
-    request_shape: QueryContractRequestShape | None = None
-    comparison: ComparisonDirective | None = None
-    continuation_type: str | None = None
-    continuation_delta_type: str | None = None
-    conversational_prefix: str | None = None
-    intent_spec: QueryIntentSpec | None = None
-    execution_plan: QueryExecutionPlan | None = None
-
-    @property
-    def time_range(self) -> TimeRange | None:
-        """Expose explicit canonical time bounds through the runtime contract."""
-        if self.execution_plan is None:
-            return None
-        return self.execution_plan.time_range
-
-    def to_query_ir(self) -> QueryIR:
-        """Project the runtime contract back into query IR for safe rebuilds."""
-        return QueryIR(
-            intent=self.intent,
-            timezone=self.timezone,
-            time_range=self.time_range or TimeRange(start=self.time_start, end=self.time_end),
-            filters=self.filters.model_copy(deep=True) if self.filters is not None else None,
-            aggregation=self.aggregation.model_copy(deep=True) if self.aggregation is not None else None,
-            accounts_scope=self.accounts_scope,
-            account_name=self.account_name,
-            amount_check=self.amount_check,
-            item_name=self.item_name,
-            analysis_type=self.analysis_type,
-            result_limit=self.result_limit,
-            result_reference=self.result_reference,
-            answer_fact_field=self.answer_fact_field,
-            request_shape=self.request_shape,
-            comparison=self.comparison.model_copy(deep=True) if self.comparison is not None else None,
-            continuation_type=self.continuation_type,
-            continuation_delta_type=self.continuation_delta_type,
-            conversational_prefix=self.conversational_prefix,
-            intent_spec=self.intent_spec.model_copy(deep=True) if self.intent_spec is not None else None,
-        )
-
-    @classmethod
-    def from_query_ir(cls, ir: QueryIR) -> QueryExecutionContract:
-        """Compile runtime contract from QueryIR."""
-        intent_spec = ir.intent_spec or derive_query_intent_spec_from_fields(
-            intent=ir.intent,
-            filters=ir.filters,
-            aggregation=ir.aggregation,
-            answer_fact_field=ir.answer_fact_field,
-            request_shape=ir.request_shape,
-        )
-        execution_plan = build_query_execution_plan_from_fields(
-            intent_spec=intent_spec,
-            time_range=ir.time_range,
-            filters=ir.filters,
-            aggregation=ir.aggregation,
-            result_limit=ir.result_limit,
-            result_reference=ir.result_reference,
-            comparison=ir.comparison,
-            continuation_type=ir.continuation_type,
-            continuation_delta_type=ir.continuation_delta_type,
-        )
-        return cls(
-            intent=ir.intent,
-            time_start=ir.time_range.start,
-            time_end=ir.time_range.end,
-            timezone=ir.timezone,
-            filters=ir.filters,
-            aggregation=ir.aggregation,
-            accounts_scope=ir.accounts_scope,
-            account_name=ir.account_name,
-            amount_check=ir.amount_check,
-            item_name=ir.item_name,
-            analysis_type=ir.analysis_type,
-            result_limit=ir.result_limit,
-            result_reference=ir.result_reference,
-            answer_fact_field=ir.answer_fact_field,
-            request_shape=ir.request_shape,
-            comparison=ir.comparison,
-            continuation_type=ir.continuation_type,
-            continuation_delta_type=ir.continuation_delta_type,
-            conversational_prefix=ir.conversational_prefix,
-            intent_spec=intent_spec,
-            execution_plan=execution_plan,
-        )
 
 
 class QueryFrameFacts(BaseModel):
@@ -326,7 +165,7 @@ class QueryFrame(BaseModel):
 
     frame_id: str
     turn_index: int = Field(ge=1)
-    query_contract: QueryExecutionContract
+    query_request: QueryRequest
     summary_text: str
     interpretation: dict[str, Any] | None = None
     surface_type: SurfaceViewMode | None = None
@@ -385,7 +224,7 @@ class QueryResult(BaseModel):
     context_key: str = Field(default_factory=lambda: f"qr:{uuid4()}")
     has_more: bool = False
     conversational_prefix: str | None = None
-    query_contract: QueryExecutionContract | None = None
+    query_request: QueryRequest | None = None
     interpretation: dict[str, Any] | None = None
     surface_view: SurfaceView | None = None
     answer_strategy: QueryAnswerStrategy | None = None
@@ -399,107 +238,6 @@ class QueryResult(BaseModel):
     cache_window_start: str | None = None
     cache_window_end: str | None = None
     cache_reused: bool = False
-
-
-def derive_query_intent_spec_from_fields(
-    *,
-    intent: QueryIntent,
-    filters: Filters | None,
-    aggregation: Aggregation | None,
-    answer_fact_field: QueryFactField | None,
-    request_shape: QueryContractRequestShape | None = None,
-) -> QueryIntentSpec:
-    """Derive semantic intent from explicit query fields."""
-    grouping: Literal["category", "merchant", "day", "account", "transaction_type", "none"] = "none"
-    ranking: Literal["none", "largest", "smallest", "count", "amount"] = "none"
-    objective = QueryObjective.TRANSACTION_LIST
-    subject = QuerySubject.TRANSACTIONS
-    user_request_shape = UserRequestShape.LIST
-    fact_field: QueryFactField | Literal["none"] = "none"
-
-    if request_shape == "existence":
-        objective = QueryObjective.FACT
-        user_request_shape = UserRequestShape.DIRECT_ANSWER
-    elif aggregation and aggregation.group_by:
-        grouping = cast(Literal["category", "merchant", "day", "account", "transaction_type"], aggregation.group_by)
-    if aggregation and aggregation.type in {"largest", "smallest"}:
-        ranking = cast(Literal["largest", "smallest"], aggregation.type)
-    elif aggregation and aggregation.type == "count":
-        ranking = "count"
-    elif aggregation and aggregation.sort_by in {"count", "amount"}:
-        ranking = aggregation.sort_by
-
-    if answer_fact_field in {
-        "date",
-        "counterparty",
-        "amount",
-        "bank",
-        "status",
-        "description",
-        "reference",
-        "account",
-        "direction",
-        "category",
-    }:
-        objective = QueryObjective.FACT
-        fact_field = answer_fact_field
-        user_request_shape = UserRequestShape.DIRECT_ANSWER
-    elif intent == QueryIntent.BENEFICIARY_SUMMARY:
-        objective = QueryObjective.GROUPED_SUMMARY
-        subject = QuerySubject.BENEFICIARIES
-        user_request_shape = UserRequestShape.SUMMARY
-    elif intent == QueryIntent.TIME_COMPARISON:
-        objective = QueryObjective.COMPARISON
-        user_request_shape = UserRequestShape.SUMMARY
-    elif intent == QueryIntent.AFFORDABILITY:
-        objective = QueryObjective.AFFORDABILITY
-        user_request_shape = UserRequestShape.DIRECT_ANSWER
-    elif aggregation is not None:
-        objective = QueryObjective.GROUPED_SUMMARY
-        user_request_shape = UserRequestShape.SUMMARY
-
-    if grouping == "account":
-        subject = QuerySubject.ACCOUNTS
-
-    return QueryIntentSpec(
-        objective=objective,
-        subject=subject,
-        filters=filters.model_copy(deep=True) if filters is not None else None,
-        grouping=grouping,
-        fact_field=fact_field,
-        ranking=ranking,
-        user_request_shape=user_request_shape,
-    )
-
-
-def build_query_execution_plan_from_fields(
-    *,
-    intent_spec: QueryIntentSpec,
-    time_range: TimeRange | None,
-    filters: Filters | None,
-    aggregation: Aggregation | None,
-    result_limit: int | None,
-    result_reference: Literal["latest", "oldest"] | None,
-    comparison: ComparisonDirective | None = None,
-    continuation_type: str | None = None,
-    continuation_delta_type: str | None = None,
-) -> QueryExecutionPlan:
-    """Build canonical execution plan from explicit query fields."""
-    drill_down_template: dict[str, Any] = {}
-    if continuation_type:
-        drill_down_template["continuation_type"] = continuation_type
-    if continuation_delta_type:
-        drill_down_template["continuation_delta_type"] = continuation_delta_type
-    return QueryExecutionPlan(
-        intent_spec=intent_spec,
-        time_range=time_range.model_copy(deep=True) if time_range is not None else None,
-        filters=filters.model_copy(deep=True) if filters is not None else None,
-        aggregation=aggregation.model_copy(deep=True) if aggregation is not None else None,
-        result_limit=result_limit,
-        result_reference=result_reference,
-        comparison=comparison.model_copy(deep=True) if comparison is not None else None,
-        drill_down_template=drill_down_template,
-    )
 
 
 CATEGORY_KEYWORDS: dict[str, list[str]] = {

@@ -1,11 +1,11 @@
 from datetime import timedelta
 
 from banking.presentation.i18n.renderer import render_message
-from banking.transactions.query.models.domain import QueryExecutionContract
+from banking.transactions.query.models.domain import QueryRequest
 from banking.transactions.query.utils.timezone import lagos_today
 
 
-def build_timeframe_suffix(query: QueryExecutionContract, locale: str) -> str:
+def build_timeframe_suffix(query: QueryRequest, locale: str) -> str:
     time_range = query.time_range
     if time_range:
         today = lagos_today()

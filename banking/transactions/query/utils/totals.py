@@ -58,11 +58,7 @@ def calculate_financial_totals(
 
     for t in transactions:
         raw_status = (
-            t.get("display_status")
-            or t.get("status")
-            or t.get("local_status")
-            or t.get("provider_status")
-            or ""
+            t.get("display_status") or t.get("status") or t.get("local_status") or t.get("provider_status") or ""
         )
         status = str(raw_status).lower()
         is_settled = False

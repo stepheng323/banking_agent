@@ -5,7 +5,7 @@ from typing import Any
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
 )
@@ -64,7 +64,7 @@ def maybe_build_fact_answer_from_decision(
     decision: Any,
     session: dict[str, Any],
     restored_query_result: QueryResult | None,
-    session_query_contract: QueryExecutionContract | None,
+    session_query_request: QueryRequest | None,
     language: str,
 ) -> dict[str, Any] | None:
     if getattr(decision, "decision", None) != "continuation":
@@ -73,12 +73,12 @@ def maybe_build_fact_answer_from_decision(
         return None
     if getattr(decision, "drill_down_action", None) != "answer_fact":
         return None
-    if session_query_contract is None:
+    if session_query_request is None:
         return None
-    if session_query_contract.intent == session_query_contract.intent.BENEFICIARY_SUMMARY:
+    if session_query_request.intent == session_query_request.intent.BENEFICIARY_SUMMARY:
         return None
 
-    raw_fact_field = getattr(decision, "fact_field", None) or session_query_contract.answer_fact_field
+    raw_fact_field = getattr(decision, "fact_field", None) or session_query_request.answer_fact_field
     if raw_fact_field == "recipient":
         raw_fact_field = "counterparty"
     if raw_fact_field not in {
@@ -94,13 +94,11 @@ def maybe_build_fact_answer_from_decision(
         "category",
     }:
         return None
-    if _requires_scoped_fact_query(session_query_contract):
+    if _requires_scoped_fact_query(session_query_request):
         return None
 
     selected_index_raw = session.get("selected_item_index")
-    selected_index = (
-        selected_index_raw if isinstance(selected_index_raw, int) and selected_index_raw >= 0 else None
-    )
+    selected_index = selected_index_raw if isinstance(selected_index_raw, int) and selected_index_raw >= 0 else None
     raw_drill_index = getattr(decision, "drill_down_index", None)
     drill_index = raw_drill_index if isinstance(raw_drill_index, int) and raw_drill_index >= 0 else selected_index
 
@@ -120,10 +118,10 @@ def maybe_build_fact_answer_from_decision(
         cached_transactions = _coerce_cached_transactions(session)
         if cached_transactions:
             current_window_start = (
-                session_query_contract.time_range.start.isoformat() if session_query_contract.time_range else None
+                session_query_request.time_range.start.isoformat() if session_query_request.time_range else None
             )
             current_window_end = (
-                session_query_contract.time_range.end.isoformat() if session_query_contract.time_range else None
+                session_query_request.time_range.end.isoformat() if session_query_request.time_range else None
             )
             scoped_transactions = apply_time_window(
                 cached_transactions,
@@ -131,11 +129,11 @@ def maybe_build_fact_answer_from_decision(
                 window_end=current_window_end,
             )
             filtered_transactions = (
-                apply_filters(scoped_transactions, session_query_contract.filters)
-                if session_query_contract.filters
+                apply_filters(scoped_transactions, session_query_request.filters)
+                if session_query_request.filters
                 else list(scoped_transactions)
             )
-            reverse_sort = session_query_contract.result_reference != "oldest"
+            reverse_sort = session_query_request.result_reference != "oldest"
             ranked_transactions = sorted(filtered_transactions, key=_transaction_sort_key, reverse=reverse_sort)
             if drill_index is not None and 0 <= drill_index < len(ranked_transactions):
                 item = _query_result_item_from_transaction(
@@ -148,13 +146,13 @@ def maybe_build_fact_answer_from_decision(
         return None
 
     answer_contract = (
-        session_query_contract.model_copy(update={"result_reference": None})
+        session_query_request.model_copy(update={"result_reference": None})
         if selected_index is None or drill_index != selected_index
-        else session_query_contract
+        else session_query_request
     )
     answer_context = build_direct_fact_answer(
         item,
-        query_contract=answer_contract,
+        query_request=answer_contract,
         fact_field=raw_fact_field,
         locale=language,
         is_followup=True,
@@ -175,11 +173,11 @@ def maybe_build_fact_answer_from_decision(
     }
 
 
-def _requires_scoped_fact_query(query_contract: QueryExecutionContract) -> bool:
+def _requires_scoped_fact_query(query_request: QueryRequest) -> bool:
     """Aggregate rows are scopes, not concrete transactions."""
-    if query_contract.intent == query_contract.intent.BENEFICIARY_SUMMARY:
+    if query_request.intent == query_request.intent.BENEFICIARY_SUMMARY:
         return True
-    aggregation = query_contract.aggregation
+    aggregation = query_request.aggregation
     return aggregation is not None and aggregation.group_by is not None
 
 

@@ -8,7 +8,7 @@ from typing import Any
 
 from banking.accounts.mandate_state import READY, effective_mandate_status
 from banking.presentation.i18n.renderer import render_message
-from banking.transactions.query.models.domain import QueryExecutionContract
+from banking.transactions.query.models.domain import QueryRequest
 from banking.transactions.query.services.fetching.fetch import _is_missing_mirror_table_error
 from shared.config.settings import settings
 from shared.utils.logging import get_logger
@@ -88,7 +88,7 @@ def _format_sync_time(value: str | None) -> str | None:
 
 def _resolve_window(
     *,
-    query_contract: QueryExecutionContract | None,
+    query_request: QueryRequest | None,
     session: dict[str, Any],
 ) -> tuple[date | None, date | None]:
     cache_start = session.get("cache_window_start")
@@ -98,8 +98,8 @@ def _resolve_window(
             return date.fromisoformat(cache_start[:10]), date.fromisoformat(cache_end[:10])
         except ValueError:
             pass
-    if query_contract is not None:
-        return query_contract.time_start, query_contract.time_end
+    if query_request is not None:
+        return query_request.time_start, query_request.time_end
     return None, None
 
 
@@ -236,7 +236,7 @@ def _single_account_answer(
 async def build_query_coverage_answer(
     *,
     accounts_info: list[dict[str, Any]],
-    query_contract: QueryExecutionContract | None,
+    query_request: QueryRequest | None,
     session: dict[str, Any],
     target_text: str | None,
     locale: str = "en",
@@ -257,7 +257,7 @@ async def build_query_coverage_answer(
             {"account": target_text.strip(), "options": labels},
         )
 
-    start_date, end_date = _resolve_window(query_contract=query_contract, session=session)
+    start_date, end_date = _resolve_window(query_request=query_request, session=session)
     snapshots = [
         await _coverage_for_account(account, start_date=start_date, end_date=end_date) for account in selected_accounts
     ]

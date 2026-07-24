@@ -7,8 +7,13 @@ from typing import Any
 
 from banking.transactions.query.continuations.clarification_state import clarification_candidate
 from banking.transactions.query.contracts import SelectionPayload
-from banking.transactions.query.models.domain import QueryExecutionContract, QueryIntent
 from banking.transactions.query.models.extraction import ClarificationCandidate
+from banking.transactions.query.models.operations import (
+    NamedCounterparty,
+    QueryRequest,
+    RetrieveOperation,
+    SummarizeOperation,
+)
 
 
 def _normal(value: Any) -> str:
@@ -45,7 +50,7 @@ def _label(row: dict[str, Any]) -> str:
 
 
 def recipient_clarification_candidates(
-    contract: QueryExecutionContract,
+    request: QueryRequest,
     beneficiaries: list[Any],
 ) -> list[ClarificationCandidate]:
     """Return saved-recipient candidates only for an ambiguous outgoing query.
@@ -55,17 +60,15 @@ def recipient_clarification_candidates(
     based on the compiled contract rather than raw message wording.
     """
 
-    filters = contract.filters
-    requested_values = filters.counterparty if filters is not None else None
-    if (
-        contract.intent not in {QueryIntent.TRANSACTION_LIST, QueryIntent.ANALYTICS_SUMMARY}
-        or filters is None
-        or filters.transaction_type != "debit"
-        or not requested_values
-    ):
+    operation = request.operation
+    scope = operation.scope if isinstance(operation, (RetrieveOperation, SummarizeOperation)) else None
+    predicate = scope.predicate if scope is not None else None
+    counterparty = predicate.counterparty if predicate is not None else None
+    reference = counterparty.reference if counterparty is not None else None
+    if predicate is None or predicate.direction != "debit" or not isinstance(reference, NamedCounterparty):
         return []
 
-    requested = _normal(requested_values[0])
+    requested = _normal(reference.name)
     if not requested:
         return []
     matches = [
@@ -103,34 +106,35 @@ def recipient_clarification_candidates(
 
 
 def ground_unique_saved_recipient(
-    contract: QueryExecutionContract,
+    request: QueryRequest,
     beneficiaries: list[Any],
-) -> QueryExecutionContract:
+) -> QueryRequest:
     """Replace a unique saved alias with its canonical recipient name."""
 
-    filters = contract.filters
-    requested_values = filters.counterparty if filters is not None else None
-    if (
-        contract.intent not in {QueryIntent.TRANSACTION_LIST, QueryIntent.ANALYTICS_SUMMARY}
-        or filters is None
-        or filters.transaction_type != "debit"
-        or not requested_values
-    ):
-        return contract
-    requested = _normal(requested_values[0])
+    operation = request.operation
+    scope = operation.scope if isinstance(operation, (RetrieveOperation, SummarizeOperation)) else None
+    predicate = scope.predicate if scope is not None else None
+    counterparty = predicate.counterparty if predicate is not None else None
+    reference = counterparty.reference if counterparty is not None else None
+    if predicate is None or predicate.direction != "debit" or not isinstance(reference, NamedCounterparty):
+        return request
+    requested = _normal(reference.name)
     matches = [
         row
         for row in beneficiaries
         if isinstance(row, dict) and _is_transfer_beneficiary(row) and _matches_requested_recipient(requested, row)
     ]
     if len(matches) != 1:
-        return contract
+        return request
     canonical_name = str(matches[0].get("account_name") or matches[0].get("alias") or "").strip()
     if not canonical_name:
-        return contract
-    grounded_filters = filters.model_copy(deep=True)
-    grounded_filters.counterparty = [canonical_name]
-    return contract.model_copy(update={"filters": grounded_filters})
+        return request
+    grounded_reference = reference.model_copy(update={"name": canonical_name})
+    grounded_counterparty = counterparty.model_copy(update={"reference": grounded_reference})
+    grounded_predicate = predicate.model_copy(update={"counterparty": grounded_counterparty})
+    grounded_scope = scope.model_copy(update={"predicate": grounded_predicate})
+    grounded_operation = operation.model_copy(update={"scope": grounded_scope})
+    return request.model_copy(update={"operation": grounded_operation})
 
 
 __all__ = ["ground_unique_saved_recipient", "recipient_clarification_candidates"]

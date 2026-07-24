@@ -9,14 +9,14 @@ from banking.presentation.formatters.query_transaction_copy import format_transa
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.contracts import PresentationMode, PresentationPlan, SurfaceView
 from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
     QueryIntent,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
     TimeRange,
 )
 from banking.transactions.query.presentation.formatting import format_query_date, parse_summary_parts
-from banking.transactions.query.presentation.surface_builder import result_query_contract
+from banking.transactions.query.presentation.surface_builder import result_query_request
 from banking.transactions.query.utils.timezone import lagos_today
 from shared.utils.bank_aliases import display_bank_name
 
@@ -35,9 +35,14 @@ def build_transaction_list_presentation_plan(
     summary_parts = parse_summary_parts(result.summary_text)
     display_items = _display_items(result.items or [], current_page=current_page)
     total_count = _result_total(summary_parts=summary_parts, items=result.items or [])
-    has_more_results = has_more or result.has_more or total_count > _display_end_index(
-        display_count=len(display_items),
-        current_page=current_page,
+    has_more_results = (
+        has_more
+        or result.has_more
+        or total_count
+        > _display_end_index(
+            display_count=len(display_items),
+            current_page=current_page,
+        )
     )
     lead_text = _build_transaction_list_lead(
         result,
@@ -92,7 +97,7 @@ def _build_transaction_list_lead(
     current_page: int,
     has_more: bool,
 ) -> str:
-    contract = result_query_contract(result)
+    contract = result_query_request(result)
     if current_page > 0:
         return _page_window_copy(display_count=display_count, current_page=current_page)
     if contract and contract.intent == QueryIntent.ANALYTICS_SUMMARY and result.summary_text:
@@ -112,11 +117,9 @@ def _build_transaction_list_lead(
     return sentence
 
 
-def _transaction_noun(contract: QueryExecutionContract | None, *, count: int) -> str:
+def _transaction_noun(contract: QueryRequest | None, *, count: int) -> str:
     filters = contract.filters if contract else None
-    account_filter = (
-        (filters.account_filter or "").strip() if filters else ""
-    )
+    account_filter = (filters.account_filter or "").strip() if filters else ""
     category = _first_filter_label(filters.category if filters else None)
     status = filters.status if filters else None
     tx_type = filters.transaction_type if filters else None
@@ -145,7 +148,7 @@ def _first_filter_label(values: list[str] | None) -> str | None:
     return None
 
 
-def _transaction_list_time_phrase(contract: QueryExecutionContract | None) -> str:
+def _transaction_list_time_phrase(contract: QueryRequest | None) -> str:
     time_range = _contract_time_range(contract)
     if time_range is None:
         return ""
@@ -164,7 +167,7 @@ def _transaction_list_time_phrase(contract: QueryExecutionContract | None) -> st
     return f"for {_format_lead_date(start)}–{_format_lead_date(end)}"
 
 
-def _contract_time_range(contract: QueryExecutionContract | None) -> TimeRange | None:
+def _contract_time_range(contract: QueryRequest | None) -> TimeRange | None:
     if contract is None:
         return None
     if contract.time_range is not None:

@@ -2,30 +2,32 @@
 
 from collections import defaultdict
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any
 
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
     QueryAnswerStrategy,
-    QueryExecutionContract,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
     get_transaction_category,
 )
+from banking.transactions.query.services.analysis.kernel.contracts import AnalysisDataset, CoverageStatus
+from banking.transactions.query.services.analysis.kernel.service import AnalysisService
 from banking.transactions.query.services.fetching.fetch import (
     extract_counterparty,
     fetch_and_filter,
     parse_date,
 )
 from banking.transactions.query.utils.timezone import lagos_today
-from banking.transactions.query.utils.totals import calculate_financial_totals
 from shared.clients.abstractions.banking import BankDataProvider
 
 
 async def handle_analytics(
     provider: BankDataProvider,
-    contract: QueryExecutionContract,
+    contract: QueryRequest,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -35,6 +37,7 @@ async def handle_analytics(
     language: str = "en",
 ) -> QueryResult:
     """Handle analytics summary queries."""
+    analysis_service = AnalysisService(provider)
     transactions = await fetch_and_filter(
         provider,
         contract,
@@ -43,6 +46,16 @@ async def handle_analytics(
         accounts_info,
         user_id=user_id,
     )
+    dataset = AnalysisDataset(
+        basis="ledger_transactions",
+        period_label="selected",
+        start_date=contract.time_start,
+        end_date=contract.time_end,
+        rows=transactions,
+        coverage_status=CoverageStatus.UNAVAILABLE,
+    )
+    financial_analysis = await analysis_service.analyze_cash_flow(dataset)
+    transactions = financial_analysis.settled_rows
 
     if not contract.aggregation:
         return QueryResult(summary_text=render_message("query.analytics.no_aggregation", language))
@@ -51,17 +64,14 @@ async def handle_analytics(
     if contract.aggregation.group_by:
         agg_type = "breakdown"
 
-    totals = calculate_financial_totals(transactions, account_id)
-    transactions = totals.settled_transactions
-
     if agg_type == "sum":
         total = (
-            totals.total_inflow
+            financial_analysis.inflow.value
             if contract.filters and contract.filters.transaction_type == "credit"
-            else totals.total_outflow
+            else financial_analysis.outflow.value
         )
         if not contract.filters or contract.filters.transaction_type not in {"credit", "debit"}:
-            total = totals.total_inflow + totals.total_outflow
+            total = financial_analysis.inflow.value + financial_analysis.outflow.value
 
         count = len(transactions)
         if count == 0:
@@ -262,18 +272,23 @@ async def handle_analytics(
                 {"limit": limit, "adj_title": adj_title, "label": label},
             )
 
-        total = len(sorted_txns)
-        has_more = end_idx < total
+        total_count = len(sorted_txns)
+        has_more = end_idx < total_count
 
         return QueryResult(summary_text=summary_text, items=items, has_more=has_more)
 
     elif agg_type == "breakdown":
-        return await _aggregate_breakdown(transactions, contract, totals, language)
+        return await _aggregate_breakdown(
+            transactions,
+            contract,
+            total_spent=financial_analysis.outflow.value,
+            language=language,
+        )
 
     return QueryResult(summary_text=render_message("query.analytics.aggregation_completed", language))
 
 
-def _build_timeframe_suffix(query: QueryExecutionContract, locale: str) -> str:
+def _build_timeframe_suffix(query: QueryRequest, locale: str) -> str:
     time_range = query.time_range
     if time_range:
         today = lagos_today()
@@ -311,7 +326,7 @@ def _build_timeframe_suffix(query: QueryExecutionContract, locale: str) -> str:
     return render_message("query.analytics.timeframe_default", locale)
 
 
-def _build_sum_target_description(query: QueryExecutionContract, locale: str) -> str:
+def _build_sum_target_description(query: QueryRequest, locale: str) -> str:
     filters = query.filters
     if filters is None:
         return ""
@@ -341,7 +356,7 @@ def _build_sum_target_description(query: QueryExecutionContract, locale: str) ->
     return "".join(parts)
 
 
-def _sum_summary_key(query: QueryExecutionContract) -> MessageKey:
+def _sum_summary_key(query: QueryRequest) -> MessageKey:
     filters = query.filters
     if filters is None:
         return "query.analytics.summary_spent"
@@ -380,14 +395,11 @@ def _transaction_label(count: int, locale: str) -> str:
 
 async def _aggregate_breakdown(
     transactions: list[dict],
-    contract: QueryExecutionContract,
-    totals: Any | None = None,
+    contract: QueryRequest,
+    total_spent: Decimal = Decimal("0"),
     language: str = "en",
 ) -> QueryResult:
     """Aggregate transactions by day/category/merchant."""
-    if totals is None:
-        totals = calculate_financial_totals(transactions)
-
     group_by = contract.aggregation.group_by if contract.aggregation else "day"
     grouped: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
@@ -441,8 +453,6 @@ async def _aggregate_breakdown(
     sorted_items = sorted_items[:limit]
 
     # Include total spent in summary if it's a category/merchant breakdown of expenses
-    total_spent = totals.total_outflow
-
     items: list[QueryResultItem] = []
     for i, (key, data) in enumerate(sorted_items):
         display_key = key

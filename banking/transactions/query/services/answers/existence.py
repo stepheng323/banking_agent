@@ -1,26 +1,26 @@
 """Existence answer copy for transaction query results."""
 
 from banking.presentation.formatters.currency import format_naira
-from banking.transactions.query.models.domain import QueryExecutionContract, QueryResult
+from banking.transactions.query.models.domain import QueryRequest, QueryResult
 from banking.transactions.query.utils.timezone import lagos_today
 
 
 def build_existence_answer(
     result: QueryResult,
     *,
-    query_contract: QueryExecutionContract,
+    query_request: QueryRequest,
 ) -> str:
     """Build direct yes/no copy for transaction existence questions."""
     items = result.items or []
     count = len(items)
-    filters = query_contract.filters
+    filters = query_request.filters
     tx_type = filters.transaction_type if filters else None
     counterparty = _first_filter_value(filters.counterparty if filters else None)
     merchant = _first_filter_value(filters.merchant if filters else None)
     category = _first_filter_value(filters.category if filters else None)
     target = counterparty or merchant or category
     target_phrase = _target_phrase(target, category=category)
-    time_phrase = _time_phrase(query_contract)
+    time_phrase = _time_phrase(query_request)
 
     if count == 0:
         return _build_existence_no_match(tx_type=tx_type, target_phrase=target_phrase, time_phrase=time_phrase)
@@ -81,8 +81,8 @@ def _target_phrase(target: str | None, *, category: str | None) -> str | None:
     return cleaned
 
 
-def _time_phrase(query_contract: QueryExecutionContract) -> str:
-    time_range = query_contract.time_range
+def _time_phrase(query_request: QueryRequest) -> str:
+    time_range = query_request.time_range
     if time_range is None:
         return ""
     today = lagos_today()

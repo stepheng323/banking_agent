@@ -6,10 +6,11 @@ from typing import Any
 
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
 )
+from banking.transactions.query.models.operations import GroupedSummarySpec, SummarizeOperation
 from banking.transactions.query.presentation.scope import build_beneficiary_summary_header
 from banking.transactions.query.services.fetching.fetch import (
     extract_counterparty,
@@ -35,7 +36,7 @@ def _normalize_recipient_key(name: str) -> str:
 
 async def handle_beneficiary_summary(
     provider: BankDataProvider,
-    contract: QueryExecutionContract,
+    contract: QueryRequest,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -106,7 +107,12 @@ async def handle_beneficiary_summary(
         )
         heading_type = render_message("query.beneficiary.heading_top", language)
 
-    limit = contract.aggregation.limit if contract.aggregation else 5
+    operation = contract.operation
+    limit = (
+        operation.summary.limit
+        if isinstance(operation, SummarizeOperation) and isinstance(operation.summary, GroupedSummarySpec)
+        else 5
+    )
 
     # Determine timeframe text
     if contract.time_range:

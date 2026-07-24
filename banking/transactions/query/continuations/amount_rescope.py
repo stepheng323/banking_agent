@@ -6,8 +6,8 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal
 
-from banking.transactions.query.continuations.transforms import rebuild_query_contract
-from banking.transactions.query.models.domain import Filters, QueryExecutionContract
+from banking.transactions.query.continuations.transforms import rebuild_query_request
+from banking.transactions.query.models.domain import Filters, QueryRequest
 
 
 @dataclass(frozen=True)
@@ -55,19 +55,19 @@ def amount_rescope_filter_patch(message: str) -> AmountFilterPatch | None:
 
 
 def rebuild_with_amount_rescope(
-    session_query_contract: QueryExecutionContract,
+    session_query_request: QueryRequest,
     *,
     patch: AmountFilterPatch,
     continuation_type: str,
-) -> QueryExecutionContract:
+) -> QueryRequest:
     filters = Filters(
         min_amount=patch.min_amount,
         max_amount=patch.max_amount,
         min_amount_inclusive=patch.min_amount_inclusive,
         max_amount_inclusive=patch.max_amount_inclusive,
     )
-    return rebuild_query_contract(
-        session_query_contract,
+    return rebuild_query_request(
+        session_query_request,
         filters=filters,
         merge_filters=True,
         result_limit=None,

@@ -18,10 +18,11 @@ from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.context_frames import build_reasoner_context_from_frames
 from banking.transactions.query.models.domain import (
     Filters,
-    QueryExecutionContract,
     QueryIntent,
+    QueryRequest,
     TimeRange,
 )
+from banking.transactions.query.models.operations import AnalyzeOperation, CompareOperation
 from banking.transactions.query.nodes.execution import ExecutionStep
 from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.nodes.generative_formatter import GenerativeFormattingStep
@@ -104,7 +105,7 @@ class QueryWorker:
             event,
             session_source=session_source,
             session_active=bool(snapshot.get("session_active")),
-            has_query_contract=bool(snapshot.get("query_contract")),
+            has_query_request=bool(snapshot.get("query_request")),
             has_query_result=bool(snapshot.get("query_result")),
             has_surface=_session_has_surface_view(snapshot),
             has_query_frames=bool(snapshot.get("query_frames")),
@@ -240,20 +241,20 @@ class QueryWorker:
     @classmethod
     def _build_query_progress_stage_metadata(
         cls,
-        query_contract: QueryExecutionContract | dict[str, Any] | None,
+        query_request: QueryRequest | dict[str, Any] | None,
         *,
         locale: str,
         include_time: bool,
     ) -> dict[str, str] | None:
-        if isinstance(query_contract, dict):
+        if isinstance(query_request, dict):
             try:
-                query_contract = QueryExecutionContract.model_validate(query_contract)
+                query_request = QueryRequest.model_validate(query_request)
             except Exception:
                 return None
-        if not isinstance(query_contract, QueryExecutionContract):
+        if not isinstance(query_request, QueryRequest):
             return None
 
-        filters = query_contract.filters
+        filters = query_request.filters
         counterparty_values = filters.counterparty if filters and filters.counterparty else []
         merchant_values = filters.merchant if filters and filters.merchant else []
         category_values = filters.category if filters and filters.category else []
@@ -264,19 +265,19 @@ class QueryWorker:
             (item.strip().title() for item in category_values if isinstance(item, str) and item.strip()), None
         )
         tx_type = filters.transaction_type if filters else None
-        time_phrase = cls._build_time_phrase(query_contract.time_range, locale) if include_time else None
+        time_phrase = cls._build_time_phrase(query_request.time_range, locale) if include_time else None
         scope_label = cls._build_scope_label(
-            intent=query_contract.intent,
+            intent=query_request.intent,
             filters=filters,
-            time_range=query_contract.time_range,
+            time_range=query_request.time_range,
             locale=locale,
             include_time=include_time,
         )
 
         direction = "all"
-        if query_contract.intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "debit":
+        if query_request.intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "debit":
             direction = "sent"
-        elif query_contract.intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "credit":
+        elif query_request.intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "credit":
             direction = "received"
         elif tx_type == "debit":
             direction = "outgoing"
@@ -293,7 +294,7 @@ class QueryWorker:
                 "scope_label": scope_label,
             },
         )
-        metadata["intent_family"] = query_contract.intent.value
+        metadata["intent_family"] = query_request.intent.value
         if merchant:
             metadata["counterparty_label"] = merchant
         if category:
@@ -319,7 +320,7 @@ class QueryWorker:
 
         locale = LocaleManager.normalize(state.get("language")).value
         stage_metadata = cls._build_query_progress_stage_metadata(
-            state.get("query_contract"),
+            state.get("query_request"),
             locale=locale,
             include_time=include_time,
         )
@@ -330,14 +331,15 @@ class QueryWorker:
         if state.get("drill_down_action") == "view_details":
             return
 
-        query_contract = state.get("query_contract")
-        if isinstance(query_contract, dict):
-            query_contract = QueryExecutionContract.model_validate(query_contract)
+        query_request = state.get("query_request")
+        if isinstance(query_request, dict):
+            query_request = QueryRequest.model_validate(query_request)
 
         stage_key = "query.fetching_transactions"
-        if isinstance(query_contract, QueryExecutionContract):
-            if query_contract.comparison is not None or query_contract.intent == QueryIntent.TIME_COMPARISON:
-                stage_key = "query.comparing_periods"
+        if isinstance(query_request, QueryRequest) and isinstance(
+            query_request.operation, (CompareOperation, AnalyzeOperation)
+        ):
+            stage_key = "query.comparing_periods"
 
         await QueryWorker._set_query_progress_stage(
             stage_key,
@@ -378,7 +380,7 @@ class QueryWorker:
                     "pending_clarification",
                     pending_query_clarification,
                 ),
-                "query_contract": pending_query_clarification.get("query_contract"),
+                "query_request": pending_query_clarification.get("query_request"),
                 "query_result": pending_query_clarification.get("query_result"),
                 "query_frames": pending_query_clarification.get("query_frames"),
                 "current_page": pending_query_clarification.get("current_page", 0),
@@ -404,7 +406,7 @@ class QueryWorker:
                 session=query_session,
                 session_source=session_source,
             )
-        if query_session and not query_session.get("query_contract") and not query_session.get("pending_clarification"):
+        if query_session and not query_session.get("query_request") and not query_session.get("pending_clarification"):
             logger.warning(
                 "query_session_missing_contract_cleared",
                 session_source=session_source,
@@ -421,7 +423,7 @@ class QueryWorker:
 
         # Merge key session fields into state so continuation steps have context.
         session_defaults = {
-            "query_contract": query_session.get("query_contract"),
+            "query_request": query_session.get("query_request"),
             "query_result": query_session.get("query_result"),
             "show_expanded": query_session.get("show_expanded"),
             "current_page": query_session.get("current_page"),
@@ -474,7 +476,7 @@ class QueryWorker:
         if (
             isinstance(query_session, dict)
             and query_session.get("session_active")
-            and not query_session.get("query_contract")
+            and not query_session.get("query_request")
             and not query_session.get("pending_clarification")
         ):
             logger.warning(

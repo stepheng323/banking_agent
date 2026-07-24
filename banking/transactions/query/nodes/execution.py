@@ -8,7 +8,7 @@ from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.actions import handle_drill_down
 from banking.transactions.query.contracts import SurfaceViewMode
 from banking.transactions.query.executor import QueryExecutor
-from banking.transactions.query.models.domain import QueryExecutionContract
+from banking.transactions.query.models.operations import QueryRequest
 from banking.transactions.query.pipeline import QueryStep
 from banking.transactions.query.presentation.formatter import QueryFormatter
 from banking.transactions.query.presentation.surface_builder import build_surface_view
@@ -39,43 +39,17 @@ class ExecutionStep(QueryStep):
 
     @staticmethod
     def _build_interpretation(
-        query_contract: QueryExecutionContract,
+        query_request: QueryRequest,
         *,
         continuation_type: str | None = None,
         continuation_delta_type: str | None = None,
     ) -> dict[str, Any]:
-        """Build compact debug metadata from the execution contract."""
-        time_granularity = None
-        if query_contract.time_range:
-            time_granularity = query_contract.time_range.granularity
-
-        time_window: dict[str, Any] = {
-            "start": query_contract.time_start.isoformat(),
-            "end": query_contract.time_end.isoformat(),
-            "timezone": query_contract.timezone,
-        }
-        if time_granularity:
-            time_window["granularity"] = time_granularity
-
-        comparison_payload: dict[str, Any] | None = None
-        if query_contract.comparison:
-            comparison_payload = {"mode": query_contract.comparison.mode}
-            if query_contract.comparison.explicit_range:
-                comparison_payload["start"] = query_contract.comparison.explicit_range.start.isoformat()
-                comparison_payload["end"] = query_contract.comparison.explicit_range.end.isoformat()
-
+        """Build compact debug metadata from the authoritative operation."""
         return {
-            "intent": query_contract.intent.value,
-            "time_window": time_window,
-            "comparison": comparison_payload,
-            "filters": query_contract.filters.model_dump(exclude_none=True) if query_contract.filters else None,
-            "aggregation": query_contract.aggregation.model_dump(exclude_none=True)
-            if query_contract.aggregation
-            else None,
-            "result_limit": query_contract.result_limit,
-            "result_reference": query_contract.result_reference,
-            "continuation_type": query_contract.continuation_type or continuation_type,
-            "continuation_delta_type": query_contract.continuation_delta_type or continuation_delta_type,
+            "schema_version": query_request.schema_version,
+            "operation": query_request.operation.model_dump(mode="json", exclude_none=True),
+            "continuation_type": continuation_type,
+            "continuation_delta_type": continuation_delta_type,
         }
 
     async def run(self, state: dict[str, Any], worker_context: Any = None) -> TransactionResult:
@@ -85,9 +59,9 @@ class ExecutionStep(QueryStep):
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
         locale = LocaleManager.normalize(state.get("language")).value
 
-        query_contract = state.get("query_contract")
-        if isinstance(query_contract, dict):
-            query_contract = QueryExecutionContract.model_validate(query_contract)
+        query_request = state.get("query_request")
+        if isinstance(query_request, dict):
+            query_request = QueryRequest.model_validate(query_request)
 
         account_id = state.get("account_id")
         account_ids_raw = state.get("account_ids")
@@ -135,7 +109,7 @@ class ExecutionStep(QueryStep):
         ):
             return await handle_drill_down(state)
 
-        if not query_contract or not account_id:
+        if not isinstance(query_request, QueryRequest) or not account_id:
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
                 error=render_message("query.error.missing_params", locale),
@@ -145,7 +119,7 @@ class ExecutionStep(QueryStep):
         resolved_account_id = str(account_id)
 
         result = await executor.execute(
-            query=query_contract,
+            query=query_request,
             account_id=resolved_account_id,
             account_ids=account_ids,
             accounts_info=accounts_info,
@@ -161,8 +135,10 @@ class ExecutionStep(QueryStep):
                 "inbound_message_id": state.get("inbound_message_id"),
             },
         )
+        if result.query_request is None:
+            result.query_request = query_request
         result.interpretation = self._build_interpretation(
-            query_contract,
+            query_request,
             continuation_type=state.get("continuation_type"),
             continuation_delta_type=state.get("continuation_delta_type"),
         )
@@ -192,7 +168,7 @@ class ExecutionStep(QueryStep):
             response=formatted_response,
             patch={
                 "query_result": result,
-                "query_contract": query_contract,
+                "query_request": query_request,
                 "resolver_message": None,
                 "session_active": True,
                 "flow_state": "complete",

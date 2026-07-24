@@ -5,16 +5,20 @@ from __future__ import annotations
 from calendar import monthrange
 from typing import Any, SupportsFloat, SupportsInt, cast
 
-from banking.transactions.query.continuations.transforms import rebuild_query_contract
+from banking.transactions.query.continuations.transforms import rebuild_query_request
 from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import (
-    ComparisonDirective,
-    QueryExecutionContract,
     QueryFrame,
     QueryFrameFacts,
     QueryIntent,
+    QueryRequest,
     QueryResult,
     TimeRange,
+)
+from banking.transactions.query.models.operations import (
+    CompareOperation,
+    ExplicitBaseline,
+    PeriodComparisonSpec,
 )
 
 MAX_QUERY_FRAMES = 3
@@ -38,14 +42,14 @@ def restore_query_frames(raw_frames: object) -> list[QueryFrame]:
 def append_query_frame(
     existing_frames: list[QueryFrame],
     *,
-    query_contract: QueryExecutionContract,
+    query_request: QueryRequest,
     result: QueryResult,
     max_frames: int = MAX_QUERY_FRAMES,
 ) -> list[QueryFrame]:
     """Append a compact frame for the latest executed query and trim history."""
     next_turn_index = max((frame.turn_index for frame in existing_frames), default=0) + 1
     frame = build_query_frame(
-        query_contract=query_contract,
+        query_request=query_request,
         result=result,
         turn_index=next_turn_index,
     )
@@ -54,18 +58,18 @@ def append_query_frame(
 
 def build_query_frame(
     *,
-    query_contract: QueryExecutionContract,
+    query_request: QueryRequest,
     result: QueryResult,
     turn_index: int,
 ) -> QueryFrame:
     """Build a compact query frame from a query execution result."""
     surface_view = result.surface_view
-    facts = _derive_query_frame_facts(query_contract=query_contract, result=result, surface_view=surface_view)
+    facts = _derive_query_frame_facts(query_request=query_request, result=result, surface_view=surface_view)
 
     return QueryFrame(
         frame_id=f"qf_{turn_index}",
         turn_index=turn_index,
-        query_contract=query_contract,
+        query_request=query_request,
         summary_text=result.summary_text,
         interpretation=result.interpretation,
         surface_type=surface_view.mode if surface_view else None,
@@ -109,23 +113,23 @@ def _visible_item_snapshots(surface_view: SurfaceView | None) -> list[dict[str, 
     return snapshots
 
 
-def build_grounded_query_contract(
+def build_grounded_query_request(
     *,
     query_frames: list[QueryFrame],
     frame_ids: list[str] | None,
     operation: str | None,
-) -> QueryExecutionContract | None:
+) -> QueryRequest | None:
     """Compile a grounded query contract from selected prior frames."""
     frames = resolve_query_frames(query_frames, frame_ids)
     if not frames:
         return None
 
     if operation in {"select_frame", "reuse_frame"}:
-        return frames[0].query_contract.model_copy(deep=True)
+        return frames[0].query_request.model_copy(deep=True)
 
     if operation == "show_transactions":
-        return rebuild_query_contract(
-            frames[0].query_contract,
+        return rebuild_query_request(
+            frames[0].query_request,
             intent=QueryIntent.TRANSACTION_LIST,
             aggregation=None,
             result_limit=None,
@@ -137,14 +141,19 @@ def build_grounded_query_contract(
             return None
 
         current_frame, comparison_frame = frames[0], frames[1]
-        comparison_range = comparison_frame.query_contract.time_range
-        if comparison_range is None or current_frame.query_contract.time_range is None:
+        comparison_range = comparison_frame.query_request.period
+        current_scope = current_frame.query_request.scope
+        if comparison_range is None or current_scope is None:
             return None
 
-        return rebuild_query_contract(
-            current_frame.query_contract,
-            intent=QueryIntent.TIME_COMPARISON,
-            comparison=ComparisonDirective(mode="explicit_range", explicit_range=comparison_range),
+        return QueryRequest(
+            operation=CompareOperation(
+                scope=current_scope.model_copy(deep=True),
+                comparison=PeriodComparisonSpec(
+                    baseline=ExplicitBaseline(period=comparison_range.model_copy(deep=True)),
+                    measures=["spending", "income", "net_cash_flow"],
+                ),
+            )
         )
 
     return None
@@ -152,17 +161,17 @@ def build_grounded_query_contract(
 
 def _derive_query_frame_facts(
     *,
-    query_contract: QueryExecutionContract,
+    query_request: QueryRequest,
     result: QueryResult,
     surface_view: SurfaceView | None,
 ) -> QueryFrameFacts:
     facts = QueryFrameFacts(
         label=result.summary_text,
-        direction=query_contract.filters.transaction_type if query_contract.filters else None,
+        direction=query_request.filters.transaction_type if query_request.filters else None,
     )
-    aggregation_type = query_contract.aggregation.type if query_contract.aggregation else None
+    aggregation_type = query_request.aggregation.type if query_request.aggregation else None
 
-    if query_contract.intent == QueryIntent.ANALYTICS_SUMMARY and aggregation_type == "sum":
+    if query_request.intent == QueryIntent.ANALYTICS_SUMMARY and aggregation_type == "sum":
         return facts.model_copy(
             update={
                 "metric_kind": "amount",
@@ -171,7 +180,7 @@ def _derive_query_frame_facts(
             }
         )
 
-    if query_contract.intent == QueryIntent.ANALYTICS_SUMMARY and aggregation_type == "average":
+    if query_request.intent == QueryIntent.ANALYTICS_SUMMARY and aggregation_type == "average":
         average_amount = None
         if result.items:
             average_amount = sum(item.amount for item in result.items) / len(result.items)
@@ -183,7 +192,7 @@ def _derive_query_frame_facts(
             }
         )
 
-    if query_contract.intent == QueryIntent.ANALYTICS_SUMMARY and aggregation_type == "count":
+    if query_request.intent == QueryIntent.ANALYTICS_SUMMARY and aggregation_type == "count":
         return facts.model_copy(
             update={
                 "metric_kind": "count",
@@ -191,7 +200,7 @@ def _derive_query_frame_facts(
             }
         )
 
-    if query_contract.intent == QueryIntent.TIME_COMPARISON:
+    if query_request.intent == QueryIntent.TIME_COMPARISON:
         amount, comparison_amount, count = _extract_time_comparison_facts(result)
         return facts.model_copy(
             update={
@@ -202,10 +211,10 @@ def _derive_query_frame_facts(
             }
         )
 
-    if query_contract.intent == QueryIntent.TRANSACTION_LIST:
+    if query_request.intent == QueryIntent.TRANSACTION_LIST:
         return facts.model_copy(update={"metric_kind": "transactions", "count": len(result.items or [])})
 
-    if query_contract.intent == QueryIntent.TRANSACTION_SEARCH:
+    if query_request.intent == QueryIntent.TRANSACTION_SEARCH:
         return facts.model_copy(update={"metric_kind": "single_item", "count": len(result.items or [])})
 
     if surface_view and surface_view.mode == SurfaceViewMode.TRANSACTION_LIST:
@@ -249,8 +258,8 @@ def _coerce_int(value: object) -> int | None:
 
 
 def can_compare_frames(current_frame: QueryFrame, comparison_frame: QueryFrame) -> bool:
-    current_query = current_frame.query_contract
-    comparison_query = comparison_frame.query_contract
+    current_query = current_frame.query_request
+    comparison_query = comparison_frame.query_request
     if (
         current_query.intent != QueryIntent.ANALYTICS_SUMMARY
         or comparison_query.intent != QueryIntent.ANALYTICS_SUMMARY
@@ -266,7 +275,7 @@ def can_compare_frames(current_frame: QueryFrame, comparison_frame: QueryFrame) 
 
 
 def _frame_shape_signature(frame: QueryFrame) -> dict[str, Any]:
-    query = frame.query_contract
+    query = frame.query_request
     filters = query.filters.model_dump(exclude_none=True) if query.filters else {}
     aggregation = query.aggregation.model_dump(exclude_none=True) if query.aggregation else {}
     return {

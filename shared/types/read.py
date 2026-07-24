@@ -17,6 +17,20 @@ ResponseShape: TypeAlias = Literal[
     "surface_paginated",
     "surface_actionable",
 ]
+
+# Shapes an LLM may select. fact_recap is reserved for a future recap surface:
+# no subject allowlist admits it and no dispatcher consumes it, so advertising
+# it to a model only produces guaranteed validation failures.
+AdvertisedResponseShape: TypeAlias = Literal[
+    "fact_bool",
+    "fact_count",
+    "fact_value",
+    "fact_status",
+    "surface_list",
+    "surface_detail",
+    "surface_paginated",
+    "surface_actionable",
+]
 ReadSubject: TypeAlias = Literal[
     "transaction",
     "balance",
@@ -75,7 +89,7 @@ class ReadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     subject: ReadSubject
-    response_shape: ResponseShape
+    response_shape: AdvertisedResponseShape
     entity_name: str | None = Field(default=None, max_length=120)
     bank_name: str | None = Field(default=None, max_length=120)
     status: str | None = Field(default=None, max_length=64)
@@ -135,6 +149,7 @@ def read_request_payload(request: ReadRequest | None) -> dict[str, Any]:
 
 
 __all__ = [
+    "AdvertisedResponseShape",
     "ReadRequest",
     "ReadResult",
     "ReadSelector",

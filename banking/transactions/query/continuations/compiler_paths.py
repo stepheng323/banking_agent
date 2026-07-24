@@ -15,12 +15,12 @@ from banking.transactions.query.continuations.beneficiary_grounding import (
     recipient_clarification_candidates,
 )
 from banking.transactions.query.continuations.clarification_state import build_selection_clarification_updates
-from banking.transactions.query.models.domain import QueryExecutionContract
 from banking.transactions.query.models.extraction import (
     ClarificationOperation,
     PendingClarificationState,
     ResolverOutcome,
 )
+from banking.transactions.query.models.operations import QueryRequest
 from banking.transactions.query.utils.timezone import lagos_today
 from shared.utils.logging import get_logger
 
@@ -246,35 +246,37 @@ def parse_result_to_updates(
             "flow_state": "parsing",
         }
 
-    query_contract = None
-    if isinstance(result.query_contract, dict):
+    query_request = None
+    if isinstance(result.query_request, dict):
         try:
-            query_contract = QueryExecutionContract.model_validate(result.query_contract)
+            query_request = QueryRequest.model_validate(result.query_request)
         except Exception:
-            query_contract = None
-
-    if query_contract is None:
-        query_ir = step.parser.build_query_ir_from_extraction(result.extraction, today=today, language=language)
-        query_contract = step.parser.build_execution_contract_from_ir(query_ir)
+            query_request = None
+    if query_request is None:
+        query_request = step.parser.build_query_request_from_extraction(
+            result.extraction,
+            today=today,
+            language=language,
+        )
 
     raw_beneficiaries = state.get("beneficiaries")
     beneficiaries: list[Any] = raw_beneficiaries if isinstance(raw_beneficiaries, list) else []
-    query_contract = ground_unique_saved_recipient(query_contract, beneficiaries)
-    candidates = recipient_clarification_candidates(query_contract, beneficiaries)
+    query_request = ground_unique_saved_recipient(query_request, beneficiaries)
+    candidates = recipient_clarification_candidates(query_request, beneficiaries)
     if candidates:
         raw_session = state.get("query_session")
         session: dict[str, Any] = raw_session if isinstance(raw_session, dict) else {}
         return build_selection_clarification_updates(
             candidates=candidates,
             operation=ClarificationOperation(grounded_operation="recipient_filter"),
-            query_contract=query_contract,
+            query_request=query_request,
             locale=language,
             session=session,
             turn_id=state.get("turn_id"),
         )
 
     return {
-        "query_contract": query_contract,
+        "query_request": query_request,
         "resolver_message": resolver_msg,
         "flow_state": "executing",
         "current_page": 0,

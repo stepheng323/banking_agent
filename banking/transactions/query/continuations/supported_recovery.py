@@ -7,7 +7,7 @@ from datetime import date
 from typing import Any
 
 from banking.transactions.query.compiler.lexical_recovery import looks_like_support_problem_statement
-from banking.transactions.query.models.domain import QueryExecutionContract
+from banking.transactions.query.models.domain import QueryRequest
 from banking.transactions.query.models.extraction import (
     QueryExtractionResult,
     ResolverOutcome,
@@ -77,29 +77,29 @@ async def maybe_recover_supported_followup_query(
         )
         return None
 
-    query_contract: QueryExecutionContract | dict[str, Any] | None = parsed_result.query_contract
-    if isinstance(query_contract, dict):
+    query_request: QueryRequest | dict[str, Any] | None = parsed_result.query_request
+    if isinstance(query_request, dict):
         try:
-            query_contract = QueryExecutionContract.model_validate(query_contract)
+            query_request = QueryRequest.model_validate(query_request)
         except Exception:
-            query_contract = None
-    if not isinstance(query_contract, QueryExecutionContract):
+            query_request = None
+    if not isinstance(query_request, QueryRequest):
         logger.info(
             "query_continuation_resolution",
             path="fallback_parse_supported_query",
             recovered=False,
-            skip_reason="missing_query_contract",
+            skip_reason="missing_query_request",
             resolution_source=resolution_source,
         )
         return None
 
-    if not step._has_supported_followup_query_signal(query_contract):
+    if not step._has_supported_followup_query_signal(query_request):
         logger.info(
             "query_continuation_resolution",
             path="fallback_parse_supported_query",
             recovered=False,
             skip_reason="time_only_or_weak_query_signal",
-            parsed_intent=query_contract.intent.value,
+            parsed_intent=query_request.intent.value,
             resolution_source=resolution_source,
         )
         return None
@@ -111,7 +111,7 @@ async def maybe_recover_supported_followup_query(
             path="fallback_parse_supported_query",
             recovered=False,
             skip_reason="followup_reparse_requires_explicit_scope",
-            parsed_intent=query_contract.intent.value,
+            parsed_intent=query_request.intent.value,
             resolution_source=resolution_source,
         )
         return None
@@ -120,7 +120,7 @@ async def maybe_recover_supported_followup_query(
         "query_continuation_resolution",
         path="fallback_parse_supported_query",
         recovered=True,
-        parsed_intent=query_contract.intent.value,
+        parsed_intent=query_request.intent.value,
         resolution_source=resolution_source,
     )
     recovered_updates = parse_result_to_updates(step, parsed_result, state=state, today=today, language=language)

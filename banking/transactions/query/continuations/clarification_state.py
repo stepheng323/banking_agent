@@ -9,13 +9,14 @@ from typing import Any
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.contracts import SelectionPayload
-from banking.transactions.query.models.domain import Filters, QueryExecutionContract, QueryIntent
+from banking.transactions.query.models.domain import QueryIntent
 from banking.transactions.query.models.extraction import (
     ClarificationCandidate,
     ClarificationOperation,
     PendingClarificationState,
     QueryExtractionResult,
 )
+from banking.transactions.query.models.operations import NamedCounterparty, QueryRequest
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -39,7 +40,7 @@ def build_selection_clarification_updates(
     *,
     candidates: list[ClarificationCandidate],
     operation: ClarificationOperation,
-    query_contract: QueryExecutionContract | None,
+    query_request: QueryRequest | None,
     locale: str,
     session: dict[str, Any],
     turn_id: str | None = None,
@@ -48,7 +49,7 @@ def build_selection_clarification_updates(
     bounded = candidates[:5]
     lines = "\n".join(f"{index}. {candidate.label}" for index, candidate in enumerate(bounded, 1))
     response = render_message("query.clarify.multiple_matches", locale, {"options": lines})
-    intent = query_contract.intent if query_contract is not None else QueryIntent.TRANSACTION_LIST
+    intent = QueryIntent.TRANSACTION_LIST
     pending = PendingClarificationState(
         original_query="",
         current_intent=intent,
@@ -59,7 +60,7 @@ def build_selection_clarification_updates(
         target_field=operation.fact_field,
         candidate_payloads=bounded,
         original_operation=operation,
-        query_contract=query_contract.model_dump(mode="json") if query_contract is not None else None,
+        query_request=query_request.model_dump(mode="json") if query_request is not None else None,
         created_turn_id=turn_id,
     )
     logger.info(
@@ -77,7 +78,7 @@ def build_selection_clarification_updates(
         "show_expanded": bool(session.get("show_expanded", False)),
         "current_page": int(session.get("current_page", 0) or 0),
     }
-    for key in ("query_result", "query_frames", "query_contract", "page_size"):
+    for key in ("query_result", "query_frames", "query_request", "page_size"):
         if session.get(key) is not None:
             updates[key] = session[key]
     return updates
@@ -114,8 +115,8 @@ def resolve_selection_clarification(
             operation_restored=bool(pending.original_operation),
         )
         if operation.grounded_operation == "recipient_filter":
-            contract = _recipient_filter_contract(pending, candidate.payload)
-            if contract is None:
+            request = _recipient_filter_request(pending, candidate.payload)
+            if request is None:
                 return {
                     "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
                     "response": render_message("query.clarify.unsure_rephrase", locale),
@@ -124,7 +125,7 @@ def resolve_selection_clarification(
                     "pending_clarification": None,
                 }
             return {
-                "query_contract": contract,
+                "query_request": request,
                 "flow_state": "executing",
                 "session_active": True,
                 "pending_clarification": None,
@@ -193,23 +194,29 @@ def _match_candidate(candidates: list[ClarificationCandidate], normalized: str) 
     return strong[0][1]
 
 
-def _recipient_filter_contract(
+def _recipient_filter_request(
     pending: PendingClarificationState,
     payload: SelectionPayload,
-) -> QueryExecutionContract | None:
-    if not isinstance(pending.query_contract, dict):
+) -> QueryRequest | None:
+    if not isinstance(pending.query_request, dict):
         return None
     try:
-        contract = QueryExecutionContract.model_validate(pending.query_contract)
+        request = QueryRequest.model_validate(pending.query_request)
     except Exception:
         return None
     raw_counterparties = payload.filters_patch.get("counterparty") if isinstance(payload.filters_patch, dict) else None
     counterparties = [str(value).strip() for value in raw_counterparties or [] if str(value).strip()]
     if not counterparties:
         return None
-    filters = contract.filters.model_copy(deep=True) if contract.filters is not None else Filters()
-    filters.counterparty = counterparties
-    return contract.model_copy(update={"filters": filters})
+    scope = request.scope
+    if scope is None or scope.predicate.counterparty is None:
+        return None
+    reference = NamedCounterparty(name=counterparties[0])
+    counterparty = scope.predicate.counterparty.model_copy(update={"reference": reference})
+    predicate = scope.predicate.model_copy(update={"counterparty": counterparty})
+    grounded_scope = scope.model_copy(update={"predicate": predicate})
+    operation = request.operation.model_copy(update={"scope": grounded_scope})
+    return request.model_copy(update={"operation": operation})
 
 
 def clarification_candidate(

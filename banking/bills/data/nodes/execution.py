@@ -179,7 +179,14 @@ class ExecutionStep(PipelineStep):
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
                 receipt=receipt,
-                patch={"transaction_id": transaction_id, "receipt": receipt, "final_status": "processing"} if transaction_id else {"receipt": receipt, "final_status": "processing"},
+                patch={
+                    "transaction_id": transaction_id,
+                    "receipt": receipt,
+                    "final_status": "processing",
+                } if transaction_id else {
+                    "receipt": receipt,
+                    "final_status": "processing"
+                },
             )
 
         except Exception as exc:

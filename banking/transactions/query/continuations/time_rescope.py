@@ -6,10 +6,10 @@ from typing import Any
 
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.compiler.time_ranges import build_time_range
-from banking.transactions.query.continuations.transforms import rebuild_query_contract
+from banking.transactions.query.continuations.transforms import rebuild_query_request
 from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
     QueryIntent,
+    QueryRequest,
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
@@ -188,18 +188,18 @@ async def maybe_recover_time_rescope_continuation(
     decision: Any,
     state: dict[str, Any],
     session: dict[str, Any],
-    session_query_contract: QueryExecutionContract | None,
+    session_query_request: QueryRequest | None,
     message: str,
     today: date,
     language: str,
 ) -> dict[str, Any] | None:
     del session
-    if session_query_contract is None:
+    if session_query_request is None:
         step._log_time_rescope_recovery(
             trigger_reason=trigger_reason,
             recovered=False,
-            session_has_query_contract=False,
-            skip_reason="missing_query_contract",
+            session_has_query_request=False,
+            skip_reason="missing_query_request",
         )
         return None
 
@@ -214,7 +214,7 @@ async def maybe_recover_time_rescope_continuation(
         step._log_time_rescope_recovery(
             trigger_reason=trigger_reason,
             recovered=False,
-            session_has_query_contract=True,
+            session_has_query_request=True,
             skip_reason="message_not_time_only",
         )
         return None
@@ -231,7 +231,7 @@ async def maybe_recover_time_rescope_continuation(
         step._log_time_rescope_recovery(
             trigger_reason=trigger_reason,
             recovered=False,
-            session_has_query_contract=True,
+            session_has_query_request=True,
             skip_reason="parser_requested_clarification" if clarification_message else "time_not_resolved",
         )
         return None
@@ -239,7 +239,7 @@ async def maybe_recover_time_rescope_continuation(
     step._log_time_rescope_recovery(
         trigger_reason=trigger_reason,
         recovered=True,
-        session_has_query_contract=True,
+        session_has_query_request=True,
         resolved_time_range=resolved_time_range,
         preserved_query_shape=True,
     )
@@ -249,21 +249,21 @@ async def maybe_recover_time_rescope_continuation(
         "continuation_type": "time_delta",
         "continuation_delta_type": "time",
         "resolver_message": None,
-        "query_contract": rebuild_query_contract(
-            session_query_contract,
+        "query_request": rebuild_query_request(
+            session_query_request,
             time_range=resolved_time_range,
             filters=(
                 getattr(decision, "filters", None)
                 if getattr(decision, "filters", None) is not None
-                else session_query_contract.filters
+                else session_query_request.filters
             ),
             merge_filters=True,
             result_limit=decision.result_limit
             if decision.result_limit is not None
-            else session_query_contract.result_limit,
+            else session_query_request.result_limit,
             result_reference=decision.result_reference
             if decision.result_reference is not None
-            else session_query_contract.result_reference,
+            else session_query_request.result_reference,
             continuation_type="time_delta",
             continuation_delta_type="time",
         ),
@@ -287,8 +287,7 @@ async def resolve_time_delta_range(
 
     direct_rescope = direct_time_rescope_range(message, today=today)
     if direct_rescope is not None and (
-        getattr(decision, "continuation_type", None) == "time_delta"
-        or getattr(decision, "delta_type", None) == "time"
+        getattr(decision, "continuation_type", None) == "time_delta" or getattr(decision, "delta_type", None) == "time"
     ):
         if state is not None:
             step._log_query_trace(
@@ -324,14 +323,14 @@ async def resolve_time_delta_range(
         if result.outcome == ResolverOutcome.NEEDS_INPUT:
             return None, result.resolver_message or render_message("query.clarify.default", language)
 
-        query_contract = None
-        if isinstance(result.query_contract, dict):
+        query_request = None
+        if isinstance(result.query_request, dict):
             try:
-                query_contract = QueryExecutionContract.model_validate(result.query_contract)
+                query_request = QueryRequest.model_validate(result.query_request)
             except Exception:
-                query_contract = None
+                query_request = None
 
-        if query_contract and query_contract.time_range is not None:
+        if query_request and query_request.time_range is not None:
             if state is not None:
                 step._log_query_trace(
                     state=state,
@@ -342,10 +341,12 @@ async def resolve_time_delta_range(
                     semantic_decision=semantic_decision,
                     continuation_type=continuation_type,
                 )
-            return query_contract.time_range, None
+            return query_request.time_range, None
 
         if result.extraction is not None:
-            query_ir = step.parser.build_query_ir_from_extraction(result.extraction, today=today, language=language)
+            query_ir = step.parser.build_query_request_from_extraction(
+                result.extraction, today=today, language=language
+            )
             if state is not None:
                 step._log_query_trace(
                     state=state,
@@ -372,7 +373,7 @@ async def resolve_time_delta_range(
                     continuation_type=continuation_type,
                 )
             return None, None
-        query_ir = step.parser.build_query_ir_from_extraction(
+        query_ir = step.parser.build_query_request_from_extraction(
             QueryExtractionResult(
                 time_range=parsed_time_range,
                 raw_query=message,
@@ -414,7 +415,7 @@ async def resolve_time_delta_range(
             parsed_time_range = step.parser.parse_clarification_time_range(candidate, today=today)
             if parsed_time_range is None:
                 continue
-            query_ir = step.parser.build_query_ir_from_extraction(
+            query_ir = step.parser.build_query_request_from_extraction(
                 QueryExtractionResult(
                     time_range=parsed_time_range,
                     raw_query=message,

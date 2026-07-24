@@ -38,8 +38,8 @@ def build_memory_answer(
     if current_facts.amount is None or comparison_facts.amount is None:
         return None
 
-    current_label = format_period_label(current_frame.query_contract.time_range)
-    comparison_label = format_period_label(comparison_frame.query_contract.time_range)
+    current_label = format_period_label(current_frame.query_request.time_range)
+    comparison_label = format_period_label(comparison_frame.query_request.time_range)
     if current_label is None or comparison_label is None:
         return None
 

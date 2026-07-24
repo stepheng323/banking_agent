@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from datetime import date
+from typing import Any, Literal, cast
 
 from banking.transactions.query.contracts import (
     FactCapability,
@@ -13,16 +14,23 @@ from banking.transactions.query.contracts import (
     SurfaceViewMode,
 )
 from banking.transactions.query.models.domain import (
-    Filters,
     QueryAnswerContext,
     QueryAnswerStrategy,
-    QueryExecutionContract,
     QueryFactField,
     QueryIntent,
-    QueryIR,
     QueryResult,
     QueryResultItem,
-    TimeRange,
+)
+from banking.transactions.query.models.operations import (
+    AnalyzeOperation,
+    NamedAccount,
+    NamedCounterparty,
+    QueryRequest,
+    ResolvedPeriod,
+    RetrieveOperation,
+    RetrieveProjection,
+    RetrieveSelection,
+    VarianceDriversSpec,
 )
 
 ALL_FACT_CAPABILITIES: tuple[FactCapability, ...] = (
@@ -72,14 +80,12 @@ def build_query_transfer_handoff_payload(item: QueryResultItem) -> dict[str, Any
     return {key: value for key, value in payload.items() if value is not None and value != ""}
 
 
-def build_focus_referent(
-    item: QueryResultItem, *, query_contract: QueryExecutionContract | None
-) -> FocusedReferent | None:
+def build_focus_referent(item: QueryResultItem, *, query_request: QueryRequest | None) -> FocusedReferent | None:
     """Build a shared focused referent from a transaction answer."""
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
     recipient_name = str(metadata.get("recipient_name") or metadata.get("counterparty") or "").strip() or None
     label = recipient_name or _first_filter_value(
-        query_contract.filters.counterparty if query_contract and query_contract.filters else None
+        query_request.filters.counterparty if query_request and query_request.filters else None
     )
     if not label:
         return None
@@ -118,14 +124,14 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
     if result.surface_view is not None:
         return result.surface_view
 
-    query_contract = result_query_contract(result)
+    query_request = result_query_request(result)
 
     if result.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER and result.answer_context is not None:
-        if query_contract is not None and _is_summary_scope_direct_answer(query_contract):
+        if query_request is not None and _is_summary_scope_direct_answer(query_request):
             return _build_summary_scope_surface_view(
                 result,
                 answer_context=result.answer_context,
-                query_contract=query_contract,
+                query_request=query_request,
             )
         direct_items: list[SurfaceItemView] = []
         context: dict[str, Any] = {"hint_text": result.answer_context.hint_text}
@@ -134,8 +140,8 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
             item = result_items[0]
             base_context = build_surface_view_context(result=result, mode=SurfaceViewMode.DIRECT_ANSWER)
             focus_type = "transaction"
-            if query_contract and query_contract.aggregation and query_contract.aggregation.group_by:
-                focus_type = "account" if query_contract.aggregation.group_by == "account" else "group_bucket"
+            if query_request and query_request.aggregation and query_request.aggregation.group_by:
+                focus_type = "account" if query_request.aggregation.group_by == "account" else "group_bucket"
             item_context = _focused_context(
                 base=base_context,
                 focus_type=focus_type,
@@ -174,11 +180,34 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
             lead_text=result.answer_context.primary_text,
         )
 
+    if result.answer_strategy == QueryAnswerStrategy.VARIANCE_INSIGHT:
+        return SurfaceView(
+            mode=SurfaceViewMode.VARIANCE_INSIGHT,
+            lead_text=result.summary_text,
+            items=[
+                SurfaceItemView(
+                    id=item.id,
+                    label=item.description,
+                    amount=item.amount,
+                    metadata=item.metadata or {},
+                    payload=SelectionPayload(**cast(dict[str, Any], item.metadata.get("selection_payload")))
+                    if isinstance(item.metadata, dict) and item.metadata.get("selection_payload")
+                    else _build_selection_payload(
+                        item,
+                        mode=SurfaceViewMode.VARIANCE_INSIGHT,
+                        context={"view": "variance_insight"},
+                    ),
+                )
+                for item in result.items or []
+            ],
+            context={"view": "variance_insight"},
+        )
+
     if (
         result.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST
-        and query_contract is not None
-        and query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY
-        and query_contract.result_limit == 1
+        and query_request is not None
+        and query_request.intent == QueryIntent.BENEFICIARY_SUMMARY
+        and query_request.result_limit == 1
         and result.items
     ):
         context = _focused_context(
@@ -213,16 +242,16 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
 
     if (
         result.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST
-        and query_contract is not None
-        and query_contract.aggregation is not None
-        and query_contract.aggregation.type in {"largest", "smallest"}
+        and query_request is not None
+        and query_request.aggregation is not None
+        and query_request.aggregation.type in {"largest", "smallest"}
         and result.items
     ):
-        if len(result.items) == 1 or query_contract.result_limit == 1:
+        if len(result.items) == 1 or query_request.result_limit == 1:
             context = _focused_context(
                 base={
                     **build_surface_view_context(result=result, mode=SurfaceViewMode.TRANSACTION_LIST),
-                    "ranked_type": query_contract.aggregation.type,
+                    "ranked_type": query_request.aggregation.type,
                 },
                 focus_type="transaction",
             )
@@ -253,7 +282,7 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
 
         ranking_context = {
             **build_surface_view_context(result=result, mode=SurfaceViewMode.TRANSACTION_LIST),
-            "type": query_contract.aggregation.type,
+            "type": query_request.aggregation.type,
         }
         return SurfaceView(
             mode=SurfaceViewMode.TRANSACTION_LIST,
@@ -277,19 +306,16 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
 
     if (
         result.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST
-        and query_contract is not None
-        and query_contract.aggregation is not None
-        and (
-            query_contract.aggregation.group_by is not None
-            or query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY
-        )
-        and query_contract.result_limit == 1
+        and query_request is not None
+        and query_request.aggregation is not None
+        and (query_request.aggregation.group_by is not None or query_request.intent == QueryIntent.BENEFICIARY_SUMMARY)
+        and query_request.result_limit == 1
         and result.items
     ):
-        if query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY:
+        if query_request.intent == QueryIntent.BENEFICIARY_SUMMARY:
             focus_type = "beneficiary"
         else:
-            focus_type = "account" if query_contract.aggregation.group_by == "account" else "group_bucket"
+            focus_type = "account" if query_request.aggregation.group_by == "account" else "group_bucket"
         context = _focused_context(
             base=build_surface_view_context(result=result, mode=SurfaceViewMode.GROUPED_SUMMARY),
             focus_type=focus_type,
@@ -366,12 +392,12 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
     return SurfaceView(mode=mode, items=items, context=context)
 
 
-def _is_summary_scope_direct_answer(query_contract: QueryExecutionContract | None) -> bool:
-    if query_contract is None:
+def _is_summary_scope_direct_answer(query_request: QueryRequest | None) -> bool:
+    if query_request is None:
         return False
-    if query_contract.answer_fact_field is not None:
+    if query_request.answer_fact_field is not None:
         return False
-    if query_contract.intent in {
+    if query_request.intent in {
         QueryIntent.ANALYTICS_SUMMARY,
         QueryIntent.CASH_FLOW_SUMMARY,
         QueryIntent.TIME_COMPARISON,
@@ -385,7 +411,7 @@ def _build_summary_scope_surface_view(
     result: QueryResult,
     *,
     answer_context: QueryAnswerContext,
-    query_contract: QueryExecutionContract,
+    query_request: QueryRequest,
 ) -> SurfaceView:
     context = _focused_context(
         base=build_surface_view_context(result=result, mode=SurfaceViewMode.DIRECT_ANSWER),
@@ -394,16 +420,16 @@ def _build_summary_scope_surface_view(
     context.update(
         {
             "type": "summary_scope",
-            "summary_intent": query_contract.intent.value,
-            "summary_filters": query_contract.filters.model_dump(mode="json")
-            if query_contract.filters is not None
+            "summary_intent": query_request.intent.value,
+            "summary_filters": query_request.filters.model_dump(mode="json")
+            if query_request.filters is not None
             else None,
-            "summary_aggregation": query_contract.aggregation.model_dump(mode="json")
-            if query_contract.aggregation is not None
+            "summary_aggregation": query_request.aggregation.model_dump(mode="json")
+            if query_request.aggregation is not None
             else None,
-            "summary_time_range": query_contract.time_range.model_dump(mode="json")
-            if query_contract.time_range is not None
-            else {"start": query_contract.time_start.isoformat(), "end": query_contract.time_end.isoformat()},
+            "summary_time_range": query_request.time_range.model_dump(mode="json")
+            if query_request.time_range is not None
+            else {"start": query_request.time_start.isoformat(), "end": query_request.time_end.isoformat()},
             "supported_followups": [
                 "show_evidence",
                 "breakdown",
@@ -434,7 +460,7 @@ def _build_summary_scope_surface_view(
                 metadata={
                     "surface_mode": SurfaceViewMode.DIRECT_ANSWER.value,
                     "focus_type": "summary_scope",
-                    "summary_intent": query_contract.intent.value,
+                    "summary_intent": query_request.intent.value,
                 },
             )
         ],
@@ -452,24 +478,63 @@ def _focused_context(*, base: dict[str, Any], focus_type: str) -> dict[str, Any]
 
 
 def apply_selection_payload_to_query(
-    query_contract: QueryExecutionContract,
+    query_request: QueryRequest,
     payload: SelectionPayload,
     *,
     fact_field: QueryFactField | None = None,
     continuation_type: str | None = None,
     continuation_delta_type: str | None = None,
-) -> QueryExecutionContract:
+) -> QueryRequest:
     """Compile a new transaction-list contract from a typed selection payload."""
-    filters = query_contract.filters.model_copy(deep=True) if query_contract.filters is not None else Filters()
-    for key, value in payload.filters_patch.items():
-        setattr(filters, key, value)
+    if payload.insight_evidence is not None:
+        evidence = payload.insight_evidence
+        scope = query_request.scope
+        if scope is None:
+            raise ValueError("insight evidence requires a transaction-backed scope")
+        period = ResolvedPeriod(
+            start=date.fromisoformat(evidence.current_start), end=date.fromisoformat(evidence.current_end)
+        )
+        analysis = (
+            query_request.operation.analysis.model_copy(deep=True)
+            if isinstance(query_request.operation, AnalyzeOperation)
+            else VarianceDriversSpec(
+                analysis_basis=evidence.basis,
+                measure=cast(
+                    Literal["spending", "income", "net_cash_flow", "cash_flow_overview"],
+                    evidence.measure,
+                ),
+            )
+        )
+        analysis = analysis.model_copy(update={"evidence": evidence})
+        return QueryRequest(
+            operation=AnalyzeOperation(scope=scope.model_copy(update={"period": period}), analysis=analysis)
+        )
 
-    time_range = query_contract.time_range or TimeRange(start=query_contract.time_start, end=query_contract.time_end)
+    scope = query_request.scope
+    if scope is None:
+        raise ValueError("selection requires a transaction-backed scope")
+    predicate = scope.predicate.model_copy(deep=True)
+    accounts = scope.accounts
+    counterparties = payload.filters_patch.get("counterparty")
+    if isinstance(counterparties, list) and counterparties:
+        from banking.transactions.query.models.operations import CounterpartySelector
+
+        predicate.counterparty = CounterpartySelector(
+            role="any", reference=NamedCounterparty(name=str(counterparties[0]))
+        )
+    for field, target in (("transaction_type", "direction"), ("category", "categories"), ("status", "statuses")):
+        if field in payload.filters_patch:
+            value = payload.filters_patch[field]
+            setattr(predicate, target, [value] if target.endswith("s") and not isinstance(value, list) else value)
+    account_filter = payload.filters_patch.get("account_filter")
+    if isinstance(account_filter, str) and account_filter.strip():
+        accounts = NamedAccount(name=account_filter.strip())
+    period = scope.period
     if payload.time_patch:
         start_raw = payload.time_patch.get("start")
         end_raw = payload.time_patch.get("end")
         if isinstance(start_raw, str) and isinstance(end_raw, str):
-            time_range = TimeRange.model_validate(
+            period = ResolvedPeriod.model_validate(
                 {
                     "start": start_raw,
                     "end": end_raw,
@@ -477,48 +542,30 @@ def apply_selection_payload_to_query(
                 }
             )
 
-    return QueryExecutionContract.from_query_ir(
-        QueryIR(
-            intent=QueryIntent.TRANSACTION_LIST,
-            timezone=query_contract.timezone,
-            time_range=time_range,
-            filters=filters,
-            aggregation=None,
-            accounts_scope=query_contract.accounts_scope,
-            account_name=query_contract.account_name,
-            amount_check=query_contract.amount_check,
-            item_name=query_contract.item_name,
-            analysis_type=query_contract.analysis_type,
-            result_limit=None,
-            result_reference=None,
-            answer_fact_field=fact_field,
-            comparison=query_contract.comparison.model_copy(deep=True)
-            if query_contract.comparison is not None
-            else None,
-            continuation_type=continuation_type,
-            continuation_delta_type=continuation_delta_type,
-            intent_spec=query_contract.intent_spec.model_copy(deep=True)
-            if query_contract.intent_spec is not None
-            else None,
+    return QueryRequest(
+        operation=RetrieveOperation(
+            scope=scope.model_copy(update={"period": period, "predicate": predicate, "accounts": accounts}),
+            projection=RetrieveProjection(shape="fact" if fact_field else "list", fact_field=fact_field),
+            selection=RetrieveSelection(cardinality="one" if fact_field else "many"),
         )
     )
 
 
-def result_query_contract(result: QueryResult) -> QueryExecutionContract | None:
+def result_query_request(result: QueryResult) -> QueryRequest | None:
     """Read the query execution contract from the runtime result."""
-    return result.query_contract
+    return result.query_request
 
 
 def build_surface_view_context(*, result: QueryResult, mode: SurfaceViewMode) -> dict[str, Any]:
-    query_contract = result_query_contract(result)
+    query_request = result_query_request(result)
     context: dict[str, Any] = {"mode": mode.value}
     if mode == SurfaceViewMode.GROUPED_SUMMARY:
-        if query_contract and query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY:
+        if query_request and query_request.intent == QueryIntent.BENEFICIARY_SUMMARY:
             context["view"] = "beneficiary_summary"
-        elif query_contract and query_contract.aggregation and query_contract.aggregation.group_by:
-            context["group_by"] = query_contract.aggregation.group_by
+        elif query_request and query_request.aggregation and query_request.aggregation.group_by:
+            context["group_by"] = query_request.aggregation.group_by
             context["surface_type"] = "breakdown"
-        elif query_contract and query_contract.intent in {
+        elif query_request and query_request.intent in {
             QueryIntent.ANALYTICS_SUMMARY,
             QueryIntent.TIME_COMPARISON,
             QueryIntent.AFFORDABILITY,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from banking.presentation.i18n.renderer import render_message
-from banking.transactions.query.models.domain import QueryExecutionContract, QueryResult
+from banking.transactions.query.models.domain import QueryRequest, QueryResult
 from banking.transactions.query.presentation.scope import (
     build_transaction_heading,
     format_naira,
@@ -13,14 +13,14 @@ from banking.transactions.query.presentation.scope import (
 
 def build_aggregate_scope_reply(
     *,
-    session_query_contract: QueryExecutionContract | None,
+    session_query_request: QueryRequest | None,
     query_result: QueryResult | None,
     locale: str,
 ) -> str:
-    if session_query_contract is None:
+    if session_query_request is None:
         return render_message("query.clarify.unsure_rephrase", locale)
 
-    scope_heading = build_transaction_heading(session_query_contract, locale=locale)
+    scope_heading = build_transaction_heading(session_query_request, locale=locale)
     if scope_heading:
         scope_heading = scope_heading.strip("*")
     else:
@@ -33,7 +33,7 @@ def build_aggregate_scope_reply(
         total_count = len(query_result.items)
 
     total_text = format_naira(total_amount) if total_amount is not None else None
-    period_text = period_label(session_query_contract.time_range, locale=locale)
+    period_text = period_label(session_query_request.time_range, locale=locale)
     period_suffix = f" ({period_text})" if period_text else ""
     total_suffix = (
         render_message("query.reply.aggregate.total_suffix", locale, {"total": total_text})

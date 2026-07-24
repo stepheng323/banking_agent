@@ -8,7 +8,7 @@ from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 from banking.presentation.formatters.currency import format_naira_compact
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
+    QueryRequest,
     QueryResult,
 )
 from shared.clients.abstractions.banking import BankDataProvider
@@ -17,7 +17,7 @@ from shared.money import MoneyAmount, to_naira
 
 async def handle_affordability(
     provider: BankDataProvider,
-    contract: QueryExecutionContract,
+    contract: QueryRequest,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,

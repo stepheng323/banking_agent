@@ -18,11 +18,11 @@ from banking.transactions.query.contracts import (
 )
 from banking.transactions.query.models.domain import (
     QueryAnswerStrategy,
-    QueryExecutionContract,
-    QueryIntent,
+    QueryRequest,
     QueryResult,
     TimeRange,
 )
+from banking.transactions.query.models.operations import RetrieveOperation
 from banking.transactions.query.presentation.formatting import (
     format_query_amount,
     format_query_date,
@@ -31,7 +31,7 @@ from banking.transactions.query.presentation.formatting import (
     parse_summary_parts,
 )
 from banking.transactions.query.presentation.scope import build_breakdown_heading, period_label
-from banking.transactions.query.presentation.surface_builder import build_surface_view, result_query_contract
+from banking.transactions.query.presentation.surface_builder import build_surface_view, result_query_request
 from banking.transactions.query.presentation.transaction_list_plan import (
     build_transaction_list_presentation_plan,
 )
@@ -92,11 +92,11 @@ def _build_raw_presentation_plan(
         return _build_single_item_detail_presentation_plan(result, locale=locale)
 
     if surface_view.mode == SurfaceViewMode.GROUPED_SUMMARY:
-        query_contract = result_query_contract(result)
+        query_request = result_query_request(result)
         context = surface_view.context if isinstance(surface_view.context, dict) else {}
         if str(context.get("view") or "").strip() == "beneficiary_summary":
             return _build_grouped_summary_presentation_plan(result, surface_view=surface_view, locale=locale)
-        if len(surface_view.items) == 1 and query_contract and query_contract.result_limit == 1:
+        if len(surface_view.items) == 1 and query_request and query_request.result_limit == 1:
             item = surface_view.items[0]
             amount_str = f"₦{abs(float(item.amount or 0.0)):,.0f}"
             return PresentationPlan(
@@ -106,6 +106,13 @@ def _build_raw_presentation_plan(
                 selection_payloads=[item.payload],
             )
         return _build_grouped_summary_presentation_plan(result, surface_view=surface_view, locale=locale)
+
+    if surface_view.mode == SurfaceViewMode.VARIANCE_INSIGHT:
+        return PresentationPlan(
+            mode=PresentationMode.VARIANCE_INSIGHT,
+            lead_text=surface_view.lead_text or result.summary_text,
+            selection_payloads=[item.payload for item in surface_view.items],
+        )
 
     if _is_ranked_transaction_surface(result, surface_view=surface_view):
         return _build_ranked_transaction_presentation_plan(result, locale=locale, current_page=current_page)
@@ -136,10 +143,8 @@ def build_presentation_plan(
         show_expanded=show_expanded,
         has_more=has_more,
     )
-    query_contract = result_query_contract(result)
-    is_evidence_continuation = bool(
-        query_contract and query_contract.continuation_type == "show_evidence"
-    )
+    query_request = result_query_request(result)
+    is_evidence_continuation = bool(query_request and query_request.continuation_type == "show_evidence")
     if plan is not None and is_evidence_continuation and plan.mode == PresentationMode.TRANSACTION_LIST:
         visible_count = sum(item.lstrip().startswith("•") for item in plan.items)
         if visible_count == 1:
@@ -152,9 +157,7 @@ def build_presentation_plan(
             )
     elif plan is not None and getattr(result, "conversational_prefix", None):
         plan.lead_text = (
-            f"{result.conversational_prefix} {plan.lead_text}"
-            if plan.lead_text
-            else result.conversational_prefix
+            f"{result.conversational_prefix} {plan.lead_text}" if plan.lead_text else result.conversational_prefix
         )
     return plan
 
@@ -175,7 +178,7 @@ def _build_direct_answer_presentation_plan(result: QueryResult, *, locale: str) 
     if not result.items:
         from banking.transactions.query.services.answers.fact_no_results import build_fact_no_results_text
 
-        fact_no_results = build_fact_no_results_text(result_query_contract(result), locale=locale)
+        fact_no_results = build_fact_no_results_text(result_query_request(result), locale=locale)
         if fact_no_results:
             return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=fact_no_results)
         if result.summary_text:
@@ -202,14 +205,14 @@ def _build_no_results_presentation_plan(result: QueryResult, *, locale: str) -> 
 
 
 def _build_no_results_text(result: QueryResult, *, locale: str) -> str | None:
-    query_contract = result_query_contract(result)
-    time_range = query_contract.time_range if query_contract else None
-    tx_type = query_contract.filters.transaction_type if query_contract and query_contract.filters else None
+    query_request = result_query_request(result)
+    time_range = query_request.time_range if query_request else None
+    tx_type = query_request.filters.transaction_type if query_request and query_request.filters else None
     if (
-        query_contract
-        and query_contract.intent in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH}
+        query_request
+        and isinstance(query_request.operation, RetrieveOperation)
         and time_range is not None
-        and not _has_search_shaped_no_results_context(query_contract)
+        and not _has_search_shaped_no_results_context(query_request)
     ):
         return _format_factual_no_results(time_range, locale=locale, transaction_type=tx_type)
 
@@ -230,13 +233,13 @@ def _build_no_results_text(result: QueryResult, *, locale: str) -> str | None:
     )
 
 
-def _has_search_shaped_no_results_context(query_contract: QueryExecutionContract | None) -> bool:
-    if not query_contract:
+def _has_search_shaped_no_results_context(query_request: QueryRequest | None) -> bool:
+    if not query_request:
         return False
-    if query_contract.aggregation is not None:
+    if query_request.aggregation is not None:
         return True
 
-    filters = query_contract.filters
+    filters = query_request.filters
     if not filters:
         return False
 
@@ -249,7 +252,7 @@ def _has_search_shaped_no_results_context(query_contract: QueryExecutionContract
             filters.max_amount is not None,
             bool(filters.exclude),
             filters.account_filter is not None,
-            query_contract.account_name is not None,
+            query_request.account_name is not None,
         )
     )
 
@@ -342,7 +345,7 @@ def _build_grouped_summary_presentation_plan(
             hint_text += f"\n{render_message('query.format.show_more_hint', locale)}"
 
         summary = build_breakdown_heading(
-            result_query_contract(result),
+            result_query_request(result),
             group_by=group_by or None,
             locale=locale,
             fallback_summary=result.summary_text,
@@ -383,19 +386,17 @@ def _build_beneficiary_summary_presentation_plan(
     has_more: bool,
     locale: str,
 ) -> PresentationPlan:
-    query_contract = result_query_contract(result)
-    tx_type = query_contract.filters.transaction_type if query_contract and query_contract.filters else "debit"
-    sort_by = query_contract.aggregation.sort_by if query_contract and query_contract.aggregation else "amount"
+    query_request = result_query_request(result)
+    tx_type = query_request.filters.transaction_type if query_request and query_request.filters else "debit"
+    sort_by = query_request.aggregation.sort_by if query_request and query_request.aggregation else "amount"
     is_credit = tx_type == "credit"
     is_frequency = sort_by == "count"
-    period = _beneficiary_summary_period_phrase(query_contract, result.summary_text, locale=locale)
-    answer_only = bool(query_contract and query_contract.result_limit == 1)
+    period = _beneficiary_summary_period_phrase(query_request, result.summary_text, locale=locale)
+    answer_only = bool(query_request and query_request.result_limit == 1)
 
     # If this is a time_delta or replace_scope continuation, we want to maintain the summary
     # context and avoid aggressively rendering a direct answer UI card just because there's 1 result.
-    is_rescope = bool(
-        query_contract and query_contract.continuation_delta_type in {"time_delta", "replace_scope"}
-    )
+    is_rescope = bool(query_request and query_request.continuation_delta_type in {"time_delta", "replace_scope"})
     if is_rescope and answer_only:
         answer_only = False
 
@@ -472,13 +473,13 @@ def _format_beneficiary_answer_detail(item: SurfaceItemView) -> str:
 
 
 def _beneficiary_summary_period_phrase(
-    query_contract: QueryExecutionContract | None,
+    query_request: QueryRequest | None,
     summary_text: str,
     *,
     locale: str,
 ) -> str:
-    if query_contract is not None:
-        label = period_label(query_contract.time_range, locale=locale)
+    if query_request is not None:
+        label = period_label(query_request.time_range, locale=locale)
         if label:
             return _sentence_period_label(label)
 
@@ -586,24 +587,24 @@ def _build_single_item_detail_presentation_plan(result: QueryResult, *, locale: 
         return None
 
     item = result.items[0]
-    query_contract = result_query_contract(result)
+    query_request = result_query_request(result)
     primary_text: str | None = None
 
-    if query_contract is not None and query_contract.answer_fact_field is not None:
+    if query_request is not None and query_request.answer_fact_field is not None:
         from banking.transactions.query.services.answers.fact_answer import build_direct_fact_answer
 
         answer_context = build_direct_fact_answer(
             item,
-            query_contract=query_contract,
-            fact_field=query_contract.answer_fact_field,
+            query_request=query_request,
+            fact_field=query_request.answer_fact_field,
             locale=locale,
         )
         primary_text = answer_context.primary_text
 
     title = render_message("query.format.transaction_details_title", locale)
-    if query_contract and query_contract.result_reference == "latest":
+    if query_request and query_request.result_reference == "latest":
         title = render_message("query.format.last_transaction_title", locale)
-        tx_filters = query_contract.filters
+        tx_filters = query_request.filters
         if tx_filters and tx_filters.transaction_type in ("debit", "credit"):
             title = render_message(
                 "query.format.last_transaction_type_title",

@@ -4,7 +4,7 @@ from typing import Any
 
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
-from banking.transactions.query.grounding.frames import build_grounded_query_contract
+from banking.transactions.query.grounding.frames import build_grounded_query_request
 from banking.transactions.query.grounding.memory import build_memory_answer
 
 
@@ -62,12 +62,12 @@ def resolve_grounded_followup(
         }
 
     if answer_mode == "grounded_query":
-        query_contract = build_grounded_query_contract(
+        query_request = build_grounded_query_request(
             query_frames=query_frames,
             frame_ids=frame_ids,
             operation=operation,
         )
-        if query_contract is None:
+        if query_request is None:
             return {
                 "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
                 "response": render_message("query.clarify.grounded_query_failed", language),
@@ -80,7 +80,7 @@ def resolve_grounded_followup(
         return {
             "flow_state": "executing",
             "resolver_message": None,
-            "query_contract": query_contract,
+            "query_request": query_request,
             "current_page": 0,
             "show_expanded": False,
         }

@@ -1,16 +1,13 @@
-"""Query executor - thin dispatch layer for query execution contracts."""
+"""Query executor - thin dispatch layer for typed query operations."""
 
 from collections.abc import Awaitable, Callable
 from time import perf_counter
 from typing import Any, cast
 
 from banking.presentation.i18n.renderer import render_message
-from banking.transactions.query.handlers.registry import HANDLER_REGISTRY
-from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
-    QueryIntent,
-    QueryResult,
-)
+from banking.transactions.query.handlers.registry import handler_for_request
+from banking.transactions.query.models.domain import QueryResult
+from banking.transactions.query.models.operations import NamedAccount, QueryRequest, RetrieveOperation
 from banking.transactions.shared.account_selection.service import find_account_by_bank_name
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.utils.logging import get_logger
@@ -31,7 +28,7 @@ class QueryExecutor:
 
     async def execute(
         self,
-        query: QueryExecutionContract,
+        query: QueryRequest,
         account_id: str,
         account_ids: list[str] | None = None,
         accounts_info: list[dict] | None = None,
@@ -61,8 +58,9 @@ class QueryExecutor:
         """
         all_account_ids = account_ids or [account_id]
 
-        if query.accounts_scope == "single" and query.account_name and accounts_info:
-            resolved_id = self._resolve_account_by_name(query.account_name, accounts_info)
+        accounts = query.accounts
+        if isinstance(accounts, NamedAccount) and accounts_info:
+            resolved_id = self._resolve_account_by_name(accounts.name, accounts_info)
             if resolved_id:
                 account_id = resolved_id
                 all_account_ids = [resolved_id]
@@ -71,22 +69,25 @@ class QueryExecutor:
                     summary_text=render_message(
                         "query.account.not_found_by_name",
                         language,
-                        {"account_name": query.account_name},
+                        {"account_name": accounts.name},
                     ),
                 )
-        elif query.accounts_scope == "single":
+        elif isinstance(accounts, NamedAccount):
             all_account_ids = [account_id]
 
-        handler = HANDLER_REGISTRY.get(query.intent)
+        handler = handler_for_request(query)
         if not handler:
-            logger.error("unknown_query_intent", intent=query.intent)
+            logger.error("unknown_query_operation", operation=query.operation.kind)
             return QueryResult(summary_text=render_message("query.error.unknown_intent", language))
 
         typed_handler = cast(Callable[..., Awaitable[QueryResult]], handler)
         started_at = perf_counter()
 
         try:
-            if query.intent in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH}:
+            is_transaction_list = (
+                isinstance(query.operation, RetrieveOperation) and query.operation.projection.shape == "list"
+            )
+            if is_transaction_list:
                 result = await typed_handler(
                     self.provider,
                     query,
@@ -114,8 +115,7 @@ class QueryExecutor:
                     user_id=user_id,
                     language=language,
                 )
-            result.query_contract = query
-            result.conversational_prefix = query.conversational_prefix
+            result.query_request = query
             logger.info(
                 "query_trace",
                 turn_id=(trace_context or {}).get("turn_id"),
@@ -123,13 +123,13 @@ class QueryExecutor:
                 query_phase="execution",
                 latency_ms=round((perf_counter() - started_at) * 1000.0, 2),
                 outcome="ok",
-                intent=query.intent.value,
+                operation=query.operation.kind,
                 cache_reused=result.cache_reused,
                 continuation_type=continuation_type,
             )
             return result
         except Exception as e:
-            logger.error("query_execution_error", intent=query.intent, error=str(e))
+            logger.error("query_execution_error", operation=query.operation.kind, error=str(e))
             logger.info(
                 "query_trace",
                 turn_id=(trace_context or {}).get("turn_id"),
@@ -137,7 +137,7 @@ class QueryExecutor:
                 query_phase="execution",
                 latency_ms=round((perf_counter() - started_at) * 1000.0, 2),
                 outcome="failed",
-                intent=query.intent.value,
+                operation=query.operation.kind,
                 cache_reused=False,
                 continuation_type=continuation_type,
             )

@@ -4,8 +4,8 @@ from banking.transactions.query.continuations.messaging import build_soft_clarif
 from banking.transactions.query.models.domain import (
     QueryAnswerContext,
     QueryAnswerStrategy,
-    QueryExecutionContract,
     QueryIntent,
+    QueryRequest,
     QueryResult,
 )
 from banking.transactions.query.presentation.formatting import parse_summary_parts
@@ -19,12 +19,12 @@ def select_answer_strategy(result: QueryResult, *, locale: str = "en") -> QueryR
     if result.answer_strategy is not None:
         return result
 
-    query_contract = result.query_contract
+    query_request = result.query_request
 
-    if query_contract and query_contract.request_shape == "existence":
-        return _apply_existence_answer_strategy(result, query_contract=query_contract)
+    if query_request and query_request.request_shape == "existence":
+        return _apply_existence_answer_strategy(result, query_request=query_request)
 
-    if query_contract and query_contract.answer_fact_field in {
+    if query_request and query_request.answer_fact_field in {
         "date",
         "counterparty",
         "amount",
@@ -36,27 +36,27 @@ def select_answer_strategy(result: QueryResult, *, locale: str = "en") -> QueryR
         "direction",
         "category",
     }:
-        return _apply_fact_answer_strategy(result, query_contract=query_contract, locale=locale)
+        return _apply_fact_answer_strategy(result, query_request=query_request, locale=locale)
 
-    if query_contract and query_contract.intent in {
+    if query_request and query_request.intent in {
         QueryIntent.ANALYTICS_SUMMARY,
         QueryIntent.BENEFICIARY_SUMMARY,
         QueryIntent.TIME_COMPARISON,
         QueryIntent.AFFORDABILITY,
     }:
         if (
-            query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
-            and query_contract.aggregation
-            and query_contract.aggregation.type in {"sum", "average"}
+            query_request.intent == QueryIntent.ANALYTICS_SUMMARY
+            and query_request.aggregation
+            and query_request.aggregation.type in {"sum", "average"}
         ):
             result.answer_strategy = QueryAnswerStrategy.DIRECT_ANSWER
             result.answer_context = QueryAnswerContext(primary_text=result.summary_text)
         else:
             result.answer_strategy = QueryAnswerStrategy.SUMMARY_LIST
-            if query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY and result.items and len(result.items) == 1:
+            if query_request.intent == QueryIntent.BENEFICIARY_SUMMARY and result.items and len(result.items) == 1:
                 from banking.transactions.query.presentation.surface_builder import build_focus_referent
 
-                focus_referent = build_focus_referent(result.items[0], query_contract=query_contract)
+                focus_referent = build_focus_referent(result.items[0], query_request=query_request)
                 if focus_referent is not None:
                     result.followup_referent = focus_referent
         return result
@@ -70,16 +70,14 @@ def select_answer_strategy(result: QueryResult, *, locale: str = "en") -> QueryR
     return result
 
 
-def _apply_fact_answer_strategy(
-    result: QueryResult, *, query_contract: QueryExecutionContract, locale: str
-) -> QueryResult:
-    fact_field = query_contract.answer_fact_field or "date"
+def _apply_fact_answer_strategy(result: QueryResult, *, query_request: QueryRequest, locale: str) -> QueryResult:
+    fact_field = query_request.answer_fact_field or "date"
 
     if not result.items:
         result.answer_strategy = QueryAnswerStrategy.DIRECT_ANSWER
         return result
 
-    if len(result.items) > 1 and query_contract.result_reference not in {"latest", "oldest"}:
+    if len(result.items) > 1 and query_request.result_reference not in {"latest", "oldest"}:
         result.answer_strategy = QueryAnswerStrategy.CLARIFY
         result.answer_context = QueryAnswerContext(
             primary_text=build_soft_clarification(result.items, context="Which transaction", locale=locale)
@@ -90,12 +88,12 @@ def _apply_fact_answer_strategy(
     result.answer_strategy = QueryAnswerStrategy.DIRECT_ANSWER
     result.answer_context = build_direct_fact_answer(
         item,
-        query_contract=query_contract,
+        query_request=query_request,
         fact_field=fact_field,
         locale=locale,
-        is_followup=bool(query_contract and query_contract.continuation_type),
+        is_followup=bool(query_request and query_request.continuation_type),
     )
-    focus_referent = build_focus_referent(item, query_contract=query_contract)
+    focus_referent = build_focus_referent(item, query_request=query_request)
     if focus_referent is not None:
         result.followup_referent = focus_referent
     return result
@@ -104,10 +102,8 @@ def _apply_fact_answer_strategy(
 def _apply_existence_answer_strategy(
     result: QueryResult,
     *,
-    query_contract: QueryExecutionContract,
+    query_request: QueryRequest,
 ) -> QueryResult:
     result.answer_strategy = QueryAnswerStrategy.DIRECT_ANSWER
-    result.answer_context = QueryAnswerContext(
-        primary_text=build_existence_answer(result, query_contract=query_contract)
-    )
+    result.answer_context = QueryAnswerContext(primary_text=build_existence_answer(result, query_request=query_request))
     return result

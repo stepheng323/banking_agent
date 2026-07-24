@@ -7,7 +7,7 @@ from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
 )
@@ -26,18 +26,18 @@ def _resolve_transaction_type(item: Any, locale: str) -> tuple[str, str]:
     return transaction_type, transaction_type_display
 
 
-def _query_contract_from_state(state: dict[str, Any]) -> QueryExecutionContract | None:
-    query_contract = state.get("query_contract")
-    if isinstance(query_contract, QueryExecutionContract):
-        return query_contract
+def _query_request_from_state(state: dict[str, Any]) -> QueryRequest | None:
+    query_request = state.get("query_request")
+    if isinstance(query_request, QueryRequest):
+        return query_request
 
     query_result = state.get("query_result")
     if isinstance(query_result, QueryResult):
-        return query_result.query_contract
+        return query_result.query_request
     if isinstance(query_result, dict):
         try:
             validated = QueryResult.model_validate(query_result)
-            return validated.query_contract
+            return validated.query_request
         except Exception:
             return None
     return None
@@ -169,10 +169,10 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
             "category",
             "description",
         }:
-            query_contract = _query_contract_from_state(state)
+            query_request = _query_request_from_state(state)
             answer_context = build_direct_fact_answer(
                 item,
-                query_contract=query_contract,
+                query_request=query_request,
                 fact_field="counterparty" if fact_field == "recipient" else fact_field,
                 locale=locale,
                 is_followup=True,
@@ -291,9 +291,9 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         )
 
     selected_payload = _resolve_selected_payload(query_result, state, item)
-    query_contract = _query_contract_from_state(state)
-    if query_contract is not None:
-        query_contract = query_contract.model_copy(
+    query_request = _query_request_from_state(state)
+    if query_request is not None:
+        query_request = query_request.model_copy(
             update={
                 "answer_fact_field": None,
                 "result_reference": None,
@@ -308,7 +308,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         items=[item],
         context_key=query_result.context_key,
         has_more=query_result.has_more,
-        query_contract=query_contract,
+        query_request=query_request,
         surface_view=SurfaceView(
             mode=SurfaceViewMode.DIRECT_ANSWER,
             items=[

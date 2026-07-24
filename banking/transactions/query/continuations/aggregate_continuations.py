@@ -6,11 +6,11 @@ from collections.abc import Awaitable, Callable
 from datetime import date
 from typing import Any
 
-from banking.transactions.query.continuations.transforms import rebuild_query_contract
+from banking.transactions.query.continuations.transforms import rebuild_query_request
 from banking.transactions.query.models.domain import (
     Aggregation,
-    QueryExecutionContract,
     QueryIntent,
+    QueryRequest,
 )
 from banking.transactions.query.models.extraction import (
     QueryExtractionResult,
@@ -46,14 +46,14 @@ def _has_specific_scope_filters(filters: Any | None) -> bool:
 def _should_reset_inherited_aggregate_filters(
     *,
     extraction: QueryExtractionResult | None,
-    session_query_contract: QueryExecutionContract | None,
-    extracted_contract: QueryExecutionContract | None,
+    session_query_request: QueryRequest | None,
+    extracted_contract: QueryRequest | None,
 ) -> bool:
-    if extraction is None or session_query_contract is None or extracted_contract is None:
+    if extraction is None or session_query_request is None or extracted_contract is None:
         return False
     if extraction.time_range.reference_type not in {TimeReference.EXPLICIT, TimeReference.ALL_TIME}:
         return False
-    if not _has_specific_scope_filters(session_query_contract.filters):
+    if not _has_specific_scope_filters(session_query_request.filters):
         return False
     return not _has_specific_scope_filters(extracted_contract.filters)
 
@@ -61,7 +61,7 @@ def _should_reset_inherited_aggregate_filters(
 def _should_replace_aggregate_time_range(
     *,
     extraction: QueryExtractionResult | None,
-    extracted_contract: QueryExecutionContract | None,
+    extracted_contract: QueryRequest | None,
 ) -> bool:
     if extraction is None or extracted_contract is None:
         return False
@@ -74,29 +74,29 @@ def _should_replace_aggregate_time_range(
 
 def _should_replace_aggregate_session_from_fresh_parse(
     *,
-    session_query_contract: QueryExecutionContract,
+    session_query_request: QueryRequest,
     parsed_extraction: QueryExtractionResult | None,
-    parsed_query_contract: QueryExecutionContract | None,
+    parsed_query_request: QueryRequest | None,
 ) -> bool:
-    if parsed_extraction is None or parsed_query_contract is None:
+    if parsed_extraction is None or parsed_query_request is None:
         return False
     if parsed_extraction.time_range.reference_type not in {TimeReference.EXPLICIT, TimeReference.ALL_TIME}:
         return False
-    if parsed_query_contract.intent != session_query_contract.intent:
+    if parsed_query_request.intent != session_query_request.intent:
         return True
-    if _has_specific_scope_filters(session_query_contract.filters) and not _has_specific_scope_filters(
-        parsed_query_contract.filters
+    if _has_specific_scope_filters(session_query_request.filters) and not _has_specific_scope_filters(
+        parsed_query_request.filters
     ):
         return True
-    session_agg = session_query_contract.aggregation.type if session_query_contract.aggregation is not None else None
-    parsed_agg = parsed_query_contract.aggregation.type if parsed_query_contract.aggregation is not None else None
+    session_agg = session_query_request.aggregation.type if session_query_request.aggregation is not None else None
+    parsed_agg = parsed_query_request.aggregation.type if parsed_query_request.aggregation is not None else None
     return session_agg != parsed_agg
 
 
 def _should_override_aggregate_reasoner_extraction(
     *,
-    extracted_contract: QueryExecutionContract | None,
-    deterministic_contract: QueryExecutionContract | None,
+    extracted_contract: QueryRequest | None,
+    deterministic_contract: QueryRequest | None,
 ) -> bool:
     if extracted_contract is None or deterministic_contract is None:
         return False
@@ -144,7 +144,7 @@ def _sanitize_aggregate_extraction(extraction: QueryExtractionResult) -> QueryEx
 def _preserve_active_direction_unless_filter_delta(
     *,
     decision: Any,
-    session_query_contract: QueryExecutionContract,
+    session_query_request: QueryRequest,
     updated_filters: Any | None,
 ) -> Any | None:
     """Keep active credit/debit scope for grouping-only aggregate refinements."""
@@ -153,7 +153,7 @@ def _preserve_active_direction_unless_filter_delta(
     if getattr(decision, "delta_type", None) == "filter":
         return updated_filters
 
-    active_filters = session_query_contract.filters
+    active_filters = session_query_request.filters
     active_type = getattr(active_filters, "transaction_type", None) if active_filters is not None else None
     updated_type = getattr(updated_filters, "transaction_type", None)
     if active_type not in {"credit", "debit"} or updated_type not in {"credit", "debit"}:
@@ -172,7 +172,7 @@ async def compile_aggregate_continuation_updates(
     state: dict[str, Any],
     today: date,
     language: str,
-    session_query_contract: QueryExecutionContract | None,
+    session_query_request: QueryRequest | None,
     parse_result_to_updates: ParseResultToUpdates,
     parse_reasoner_extraction_to_updates: ParseReasonerExtractionToUpdates,
 ) -> dict[str, Any] | None:
@@ -183,26 +183,26 @@ async def compile_aggregate_continuation_updates(
         extraction = _sanitize_aggregate_extraction(extraction)
 
     deterministic_result = None
-    deterministic_contract: QueryExecutionContract | None = None
-    if session_query_contract is not None:
+    deterministic_contract: QueryRequest | None = None
+    if session_query_request is not None:
         deterministic_result = step.parser.parse_deterministic(state.get("message", ""), today=today, language=language)
-        deterministic_contract = step._validated_query_contract(
-            deterministic_result.query_contract if deterministic_result is not None else None
+        deterministic_contract = step._validated_query_request(
+            deterministic_result.query_request if deterministic_result is not None else None
         )
 
-    if extraction is None and session_query_contract is not None:
+    if extraction is None and session_query_request is not None:
         if (
             deterministic_result is not None
             and deterministic_result.outcome == ResolverOutcome.OK
             and _should_replace_aggregate_session_from_fresh_parse(
-                session_query_contract=session_query_contract,
+                session_query_request=session_query_request,
                 parsed_extraction=deterministic_result.extraction,
-                parsed_query_contract=deterministic_contract,
+                parsed_query_request=deterministic_contract,
             )
         ):
             logger.info(
                 "query_aggregate_fresh_parse_reset",
-                previous_intent=session_query_contract.intent.value,
+                previous_intent=session_query_request.intent.value,
                 parsed_intent=deterministic_contract.intent.value if deterministic_contract is not None else None,
                 parsed_time_reference=(
                     deterministic_result.extraction.time_range.reference_type.value
@@ -213,7 +213,7 @@ async def compile_aggregate_continuation_updates(
             updates = parse_result_to_updates(step, deterministic_result, state=state, today=today, language=language)
             return step._append_query_session_transition(updates, "replace_session_new_query")
 
-    if session_query_contract is None:
+    if session_query_request is None:
         if extraction is None:
             return None
         patched_decision = (
@@ -227,10 +227,10 @@ async def compile_aggregate_continuation_updates(
             language=language,
         )
 
-    extracted_contract: QueryExecutionContract | None = None
+    extracted_contract: QueryRequest | None = None
     if extraction is not None:
         compiled = step.parser.compile_extraction(extraction, today=today, language=language)
-        extracted_contract = step._validated_query_contract(compiled.query_contract)
+        extracted_contract = step._validated_query_request(compiled.query_request)
         if extraction.intent == QueryIntent.CASH_FLOW_SUMMARY and extracted_contract is not None:
             cashflow_contract = extracted_contract.model_copy(
                 update={
@@ -242,7 +242,7 @@ async def compile_aggregate_continuation_updates(
             patched_result = compiled.model_copy(
                 update={
                     "extraction": extraction,
-                    "query_contract": cashflow_contract.model_dump(mode="json"),
+                    "query_request": cashflow_contract.model_dump(mode="json"),
                     "query_ir": None,
                 }
             )
@@ -253,9 +253,9 @@ async def compile_aggregate_continuation_updates(
             and deterministic_result.outcome == ResolverOutcome.OK
             and deterministic_contract is not None
             and _should_replace_aggregate_session_from_fresh_parse(
-                session_query_contract=session_query_contract,
+                session_query_request=session_query_request,
                 parsed_extraction=deterministic_result.extraction,
-                parsed_query_contract=deterministic_contract,
+                parsed_query_request=deterministic_contract,
             )
             and _should_override_aggregate_reasoner_extraction(
                 extracted_contract=extracted_contract,
@@ -264,7 +264,7 @@ async def compile_aggregate_continuation_updates(
         ):
             logger.info(
                 "query_aggregate_reasoner_extraction_reparsed",
-                previous_intent=session_query_contract.intent.value,
+                previous_intent=session_query_request.intent.value,
                 extracted_intent=extracted_contract.intent.value if extracted_contract is not None else None,
                 parsed_intent=deterministic_contract.intent.value,
                 extracted_aggregation_type=(
@@ -298,12 +298,12 @@ async def compile_aggregate_continuation_updates(
     updated_filters = extracted_contract.filters if extracted_contract is not None else None
     updated_filters = _preserve_active_direction_unless_filter_delta(
         decision=decision,
-        session_query_contract=session_query_contract,
+        session_query_request=session_query_request,
         updated_filters=updated_filters,
     )
     reset_inherited_filters = _should_reset_inherited_aggregate_filters(
         extraction=extraction,
-        session_query_contract=session_query_contract,
+        session_query_request=session_query_request,
         extracted_contract=extracted_contract,
     )
     replace_time_range = _should_replace_aggregate_time_range(
@@ -314,8 +314,8 @@ async def compile_aggregate_continuation_updates(
         logger.info(
             "query_aggregate_filter_reset",
             reason="explicit_aggregate_scope_without_specific_filter",
-            previous_intent=session_query_contract.intent.value,
-            previous_has_specific_filters=_has_specific_scope_filters(session_query_contract.filters),
+            previous_intent=session_query_request.intent.value,
+            previous_has_specific_filters=_has_specific_scope_filters(session_query_request.filters),
             extracted_intent=extracted_contract.intent.value if extracted_contract is not None else None,
             extracted_time_reference=extraction.time_range.reference_type.value if extraction is not None else None,
         )
@@ -325,9 +325,9 @@ async def compile_aggregate_continuation_updates(
             and deterministic_result.outcome == ResolverOutcome.OK
             and deterministic_contract is not None
             and _should_replace_aggregate_session_from_fresh_parse(
-                session_query_contract=session_query_contract,
+                session_query_request=session_query_request,
                 parsed_extraction=deterministic_result.extraction,
-                parsed_query_contract=deterministic_contract,
+                parsed_query_request=deterministic_contract,
             )
             and (
                 _has_specific_scope_filters(extracted_contract.filters)
@@ -338,7 +338,7 @@ async def compile_aggregate_continuation_updates(
         ):
             logger.info(
                 "query_aggregate_reasoner_extraction_reset",
-                previous_intent=session_query_contract.intent.value,
+                previous_intent=session_query_request.intent.value,
                 extracted_intent=extracted_contract.intent.value,
                 parsed_intent=deterministic_contract.intent.value,
                 extracted_has_specific_filters=_has_specific_scope_filters(extracted_contract.filters),
@@ -366,7 +366,7 @@ async def compile_aggregate_continuation_updates(
         updated_filters = extracted_contract.filters
         updated_filters = _preserve_active_direction_unless_filter_delta(
             decision=decision,
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
             updated_filters=updated_filters,
         )
         aggregation = deterministic_aggregation.model_copy(deep=True)
@@ -375,29 +375,27 @@ async def compile_aggregate_continuation_updates(
             aggregation_type=aggregation.type,
             group_by=aggregation.group_by,
         )
-    elif step._is_income_vs_spending_followup(message=state.get("message", ""), query_contract=session_query_contract):
+    elif step._is_income_vs_spending_followup(message=state.get("message", ""), query_request=session_query_request):
         aggregation = Aggregation(type="breakdown", group_by="transaction_type")
         logger.info(
             "query_continuation_resolution",
             path="aggregate_income_vs_spending_fallback",
             recovered=True,
-            original_intent=session_query_contract.intent.value,
+            original_intent=session_query_request.intent.value,
         )
     else:
         aggregation = Aggregation(type="sum")
 
-    query_contract = rebuild_query_contract(
-        session_query_contract,
+    query_request = rebuild_query_request(
+        session_query_request,
         filters=(
-            updated_filters
-            if reset_inherited_filters or updated_filters is not None
-            else session_query_contract.filters
+            updated_filters if reset_inherited_filters or updated_filters is not None else session_query_request.filters
         ),
         merge_filters=updated_filters is not None and not reset_inherited_filters,
         time_range=(
-            extracted_contract.to_query_ir().time_range
+            extracted_contract.time_range
             if replace_time_range and extracted_contract is not None
-            else session_query_contract.to_query_ir().time_range
+            else session_query_request.time_range
         ),
         intent=QueryIntent.ANALYTICS_SUMMARY,
         aggregation=aggregation,
@@ -410,13 +408,13 @@ async def compile_aggregate_continuation_updates(
     logger.info(
         "query_aggregate_continuation_compiled",
         source="reasoner_extraction" if extracted_contract is not None else "active_query_scope_default",
-        aggregation_type=query_contract.aggregation.type if query_contract.aggregation is not None else None,
-        time_start=query_contract.time_start.isoformat(),
-        time_end=query_contract.time_end.isoformat(),
-        has_filters=bool(query_contract.filters),
+        aggregation_type=query_request.aggregation.type if query_request.aggregation is not None else None,
+        time_start=query_request.time_start.isoformat(),
+        time_end=query_request.time_end.isoformat(),
+        has_filters=bool(query_request.filters),
     )
     return {
-        "query_contract": query_contract,
+        "query_request": query_request,
         "resolver_message": None,
         "flow_state": "executing",
         "current_page": 0,

@@ -172,11 +172,7 @@ class GenerativeFormattingStep(QueryStep):
         self.llm = llm
         self.chain: Runnable | None = None
         try:
-            self.chain = (
-                ChatPromptTemplate.from_messages([("system", PROMPT_TEMPLATE)])
-                | self.llm
-                | StrOutputParser()
-            )
+            self.chain = ChatPromptTemplate.from_messages([("system", PROMPT_TEMPLATE)]) | self.llm | StrOutputParser()
         except Exception:
             self.chain = None
 
@@ -211,9 +207,7 @@ class GenerativeFormattingStep(QueryStep):
         # must not rewrite the same query decision; deterministic formatting
         # is the authoritative presentation fallback for reasoned answers.
         reasoner_calls = state.get("_query_llm_calls_used")
-        if state.get("_query_semantic_llm_used") is True or (
-            isinstance(reasoner_calls, int) and reasoner_calls > 0
-        ):
+        if state.get("_query_semantic_llm_used") is True or (isinstance(reasoner_calls, int) and reasoner_calls > 0):
             logger.info(
                 "query_direct_answer_formatting_skipped",
                 reason="semantic_reasoner_already_used",

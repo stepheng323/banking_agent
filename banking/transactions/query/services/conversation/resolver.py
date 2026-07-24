@@ -39,9 +39,8 @@ def build_query_conversation_updates(
     continuation_type = getattr(decision, "continuation_type", None)
     if continuation_type in {"filter_delta", "time_delta", "aggregate", "coverage"}:
         return None
-    if (
-        continuation_type not in {"drill_down", "recipient_drill_down"}
-        and not decision_has_target_reference(decision, text)
+    if continuation_type not in {"drill_down", "recipient_drill_down"} and not decision_has_target_reference(
+        decision, text
     ):
         return None
 
@@ -90,7 +89,7 @@ def build_query_conversation_updates(
                 fact_field=resolve_requested_fact_field(decision),
                 grounded_operation=getattr(decision, "grounded_operation", None),
             ),
-            query_contract=query_result.query_contract if query_result is not None else None,
+            query_request=query_result.query_request if query_result is not None else None,
             locale=locale,
             session=session or {},
             turn_id=turn_id,
@@ -159,12 +158,12 @@ def _is_focused_aggregate_scope(
     if focus_type in {"beneficiary", "group_bucket", "account"}:
         return True
 
-    query_contract = query_result.query_contract if query_result is not None else None
-    if query_contract is None:
+    query_request = query_result.query_request if query_result is not None else None
+    if query_request is None:
         return False
-    if query_contract.intent == query_contract.intent.BENEFICIARY_SUMMARY:
+    if query_request.intent == query_request.intent.BENEFICIARY_SUMMARY:
         return True
-    return bool(query_contract.aggregation is not None and query_contract.aggregation.group_by is not None)
+    return bool(query_request.aggregation is not None and query_request.aggregation.group_by is not None)
 
 
 __all__ = ["build_query_conversation_updates"]

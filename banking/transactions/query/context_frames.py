@@ -7,10 +7,10 @@ from banking.transactions.query.contracts import SelectionPayload, SurfaceItemVi
 from banking.transactions.query.grounding.frames import build_query_frame
 from banking.transactions.query.models.domain import (
     QueryAnswerStrategy,
-    QueryExecutionContract,
     QueryResult,
     QueryResultItem,
 )
+from banking.transactions.query.models.operations import QueryRequest
 
 
 def build_reasoner_context_from_frames(
@@ -22,7 +22,7 @@ def build_reasoner_context_from_frames(
         return {}
 
     metadata = active_frame.get("metadata") or {}
-    contract = _restore_query_contract(metadata.get("query_contract"))
+    contract = _restore_query_request(metadata.get("query_request"))
     if contract is None:
         return {}
 
@@ -34,7 +34,7 @@ def build_reasoner_context_from_frames(
         summary_text=str(metadata.get("summary_text") or surface_view.lead_text or ""),
         items=query_items,
         has_more=bool(metadata.get("has_more")),
-        query_contract=contract,
+        query_request=contract,
         surface_view=surface_view,
         answer_strategy=answer_strategy,
     )
@@ -42,12 +42,12 @@ def build_reasoner_context_from_frames(
     query_frames = _query_frames_from_context_frames(context_frames or [active_frame])
     if not query_frames:
         query_frames = [
-            build_query_frame(query_contract=contract, result=query_result, turn_index=1).model_dump(mode="json")
+            build_query_frame(query_request=contract, result=query_result, turn_index=1).model_dump(mode="json")
         ]
 
     return {
         "session_active": True,
-        "query_contract": contract.model_dump(mode="json"),
+        "query_request": contract.model_dump(mode="json"),
         "query_result": query_result.model_dump(mode="json"),
         "query_frames": query_frames,
         "current_page": int(metadata.get("current_page") or 0),
@@ -69,7 +69,7 @@ def _query_frames_from_context_frames(frames: list[dict[str, Any]]) -> list[dict
             query_frames.append(raw_query_frame)
             continue
 
-        contract = _restore_query_contract(metadata.get("query_contract"))
+        contract = _restore_query_request(metadata.get("query_request"))
         if contract is None:
             continue
 
@@ -78,12 +78,12 @@ def _query_frames_from_context_frames(frames: list[dict[str, Any]]) -> list[dict
             summary_text=str(metadata.get("summary_text") or surface_view.lead_text or ""),
             items=[_query_item_from_surface_item(item) for item in surface_view.items],
             has_more=bool(metadata.get("has_more")),
-            query_contract=contract,
+            query_request=contract,
             surface_view=surface_view,
             answer_strategy=_answer_strategy_from_surface(surface_view.mode),
         )
         query_frames.append(
-            build_query_frame(query_contract=contract, result=query_result, turn_index=turn_index).model_dump(
+            build_query_frame(query_request=contract, result=query_result, turn_index=turn_index).model_dump(
                 mode="json"
             )
         )
@@ -92,15 +92,15 @@ def _query_frames_from_context_frames(frames: list[dict[str, Any]]) -> list[dict
 
 def _is_active_query_frame(frame: dict[str, Any]) -> bool:
     metadata = frame.get("metadata") or {}
-    return metadata.get("source") == "query" and bool(metadata.get("query_contract"))
+    return metadata.get("source") == "query" and bool(metadata.get("query_request"))
 
 
-def _restore_query_contract(raw: Any) -> QueryExecutionContract | None:
-    if isinstance(raw, QueryExecutionContract):
+def _restore_query_request(raw: Any) -> QueryRequest | None:
+    if isinstance(raw, QueryRequest):
         return raw
     if isinstance(raw, dict):
         try:
-            return QueryExecutionContract.model_validate(raw)
+            return QueryRequest.model_validate(raw)
         except Exception:
             return None
     return None
@@ -190,6 +190,8 @@ def _answer_strategy_from_surface(mode: SurfaceViewMode) -> QueryAnswerStrategy:
         return QueryAnswerStrategy.SUMMARY_LIST
     if mode == SurfaceViewMode.CLARIFICATION:
         return QueryAnswerStrategy.CLARIFY
+    if mode == SurfaceViewMode.VARIANCE_INSIGHT:
+        return QueryAnswerStrategy.VARIANCE_INSIGHT
     return QueryAnswerStrategy.TRANSACTION_LIST
 
 

@@ -5,26 +5,32 @@ Example: "How did my spending this month compare to last month?"
 """
 
 from calendar import monthrange
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
-    ComparisonDirective,
-    QueryExecutionContract,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
-    TimeRange,
 )
+from banking.transactions.query.models.operations import (
+    CompareOperation,
+    ComparisonBaseline,
+    ExplicitBaseline,
+    ResolvedPeriod,
+    YearAgoBaseline,
+)
+from banking.transactions.query.services.analysis.kernel.contracts import AnalysisDataset, CoverageStatus
+from banking.transactions.query.services.analysis.kernel.metrics import analyze_cash_flow
 from banking.transactions.query.services.fetching.fetch import fetch_and_filter
-from banking.transactions.query.utils.totals import calculate_financial_totals
 from shared.clients.abstractions.banking import BankDataProvider
 
 
 async def handle_time_comparison(
     provider: BankDataProvider,
-    contract: QueryExecutionContract,
+    contract: QueryRequest,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -35,20 +41,21 @@ async def handle_time_comparison(
 ) -> QueryResult:
     """Handle time comparison queries (this month vs last month, etc.)."""
     del current_page, page_size
-    if not contract.time_range:
+    operation = contract.operation
+    if not isinstance(operation, CompareOperation):
         return QueryResult(summary_text=render_message("query.time_comparison.prompt_specify_period", language))
 
     # Get current period data
-    current_period = contract.time_range
-    comparison_period = _get_comparison_period(current_period, directive=contract.comparison)
-
-    comparison_contract = contract.model_copy(deep=True)
-    comparison_contract.time_start = comparison_period.start
-    comparison_contract.time_end = comparison_period.end
-    if comparison_contract.execution_plan is not None:
-        comparison_contract.execution_plan = comparison_contract.execution_plan.model_copy(
-            update={"time_range": comparison_period}
-        )
+    current_period = operation.scope.period
+    comparison_period = _get_comparison_period(current_period, baseline=operation.comparison.baseline)
+    comparison_contract = contract.model_copy(
+        update={
+            "operation": operation.model_copy(
+                update={"scope": operation.scope.model_copy(update={"period": comparison_period})}
+            )
+        },
+        deep=True,
+    )
 
     # Fetch transactions for both periods
     current_txns = await fetch_and_filter(
@@ -69,8 +76,16 @@ async def handle_time_comparison(
     )
 
     # Calculate totals
-    current_stats = _calculate_stats(current_txns)
-    comparison_stats = _calculate_stats(comparison_txns)
+    current_stats = _calculate_stats(
+        current_txns,
+        period=current_period,
+        period_label="current",
+    )
+    comparison_stats = _calculate_stats(
+        comparison_txns,
+        period=comparison_period,
+        period_label="comparison",
+    )
 
     # Build response
     current_label = _format_period_label(current_period)
@@ -152,28 +167,31 @@ async def handle_time_comparison(
     )
 
 
-def _safe_shift_year(day: TimeRange, years_back: int = 1) -> TimeRange:
+def _safe_shift_year(day: ResolvedPeriod, years_back: int = 1) -> ResolvedPeriod:
     """Shift a range backwards by years with leap-day safety."""
     try:
-        return TimeRange(
+        return ResolvedPeriod(
             start=day.start.replace(year=day.start.year - years_back),
             end=day.end.replace(year=day.end.year - years_back),
             granularity=day.granularity,
         )
     except ValueError:
         # Handle leap-day and similar edge-cases by clamping to previous day.
-        return TimeRange(
+        return ResolvedPeriod(
             start=(day.start - timedelta(days=1)).replace(year=day.start.year - years_back),
             end=(day.end - timedelta(days=1)).replace(year=day.end.year - years_back),
             granularity=day.granularity,
         )
 
 
-def _get_comparison_period(current: TimeRange, directive: ComparisonDirective | None = None) -> TimeRange:
-    """Calculate comparison period from the contract directive."""
-    if directive and directive.mode == "explicit_range" and directive.explicit_range:
-        return directive.explicit_range
-    if directive and directive.mode == "year_ago":
+def _get_comparison_period(
+    current: ResolvedPeriod,
+    baseline: ComparisonBaseline | None = None,
+) -> ResolvedPeriod:
+    """Resolve the native comparison baseline to an inclusive period."""
+    if isinstance(baseline, ExplicitBaseline):
+        return baseline.period
+    if isinstance(baseline, YearAgoBaseline):
         return _safe_shift_year(current, years_back=1)
 
     # Default: same duration, immediately previous timeframe.
@@ -183,21 +201,38 @@ def _get_comparison_period(current: TimeRange, directive: ComparisonDirective | 
     comparison_end = current.start - timedelta(days=1)
     comparison_start = comparison_end - timedelta(days=duration - 1)
 
-    return TimeRange(
+    return ResolvedPeriod(
         start=comparison_start,
         end=comparison_end,
         granularity=current.granularity,
     )
 
 
-def _calculate_stats(transactions: list[dict]) -> dict[str, Any]:
+def _calculate_stats(
+    transactions: list[dict],
+    *,
+    period: ResolvedPeriod | None = None,
+    period_label: str = "selected",
+) -> dict[str, Any]:
     """Calculate statistics from transactions."""
-    totals = calculate_financial_totals(transactions)
+    if period is None:
+        today = date.today()
+        period = ResolvedPeriod(start=today, end=today)
+    analysis = analyze_cash_flow(
+        AnalysisDataset(
+            basis="ledger_transactions",
+            period_label=period_label,
+            start_date=period.start,
+            end_date=period.end,
+            rows=transactions,
+            coverage_status=CoverageStatus.UNAVAILABLE,
+        )
+    )
     return {
-        "debit_total": float(totals.total_outflow),
-        "credit_total": float(totals.total_inflow),
-        "count": len(totals.settled_transactions),
-        "net": float(totals.net_flow),
+        "debit_total": float(analysis.outflow.value),
+        "credit_total": float(analysis.inflow.value),
+        "count": len(analysis.settled_rows),
+        "net": float(analysis.net_cash_flow.value),
     }
 
 
@@ -221,7 +256,7 @@ def _format_change(change: float, pct_change: float | None, locale: str = "en") 
     return render_message("query.time_comparison.no_change", locale)
 
 
-def _format_period_label(period: TimeRange) -> str:
+def _format_period_label(period: ResolvedPeriod) -> str:
     """Format a time range as a readable label."""
     is_same_month = period.start.month == period.end.month and period.start.year == period.end.year
     if is_same_month and _is_full_month_window(period):
@@ -231,7 +266,7 @@ def _format_period_label(period: TimeRange) -> str:
     return f"{period.start.strftime('%b %d, %Y')} - {period.end.strftime('%b %d, %Y')}"
 
 
-def _is_full_month_window(period: TimeRange) -> bool:
+def _is_full_month_window(period: ResolvedPeriod) -> bool:
     """Return True when range spans a complete calendar month."""
     if period.start.year != period.end.year or period.start.month != period.end.month:
         return False

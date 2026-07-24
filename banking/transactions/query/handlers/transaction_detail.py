@@ -2,7 +2,7 @@
 
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
 )
@@ -12,7 +12,7 @@ from shared.clients.abstractions.banking import BankDataProvider
 
 async def handle_transaction_detail(
     provider: BankDataProvider,
-    contract: QueryExecutionContract,
+    contract: QueryRequest,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,

@@ -35,11 +35,11 @@ def _airtime_service_metadata(data: AirtimePayload) -> dict[str, Any] | None:
 
 
 def _airtime_recipient_target(data: AirtimePayload, locale: str) -> str:
-    phone = str(data.recipient_phone or "").strip()
+    phone = data.recipient_phone or "".strip()
     if data.is_self:
         self_label = render_message("airtime.format.summary.target_self", locale)
         return f"{self_label} ({phone})" if phone else self_label
-    recipient_name = str(data.recipient_name or "").strip()
+    recipient_name = data.recipient_name or "".strip()
     if recipient_name:
         return f"{recipient_name} ({phone})" if phone else recipient_name
     return phone
@@ -165,7 +165,10 @@ class ExecutionStep(AirtimeStep):
                         ),
                     ),
                 },
-                patch={"transaction_id": transaction_id, "final_status": "processing"} if transaction_id else {"final_status": "processing"},
+                patch={
+                    "transaction_id": transaction_id,
+                    "final_status": "processing"
+                }   if transaction_id else {"final_status": "processing"},
             )
 
         except Exception as e:

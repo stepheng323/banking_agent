@@ -90,6 +90,8 @@ _SPENDING_EXTREMA_CUE_RE = re.compile(
     r"\b(?:largest|highest|biggest|max(?:imum)?|smallest|lowest|least|minimum|min)\b",
     re.IGNORECASE,
 )
+
+
 def _looks_like_single_direction_inflow_total(raw_query: str) -> bool:
     if not raw_query:
         return False
@@ -205,8 +207,6 @@ def infer_query_result_limit(
         if extraction.aggregation.limit == 1:
             return 1
     return None
-
-
 
 
 def resolve_result_limit(

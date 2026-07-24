@@ -14,8 +14,8 @@ from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.continuations.classifier import ContinuationClassifier
 from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
     QueryFrame,
+    QueryRequest,
     QueryResultItem,
 )
 from banking.transactions.query.models.extraction import QueryExtractionResult
@@ -62,6 +62,7 @@ _ORDINAL_WORDS: dict[str, int] = {
     "fifth": 4,
     "5th": 4,
 }
+
 
 class QuerySemanticReasoner:
     """Single semantic reasoner for fresh query, clarification, and continuation."""
@@ -313,23 +314,23 @@ class QuerySemanticReasoner:
         return cls._serialize_surface_context(surface_view)
 
     @classmethod
-    def _serialize_query_anchor(cls, query_contract: QueryExecutionContract | None) -> str:
-        if query_contract is None:
+    def _serialize_query_anchor(cls, query_request: QueryRequest | None) -> str:
+        if query_request is None:
             return "none"
         payload = {
-            "intent": query_contract.intent.value,
-            "time_start": query_contract.time_start.isoformat(),
-            "time_end": query_contract.time_end.isoformat(),
-            "filters": query_contract.filters.model_dump(exclude_none=True)
-            if query_contract.filters is not None
+            "intent": query_request.intent.value,
+            "time_start": query_request.time_start.isoformat(),
+            "time_end": query_request.time_end.isoformat(),
+            "filters": query_request.filters.model_dump(exclude_none=True)
+            if query_request.filters is not None
             else None,
             "aggregation": (
-                query_contract.aggregation.model_dump(exclude_none=True)
-                if query_contract.aggregation is not None
+                query_request.aggregation.model_dump(exclude_none=True)
+                if query_request.aggregation is not None
                 else None
             ),
-            "result_limit": query_contract.result_limit,
-            "result_reference": query_contract.result_reference,
+            "result_limit": query_request.result_limit,
+            "result_reference": query_request.result_reference,
         }
         return cls._serialize(payload)
 
@@ -520,7 +521,7 @@ class QuerySemanticReasoner:
             language=context.language,
             session_mode=context.session_mode,
             message=context.message,
-            current_query=self._serialize_query_anchor(context.query_contract),
+            current_query=self._serialize_query_anchor(context.query_request),
             pending_clarification=pending_clarification_section,
             surface_type=prompt_surface_type,
             surface_context=self._serialize_surface_snapshot(surface_view=context.surface_view),

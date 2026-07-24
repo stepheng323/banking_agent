@@ -11,9 +11,9 @@ from typing import Any, cast
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
     Filters,
-    QueryExecutionContract,
     match_transaction_category,
 )
+from banking.transactions.query.models.operations import AllAccounts, QueryRequest
 from banking.transactions.query.services.analysis.narration import analyze_transaction_narration
 from banking.transactions.query.services.fetching.bank_transaction_mirror import (
     build_mirrored_account_contexts,
@@ -288,31 +288,25 @@ def decide_transaction_cache_reuse(
     return TransactionCacheReuseDecision(can_reuse=False, strategy="none")
 
 
-def resolve_query_date_bounds(query_contract: QueryExecutionContract) -> tuple[str, str]:
+def resolve_query_date_bounds(query_request: QueryRequest) -> tuple[str, str]:
     """Resolve start/end ISO dates for a query."""
-    if query_contract.time_range:
-        return query_contract.time_range.start.isoformat(), query_contract.time_range.end.isoformat()
-
-    from datetime import timedelta
-
-    days = 30 if query_contract.intent == "analytics_summary" else 7
-    today = lagos_today()
-    end = today.isoformat()
-    start = (today - timedelta(days=days)).isoformat()
-    return start, end
+    period = query_request.period
+    if period is None:
+        raise ValueError("transaction-backed query operation requires a period")
+    return period.start.isoformat(), period.end.isoformat()
 
 
 def build_cache_fingerprint(
-    query_contract: QueryExecutionContract,
+    query_request: QueryRequest,
     account_id: str,
     account_ids: list[str],
     user_id: str | None = None,
 ) -> str:
     """Build fingerprint for cache-safe transaction base reuse."""
-    start, end = resolve_query_date_bounds(query_contract)
+    start, end = resolve_query_date_bounds(query_request)
     payload = {
-        "intent": str(query_contract.intent),
-        "accounts_scope": query_contract.accounts_scope,
+        "operation": query_request.operation.kind,
+        "accounts_scope": "all" if isinstance(query_request.accounts, AllAccounts) else "selected",
         "account_id": account_id,
         "account_ids": sorted(str(acc) for acc in account_ids),
         "start": start,
@@ -325,15 +319,15 @@ def build_cache_fingerprint(
 
 
 def build_cache_scope_fingerprint(
-    query_contract: QueryExecutionContract,
+    query_request: QueryRequest,
     account_id: str,
     account_ids: list[str],
     user_id: str | None = None,
 ) -> str:
     """Build fingerprint for cache reuse across narrower time windows."""
     payload = {
-        "intent": str(query_contract.intent),
-        "accounts_scope": query_contract.accounts_scope,
+        "operation": query_request.operation.kind,
+        "accounts_scope": "all" if isinstance(query_request.accounts, AllAccounts) else "selected",
         "account_id": account_id,
         "account_ids": sorted(str(acc) for acc in account_ids),
         "user_id": str(user_id or ""),
@@ -367,7 +361,7 @@ def _log_query_trace(
 
 async def fetch_and_filter(
     provider: BankDataProvider,
-    query_contract: QueryExecutionContract,
+    query_request: QueryRequest,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -377,29 +371,24 @@ async def fetch_and_filter(
     """Fetch transactions and apply filters."""
     transactions = await fetch_transactions_base(
         provider,
-        query_contract,
+        query_request,
         account_id,
         account_ids,
         accounts_info,
         user_id=user_id,
         trace_context=trace_context,
     )
-    if query_contract.time_range:
-        transactions = apply_time_window(
-            transactions,
-            window_start=query_contract.time_range.start,
-            window_end=query_contract.time_range.end,
-        )
+    from banking.transactions.query.services.fetching.semantic_filters import apply_query_scope
 
-    if query_contract.filters:
-        transactions = apply_filters(transactions, query_contract.filters)
+    if query_request.scope is not None:
+        transactions = apply_query_scope(transactions, query_request.scope)
 
     return transactions
 
 
 async def fetch_transactions_base(
     provider: BankDataProvider,
-    query_contract: QueryExecutionContract,
+    query_request: QueryRequest,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -408,7 +397,7 @@ async def fetch_transactions_base(
 ) -> list[dict]:
     """Fetch transaction base set for the query time/account envelope (no query.filters applied)."""
     started_at = perf_counter()
-    start, end = resolve_query_date_bounds(query_contract)
+    start, end = resolve_query_date_bounds(query_request)
     start_bound = date.fromisoformat(start)
     end_bound = date.fromisoformat(end)
 
@@ -442,7 +431,7 @@ async def fetch_transactions_base(
             return _apply_transaction_analysis(d)
         return {"raw": str(t)}
 
-    fetch_account_count = len(account_ids) if query_contract.accounts_scope == "all" and account_ids else 1
+    fetch_account_count = len(account_ids) if isinstance(query_request.accounts, AllAccounts) and account_ids else 1
     used_parallel_fetch = False
     transactions: list[dict[str, Any]]
 
@@ -490,7 +479,7 @@ async def fetch_transactions_base(
             use_mirror = False
 
     if not use_mirror:
-        if query_contract.accounts_scope == "all" and len(account_ids) > 1:
+        if isinstance(query_request.accounts, AllAccounts) and len(account_ids) > 1:
             all_txns: list[dict[str, Any]] = []
             used_parallel_fetch = True
             semaphore = asyncio.Semaphore(min(_MULTI_ACCOUNT_FETCH_CONCURRENCY, len(account_ids)))

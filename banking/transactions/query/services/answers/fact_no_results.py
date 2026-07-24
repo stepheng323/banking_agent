@@ -4,20 +4,20 @@ import re
 
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.capabilities import QUERY_LIMITS
-from banking.transactions.query.models.domain import QueryExecutionContract
+from banking.transactions.query.models.domain import QueryRequest
 from banking.transactions.query.utils.timezone import lagos_today
 
 
-def build_fact_no_results_text(query_contract: QueryExecutionContract | None, *, locale: str = "en") -> str | None:
+def build_fact_no_results_text(query_request: QueryRequest | None, *, locale: str = "en") -> str | None:
     """Return compact conversational no-results copy for fact queries when available."""
-    if query_contract is None or query_contract.filters is None:
+    if query_request is None or query_request.filters is None:
         return None
 
-    tx_type = query_contract.filters.transaction_type
-    counterparty = _first_filter_value(query_contract.filters.counterparty)
-    time_range = query_contract.time_range
+    tx_type = query_request.filters.transaction_type
+    counterparty = _first_filter_value(query_request.filters.counterparty)
+    time_range = query_request.time_range
     today = lagos_today()
-    if _uses_unbounded_fact_latest_window(query_contract):
+    if _uses_unbounded_fact_latest_window(query_request):
         time_suffix = ""
     elif time_range is None:
         time_suffix = render_message("query.reply.no_result.time.period", locale)
@@ -53,10 +53,10 @@ def build_fact_no_results_text(query_contract: QueryExecutionContract | None, *,
     return None
 
 
-def _uses_unbounded_fact_latest_window(query_contract: QueryExecutionContract) -> bool:
-    if query_contract.answer_fact_field is None or query_contract.result_reference != "latest":
+def _uses_unbounded_fact_latest_window(query_request: QueryRequest) -> bool:
+    if query_request.answer_fact_field is None or query_request.result_reference != "latest":
         return False
-    time_range = query_contract.time_range
+    time_range = query_request.time_range
     if time_range is None:
         return True
     today = lagos_today()

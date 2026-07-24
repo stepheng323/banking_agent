@@ -72,7 +72,7 @@ class QueryPipeline:
         explicit_patch_keys = set(result.patch)
         # Merge current state into result.patch
         result.patch.update(state)
-        if "query_contract" in explicit_patch_keys:
+        if "query_request" in explicit_patch_keys:
             for key in _STALE_SELECTION_KEYS:
                 if key not in explicit_patch_keys:
                     result.patch.pop(key, None)

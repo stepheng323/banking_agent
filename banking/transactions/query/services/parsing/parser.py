@@ -1,4 +1,4 @@
-"""Query parsing service - extracts QueryIR/QueryExecutionContract from natural language."""
+"""Query parsing service - extracts typed QueryRequest operations from natural language."""
 
 from datetime import date
 from typing import Any
@@ -8,12 +8,8 @@ from langchain_core.runnables import Runnable
 from banking.transactions.query.compiler import finalize as finalize_compiler
 from banking.transactions.query.compiler import lexical_recovery, query_compiler
 from banking.transactions.query.compiler.resolver import Prompt
-from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
-    QueryIntent,
-    QueryIR,
-    TimeRange,
-)
+from banking.transactions.query.compiler.v2 import compile_query_request
+from banking.transactions.query.models.domain import QueryIntent, TimeRange
 from banking.transactions.query.models.extraction import (
     FactQueryKind,
     ParserQueryExtraction,
@@ -23,6 +19,7 @@ from banking.transactions.query.models.extraction import (
     QueryTimeRange,
     ReasonerQueryExtraction,
 )
+from banking.transactions.query.models.operations import QueryRequest
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -57,7 +54,7 @@ _LAST_YEAR_TOKENS = {"last_year", "previous_year", "lastyear", "previousyear"}
 
 
 class QueryParser:
-    """Parse natural language financial questions into QueryExecutionContract."""
+    """Parse natural language financial questions into QueryRequest."""
 
     def __init__(self, llm: Runnable):
         self.llm = llm
@@ -69,7 +66,7 @@ class QueryParser:
         language: str,
         message: str | None,
         resolver_message: str | None,
-    ):
+    ) -> QueryRequest:
         return finalize_compiler.build_pending_clarification(
             self,
             extraction=extraction,
@@ -228,26 +225,15 @@ class QueryParser:
     def _requires_time_comparison_period(self, extraction: "QueryExtractionResult") -> bool:
         return finalize_compiler.requires_time_comparison_period(extraction)
 
-    def build_query_ir_from_extraction(
+    def build_query_request_from_extraction(
         self,
         extraction: "QueryExtractionResult",
         *,
-        today: date | None = None,
+        today: date,
         language: str = "en",
-        continuation_type: str | None = None,
-        continuation_delta_type: str | None = None,
-    ) -> QueryIR:
-        return query_compiler.build_query_ir_from_extraction(
-            self,
-            extraction,
-            today=today,
-            language=language,
-            continuation_type=continuation_type,
-            continuation_delta_type=continuation_delta_type,
-        )
-
-    def build_execution_contract_from_ir(self, query_ir: QueryIR) -> QueryExecutionContract:
-        return query_compiler.build_execution_contract_from_ir(query_ir)
+    ):
+        """Compile extraction directly into Query Semantics v2."""
+        return compile_query_request(self, extraction, today=today, language=language)
 
     def _compile_query_fields_from_extraction(
         self,

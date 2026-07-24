@@ -5,10 +5,13 @@ from typing import Literal
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
     CashFlowSummaryResult,
-    QueryExecutionContract,
+    QueryRequest,
     QueryResult,
 )
+from banking.transactions.query.models.operations import CashFlowSummarySpec, SummarizeOperation
 from banking.transactions.query.presentation.time_format import build_timeframe_suffix
+from banking.transactions.query.services.analysis.kernel.contracts import AnalysisDataset, CoverageStatus
+from banking.transactions.query.services.analysis.kernel.service import AnalysisService
 from banking.transactions.query.services.fetching.fetch import fetch_transactions_base
 from banking.transactions.query.utils.totals import calculate_financial_totals
 from shared.clients.abstractions.banking import BankDataProvider
@@ -16,7 +19,7 @@ from shared.clients.abstractions.banking import BankDataProvider
 
 async def handle_cash_flow(
     provider: BankDataProvider,
-    contract: QueryExecutionContract,
+    contract: QueryRequest,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -46,33 +49,55 @@ async def handle_cash_flow(
         if start_date_str <= tx_date <= end_date_str:
             in_range_txns.append(t)
 
-    totals = calculate_financial_totals(in_range_txns, account_id)
+    analysis_service = AnalysisService(provider)
+    dataset = AnalysisDataset(
+        basis="ledger_transactions",
+        period_label="selected",
+        start_date=contract.time_start,
+        end_date=contract.time_end,
+        rows=in_range_txns,
+        coverage_status=CoverageStatus.UNAVAILABLE,
+    )
+    analysis = await analysis_service.analyze_cash_flow(dataset)
+    display_totals = calculate_financial_totals(analysis.settled_rows, account_id)
+    total_inflow = analysis.inflow.value
+    total_outflow = analysis.outflow.value
+    net_flow = analysis.net_cash_flow.value
 
     status_label: Literal["positive", "negative", "neutral"] = "neutral"
-    if totals.net_flow > 0:
+    if net_flow > 0:
         status_label = "positive"
-    elif totals.net_flow < 0:
+    elif net_flow < 0:
         status_label = "negative"
 
     cash_flow_result = CashFlowSummaryResult(
         period_label="Selected Period",
         currency="NGN",
-        total_inflow=totals.total_inflow,
-        total_outflow=totals.total_outflow,
-        net_flow=totals.net_flow,
-        inflow_count=totals.inflow_count,
-        outflow_count=totals.outflow_count,
+        total_inflow=int(total_inflow),
+        total_outflow=int(total_outflow),
+        net_flow=int(net_flow),
+        inflow_count=analysis.inflow.count,
+        outflow_count=analysis.outflow.count,
         account_scope=contract.accounts_scope,
-        account_breakdown=list(totals.account_breakdowns.values()) if contract.accounts_scope == "all" else None,
-        excluded_internal_transfers_count=totals.excluded_internal_count,
-        excluded_reversals_count=totals.excluded_reversals_count,
+        account_breakdown=(
+            list(display_totals.account_breakdowns.values()) if contract.accounts_scope == "all" else None
+        ),
+        excluded_internal_transfers_count=analysis.excluded_internal_count,
+        excluded_reversals_count=analysis.excluded_unsettled_count,
         status=status_label,
     )
 
-    group_by = contract.aggregation.group_by if contract.aggregation else None
-    if group_by == "account" and totals.account_breakdowns:
+    operation = contract.operation
+    group_by = (
+        operation.summary.group_by
+        if isinstance(operation, SummarizeOperation) and isinstance(operation.summary, CashFlowSummarySpec)
+        else None
+    )
+    if group_by == "account" and display_totals.account_breakdowns:
         lines = ["Cash flow by account"]
-        for breakdown in sorted(totals.account_breakdowns.values(), key=lambda item: abs(item.net_flow), reverse=True):
+        for breakdown in sorted(
+            display_totals.account_breakdowns.values(), key=lambda item: abs(item.net_flow), reverse=True
+        ):
             suffix = f" · ···{breakdown.masked_account_number}" if breakdown.masked_account_number else ""
             if breakdown.net_flow > 0:
                 net_text = f"up ₦{breakdown.net_flow:,.0f}"
@@ -88,7 +113,7 @@ async def handle_cash_flow(
                 ]
             )
         summary_text = "\n".join(lines)
-    elif totals.total_inflow == 0 and totals.total_outflow == 0:
+    elif total_inflow == 0 and total_outflow == 0:
         direction = contract.filters.transaction_type if contract.filters is not None else None
         timeframe = build_timeframe_suffix(contract, language)
         if direction == "credit":
@@ -105,20 +130,15 @@ async def handle_cash_flow(
             )
         else:
             summary_text = render_message("query.format.no_matching_transactions", language)
-    elif totals.net_flow > 0:
+    elif net_flow > 0:
+        summary_text = f"₦{total_inflow:,.0f} came in and ₦{total_outflow:,.0f} went out. You're up ₦{net_flow:,.0f}."
+    elif net_flow < 0:
         summary_text = (
-            f"₦{totals.total_inflow:,.0f} came in and ₦{totals.total_outflow:,.0f} went out. "
-            f"You're up ₦{totals.net_flow:,.0f}."
-        )
-    elif totals.net_flow < 0:
-        summary_text = (
-            f"₦{totals.total_inflow:,.0f} came in and ₦{totals.total_outflow:,.0f} went out. "
-            f"You're down ₦{abs(totals.net_flow):,.0f}."
+            f"₦{total_inflow:,.0f} came in and ₦{total_outflow:,.0f} went out. You're down ₦{abs(net_flow):,.0f}."
         )
     else:
         summary_text = (
-            f"₦{totals.total_inflow:,.0f} came in and ₦{totals.total_outflow:,.0f} went out. "
-            "Your cash flow is perfectly balanced."
+            f"₦{total_inflow:,.0f} came in and ₦{total_outflow:,.0f} went out. Your cash flow is perfectly balanced."
         )
 
     return QueryResult(

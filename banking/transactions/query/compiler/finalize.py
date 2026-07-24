@@ -50,9 +50,10 @@ def build_pending_clarification(
     resolver_message: str | None,
 ) -> PendingClarificationState:
     ambiguity_codes = {ambiguity.code for ambiguity in extraction.ambiguities}
-    clarification_type: Literal[
-        "time", "selection", "recipient", "account", "direction", "category", "status", "amount", "scope"
-    ] | None = None
+    clarification_type: (
+        Literal["time", "selection", "recipient", "account", "direction", "category", "status", "amount", "scope"]
+        | None
+    ) = None
     target_field = None
     if AmbiguityCode.RECIPIENT_VAGUE in ambiguity_codes:
         clarification_type, target_field = "recipient", "recipient"
@@ -172,6 +173,7 @@ def inflate_parser_extraction(
             result_limit=extraction.result_limit,
             result_reference=extraction.result_reference,
             answer_fact_field=extraction.answer_fact_field,
+            insight=extraction.insight.model_copy(deep=True) if extraction.insight is not None else None,
         )
 
     inflated.raw_query = question
@@ -201,6 +203,8 @@ def derive_request_shape(extraction: QueryExtractionResult) -> QueryRequestShape
         return QueryRequestShape.COMPARISON
     if extraction.intent == QueryIntent.AFFORDABILITY:
         return QueryRequestShape.AFFORDABILITY
+    if extraction.intent == QueryIntent.INSIGHT:
+        return QueryRequestShape.INSIGHT
     if extraction.intent == QueryIntent.BENEFICIARY_SUMMARY:
         return QueryRequestShape.GROUPED_SUMMARY
     if extraction.intent == QueryIntent.ANALYTICS_SUMMARY:
@@ -311,14 +315,12 @@ def finalize_extraction(
             patch={},
         )
 
-    query_ir = parser.build_query_ir_from_extraction(decision.extraction, today=today, language=language)
-    query_contract = parser.build_execution_contract_from_ir(query_ir)
+    query_request = parser.build_query_request_from_extraction(decision.extraction, today=today, language=language)
 
     return QueryParseResult(
         outcome=outcome,
         extraction=decision.extraction,
-        query_ir=query_ir.model_dump(),
-        query_contract=query_contract.model_dump(),
+        query_request=query_request.model_dump(mode="json"),
         resolver_message=message,
         notices=notices,
         pending_clarification=pending_clarification.model_dump() if pending_clarification else None,

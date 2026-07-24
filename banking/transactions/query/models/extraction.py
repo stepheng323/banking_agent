@@ -1,11 +1,11 @@
 """Query extraction models for parser and reasoner outputs."""
 
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
-from banking.transactions.query.contracts import SelectionPayload
+from banking.transactions.query.contracts import InsightEvidenceSelection, SelectionPayload
 from banking.transactions.query.models.domain import QueryFactField, QueryIntent
 
 # Schema version for future-proofing
@@ -23,6 +23,7 @@ class QueryRequestShape(str, Enum):
     ANALYTICS = "analytics"
     COMPARISON = "comparison"
     AFFORDABILITY = "affordability"
+    INSIGHT = "insight"
 
 
 class FactQueryKind(str, Enum):
@@ -120,10 +121,28 @@ class QueryAggregation(BaseModel):
 
 
 class QueryComparison(BaseModel):
-    """Structured comparison directive for time-comparison queries."""
+    """Comparison meaning extracted from the user's wording."""
 
     mode: Literal["previous_equivalent", "year_ago", "explicit_period"] = Field(default="previous_equivalent")
     period: str | None = Field(default=None, description="Explicit comparison period when mode=explicit_period")
+
+
+class VarianceAnalysisExtraction(BaseModel):
+    """Extraction-only parameters for the implemented variance analysis."""
+
+    type: Literal["variance_drivers"] = "variance_drivers"
+    analysis_basis: Literal["ledger_transactions", "economic_events"] = "economic_events"
+    measure: Literal["spending", "income", "net_cash_flow", "cash_flow_overview"] = "spending"
+    dimensions: list[Literal["category", "counterparty", "account", "event_type", "cash_flow_class"]] = Field(
+        default_factory=lambda: cast(
+            list[Literal["category", "counterparty", "account", "event_type", "cash_flow_class"]],
+            ["category", "counterparty"],
+        )
+    )
+    confidence_policy: Literal["include", "exclude_uncertain", "segment_uncertain"] = "segment_uncertain"
+    evidence_limit: int = Field(default=5, ge=1, le=20)
+    completeness_policy: Literal["disclose", "require_complete"] = "disclose"
+    evidence: InsightEvidenceSelection | None = None
 
 
 class ClarificationPatch(BaseModel):
@@ -159,6 +178,7 @@ class ParserQueryExtraction(BaseModel):
         description="Relative positioning for results when user asks for most recent/oldest",
     )
     answer_fact_field: QueryFactField | None = Field(default=None)
+    insight: VarianceAnalysisExtraction | None = Field(default=None)
 
 
 class QueryExtractionResult(BaseModel):
@@ -180,6 +200,7 @@ class QueryExtractionResult(BaseModel):
         description="Relative positioning for results when user asks for most recent/oldest",
     )
     answer_fact_field: QueryFactField | None = Field(default=None)
+    insight: VarianceAnalysisExtraction | None = Field(default=None)
     clarification_patch: ClarificationPatch | None = Field(default=None)
 
     requested_capabilities: list[RequestedCapability] = Field(
@@ -208,6 +229,7 @@ class ReasonerQueryExtraction(BaseModel):
     result_limit: int | None = Field(default=None, ge=1, le=100)
     result_reference: Literal["latest", "oldest"] | None = Field(default=None)
     answer_fact_field: QueryFactField | None = Field(default=None)
+    insight: VarianceAnalysisExtraction | None = Field(default=None)
     raw_query: str | None = Field(default=None)
 
     def to_query_extraction_result(self) -> "QueryExtractionResult":
@@ -223,6 +245,7 @@ class ReasonerQueryExtraction(BaseModel):
             result_limit=self.result_limit,
             result_reference=self.result_reference,
             answer_fact_field=self.answer_fact_field,
+            insight=self.insight.model_copy(deep=True) if self.insight is not None else None,
             raw_query=self.raw_query,
         )
 
@@ -240,8 +263,7 @@ class QueryParseResult(BaseModel):
 
     outcome: ResolverOutcome
     extraction: QueryExtractionResult | None = None
-    query_ir: dict[str, Any] | None = Field(default=None, description="Compiled query IR snapshot")
-    query_contract: dict[str, Any] | None = Field(default=None, description="Compiled execution contract snapshot")
+    query_request: dict[str, Any] | None = Field(default=None, description="Compiled Query Semantics v2 request")
     resolver_message: str | None = Field(default=None, description="Message to show user (e.g. clarification)")
     notices: list[str] = Field(default_factory=list, description="Infos like 'Clamped to 30 days'")
     pending_clarification: dict[str, Any] | None = Field(
@@ -261,13 +283,14 @@ class PendingClarificationState(BaseModel):
     ambiguities: list[Ambiguity] = Field(default_factory=list)
     resolver_message: str | None = None
     language: str = "en"
-    clarification_type: Literal[
-        "time", "selection", "recipient", "account", "direction", "category", "status", "amount", "scope"
-    ] | None = None
+    clarification_type: (
+        Literal["time", "selection", "recipient", "account", "direction", "category", "status", "amount", "scope"]
+        | None
+    ) = None
     target_field: str | None = None
     candidate_payloads: list["ClarificationCandidate"] = Field(default_factory=list, max_length=5)
     original_operation: "ClarificationOperation | None" = None
-    query_contract: dict[str, Any] | None = None
+    query_request: dict[str, Any] | None = None
     attempt_count: int = Field(default=0, ge=0, le=2)
     created_turn_id: str | None = None
 

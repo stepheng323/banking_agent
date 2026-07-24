@@ -19,7 +19,7 @@ from banking.transactions.query.continuations.time_rescope import (
     maybe_recover_time_rescope_continuation,
     resolve_time_delta_range,
 )
-from banking.transactions.query.continuations.transforms import rebuild_query_contract
+from banking.transactions.query.continuations.transforms import rebuild_query_request
 from banking.transactions.query.contracts import SelectionPayload
 from banking.transactions.query.models.domain import (
     Aggregation,
@@ -46,16 +46,16 @@ def _transaction_direction_delta(decision: Any) -> Literal["credit", "debit", "b
 
 
 def _direction_refinement_contract(
-    query_contract: Any,
+    query_request: Any,
     direction: Literal["credit", "debit", "both"],
     *,
     continuation_delta_type: str | None,
 ) -> Any:
-    filters = query_contract.filters.model_copy(deep=True) if query_contract.filters is not None else Filters()
+    filters = query_request.filters.model_copy(deep=True) if query_request.filters is not None else Filters()
     if direction == "both":
         filters.transaction_type = None
-        return rebuild_query_contract(
-            query_contract,
+        return rebuild_query_request(
+            query_request,
             filters=filters,
             merge_filters=False,
             intent=QueryIntent.ANALYTICS_SUMMARY,
@@ -68,8 +68,8 @@ def _direction_refinement_contract(
             conversational_prefix=None,
         )
     filters.transaction_type = direction
-    return rebuild_query_contract(
-        query_contract,
+    return rebuild_query_request(
+        query_request,
         filters=filters,
         merge_filters=False,
         continuation_type="filter_delta",
@@ -86,7 +86,7 @@ async def resolve_result_continuation_updates(
     followup_intent: str,
     state: dict[str, Any],
     session: dict[str, Any],
-    session_query_contract: Any | None,
+    session_query_request: Any | None,
     restored_query_result: QueryResult | None,
     surface_view: Any | None,
     items: list[QueryResultItem],
@@ -105,9 +105,11 @@ async def resolve_result_continuation_updates(
     }
 
     direction_delta = _transaction_direction_delta(decision)
-    if session_query_contract is not None and direction_delta is not None:
-        updates["query_contract"] = _direction_refinement_contract(
-            session_query_contract,
+    if session_query_request is not None and direction_delta is not None:
+        updates["continuation_type"] = "filter_delta" if direction_delta in {"credit", "debit"} else "aggregate"
+        updates["continuation_delta_type"] = "filter"
+        updates["query_request"] = _direction_refinement_contract(
+            session_query_request,
             direction_delta,
             continuation_delta_type=continuation_delta_type,
         )
@@ -120,17 +122,17 @@ async def resolve_result_continuation_updates(
         )
         return updates
 
-    if session_query_contract and step._is_income_vs_spending_followup(
+    if session_query_request and step._is_income_vs_spending_followup(
         message=state.get("message", ""),
-        query_contract=session_query_contract,
+        query_request=session_query_request,
     ):
         new_filters = None
-        if session_query_contract.filters:
-            new_filters = session_query_contract.filters.model_copy()
+        if session_query_request.filters:
+            new_filters = session_query_request.filters.model_copy()
             new_filters.transaction_type = None
 
-        updates["query_contract"] = rebuild_query_contract(
-            session_query_contract,
+        updates["query_request"] = rebuild_query_request(
+            session_query_request,
             filters=new_filters,
             merge_filters=False,
             intent=QueryIntent.ANALYTICS_SUMMARY,
@@ -146,10 +148,10 @@ async def resolve_result_continuation_updates(
         return updates
 
     if cont_type == "show_more":
-        if session_query_contract is None:
+        if session_query_request is None:
             return step._ambiguous_followup_updates(locale=locale, session=session)
         if followup_intent in {"continue_pagination", "previous_pagination"}:
-            if session_query_contract.intent not in {QueryIntent.TRANSACTION_LIST, QueryIntent.ANALYTICS_SUMMARY}:
+            if session_query_request.intent not in {QueryIntent.TRANSACTION_LIST, QueryIntent.ANALYTICS_SUMMARY}:
                 return step._ambiguous_followup_updates(locale=locale, session=session)
             current_page = int(session.get("current_page", 0) or 0)
             if followup_intent == "previous_pagination":
@@ -179,17 +181,17 @@ async def resolve_result_continuation_updates(
                 or bool(selection_payload.filters_patch)
                 or selection_payload.time_patch is not None
             ):
-                query_contract = apply_selection_payload_to_query(
-                    session_query_contract,
+                query_request = apply_selection_payload_to_query(
+                    session_query_request,
                     selection_payload,
                     continuation_type=cont_type,
                     continuation_delta_type=continuation_delta_type,
                 )
-                query_contract.conversational_prefix = decision.response_text
-                updates["query_contract"] = query_contract
+                updates["query_request"] = query_request
+                updates["conversational_prefix"] = decision.response_text
             else:
-                updates["query_contract"] = rebuild_query_contract(
-                    session_query_contract,
+                updates["query_request"] = rebuild_query_request(
+                    session_query_request,
                     intent=QueryIntent.TRANSACTION_LIST,
                     aggregation=None,
                     result_limit=None,
@@ -205,11 +207,12 @@ async def resolve_result_continuation_updates(
             return step._ambiguous_followup_updates(locale=locale, session=session)
 
     elif cont_type == "show_evidence":
-        if session_query_contract is None or session_query_contract.intent not in {
+        if session_query_request is None or session_query_request.intent not in {
             QueryIntent.ANALYTICS_SUMMARY,
             QueryIntent.CASH_FLOW_SUMMARY,
             QueryIntent.TIME_COMPARISON,
             QueryIntent.BENEFICIARY_SUMMARY,
+            QueryIntent.INSIGHT,
         }:
             return step._ambiguous_followup_updates(locale=locale, session=session)
 
@@ -222,17 +225,17 @@ async def resolve_result_continuation_updates(
             or bool(selection_payload.filters_patch)
             or selection_payload.time_patch is not None
         ):
-            query_contract = apply_selection_payload_to_query(
-                session_query_contract,
+            query_request = apply_selection_payload_to_query(
+                session_query_request,
                 selection_payload,
                 continuation_type=cont_type,
                 continuation_delta_type=continuation_delta_type,
             )
-            query_contract.conversational_prefix = None
-            updates["query_contract"] = query_contract
+            updates["query_request"] = query_request
+            updates["conversational_prefix"] = None
         else:
-            updates["query_contract"] = rebuild_query_contract(
-                session_query_contract,
+            updates["query_request"] = rebuild_query_request(
+                session_query_request,
                 intent=QueryIntent.TRANSACTION_LIST,
                 aggregation=None,
                 result_limit=None,
@@ -246,20 +249,39 @@ async def resolve_result_continuation_updates(
         updates["show_expanded"] = False
 
     elif cont_type == "grouped_total_followup":
-        if session_query_contract is None or session_query_contract.intent != QueryIntent.BENEFICIARY_SUMMARY:
+        if session_query_request is None:
             return step._ambiguous_followup_updates(locale=locale, session=session)
-        updates["query_contract"] = rebuild_query_contract(
-            session_query_contract,
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            aggregation=Aggregation(type="sum"),
-            result_limit=None,
-            result_reference=None,
-            answer_fact_field=None,
-            continuation_type=cont_type,
-            continuation_delta_type=continuation_delta_type,
-        )
-        updates["current_page"] = 0
-        updates["show_expanded"] = False
+        if step._is_spend_vs_earn_compare_followup(message=message, query_request=session_query_request):
+            # In-vs-out comparison on a grouped surface compiles to cash flow
+            # over the same scope instead of dead-ending on a recipient total.
+            updates["query_request"] = rebuild_query_request(
+                session_query_request,
+                intent=QueryIntent.CASH_FLOW_SUMMARY,
+                filters=None,
+                aggregation=None,
+                result_limit=None,
+                result_reference=None,
+                answer_fact_field=None,
+                continuation_type=cont_type,
+                continuation_delta_type=continuation_delta_type,
+            )
+            updates["current_page"] = 0
+            updates["show_expanded"] = False
+        elif session_query_request.intent != QueryIntent.BENEFICIARY_SUMMARY:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+        else:
+            updates["query_request"] = rebuild_query_request(
+                session_query_request,
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="sum"),
+                result_limit=None,
+                result_reference=None,
+                answer_fact_field=None,
+                continuation_type=cont_type,
+                continuation_delta_type=continuation_delta_type,
+            )
+            updates["current_page"] = 0
+            updates["show_expanded"] = False
 
     elif cont_type == "time_delta":
         resolved_time_range, clarification_message = await resolve_time_delta_range(
@@ -271,7 +293,7 @@ async def resolve_result_continuation_updates(
             state=state,
         )
 
-        if session_query_contract is None or resolved_time_range is None:
+        if session_query_request is None or resolved_time_range is None:
             if clarification_message:
                 return {
                     "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
@@ -288,7 +310,7 @@ async def resolve_result_continuation_updates(
                 decision=decision,
                 state=state,
                 session=session,
-                session_query_contract=session_query_contract,
+                session_query_request=session_query_request,
                 message=message,
                 today=today,
                 language=locale,
@@ -318,7 +340,7 @@ async def resolve_result_continuation_updates(
                 decision=decision,
                 state=state,
                 session=session,
-                session_query_contract=session_query_contract,
+                session_query_request=session_query_request,
                 message=message,
                 today=today,
                 language=locale,
@@ -340,15 +362,15 @@ async def resolve_result_continuation_updates(
             )
             return step._ambiguous_followup_updates(locale=locale, session=session)
 
-        updates["query_contract"] = rebuild_query_contract(
-            session_query_contract,
+        updates["query_request"] = rebuild_query_request(
+            session_query_request,
             time_range=resolved_time_range,
             result_limit=decision.result_limit
             if decision.result_limit is not None
-            else session_query_contract.result_limit,
+            else session_query_request.result_limit,
             result_reference=decision.result_reference
             if decision.result_reference is not None
-            else session_query_contract.result_reference,
+            else session_query_request.result_reference,
             continuation_type=cont_type,
             continuation_delta_type=continuation_delta_type,
             conversational_prefix=decision.response_text,
@@ -363,23 +385,23 @@ async def resolve_result_continuation_updates(
         )
 
     elif cont_type == "filter_delta":
-        if followup_intent != "refine_existing" or session_query_contract is None:
+        if followup_intent != "refine_existing" or session_query_request is None:
             return step._ambiguous_followup_updates(locale=locale, session=session)
 
         delta_type = decision.delta_type
         allow_limit = delta_type in (None, "limit", "reference")
         allow_reference = delta_type in (None, "reference", "limit")
 
-        updates["query_contract"] = rebuild_query_contract(
-            session_query_contract,
-            filters=decision.filters if decision.filters is not None else session_query_contract.filters,
+        updates["query_request"] = rebuild_query_request(
+            session_query_request,
+            filters=decision.filters if decision.filters is not None else session_query_request.filters,
             merge_filters=decision.filters is not None,
             result_limit=decision.result_limit
             if decision.result_limit is not None and allow_limit
-            else session_query_contract.result_limit,
+            else session_query_request.result_limit,
             result_reference=decision.result_reference
             if decision.result_reference is not None and allow_reference
-            else session_query_contract.result_reference,
+            else session_query_request.result_reference,
             continuation_type=cont_type,
             continuation_delta_type=continuation_delta_type,
             conversational_prefix=decision.response_text,
@@ -406,11 +428,11 @@ async def resolve_result_continuation_updates(
         )
 
     elif cont_type == "coverage":
-        coverage_intent = _resolve_coverage_intent(decision, session_query_contract)
+        coverage_intent = _resolve_coverage_intent(decision, session_query_request)
         logger.info("query_coverage_intent_resolved", coverage_intent=coverage_intent)
         list_coverage_response = _build_result_list_coverage_response(
             restored_query_result=restored_query_result,
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
             session=session,
             locale=locale,
         )
@@ -432,7 +454,7 @@ async def resolve_result_continuation_updates(
         )
         response = await build_query_coverage_answer(
             accounts_info=accounts_info,
-            query_contract=session_query_contract,
+            query_request=session_query_request,
             session=session,
             target_text=getattr(decision, "target_text", None),
             locale=locale,
@@ -455,7 +477,7 @@ async def resolve_result_continuation_updates(
         response_text = (getattr(decision, "response_text", None) or "").strip()
         contextual_hint = (getattr(decision, "contextual_hint", None) or "").strip()
         response = response_text or build_aggregate_scope_reply(
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
             query_result=restored_query_result,
             locale=locale,
         )
@@ -492,11 +514,7 @@ async def resolve_result_continuation_updates(
             elif len(getattr(surface_view, "items", []) or []) == 1:
                 drill_idx = 0
 
-        if (
-            drill_idx is None
-            and _is_focused_aggregate_contract(session_query_contract)
-            and len(items) == 1
-        ):
+        if drill_idx is None and _is_focused_aggregate_contract(session_query_request) and len(items) == 1:
             drill_idx = 0
 
         selection_payload = None
@@ -506,14 +524,14 @@ async def resolve_result_continuation_updates(
             selection_payload = find_selection_payload(surface_view, index=drill_idx)
         selection_payload = _normalize_focused_aggregate_selection_payload(
             selection_payload,
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
             surface_view=surface_view,
             items=items,
             drill_idx=drill_idx,
         )
 
         if (
-            session_query_contract is not None
+            session_query_request is not None
             and selection_payload is not None
             and (
                 selection_payload.selection_kind in {"group_bucket", "summary_scope"}
@@ -524,8 +542,8 @@ async def resolve_result_continuation_updates(
             query_fact_field: QueryFactField | None = None
             if drill_down_action == "answer_fact" and answer_fact_field is not None:
                 query_fact_field = "counterparty" if answer_fact_field == "recipient" else answer_fact_field
-            updates["query_contract"] = apply_selection_payload_to_query(
-                session_query_contract,
+            updates["query_request"] = apply_selection_payload_to_query(
+                session_query_request,
                 selection_payload,
                 fact_field=query_fact_field,
                 continuation_type=cont_type,
@@ -549,7 +567,7 @@ async def resolve_result_continuation_updates(
 
     elif cont_type == "recipient_drill_down":
         recipient_name = decision.recipient_name
-        if recipient_name and session_query_contract is not None:
+        if recipient_name and session_query_request is not None:
             recipient_answer_fact_field: QueryFactField | None = None
             if decision.fact_field in {
                 "date",
@@ -565,8 +583,8 @@ async def resolve_result_continuation_updates(
                 recipient_answer_fact_field = cast(QueryFactField, decision.fact_field)
             selection_payload = find_selection_payload(surface_view, label=recipient_name)
             if selection_payload is not None:
-                updates["query_contract"] = apply_selection_payload_to_query(
-                    session_query_contract,
+                updates["query_request"] = apply_selection_payload_to_query(
+                    session_query_request,
                     selection_payload,
                     fact_field=recipient_answer_fact_field,
                     continuation_type=cont_type,
@@ -574,8 +592,8 @@ async def resolve_result_continuation_updates(
                 )
             else:
                 new_filters = Filters(counterparty=[recipient_name])
-                updates["query_contract"] = rebuild_query_contract(
-                    session_query_contract,
+                updates["query_request"] = rebuild_query_request(
+                    session_query_request,
                     filters=new_filters,
                     merge_filters=True,
                     intent=QueryIntent.TRANSACTION_LIST,
@@ -607,7 +625,7 @@ async def resolve_result_continuation_updates(
             state=state,
             today=today,
             language=locale,
-            has_original_scope=session_query_contract is not None,
+            has_original_scope=session_query_request is not None,
             reasoner_extraction=getattr(decision, "extraction", None),
             reasoner_confidence=decision.confidence,
             parse_result_to_updates=compiler_paths.parse_result_to_updates,
@@ -621,7 +639,7 @@ async def resolve_result_continuation_updates(
             decision=decision,
             state=state,
             session=session,
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
             message=message,
             today=today,
             language=locale,
@@ -632,10 +650,10 @@ async def resolve_result_continuation_updates(
         return step._ambiguous_followup_updates(locale=locale, session=session)
 
     elif cont_type == "recheck":
-        if session_query_contract is None:
+        if session_query_request is None:
             return step._ambiguous_followup_updates(locale=locale, session=session)
-        updates["query_contract"] = rebuild_query_contract(
-            session_query_contract,
+        updates["query_request"] = rebuild_query_request(
+            session_query_request,
             continuation_type=cont_type,
             continuation_delta_type=continuation_delta_type,
             conversational_prefix=decision.response_text,
@@ -650,7 +668,7 @@ async def resolve_result_continuation_updates(
             state=state,
             today=today,
             language=locale,
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
             parse_result_to_updates=compiler_paths.parse_result_to_updates,
             parse_reasoner_extraction_to_updates=compiler_paths.parse_reasoner_extraction_to_updates,
         )
@@ -658,7 +676,7 @@ async def resolve_result_continuation_updates(
             return aggregate_updates
         return step._ambiguous_followup_updates(locale=locale, session=session)
 
-    if "query_contract" in updates and updates.get("query_contract") is not session_query_contract:
+    if "query_request" in updates and updates.get("query_request") is not session_query_request:
         return step._append_query_session_transition(updates, "replace_session_new_query")
 
     return updates
@@ -667,21 +685,19 @@ async def resolve_result_continuation_updates(
 CoverageIntent = Literal["result_completeness", "data_coverage", "ambiguous"]
 
 
-def _resolve_coverage_intent(decision: Any, query_contract: Any | None) -> CoverageIntent:
+def _resolve_coverage_intent(decision: Any, query_request: Any | None) -> CoverageIntent:
     semantic_intent = getattr(decision, "coverage_intent", None)
     if semantic_intent in {"result_completeness", "data_coverage", "ambiguous"}:
         return cast(CoverageIntent, semantic_intent)
     # Backward-compatible structural default for older reasoner payloads. An
     # active transaction list owns questions about whether matching rows remain;
     # non-list results cannot safely infer synchronization coverage.
-    if query_contract is not None and query_contract.intent == QueryIntent.TRANSACTION_LIST:
+    if query_request is not None and query_request.intent == QueryIntent.TRANSACTION_LIST:
         return "result_completeness"
     return "ambiguous"
 
 
-def _pagination_boundary_updates(
-    *, locale: str, session: dict[str, Any], message_key: MessageKey
-) -> dict[str, Any]:
+def _pagination_boundary_updates(*, locale: str, session: dict[str, Any], message_key: MessageKey) -> dict[str, Any]:
     return {
         "transaction_outcome": TransactionOutcome.OK,
         "response": render_message(message_key, locale),
@@ -702,9 +718,7 @@ def _result_has_more(*, restored_query_result: QueryResult | None, session: dict
     return None
 
 
-def _unresolved_selection_updates(
-    *, locale: str, session: dict[str, Any], visible_count: int
-) -> dict[str, Any]:
+def _unresolved_selection_updates(*, locale: str, session: dict[str, Any], visible_count: int) -> dict[str, Any]:
     message_key: MessageKey = (
         "query.drill_down.no_items" if visible_count <= 0 else "query.drill_down.invalid_selection"
     )
@@ -730,14 +744,14 @@ def _unresolved_selection_updates(
 def _build_result_list_coverage_response(
     *,
     restored_query_result: QueryResult | None,
-    session_query_contract: Any | None,
+    session_query_request: Any | None,
     session: dict[str, Any],
     locale: str,
 ) -> str | None:
     if restored_query_result is None:
         return None
-    query_contract = restored_query_result.query_contract or session_query_contract
-    if query_contract is None or query_contract.intent != QueryIntent.TRANSACTION_LIST:
+    query_request = restored_query_result.query_request or session_query_request
+    if query_request is None or query_request.intent != QueryIntent.TRANSACTION_LIST:
         return None
     surface_context = (
         restored_query_result.surface_view.context
@@ -768,7 +782,7 @@ def _build_result_list_coverage_response(
 def _normalize_focused_aggregate_selection_payload(
     selection_payload: SelectionPayload | None,
     *,
-    session_query_contract: Any | None,
+    session_query_request: Any | None,
     surface_view: Any | None,
     items: list[QueryResultItem],
     drill_idx: int | None,
@@ -781,8 +795,8 @@ def _normalize_focused_aggregate_selection_payload(
     reading rendered text.
     """
     if (
-        session_query_contract is None
-        or not _is_focused_aggregate_contract(session_query_contract)
+        session_query_request is None
+        or not _is_focused_aggregate_contract(session_query_request)
         or surface_view is None
         or drill_idx is None
     ):
@@ -796,7 +810,7 @@ def _normalize_focused_aggregate_selection_payload(
     if len(surface_items) != 1 or not (0 <= drill_idx < len(surface_items)):
         return _focused_aggregate_selection_payload_from_result_item(
             selection_payload,
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
             items=items,
             drill_idx=drill_idx,
         )
@@ -804,27 +818,27 @@ def _normalize_focused_aggregate_selection_payload(
     surface_item = surface_items[drill_idx]
     return _focused_aggregate_selection_payload_from_surface_item(
         selection_payload,
-        session_query_contract=session_query_contract,
+        session_query_request=session_query_request,
         surface_item=surface_item,
     )
 
 
-def _is_focused_aggregate_contract(session_query_contract: Any | None) -> bool:
-    if session_query_contract is None:
+def _is_focused_aggregate_contract(session_query_request: Any | None) -> bool:
+    if session_query_request is None:
         return False
-    intent = getattr(session_query_contract, "intent", None)
+    intent = getattr(session_query_request, "intent", None)
     if intent == QueryIntent.BENEFICIARY_SUMMARY:
         return True
     if intent != QueryIntent.ANALYTICS_SUMMARY:
         return False
-    aggregation = getattr(session_query_contract, "aggregation", None)
+    aggregation = getattr(session_query_request, "aggregation", None)
     return bool(getattr(aggregation, "group_by", None))
 
 
 def _focused_aggregate_selection_payload_from_result_item(
     selection_payload: SelectionPayload | None,
     *,
-    session_query_contract: Any,
+    session_query_request: Any,
     items: list[QueryResultItem],
     drill_idx: int,
 ) -> SelectionPayload | None:
@@ -832,9 +846,10 @@ def _focused_aggregate_selection_payload_from_result_item(
         return selection_payload
 
     item = items[drill_idx]
-    label = str(
-        getattr(selection_payload, "label", "") if selection_payload is not None else ""
-    ).strip() or str(getattr(item, "description", "") or "").strip()
+    label = (
+        str(getattr(selection_payload, "label", "") if selection_payload is not None else "").strip()
+        or str(getattr(item, "description", "") or "").strip()
+    )
     if not label:
         return selection_payload
 
@@ -848,7 +863,7 @@ def _focused_aggregate_selection_payload_from_result_item(
     )
     return _focused_aggregate_selection_payload_from_surface_item(
         selection_payload,
-        session_query_contract=session_query_contract,
+        session_query_request=session_query_request,
         surface_item=synthetic_surface_item,
     )
 
@@ -856,13 +871,14 @@ def _focused_aggregate_selection_payload_from_result_item(
 def _focused_aggregate_selection_payload_from_surface_item(
     selection_payload: SelectionPayload | None,
     *,
-    session_query_contract: Any,
+    session_query_request: Any,
     surface_item: Any,
 ) -> SelectionPayload | None:
-    intent = getattr(session_query_contract, "intent", None)
-    label = str(
-        getattr(selection_payload, "label", "") if selection_payload is not None else ""
-    ).strip() or str(getattr(surface_item, "label", "") or "").strip()
+    intent = getattr(session_query_request, "intent", None)
+    label = (
+        str(getattr(selection_payload, "label", "") if selection_payload is not None else "").strip()
+        or str(getattr(surface_item, "label", "") or "").strip()
+    )
     if not label:
         return selection_payload
 
@@ -878,7 +894,7 @@ def _focused_aggregate_selection_payload_from_surface_item(
         entity_type = "beneficiary"
         filters_patch = {"counterparty": [label]}
     else:
-        aggregation = getattr(session_query_contract, "aggregation", None)
+        aggregation = getattr(session_query_request, "aggregation", None)
         group_by = getattr(aggregation, "group_by", None) if aggregation else None
         if not group_by:
             return selection_payload

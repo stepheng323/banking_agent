@@ -17,9 +17,9 @@ from banking.transactions.query.grounding.frames import (
     restore_query_frames,
 )
 from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
     QueryFrame,
     QueryIntent,
+    QueryRequest,
     QueryResultItem,
     TimeRange,
 )
@@ -81,24 +81,24 @@ class ExtractionStep(QueryStep):
         return updates
 
     @staticmethod
-    def _validated_query_contract(
-        raw_contract: QueryExecutionContract | dict[str, Any] | None,
-    ) -> QueryExecutionContract | None:
-        if isinstance(raw_contract, QueryExecutionContract):
+    def _validated_query_request(
+        raw_contract: QueryRequest | dict[str, Any] | None,
+    ) -> QueryRequest | None:
+        if isinstance(raw_contract, QueryRequest):
             return raw_contract
         if isinstance(raw_contract, dict):
             try:
-                return QueryExecutionContract.model_validate(raw_contract)
+                return QueryRequest.model_validate(raw_contract)
             except Exception:
                 return None
         return None
 
     @staticmethod
-    def _has_supported_followup_query_signal(query_contract: QueryExecutionContract) -> bool:
-        if query_contract.intent != QueryIntent.TRANSACTION_LIST:
+    def _has_supported_followup_query_signal(query_request: QueryRequest) -> bool:
+        if query_request.intent != QueryIntent.TRANSACTION_LIST:
             return True
 
-        filters = query_contract.filters
+        filters = query_request.filters
         if filters is not None and any(
             (
                 bool(filters.transaction_type),
@@ -114,12 +114,12 @@ class ExtractionStep(QueryStep):
 
         return any(
             (
-                query_contract.aggregation is not None,
-                query_contract.result_limit is not None,
-                query_contract.result_reference is not None,
-                bool(query_contract.account_name),
-                query_contract.amount_check is not None,
-                bool(query_contract.item_name),
+                query_request.aggregation is not None,
+                query_request.result_limit is not None,
+                query_request.result_reference is not None,
+                bool(query_request.account_name),
+                query_request.amount_check is not None,
+                bool(query_request.item_name),
             )
         )
 
@@ -188,8 +188,8 @@ class ExtractionStep(QueryStep):
         return extraction, "compiler_safe"
 
     @staticmethod
-    def _is_income_vs_spending_followup(*, message: str, query_contract: QueryExecutionContract | None) -> bool:
-        if query_contract is None or query_contract.intent not in {
+    def _is_income_vs_spending_followup(*, message: str, query_request: QueryRequest | None) -> bool:
+        if query_request is None or query_request.intent not in {
             QueryIntent.TRANSACTION_LIST,
             QueryIntent.ANALYTICS_SUMMARY,
         }:
@@ -204,13 +204,20 @@ class ExtractionStep(QueryStep):
         has_income = any(token in normalized for token in income_tokens)
 
         spending_tokens = (
-            " spending ", " spend ", " spent ", " debit ", " debits ",
-            " outflow ", " outflows ", " went out ", " going out "
+            " spending ",
+            " spend ",
+            " spent ",
+            " debit ",
+            " debits ",
+            " outflow ",
+            " outflows ",
+            " went out ",
+            " going out ",
         )
         has_spending = any(token in normalized for token in spending_tokens)
 
         # If it has both, or it's comparing to the opposite of the current active filter
-        active_type = getattr(query_contract.filters, "transaction_type", None) if query_contract.filters else None
+        active_type = getattr(query_request.filters, "transaction_type", None) if query_request.filters else None
         if has_income and has_spending:
             return True
         if active_type == "credit" and has_spending:
@@ -219,6 +226,39 @@ class ExtractionStep(QueryStep):
             return True
 
         return False
+
+    @staticmethod
+    def _is_spend_vs_earn_compare_followup(*, message: str, query_request: QueryRequest | None) -> bool:
+        """Detect inflow-vs-outflow comparisons like "did I spend more than I earned".
+
+        Unlike _is_income_vs_spending_followup, no explicit compare token is
+        required: the spend-vs-earn phrasing itself carries the comparison.
+        """
+        if query_request is None or query_request.intent not in {
+            QueryIntent.TRANSACTION_LIST,
+            QueryIntent.ANALYTICS_SUMMARY,
+            QueryIntent.BENEFICIARY_SUMMARY,
+        }:
+            return False
+
+        normalized = f" {message.lower()} "
+        spend_tokens = (" spend ", " spent ", " spending ", " went out ", " outflow ", " outflows ", " debit ")
+        earn_tokens = (
+            " earn ",
+            " earned ",
+            " earning ",
+            " earnings ",
+            " income ",
+            " inflow ",
+            " inflows ",
+            " came in ",
+            " receive ",
+            " received ",
+            " credited ",
+        )
+        has_spending = any(token in normalized for token in spend_tokens)
+        has_earning = any(token in normalized for token in earn_tokens)
+        return has_spending and has_earning
 
     @staticmethod
     def _ambiguous_followup_updates(*, locale: str, session: dict[str, Any]) -> dict[str, Any]:
@@ -242,13 +282,13 @@ class ExtractionStep(QueryStep):
             return f"{response_text}\n\n{contextual_hint}"
         return response_text
 
-    def _load_session_query_contract(self, session: dict[str, Any]) -> QueryExecutionContract | None:
-        raw_contract = session.get("query_contract")
-        if isinstance(raw_contract, QueryExecutionContract):
+    def _load_session_query_request(self, session: dict[str, Any]) -> QueryRequest | None:
+        raw_contract = session.get("query_request")
+        if isinstance(raw_contract, QueryRequest):
             return raw_contract
         if isinstance(raw_contract, dict):
             try:
-                return QueryExecutionContract.model_validate(raw_contract)
+                return QueryRequest.model_validate(raw_contract)
             except Exception:
                 return None
         return None
@@ -283,7 +323,7 @@ class ExtractionStep(QueryStep):
         today: date,
         language: str,
         state: dict[str, Any],
-        query_contract: QueryExecutionContract | None = None,
+        query_request: QueryRequest | None = None,
         items: list[QueryResultItem] | None = None,
         surface_view: SurfaceView | None = None,
         query_frames: list[QueryFrame] | None = None,
@@ -293,7 +333,7 @@ class ExtractionStep(QueryStep):
             message=message,
             today=today,
             language=language,
-            query_contract=query_contract,
+            query_request=query_request,
             items=items,
             surface_view=surface_view,
             query_frames=query_frames,
@@ -338,7 +378,7 @@ class ExtractionStep(QueryStep):
         *,
         trigger_reason: str,
         recovered: bool,
-        session_has_query_contract: bool,
+        session_has_query_request: bool,
         resolved_time_range: TimeRange | None = None,
         skip_reason: str | None = None,
         preserved_query_shape: bool | None = None,
@@ -348,7 +388,7 @@ class ExtractionStep(QueryStep):
             path="time_rescope_recovery",
             trigger_reason=trigger_reason,
             recovered=recovered,
-            session_has_query_contract=session_has_query_contract,
+            session_has_query_request=session_has_query_request,
             resolved_time_range=resolved_time_range is not None,
             resolved_time_start=resolved_time_range.start.isoformat() if resolved_time_range is not None else None,
             resolved_time_end=resolved_time_range.end.isoformat() if resolved_time_range is not None else None,
@@ -364,16 +404,16 @@ class ExtractionStep(QueryStep):
     def _should_ignore_grounded_query_for_aggregate(
         *,
         grounded_updates: dict[str, Any],
-        session_query_contract: QueryExecutionContract | None,
+        session_query_request: QueryRequest | None,
         continuation_type: str,
     ) -> bool:
-        if continuation_type != "aggregate" or session_query_contract is None:
+        if continuation_type != "aggregate" or session_query_request is None:
             return False
-        if session_query_contract.intent != QueryIntent.TRANSACTION_LIST:
+        if session_query_request.intent != QueryIntent.TRANSACTION_LIST:
             return False
 
-        grounded_contract = grounded_updates.get("query_contract")
-        if not isinstance(grounded_contract, QueryExecutionContract):
+        grounded_contract = grounded_updates.get("query_request")
+        if not isinstance(grounded_contract, QueryRequest):
             return False
 
         return grounded_contract.intent == QueryIntent.TRANSACTION_LIST

@@ -60,8 +60,8 @@ def _normalize_show_existing_message(message: str) -> str:
     return " ".join(message.strip().split()).lower().rstrip("?.!,")
 
 
-def _is_show_existing_transactions_followup(message: str, session_query_contract: Any | None) -> bool:
-    if session_query_contract is None or session_query_contract.intent not in {
+def _is_show_existing_transactions_followup(message: str, session_query_request: Any | None) -> bool:
+    if session_query_request is None or session_query_request.intent not in {
         QueryIntent.ANALYTICS_SUMMARY,
         QueryIntent.BENEFICIARY_SUMMARY,
         QueryIntent.CASH_FLOW_SUMMARY,
@@ -71,8 +71,8 @@ def _is_show_existing_transactions_followup(message: str, session_query_contract
     return _normalize_show_existing_message(message) in _SHOW_EXISTING_TRANSACTIONS_MESSAGES
 
 
-def _is_repeat_existing_query_followup(message: str, session_query_contract: Any | None) -> bool:
-    if session_query_contract is None:
+def _is_repeat_existing_query_followup(message: str, session_query_request: Any | None) -> bool:
+    if session_query_request is None:
         return False
     return _normalize_show_existing_message(message) in _REPEAT_EXISTING_QUERY_MESSAGES
 
@@ -81,7 +81,7 @@ def _repeat_existing_query_updates(
     step: Any,
     *,
     decision: Any,
-    session_query_contract: Any,
+    session_query_request: Any,
 ) -> dict[str, Any]:
     logger.info(
         "query_continuation_resolution",
@@ -92,7 +92,7 @@ def _repeat_existing_query_updates(
     )
 
     return {
-        "query_contract": session_query_contract,
+        "query_request": session_query_request,
         "resolver_message": None,
         "flow_state": "executing",
         "current_page": 0,
@@ -110,7 +110,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
     message = state.get("message", "")
     today_state = state.get("today")
     today = today_state if isinstance(today_state, date) else lagos_today()
-    session_query_contract = step._load_session_query_contract(session)
+    session_query_request = step._load_session_query_request(session)
     locale = LocaleManager.normalize(state.get("language")).value
 
     items: list[QueryResultItem] = []
@@ -139,7 +139,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
     surface_view = restored_query_result.surface_view if restored_query_result is not None else None
     logger.info(
         "query_continuation_entry",
-        has_query_contract=session_query_contract is not None,
+        has_query_request=session_query_request is not None,
         has_surface=bool(surface_view is not None),
         has_query_result=bool(session.get("query_result")),
         current_page=session.get("current_page", 0),
@@ -154,7 +154,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             today=today,
             language=locale,
             state=state,
-            query_contract=session_query_contract,
+            query_request=session_query_request,
             items=items,
             surface_view=surface_view,
             query_frames=query_frames,
@@ -197,7 +197,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             decision=decision,
             state=state,
             session=session,
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
             message=message,
             today=today,
             language=locale,
@@ -243,7 +243,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             decision=decision,
             state=state,
             session=session,
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
             message=message,
             today=today,
             language=locale,
@@ -258,7 +258,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             recovered_updates.update(step._semantic_trace_updates(decision))
             return recovered_updates
 
-    if _is_repeat_existing_query_followup(message, session_query_contract):
+    if _is_repeat_existing_query_followup(message, session_query_request):
         step._log_single_item_followup(
             surface_view=surface_view,
             continuation_type="repeat_query",
@@ -268,10 +268,10 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         return _repeat_existing_query_updates(
             step,
             decision=decision,
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
         )
 
-    if _is_show_existing_transactions_followup(message, session_query_contract):
+    if _is_show_existing_transactions_followup(message, session_query_request):
         logger.info(
             "query_continuation_resolution",
             path="semantic_show_existing_transactions_recovery",
@@ -292,7 +292,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             followup_intent="refine_existing",
             state=state,
             session=session,
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
             restored_query_result=restored_query_result,
             surface_view=surface_view,
             items=items,
@@ -340,7 +340,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             followup_intent=decision.followup_intent or "none",
             state=state,
             session=session,
-            session_query_contract=session_query_contract,
+            session_query_request=session_query_request,
             restored_query_result=restored_query_result,
             surface_view=surface_view,
             items=items,
@@ -374,7 +374,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         decision=decision,
         session=session,
         restored_query_result=restored_query_result,
-        session_query_contract=session_query_contract,
+        session_query_request=session_query_request,
         language=locale,
     )
     if semantic_fact_updates is not None:
@@ -396,14 +396,14 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
     )
     if grounded_updates is not None and step._should_ignore_grounded_query_for_aggregate(
         grounded_updates=grounded_updates,
-        session_query_contract=session_query_contract,
+        session_query_request=session_query_request,
         continuation_type=cont_type,
     ):
         logger.info(
             "query_grounded_followup_ignored",
             reason="aggregate_requires_new_query_shape",
-            grounded_intent=grounded_updates["query_contract"].intent.value,
-            original_intent=session_query_contract.intent.value if session_query_contract is not None else None,
+            grounded_intent=grounded_updates["query_request"].intent.value,
+            original_intent=session_query_request.intent.value if session_query_request is not None else None,
         )
         grounded_updates = None
     if grounded_updates is not None:
@@ -414,7 +414,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
                 decision=decision,
                 state=state,
                 session=session,
-                session_query_contract=session_query_contract,
+                session_query_request=session_query_request,
                 message=message,
                 today=today,
                 language=locale,
@@ -454,7 +454,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
                 state=state,
                 today=today,
                 language=locale,
-                has_original_scope=session_query_contract is not None,
+                has_original_scope=session_query_request is not None,
                 reasoner_extraction=getattr(decision, "extraction", None),
                 reasoner_confidence=decision.confidence,
                 parse_result_to_updates=compiler_paths.parse_result_to_updates,
@@ -468,7 +468,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
                 decision=decision,
                 state=state,
                 session=session,
-                session_query_contract=session_query_contract,
+                session_query_request=session_query_request,
                 message=message,
                 today=today,
                 language=locale,
@@ -497,7 +497,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         followup_intent=followup_intent,
         state=state,
         session=session,
-        session_query_contract=session_query_contract,
+        session_query_request=session_query_request,
         restored_query_result=restored_query_result,
         surface_view=surface_view,
         items=items,

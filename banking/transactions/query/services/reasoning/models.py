@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from banking.transactions.query.contracts import SurfaceView
 from banking.transactions.query.models.domain import (
     Filters,
-    QueryExecutionContract,
     QueryFrame,
+    QueryRequest,
     QueryResultItem,
     TimeRange,
 )
@@ -373,7 +373,7 @@ class SemanticReasonerContext:
     message: str
     today: date
     language: str
-    query_contract: QueryExecutionContract | None = None
+    query_request: QueryRequest | None = None
     pending_clarification: PendingClarificationState | None = None
     items: list[QueryResultItem] | None = None
     surface_view: SurfaceView | None = None
@@ -386,6 +386,6 @@ class SemanticReasonerContext:
     def session_mode(self) -> SemanticContextModeType:
         if self.pending_clarification is not None:
             return "pending_clarification"
-        if self.query_contract is not None:
+        if self.query_request is not None:
             return "active_result"
         return "none"
