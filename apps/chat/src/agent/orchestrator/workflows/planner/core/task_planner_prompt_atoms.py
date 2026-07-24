@@ -10,7 +10,7 @@ PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
 - Beneficiary=list|delete|rename; save only after verified transaction. Manual creation is unavailable.
 - Support=handle_request|report_issue|canonical list/find/note/close ticket actions.
 - Query=transaction_list|transaction_search|beneficiary_summary; exports unavailable.
-- Shapes: fact_count|fact_bool|fact_status|fact_recap|surface_list|surface_detail|surface_paginated|
+- Shapes: fact_count|fact_bool|fact_status|surface_list|surface_detail|surface_paginated|
   surface_actionable. People batches require recipient_allocations; funding splits use explicit_split."""
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION

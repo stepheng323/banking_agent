@@ -38,10 +38,11 @@ from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import FocusedReferent
-from banking.transactions.query.models.domain import QueryAnswerStrategy, QueryIntent, QueryResult
+from banking.transactions.query.models.domain import QueryAnswerStrategy, QueryResult
+from banking.transactions.query.models.operations import RetrieveOperation
 from banking.transactions.query.presentation.formatter import QueryFormatter
 from shared.messaging.body_blocks import MessageDocument
-from shared.types.read import ReadRequest, ReadResult, ResponseShape, normalize_read_request
+from shared.types.read import AdvertisedResponseShape, ReadRequest, ReadResult, normalize_read_request
 
 
 class QueryTaskExecutor:
@@ -55,7 +56,7 @@ def _compact_query_session_patch(patch: dict[str, Any] | None) -> dict[str, Any]
         return None
     allowed = {
         "session_active",
-        "query_contract",
+        "query_request",
         "query_result",
         "query_frames",
         "pending_clarification",
@@ -139,7 +140,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
             read_request = normalize_read_request(task.payload)
             if read_request is None:
                 if query_result.answer_strategy == QueryAnswerStrategy.TRANSACTION_LIST:
-                    shape: ResponseShape = "surface_paginated" if query_result.has_more else "surface_list"
+                    shape: AdvertisedResponseShape = "surface_paginated" if query_result.has_more else "surface_list"
                 elif query_result.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER:
                     shape = "fact_value"
                 else:
@@ -238,9 +239,11 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         if compact_session is not None:
             ctx.accumulator.set_pending_query_clarification(compact_session)
         set_task_stage(task, TaskStage.EXTRACTED)
-        if result.response:
-            ctx.accumulator.add_prompt(result.response, task_id)
-            ctx.accumulator.add_missing_fields(task_id, ["clarification"])
+        # An empty worker response must still surface a blocker; otherwise the
+        # task is left non-terminal with no interrupt and the wave stalls.
+        prompt = result.response or render_message("query.clarify.default", _state_locale(ctx.state))
+        ctx.accumulator.add_prompt(prompt, task_id)
+        ctx.accumulator.add_missing_fields(task_id, ["clarification"])
 
     elif result.outcome == TransactionOutcome.FAILED:
         fail_task(
@@ -302,11 +305,12 @@ def _query_response_body_blocks(ctx: ExecutionTurnContext, result: TransactionRe
     if not query_result.items:
         return None
     if query_result.answer_strategy != QueryAnswerStrategy.TRANSACTION_LIST:
-        query_contract = query_result.query_contract
-        if query_contract is None or query_contract.intent not in {
-            QueryIntent.TRANSACTION_LIST,
-            QueryIntent.TRANSACTION_SEARCH,
-        }:
+        query_request = query_result.query_request
+        if (
+            query_request is None
+            or not isinstance(query_request.operation, RetrieveOperation)
+            or query_request.operation.projection.shape != "list"
+        ):
             return None
 
     try:

@@ -425,12 +425,13 @@ def push_query_surface_frame(ctx: ExecutionTurnContext, query_result: Any) -> No
     )
     if frame is None:
         return
-    query_contract = getattr(query_result, "query_contract", None)
-    if query_contract is not None and hasattr(query_contract, "model_dump"):
-        frame.metadata["query_contract"] = query_contract.model_dump(mode="json")
+    query_request = getattr(query_result, "query_request", None)
+    if query_request is not None and hasattr(query_request, "model_dump"):
+        frame.metadata["query_request"] = query_request.model_dump(mode="json")
+        frame.metadata["query_schema_version"] = 2
         try:
             frame.metadata["query_frame"] = build_query_frame(
-                query_contract=query_contract,
+                query_request=query_request,
                 result=query_result,
                 turn_index=context_surface(ctx.state).frame_count + 1,
             ).model_dump(mode="json")
@@ -455,8 +456,8 @@ def _build_direct_query_summary_frame(
     surface_view: Any | None,
 ) -> ContextFrame | None:
     """Build a compact query frame for direct answers that have no visible rows."""
-    query_contract = getattr(query_result, "query_contract", None)
-    if query_contract is None or not hasattr(query_contract, "model_dump"):
+    query_request = getattr(query_result, "query_request", None)
+    if query_request is None or not hasattr(query_request, "model_dump"):
         return None
 
     summary_text = str(getattr(query_result, "summary_text", "") or "").strip()
@@ -487,7 +488,8 @@ def _build_direct_query_summary_frame(
         metadata={
             "source": "query",
             "surface_mode": "direct_answer",
-            "query_contract": query_contract.model_dump(mode="json"),
+            "query_request": query_request.model_dump(mode="json"),
+            "query_schema_version": 2,
             "summary_text": summary_text,
             "lead_text": lead_text or None,
             "surface_context": getattr(surface_view, "context", {}) if surface_view is not None else {},
@@ -496,7 +498,7 @@ def _build_direct_query_summary_frame(
     )
     try:
         frame.metadata["query_frame"] = build_query_frame(
-            query_contract=query_contract,
+            query_request=query_request,
             result=query_result,
             turn_index=context_surface(ctx.state).frame_count + 1,
         ).model_dump(mode="json")

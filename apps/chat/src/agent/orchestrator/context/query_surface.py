@@ -11,10 +11,10 @@ from banking.transactions.query.contracts import SelectionPayload, SurfaceItemVi
 from banking.transactions.query.grounding.frames import build_query_frame
 from banking.transactions.query.models.domain import (
     QueryAnswerStrategy,
-    QueryExecutionContract,
     QueryResult,
     QueryResultItem,
 )
+from banking.transactions.query.models.operations import QueryRequest
 
 
 class QueryContextFrameState(Protocol):
@@ -29,7 +29,7 @@ def query_surface_is_active(frame: ContextFrame, *, now: int | None = None) -> b
         return False
     if not frame.items:
         return False
-    return frame.metadata.get("source") == "query" and bool(frame.metadata.get("query_contract"))
+    return frame.metadata.get("source") == "query" and bool(frame.metadata.get("query_request"))
 
 
 def get_active_query_surface(state: QueryContextFrameState, *, now: int | None = None) -> ContextFrame | None:
@@ -86,7 +86,7 @@ def build_query_session_snapshot_from_surface(
     context_frames: list[ContextFrame] | None = None,
 ) -> dict[str, Any] | None:
     """Project a context frame into the legacy session shape used by continuation code."""
-    contract = _restore_query_contract(frame.metadata.get("query_contract"))
+    contract = _restore_query_request(frame.metadata.get("query_request"))
     if contract is None:
         return None
 
@@ -97,7 +97,7 @@ def build_query_session_snapshot_from_surface(
         summary_text=str(frame.metadata.get("summary_text") or surface_view.lead_text or ""),
         items=query_items,
         has_more=bool(frame.metadata.get("has_more")),
-        query_contract=contract,
+        query_request=contract,
         surface_view=surface_view,
         answer_strategy=answer_strategy,
     )
@@ -105,12 +105,12 @@ def build_query_session_snapshot_from_surface(
     query_frames = _query_frames_from_context_frames(context_frames or [frame])
     if not query_frames:
         query_frames = [
-            build_query_frame(query_contract=contract, result=query_result, turn_index=1).model_dump(mode="json")
+            build_query_frame(query_request=contract, result=query_result, turn_index=1).model_dump(mode="json")
         ]
 
     return {
         "session_active": True,
-        "query_contract": contract.model_dump(mode="json"),
+        "query_request": contract.model_dump(mode="json"),
         "query_result": query_result.model_dump(mode="json"),
         "query_frames": query_frames,
         "current_page": int(frame.metadata.get("current_page") or 0),
@@ -132,7 +132,7 @@ def _query_frames_from_context_frames(frames: list[ContextFrame]) -> list[dict[s
             query_frames.append(raw_query_frame)
             continue
 
-        contract = _restore_query_contract(frame.metadata.get("query_contract"))
+        contract = _restore_query_request(frame.metadata.get("query_request"))
         if contract is None:
             continue
         surface_view = _surface_view_from_frame(frame)
@@ -140,24 +140,24 @@ def _query_frames_from_context_frames(frames: list[ContextFrame]) -> list[dict[s
             summary_text=str(frame.metadata.get("summary_text") or surface_view.lead_text or ""),
             items=[_query_item_from_surface_item(item) for item in surface_view.items],
             has_more=bool(frame.metadata.get("has_more")),
-            query_contract=contract,
+            query_request=contract,
             surface_view=surface_view,
             answer_strategy=_answer_strategy_from_surface(surface_view.mode),
         )
         query_frames.append(
-            build_query_frame(query_contract=contract, result=query_result, turn_index=turn_index).model_dump(
+            build_query_frame(query_request=contract, result=query_result, turn_index=turn_index).model_dump(
                 mode="json"
             )
         )
     return query_frames
 
 
-def _restore_query_contract(raw: Any) -> QueryExecutionContract | None:
-    if isinstance(raw, QueryExecutionContract):
+def _restore_query_request(raw: Any) -> QueryRequest | None:
+    if isinstance(raw, QueryRequest):
         return raw
     if isinstance(raw, dict):
         try:
-            return QueryExecutionContract.model_validate(raw)
+            return QueryRequest.model_validate(raw)
         except Exception:
             return None
     return None

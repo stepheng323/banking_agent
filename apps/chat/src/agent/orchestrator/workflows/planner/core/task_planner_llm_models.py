@@ -17,7 +17,7 @@ from shared.types.conversation_sets import (
     ScheduleQueryContract,
 )
 from shared.types.planner import PlannerClauseIntentFamily, PlannerOutput, PlannerResponseKey
-from shared.types.read import ReadRequest, ReadSubject, ResponseShape
+from shared.types.read import AdvertisedResponseShape, ReadRequest, ReadSubject
 
 
 def _strip_annotations(schema: dict[str, Any]) -> None:
@@ -144,7 +144,7 @@ class PlannerLLMGenericParameters(PlannerLLMTransactionParameters):
     account_id: str | None = None
     alias: str | None = None
     read_subject: ReadSubject | None = None
-    response_shape: ResponseShape | None = None
+    response_shape: AdvertisedResponseShape | None = None
     entity_name: str | None = None
     read_status: str | None = None
 

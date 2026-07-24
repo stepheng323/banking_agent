@@ -33,7 +33,7 @@ from shared.types.planner import (
     SemanticRoutingMode,
     TransactionExecutor,
 )
-from shared.types.read import ReadSubject, ResponseShape
+from shared.types.read import AdvertisedResponseShape, ReadSubject
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -54,7 +54,7 @@ class SemanticRouteLLMDecision(BaseModel):
     response: str | None = Field(default=None, alias="res")
     expected_transaction_executors: list[TransactionExecutor] = Field(default_factory=list, alias="execs")
     read_subject: ReadSubject | None = None
-    response_shape: ResponseShape | None = None
+    response_shape: AdvertisedResponseShape | None = None
     entity_name: str | None = None
     bank_name: str | None = None
     status: str | None = None
@@ -87,7 +87,7 @@ class _ContextRouteDecision(BaseModel):
     mode: SemanticRoutingMode | None = None
     target_intent: RouterDomainIntent | None = Field(default=None, alias="intent")
     read_subject: ReadSubject | None = Field(default=None, alias="subject")
-    response_shape: ResponseShape | None = Field(default=None, alias="shape")
+    response_shape: AdvertisedResponseShape | None = Field(default=None, alias="shape")
     entity_name: str | None = Field(default=None, alias="entity", max_length=120)
     bank_name: str | None = Field(default=None, alias="bank", max_length=120)
     status: str | None = Field(default=None, max_length=64)
@@ -340,7 +340,7 @@ Return ONLY JSON with:
 - res: short direct response text or null
 - execs: array of transfer|airtime|data (empty if none)
 - read_subject: transaction | balance | linked_account | default_account | beneficiary | schedule | ticket | receipt | null
-- response_shape: fact_count | fact_bool | fact_value | fact_status | fact_recap | surface_list |
+- response_shape: fact_count | fact_bool | fact_value | fact_status | surface_list |
   surface_detail | surface_paginated | surface_actionable | null
 - unsupported_cap: lending | investments | financial_advice | international_transfers |
   pdf_exports | csv_exports | all_time_history | null

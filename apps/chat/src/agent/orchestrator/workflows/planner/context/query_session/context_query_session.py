@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 
 _STASHED_COMPAT_KEYS = {
     "session_active",
-    "query_contract",
+    "query_request",
     "query_result",
     "query_frames",
     "pending_clarification",
@@ -84,7 +84,7 @@ async def _load_query_session_snapshot(
         "planner_query_session_snapshot",
         query_session_source=query_session_source or "none",
         session_active=bool(snapshot.get("session_active")),
-        has_query_contract=bool(snapshot.get("query_contract")),
+        has_query_request=bool(snapshot.get("query_request")),
         has_query_result=bool(snapshot.get("query_result")),
         has_surface=_session_has_surface_view(snapshot),
         has_query_frames=bool(snapshot.get("query_frames")),
