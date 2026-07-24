@@ -435,6 +435,420 @@ class BankTransactionCoverage(Base):
         )
 
 
+class QueryTransaction(Base):
+    """Canonical, query-side transaction observation independent of its source system."""
+
+    __tablename__ = "query_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", name="fk_query_transactions_user_id"), nullable=False, index=True
+    )
+    linked_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", name="fk_query_transactions_linked_account_id"),
+        nullable=True,
+        index=True,
+    )
+    effective_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    effective_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    amount: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="NGN", nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="posted", index=True)
+    narration: Mapped[str | None] = mapped_column(Text, nullable=True)
+    narration_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    bank_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_reconciliation_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="unmatched", index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
+
+    sources: Mapped[list["QueryTransactionSource"]] = relationship(
+        "QueryTransactionSource", back_populates="query_transaction", cascade="all, delete-orphan"
+    )
+    semantic_projection: Mapped["TransactionSemanticProjection | None"] = relationship(
+        "TransactionSemanticProjection", back_populates="query_transaction", uselist=False, cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint("direction in ('debit', 'credit')", name="ck_query_transactions_direction"),
+        CheckConstraint("amount >= 0", name="ck_query_transactions_amount_nonnegative"),
+        Index("ix_query_transactions_user_effective", "user_id", "effective_at"),
+    )
+
+
+class QueryTransactionSource(Base):
+    """An idempotent source observation attached to a canonical query transaction."""
+
+    __tablename__ = "query_transaction_sources"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    query_transaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "query_transactions.id",
+            name="fk_query_transaction_sources_query_transaction_id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+    source_kind: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    source_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
+    provider_reference: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    match_confidence: Mapped[str] = mapped_column(String(20), nullable=False, default="exact")
+    observed_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+
+    query_transaction: Mapped["QueryTransaction"] = relationship("QueryTransaction", back_populates="sources")
+
+    __table_args__ = (UniqueConstraint("source_kind", "source_id", name="uq_query_transaction_sources_source"),)
+
+
+class CounterpartyEntity(Base):
+    """Verified global or user-scoped real-world counterparty identity."""
+
+    __tablename__ = "counterparty_entities"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_counterparty_entities_owner_user_id"),
+        nullable=True,
+        index=True,
+    )
+    canonical_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(40), nullable=False, default="unknown", index=True)
+    verification_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unverified", index=True)
+    default_category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    supported_event_types: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
+
+    aliases: Mapped[list["CounterpartyAlias"]] = relationship(
+        "CounterpartyAlias", back_populates="entity", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (UniqueConstraint("owner_user_id", "canonical_name", name="uq_counterparty_entities_owner_name"),)
+
+
+class CounterpartyAlias(Base):
+    """Normalized non-sensitive alias or narration-pattern match for an entity."""
+
+    __tablename__ = "counterparty_aliases"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    entity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("counterparty_entities.id", name="fk_counterparty_aliases_entity_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    alias_normalized: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    alias_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="name")
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False, default=Decimal("1"))
+    verification_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unverified")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+
+    entity: Mapped["CounterpartyEntity"] = relationship("CounterpartyEntity", back_populates="aliases")
+
+    __table_args__ = (
+        UniqueConstraint("entity_id", "alias_normalized", "alias_kind", name="uq_counterparty_aliases_entity_alias"),
+    )
+
+
+class CounterpartyIdentifier(Base):
+    """Encrypted identifier plus keyed hash used only for deterministic entity matching."""
+
+    __tablename__ = "counterparty_identifiers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    entity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("counterparty_entities.id", name="fk_counterparty_identifiers_entity_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    identifier_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    value_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    encrypted_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unverified")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+
+    __table_args__ = (UniqueConstraint("identifier_type", "value_hash", name="uq_counterparty_identifiers_type_hash"),)
+
+
+class UserCounterpartyProfile(Base):
+    """User-owned relationship and presentation knowledge for a counterparty."""
+
+    __tablename__ = "user_counterparty_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_user_counterparty_profiles_user_id"),
+        nullable=False,
+        index=True,
+    )
+    entity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("counterparty_entities.id", name="fk_user_counterparty_profiles_entity_id"),
+        nullable=False,
+        index=True,
+    )
+    relationship_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    preferred_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    category_override: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("user_id", "entity_id", name="uq_user_counterparty_profiles_user_entity"),)
+
+
+class EnrichmentRun(Base):
+    """Auditable batch of deterministic or model-assisted semantic enrichment."""
+
+    __tablename__ = "enrichment_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    enrichment_version: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="running", index=True)
+    model_version: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    scanned_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    resolved_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    review_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class TransactionSemanticAssertion(Base):
+    """Versioned evidence-backed semantic value for one canonical query transaction field."""
+
+    __tablename__ = "transaction_semantic_assertions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    query_transaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("query_transactions.id", name="fk_semantic_assertions_query_transaction_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    enrichment_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("enrichment_runs.id", name="fk_semantic_assertions_run_id"),
+        nullable=True,
+        index=True,
+    )
+    field_name: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    value_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    resolution_state: Mapped[str] = mapped_column(String(20), nullable=False, default="resolved")
+    rule_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    model_version: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    enrichment_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    __table_args__ = (Index("ix_semantic_assertions_active", "query_transaction_id", "field_name", "superseded_at"),)
+
+
+class TransactionSemanticProjection(Base):
+    """Current winning semantic values used by the query read path."""
+
+    __tablename__ = "transaction_semantic_projections"
+
+    query_transaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("query_transactions.id", name="fk_semantic_projections_query_transaction_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    counterparty_entity_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("counterparty_entities.id", name="fk_semantic_projections_entity_id"),
+        nullable=True,
+        index=True,
+    )
+    counterparty_name: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    entity_type: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    event_type: Mapped[str | None] = mapped_column(String(48), nullable=True, index=True)
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    cash_flow_class: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    resolution_state: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown", index=True)
+    enrichment_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
+
+    query_transaction: Mapped["QueryTransaction"] = relationship(
+        "QueryTransaction", back_populates="semantic_projection"
+    )
+
+
+class TransactionRelationship(Base):
+    """Typed, evidence-backed relationship between canonical query transactions."""
+
+    __tablename__ = "transaction_relationships"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    source_transaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("query_transactions.id", name="fk_transaction_relationships_source"),
+        nullable=False,
+        index=True,
+    )
+    target_transaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("query_transactions.id", name="fk_transaction_relationships_target"),
+        nullable=False,
+        index=True,
+    )
+    relationship_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="candidate", index=True)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    enrichment_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_transaction_id",
+            "target_transaction_id",
+            "relationship_type",
+            "superseded_at",
+            name="uq_transaction_relationships_active",
+        ),
+        CheckConstraint("source_transaction_id <> target_transaction_id", name="ck_transaction_relationships_not_self"),
+    )
+
+
+class EconomicEvent(Base):
+    """A user-meaningful economic event projected from one or more query transactions."""
+
+    __tablename__ = "economic_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", name="fk_economic_events_user_id"), nullable=False, index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    economic_amount: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="NGN")
+    direction: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    counterparty_entity_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("counterparty_entities.id", name="fk_economic_events_entity_id"),
+        nullable=True,
+        index=True,
+    )
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    cash_flow_class: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="provisional", index=True)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    effective_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    enrichment_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
+
+    legs: Mapped[list["EconomicEventTransaction"]] = relationship(
+        "EconomicEventTransaction", back_populates="economic_event", cascade="all, delete-orphan"
+    )
+
+
+class EconomicEventTransaction(Base):
+    """Allocated canonical transaction leg of an economic event."""
+
+    __tablename__ = "economic_event_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    economic_event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("economic_events.id", name="fk_economic_event_transactions_event_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    query_transaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("query_transactions.id", name="fk_economic_event_transactions_transaction_id"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    allocated_amount: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+
+    economic_event: Mapped["EconomicEvent"] = relationship("EconomicEvent", back_populates="legs")
+
+    __table_args__ = (
+        UniqueConstraint("economic_event_id", "query_transaction_id", "role", name="uq_economic_event_transaction_leg"),
+        CheckConstraint("allocated_amount >= 0", name="ck_economic_event_transactions_amount_nonnegative"),
+    )
+
+
+class BalanceSnapshot(Base):
+    """Provider-authoritative balance used for query-side semantic reconciliation."""
+
+    __tablename__ = "balance_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", name="fk_balance_snapshots_user_id"), nullable=False, index=True
+    )
+    linked_account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", name="fk_balance_snapshots_account_id"),
+        nullable=False,
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    ledger_effective_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    available_balance: Mapped[Decimal | None] = mapped_column(MONEY_COLUMN, nullable=True)
+    ledger_balance: Mapped[Decimal | None] = mapped_column(MONEY_COLUMN, nullable=True)
+    coverage_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unavailable")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+
+
+class SemanticReconciliationRun(Base):
+    """Audit record for query-side event and balance reconciliation."""
+
+    __tablename__ = "semantic_reconciliation_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_semantic_reconciliation_runs_user_id"),
+        nullable=True,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="running", index=True)
+    enrichment_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    scanned_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    assigned_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unresolved_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unresolved_amount: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False, default=Decimal("0"))
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class FundedTransfer(Base):
     """
     Logical transfer funded from multiple accounts.
