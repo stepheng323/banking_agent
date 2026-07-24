@@ -230,6 +230,7 @@ def _mirror_row_from_transaction(
                 "amount": transaction.amount,
                 "transaction_type": transaction.transaction_type,
                 "category": transaction.category,
+                "provider_counterparty": transaction.counterparty,
                 "counterparty": analysis.counterparty,
                 "counterparty_role": analysis.counterparty_role,
                 "counterparty_source": analysis.counterparty_source,
@@ -290,6 +291,32 @@ async def ensure_mirror_coverage(
             await uow.bank_transactions.bulk_upsert(
                 [_mirror_row_from_transaction(txn, account=account) for txn in provider_transactions]
             )
+            # Semantic meaning is projected during ingestion, never invented while
+            # rendering a later query.  Keep this conditional for focused tests
+            # whose lightweight fake unit of work predates the new repository.
+            query_transactions = getattr(uow, "query_transactions", None)
+            if query_transactions is not None:
+                from banking.transactions.query.services.analysis.economic_events import EconomicEventBuilder
+                from banking.transactions.query.services.analysis.semantic_enrichment import SemanticEnrichmentService
+
+                mirrored_rows = await uow.bank_transactions.list_by_account_window(
+                    account.linked_account_id,
+                    start_date=window_start,
+                    end_date=window_end,
+                    provider=_MIRROR_PROVIDER,
+                )
+                enrichment = SemanticEnrichmentService(uow.db)
+                event_builder = EconomicEventBuilder(uow.db)
+                for mirrored_row in mirrored_rows:
+                    query_transaction = await query_transactions.project_bank_transaction(mirrored_row)
+                    raw_payload = dict(mirrored_row.raw_payload or {})
+                    projection = await enrichment.enrich_query_transaction(
+                        query_transaction,
+                        provider_category=mirrored_row.category,
+                        provider_counterparty=raw_payload.get("provider_counterparty"),
+                    )
+                    await event_builder.rebuild_for_transaction(query_transaction, projection)
+                    await event_builder.link_high_confidence_candidates(query_transaction)
             await uow.bank_transaction_coverages.add_full_coverage(
                 account.linked_account_id,
                 start_date=window_start,
@@ -337,6 +364,26 @@ async def load_mirrored_transactions(
     async with UnitOfWork() as uow:
         if uow.bank_transactions is None:
             raise RuntimeError("bank_transaction_repository_unavailable")
+
+        query_transactions = getattr(uow, "query_transactions", None)
+        if query_transactions is not None:
+            try:
+                canonical_rows = await query_transactions.query_dicts_by_accounts_window(
+                    [account.linked_account_id for account in account_contexts],
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            except Exception as exc:
+                logger.warning("canonical_query_transaction_load_failed", error_type=type(exc).__name__)
+                canonical_rows = []
+            if canonical_rows:
+                linked_to_external = {
+                    str(account.linked_account_id): account.external_account_id for account in account_contexts
+                }
+                for row in canonical_rows:
+                    linked_account_id = str(row.get("source_account_id") or "")
+                    row["source_account_id"] = linked_to_external.get(linked_account_id, linked_account_id)
+                return canonical_rows
 
         rows = await uow.bank_transactions.list_by_accounts_window(
             [account.linked_account_id for account in account_contexts],

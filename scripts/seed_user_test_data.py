@@ -23,7 +23,7 @@ from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
 from shared.database.connection import get_session_local
 from shared.database.enums import BeneficiaryTypeEnum
-from shared.database.models import Account, Beneficiary, User
+from shared.database.models import Account, Beneficiary, CounterpartyAlias, CounterpartyEntity, User
 from shared.security.field_encryption import blind_index
 
 
@@ -96,6 +96,79 @@ def _seed_beneficiary_specs() -> list[dict[str, str]]:
     ]
 
 
+def _counterparty_registry_specs() -> list[dict[str, object]]:
+    """Small verified registry used by deterministic semantic-enrichment demos."""
+    return [
+        {
+            "canonical_name": "EaseMoni",
+            "entity_type": "lender",
+            "default_category": None,
+            "event_types": ["loan_disbursement", "loan_repayment"],
+            "aliases": ["easemoni", "easemoni opay mfb", "repay for easemoni"],
+        },
+        {
+            "canonical_name": "Piggyvest",
+            "entity_type": "investment_platform",
+            "default_category": "savings",
+            "event_types": ["investment_contribution", "investment_withdrawal"],
+            "aliases": ["piggyvest", "piggy vest"],
+        },
+        {
+            "canonical_name": "Uber",
+            "entity_type": "merchant",
+            "default_category": "transport",
+            "event_types": ["purchase"],
+            "aliases": ["uber", "uber trip"],
+        },
+    ]
+
+
+async def _seed_counterparty_registry(db: AsyncSession) -> int:
+    created = 0
+    for spec in _counterparty_registry_specs():
+        entity = (
+            await db.execute(
+                select(CounterpartyEntity).where(
+                    CounterpartyEntity.owner_user_id.is_(None),
+                    CounterpartyEntity.canonical_name == str(spec["canonical_name"]),
+                )
+            )
+        ).scalars().first()
+        if entity is None:
+            entity = CounterpartyEntity(
+                canonical_name=str(spec["canonical_name"]),
+                entity_type=str(spec["entity_type"]),
+                verification_status="verified",
+                default_category=spec["default_category"],
+                supported_event_types=list(spec["event_types"]),
+            )
+            db.add(entity)
+            await db.flush()
+            created += 1
+        for alias in list(spec["aliases"]):
+            normalized = " ".join(str(alias).lower().replace("-", " ").split())
+            existing = (
+                await db.execute(
+                    select(CounterpartyAlias).where(
+                        CounterpartyAlias.entity_id == entity.id,
+                        CounterpartyAlias.alias_normalized == normalized,
+                        CounterpartyAlias.alias_kind == "name",
+                    )
+                )
+            ).scalars().first()
+            if existing is None:
+                db.add(
+                    CounterpartyAlias(
+                        entity_id=entity.id,
+                        alias_normalized=normalized,
+                        alias_kind="name",
+                        confidence=1,
+                        verification_status="verified",
+                    )
+                )
+    return created
+
+
 def _beneficiary_account_lookup(account_number: str) -> str:
     lookup = blind_index(
         "beneficiaries.account_number",
@@ -162,6 +235,9 @@ async def _seed_for_user(user: User) -> None:
     created_beneficiaries = 0
     updated_beneficiaries = 0
     deleted_duplicate_beneficiaries = 0
+    created_counterparty_entities = 0
+    rebuilt_bank_sources = 0
+    rebuilt_app_sources = 0
 
     async with session_local() as db:
         user_suffix = str(user.id).split("-")[0]
@@ -235,6 +311,12 @@ async def _seed_for_user(user: User) -> None:
                 beneficiary.bank_name = spec["bank_name"]
                 updated_beneficiaries += 1
 
+        created_counterparty_entities = await _seed_counterparty_registry(db)
+
+        from banking.transactions.query.services.analysis.canonical_projection import rebuild_user_query_semantics
+
+        rebuilt_bank_sources, rebuilt_app_sources = await rebuild_user_query_semantics(db, user.id)
+
         await db.commit()
 
         account_rows = list(
@@ -268,6 +350,11 @@ async def _seed_for_user(user: User) -> None:
         f"{len(beneficiary_rows)} total "
         f"(created={created_beneficiaries}, updated={updated_beneficiaries}, "
         f"deleted_duplicates={deleted_duplicate_beneficiaries})"
+    )
+    print(f"Verified counterparty entities created: {created_counterparty_entities}")
+    print(
+        "Canonical query projections rebuilt: "
+        f"bank_sources={rebuilt_bank_sources}, app_sources={rebuilt_app_sources}"
     )
     for idx, bene in enumerate(beneficiary_rows, start=1):
         alias_part = f" alias={bene.alias}" if bene.alias else ""

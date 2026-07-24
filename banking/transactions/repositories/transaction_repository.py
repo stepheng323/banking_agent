@@ -16,6 +16,9 @@ from shared.database.models import FundedTransfer, Transaction, TransactionDebit
 from shared.security.field_encryption import blind_index
 from shared.security.redaction import redact_sensitive_identifiers
 from shared.utils.json import to_json_safe_dict
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 DIRECT_TRANSFER_CLAIMED_STATUS = "direct_transfer_claimed"
 DIRECT_TRANSFER_RECOVERABLE_PROVIDER_STATUSES = {
@@ -195,6 +198,7 @@ class TransactionRepository(BaseRepository[Transaction]):
             metadata.update(service_metadata)
             transaction.service_metadata = metadata
         self.db.add(transaction)
+        await self._project_query_read_model(transaction)
         if commit:
             await self.db.commit()
             await self.db.refresh(transaction)
@@ -254,6 +258,7 @@ class TransactionRepository(BaseRepository[Transaction]):
             outcome = "failed"
 
         self.db.add(transaction)
+        await self._project_query_read_model(transaction)
         if commit:
             await self.db.commit()
             await self.db.refresh(transaction)
@@ -462,6 +467,7 @@ class TransactionRepository(BaseRepository[Transaction]):
             if status == TransactionStatusEnum.SUCCESSFUL.value:
                 await self._post_success_ledger_entry(transaction)
             self.db.add(transaction)
+            await self._project_query_read_model(transaction)
             await self.db.commit()
             await self.db.refresh(transaction)
         return transaction
@@ -489,6 +495,22 @@ class TransactionRepository(BaseRepository[Transaction]):
             transaction,
             provider_reference=transaction.transaction_id or transaction.idempotency_key,
         )
+
+    async def _project_query_read_model(self, transaction: Transaction) -> None:
+        """Best-effort query projection that can never fail a financial mutation."""
+        try:
+            from banking.transactions.query.services.analysis.canonical_projection import (
+                project_app_transaction_read_model,
+            )
+
+            await project_app_transaction_read_model(self.db, transaction)
+        except Exception as exc:  # pragma: no cover - defensive operational boundary
+            logger.warning(
+                "canonical_query_projection_failed",
+                transaction_type=transaction.transaction_type,
+                status=transaction.status,
+                error_type=type(exc).__name__,
+            )
 
     async def _has_pooled_transfer_accounting(self, transaction: Transaction) -> bool:
         """Return true when this transaction is already represented by a funded transfer ledger."""

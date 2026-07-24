@@ -31,6 +31,7 @@ class SurfaceViewMode(str, Enum):
     TRANSACTION_LIST = "transaction_list"
     GROUPED_SUMMARY = "grouped_summary"
     CLARIFICATION = "clarification"
+    VARIANCE_INSIGHT = "variance_insight"
 
 
 class PresentationMode(str, Enum):
@@ -40,6 +41,7 @@ class PresentationMode(str, Enum):
     SUMMARY_LIST = "summary_list"
     TRANSACTION_LIST = "transaction_list"
     CLARIFY = "clarify"
+    VARIANCE_INSIGHT = "variance_insight"
 
 
 FactCapability = Literal[
@@ -56,6 +58,20 @@ FactCapability = Literal[
 ]
 
 
+class InsightEvidenceSelection(BaseModel):
+    """Stable analytical selector that can be compiled into evidence rows."""
+
+    measure: str
+    dimension: Literal["category", "counterparty", "account", "event_type", "cash_flow_class"]
+    bucket_key: str
+    basis: Literal["ledger_transactions", "economic_events"]
+    metric: Literal["spending", "income", "inflow", "outflow", "net_cash_flow"]
+    current_start: str
+    current_end: str
+    baseline_start: str
+    baseline_end: str
+
+
 class SelectionPayload(BaseModel):
     """Stable selection payload emitted by query surfaces."""
 
@@ -69,6 +85,7 @@ class SelectionPayload(BaseModel):
     time_patch: dict[str, Any] | None = None
     fact_capabilities: list[FactCapability] = Field(default_factory=list)
     handoff_payload: dict[str, Any] | None = None
+    insight_evidence: InsightEvidenceSelection | None = None
 
 
 class FocusedReferent(BaseModel):

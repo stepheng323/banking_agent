@@ -11,6 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from banking.transactions.query.contracts import FocusedReferent, SurfaceView, SurfaceViewMode
+from banking.transactions.query.models.operations import QueryRequest
 
 
 class QueryIntent(str, Enum):
@@ -24,6 +25,7 @@ class QueryIntent(str, Enum):
     CASH_FLOW_SUMMARY = "cash_flow_summary"
     BENEFICIARY_SUMMARY = "beneficiary_summary"
     AFFORDABILITY = "affordability"
+    INSIGHT = "insight"
     QUERY_CLARIFICATION = "query_clarification"
 
 
@@ -49,6 +51,7 @@ QueryContractRequestShape = Literal[
     "analytics",
     "comparison",
     "affordability",
+    "insight",
 ]
 
 
@@ -105,6 +108,7 @@ class QueryObjective(str, Enum):
     GROUPED_SUMMARY = "grouped_summary"
     COMPARISON = "comparison"
     AFFORDABILITY = "affordability"
+    INSIGHT = "insight"
     ACTION_HANDOFF = "action_handoff"
 
 
@@ -306,6 +310,7 @@ class QueryAnswerStrategy(str, Enum):
     SUMMARY_LIST = "summary_list"
     TRANSACTION_LIST = "transaction_list"
     CLARIFY = "clarify"
+    VARIANCE_INSIGHT = "variance_insight"
 
 
 class QueryAnswerContext(BaseModel):

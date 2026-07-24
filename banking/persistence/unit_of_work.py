@@ -15,6 +15,7 @@ from banking.scheduling.repositories.scheduled_run_repository import ScheduledRu
 from banking.support.repositories.support_ticket_repository import SupportTicketRepository
 from banking.transactions.repositories.bank_transaction_coverage_repository import BankTransactionCoverageRepository
 from banking.transactions.repositories.bank_transaction_repository import BankTransactionRepository
+from banking.transactions.repositories.query_transaction_repository import QueryTransactionRepository
 from banking.transactions.repositories.transaction_debit_step_repository import TransactionDebitStepRepository
 from banking.transactions.repositories.transaction_repository import TransactionRepository
 from banking.transfers.repositories.funded_transfer_repository import FundedTransferRepository
@@ -40,6 +41,7 @@ class UnitOfWork:
         self.actionable_messages: ActionableMessageRepository = None  # type: ignore[assignment]
         self.bank_transactions: BankTransactionRepository = None  # type: ignore[assignment]
         self.bank_transaction_coverages: BankTransactionCoverageRepository = None  # type: ignore[assignment]
+        self.query_transactions: QueryTransactionRepository = None  # type: ignore[assignment]
         self.processed_webhook_events: ProcessedWebhookEventRepository = None  # type: ignore[assignment]
         self.support_tickets: SupportTicketRepository = None  # type: ignore[assignment]
         self.risk_decisions: RiskDecisionRepository = None  # type: ignore[assignment]
@@ -63,6 +65,7 @@ class UnitOfWork:
         self.actionable_messages = ActionableMessageRepository(self.db)
         self.bank_transactions = BankTransactionRepository(self.db)
         self.bank_transaction_coverages = BankTransactionCoverageRepository(self.db)
+        self.query_transactions = QueryTransactionRepository(self.db)
         self.processed_webhook_events = ProcessedWebhookEventRepository(self.db)
         self.support_tickets = SupportTicketRepository(self.db)
         self.risk_decisions = RiskDecisionRepository(self.db)
