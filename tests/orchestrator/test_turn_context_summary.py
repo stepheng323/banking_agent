@@ -40,16 +40,21 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_
     summary_to_state_payload,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
-from banking.transactions.query.models.domain import QueryExecutionContract, QueryIntent, QueryIR, TimeRange
+from banking.transactions.query.models.domain import QueryIntent, TimeRange
 from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
     PendingClarificationState,
     QueryExtractionResult,
 )
+from tests.query.factories import make_query_request
 
 
 def _pending_query_clarification_snapshot(*, timestamp: float | None = None) -> dict[str, object]:
+    query_request = make_query_request(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 31)),
+    )
     return {
         "session_active": True,
         "timestamp": timestamp if timestamp is not None else time.time(),
@@ -57,18 +62,13 @@ def _pending_query_clarification_snapshot(*, timestamp: float | None = None) -> 
             "original_query": "How much did I spend last?",
             "resolver_message": "Which period did you mean?",
         },
-        "query_contract": {
-            "intent": "analytics_summary",
-            "time_start": "2026-03-01",
-            "time_end": "2026-03-31",
-            "timezone": "Africa/Lagos",
-        },
+        "query_request": query_request.model_dump(mode="json"),
     }
 
 
 def _query_surface_frame(*, summary_text: str = "Netflix was ₦5,000.") -> ContextFrame:
-    contract = QueryExecutionContract.from_query_ir(
-        QueryIR(
+    contract = (
+        make_query_request(
             intent=QueryIntent.TRANSACTION_SEARCH,
             time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 28)),
             result_limit=1,
@@ -89,7 +89,7 @@ def _query_surface_frame(*, summary_text: str = "Netflix was ₦5,000.") -> Cont
             "source": "query",
             "surface_mode": "direct_answer",
             "summary_text": summary_text,
-            "query_contract": contract.model_dump(mode="json"),
+            "query_request": contract.model_dump(mode="json"),
             "surface_context": {"mode": "direct_answer", "type": "single_transaction"},
         },
     )
@@ -248,7 +248,7 @@ async def test_load_query_session_snapshot_logs_session_shape(monkeypatch: pytes
         {
             "query_session_source": "pending_clarification",
             "session_active": True,
-            "has_query_contract": True,
+            "has_query_request": True,
             "has_query_result": False,
             "has_surface": False,
             "has_query_frames": False,
@@ -286,7 +286,7 @@ async def test_load_query_session_snapshot_logs_typed_surface_shape_without_lega
         {
             "query_session_source": "context_frame",
             "session_active": True,
-            "has_query_contract": True,
+            "has_query_request": True,
             "has_query_result": True,
             "has_surface": True,
             "has_query_frames": True,

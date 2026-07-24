@@ -17,6 +17,7 @@ from banking.transactions.query.models.extraction import (
     ResolverOutcome,
     TimeReference,
 )
+from banking.transactions.query.models.operations import QueryRequest, RetrieveOperation, SummarizeOperation
 from banking.transactions.query.services.parsing.parser import QueryParser
 
 
@@ -70,7 +71,7 @@ async def test_time_comparison_without_explicit_time_returns_needs_input() -> No
 
     assert result.outcome.value == "NEEDS_INPUT"
     assert result.resolver_message == render_message("query.time_comparison.prompt_specify_period", "en")
-    assert result.query_contract is None
+    assert result.query_request is None
 
 
 @pytest.mark.asyncio
@@ -119,7 +120,7 @@ async def test_parser_does_not_parse_support_problem_statement_as_query() -> Non
 
     assert llm.schema is None
     assert result.outcome == ResolverOutcome.NEEDS_INPUT
-    assert result.query_contract is None
+    assert result.query_request is None
     assert result.resolver_message == render_message("query.clarify.unsure_rephrase", "en")
 
 
@@ -140,7 +141,7 @@ async def test_all_time_query_auto_clamps_without_blocking_message() -> None:
     assert result.outcome == ResolverOutcome.OK
     assert result.resolver_message is None
     assert result.notices == [render_message("query.notice.clamped_days", "en", {"days_back": 180})]
-    assert result.query_contract is not None
+    assert result.query_request is not None
 
 
 @pytest.mark.asyncio
@@ -180,10 +181,13 @@ async def test_plain_people_query_is_recovered_to_beneficiary_summary_without_pe
     )
 
     assert result.outcome == ResolverOutcome.OK
-    assert result.query_contract is not None
-    assert result.query_contract["intent"] == "beneficiary_summary"
-    assert result.query_contract["filters"]["counterparty"] is None
-    assert result.query_contract["filters"]["transaction_type"] == "debit"
+    assert result.query_request is not None
+    request = QueryRequest.model_validate(result.query_request)
+    assert isinstance(request.operation, SummarizeOperation)
+    assert request.operation.summary.type == "grouped"
+    assert request.operation.summary.dimension == "counterparty"
+    assert request.operation.scope.predicate.counterparty is None
+    assert request.operation.scope.predicate.direction == "debit"
 
 
 @pytest.mark.asyncio
@@ -217,10 +221,13 @@ async def test_multilingual_recipient_summary_recovery_stays_grouped_and_clears_
     )
 
     assert result.outcome == ResolverOutcome.OK
-    assert result.query_contract is not None
-    assert result.query_contract["intent"] == "beneficiary_summary"
-    assert result.query_contract["filters"]["counterparty"] is None
-    assert result.query_contract["filters"]["transaction_type"] == "debit"
+    assert result.query_request is not None
+    request = QueryRequest.model_validate(result.query_request)
+    assert isinstance(request.operation, SummarizeOperation)
+    assert request.operation.summary.type == "grouped"
+    assert request.operation.summary.dimension == "counterparty"
+    assert request.operation.scope.predicate.counterparty is None
+    assert request.operation.scope.predicate.direction == "debit"
 
 
 @pytest.mark.asyncio
@@ -243,9 +250,9 @@ async def test_time_vague_matching_transaction_shape_clarifies_without_llm_lates
     assert (
         result.resolver_message == "What time period did you mean by 'last'? You can say something like 'last 30 days'."
     )
-    assert result.query_contract is not None
-    assert result.query_contract["intent"] == "analytics_summary"
-    assert result.query_contract["result_reference"] is None
+    assert result.query_request is not None
+    request = QueryRequest.model_validate(result.query_request)
+    assert isinstance(request.operation, SummarizeOperation)
 
 
 @pytest.mark.asyncio
@@ -266,9 +273,12 @@ async def test_latest_transaction_query_drops_spurious_narration_negotiation_wit
 
     assert result.outcome == ResolverOutcome.OK
     assert result.resolver_message is None
-    assert result.query_contract is not None
-    assert result.query_contract["result_limit"] == 1
-    assert result.query_contract["result_reference"] == "latest"
+    assert result.query_request is not None
+    request = QueryRequest.model_validate(result.query_request)
+    assert isinstance(request.operation, RetrieveOperation)
+    assert request.operation.selection.limit == 1
+    assert request.operation.selection.order == "latest"
+    assert request.operation.selection.order_explicit is True
 
 
 @pytest.mark.asyncio
@@ -288,9 +298,11 @@ async def test_named_month_without_year_defaults_instead_of_clarifying() -> None
 
     assert result.outcome == ResolverOutcome.OK
     assert result.resolver_message is None
-    assert result.query_contract is not None
-    assert result.query_contract["time_start"] == date(2026, 3, 1)
-    assert result.query_contract["time_end"] == date(2026, 3, 21)
+    assert result.query_request is not None
+    request = QueryRequest.model_validate(result.query_request)
+    assert request.period is not None
+    assert request.period.start == date(2026, 3, 1)
+    assert request.period.end == date(2026, 3, 21)
 
 
 @pytest.mark.asyncio
@@ -309,9 +321,11 @@ async def test_named_month_last_year_defaults_without_clarifying() -> None:
 
     assert result.outcome == ResolverOutcome.OK
     assert result.resolver_message is None
-    assert result.query_contract is not None
-    assert result.query_contract["time_start"] == date(2025, 3, 1)
-    assert result.query_contract["time_end"] == date(2025, 3, 31)
+    assert result.query_request is not None
+    request = QueryRequest.model_validate(result.query_request)
+    assert request.period is not None
+    assert request.period.start == date(2025, 3, 1)
+    assert request.period.end == date(2025, 3, 31)
 
 
 @pytest.mark.asyncio
@@ -339,7 +353,7 @@ async def test_parser_binds_minimal_schema_and_inflates_downstream_fields() -> N
     assert RequestedCapability.AGGREGATE_SUM in result.extraction.requested_capabilities
     assert RequestedCapability.FILTER_TX_TYPE in result.extraction.requested_capabilities
     assert RequestedCapability.TIME_RELATIVE in result.extraction.requested_capabilities
-    assert result.query_contract is not None
+    assert result.query_request is not None
 
 
 @pytest.mark.asyncio
@@ -381,10 +395,11 @@ async def test_recent_transaction_list_defaults_to_bounded_30_day_window() -> No
 
     assert result.outcome == ResolverOutcome.OK
     assert result.pending_clarification is None
-    assert result.query_contract is not None
-    assert result.query_contract["intent"] == "transaction_list"
-    assert result.query_contract["time_start"] == date(2026, 2, 27)
-    assert result.query_contract["time_end"] == date(2026, 3, 28)
+    assert result.query_request is not None
+    request = QueryRequest.model_validate(result.query_request)
+    assert isinstance(request.operation, RetrieveOperation)
+    assert request.operation.scope.period.start == date(2026, 2, 27)
+    assert request.operation.scope.period.end == date(2026, 3, 28)
 
 
 @pytest.mark.asyncio
@@ -404,9 +419,10 @@ async def test_day_scoped_singular_transaction_query_normalizes_to_list_query() 
     )
 
     assert result.outcome == ResolverOutcome.OK
-    assert result.query_contract is not None
-    assert result.query_contract["intent"] == "transaction_list"
-    assert result.query_contract["time_start"] == date(2026, 3, 28)
-    assert result.query_contract["time_end"] == date(2026, 3, 28)
-    assert result.query_contract["result_limit"] is None
-    assert result.query_contract["result_reference"] is None
+    assert result.query_request is not None
+    request = QueryRequest.model_validate(result.query_request)
+    assert isinstance(request.operation, RetrieveOperation)
+    assert request.operation.scope.period.start == date(2026, 3, 28)
+    assert request.operation.scope.period.end == date(2026, 3, 28)
+    assert request.operation.selection.limit is None
+    assert request.operation.selection.order_explicit is False

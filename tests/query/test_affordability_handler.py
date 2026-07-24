@@ -1,13 +1,9 @@
-from datetime import date
-
 import pytest
 
 from banking.transactions.query.handlers.affordability import handle_affordability
-from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
-    QueryIntent,
-)
+from banking.transactions.query.models.operations import QueryRequest
 from shared.clients.abstractions.banking import BalanceData
+from tests.query.factories import assess_request
 
 
 class FakeBalanceProvider:
@@ -21,14 +17,8 @@ class FakeBalanceProvider:
         return BalanceData(available_balance=self.balances[account_id], account_id=account_id)
 
 
-def _contract(amount: float) -> QueryExecutionContract:
-    return QueryExecutionContract(
-        intent=QueryIntent.AFFORDABILITY,
-        time_start=date(2026, 5, 1),
-        time_end=date(2026, 5, 11),
-        amount_check=amount,
-        accounts_scope="all",
-    )
+def _contract(amount: float) -> QueryRequest:
+    return assess_request(amount)
 
 
 @pytest.mark.asyncio

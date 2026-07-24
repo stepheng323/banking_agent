@@ -6,12 +6,12 @@ from typing import Any
 import pytest
 
 from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     TimeRange,
 )
 from banking.transactions.query.services.answers.coverage import build_query_coverage_answer
+from tests.query.factories import make_query_request
 
 
 class _CoverageRepo:
@@ -44,9 +44,9 @@ class _FakeUnitOfWork:
         del exc_type, exc, tb
 
 
-def _contract() -> QueryExecutionContract:
-    return QueryExecutionContract.from_query_ir(
-        QueryIR(
+def _contract() -> QueryRequest:
+    return (
+        make_query_request(
             intent=QueryIntent.TRANSACTION_LIST,
             time_range=TimeRange(start=date(2026, 4, 10), end=date(2026, 5, 10)),
         )
@@ -69,7 +69,7 @@ async def test_coverage_answer_confirms_all_accounts_when_windows_are_covered() 
             {"id": "linked_1", "account_id": "acc_1", "bank_name": "First Bank", "account_number": "6000000001"},
             {"id": "linked_2", "account_id": "acc_2", "bank_name": "GTBank", "account_number": "6000000002"},
         ],
-        query_contract=_contract(),
+        query_request=_contract(),
         session={},
         target_text=None,
     )
@@ -91,7 +91,7 @@ async def test_coverage_answer_explains_pending_mandate_for_target_account() -> 
                 "mandate_status": "pending",
             }
         ],
-        query_contract=_contract(),
+        query_request=_contract(),
         session={},
         target_text="Zenith",
     )
@@ -108,7 +108,7 @@ async def test_coverage_answer_is_honest_when_schema_is_unavailable() -> None:
         accounts_info=[
             {"id": "linked_1", "account_id": "acc_1", "bank_name": "Access Bank", "account_number": "6000000003"}
         ],
-        query_contract=_contract(),
+        query_request=_contract(),
         session={},
         target_text="Access",
     )
@@ -124,7 +124,7 @@ async def test_coverage_answer_handles_linked_account_without_local_transactions
         accounts_info=[
             {"id": "linked_1", "account_id": "acc_1", "bank_name": "First Bank", "account_number": "6000000001"}
         ],
-        query_contract=_contract(),
+        query_request=_contract(),
         session={"cached_transactions": []},
         target_text=None,
     )

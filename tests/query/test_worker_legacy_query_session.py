@@ -8,9 +8,8 @@ from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
     TimeRange,
@@ -25,6 +24,7 @@ from banking.transactions.query.services.reasoning.models import QuerySemanticDe
 from banking.transactions.query.session import QuerySessionManager, _session_has_surface_view
 from banking.transactions.query.worker import QueryWorker
 from shared.config.settings import settings
+from tests.query.factories import make_query_request
 
 
 @pytest.fixture(autouse=True)
@@ -32,14 +32,14 @@ def _disable_unified_transaction_view(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "enable_unified_transaction_view", False)
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: object) -> QueryRequest:
     fallback_day = date(2026, 3, 28)
     defaults: dict[str, object] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
     defaults.update(kwargs)
-    return QueryIR(**defaults)
+    return make_query_request(**defaults)
 
 
 class _DummyStructured:
@@ -167,8 +167,8 @@ def _active_surface_context_from_result(result: TransactionResult) -> dict[str, 
     assert result.patch is not None
     query_result = result.patch["query_result"]
     assert isinstance(query_result, QueryResult)
-    query_contract = result.patch["query_contract"]
-    assert isinstance(query_contract, QueryExecutionContract)
+    query_request = result.patch["query_request"]
+    assert isinstance(query_request, QueryRequest)
     surface_view = query_result.surface_view
     items: list[dict[str, Any]] = []
     if surface_view is not None and surface_view.items:
@@ -201,7 +201,7 @@ def _active_surface_context_from_result(result: TransactionResult) -> dict[str, 
         "items": items,
         "metadata": {
             "source": "query",
-            "query_contract": query_contract.model_dump(mode="json"),
+            "query_request": query_request.model_dump(mode="json"),
             "summary_text": query_result.summary_text,
             "surface_mode": surface_view.mode.value if surface_view is not None else "transaction_list",
             "surface_context": surface_view.context if surface_view is not None else {},
@@ -211,11 +211,11 @@ def _active_surface_context_from_result(result: TransactionResult) -> dict[str, 
 
 
 def _active_surface_context_from_session(session: dict[str, Any]) -> dict[str, Any]:
-    raw_contract = session["query_contract"]
-    query_contract = (
+    raw_contract = session["query_request"]
+    query_request = (
         raw_contract
-        if isinstance(raw_contract, QueryExecutionContract)
-        else QueryExecutionContract.model_validate(raw_contract)
+        if isinstance(raw_contract, QueryRequest)
+        else QueryRequest.model_validate(raw_contract)
     )
     raw_result = session.get("query_result")
     summary_text = raw_result.get("summary_text") if isinstance(raw_result, dict) else ""
@@ -237,7 +237,7 @@ def _active_surface_context_from_session(session: dict[str, Any]) -> dict[str, A
         ],
         "metadata": {
             "source": "query",
-            "query_contract": query_contract.model_dump(mode="json"),
+            "query_request": query_request.model_dump(mode="json"),
             "summary_text": summary_text,
             "surface_mode": surface_mode or "direct_answer",
             "surface_context": surface_view.get("context") if isinstance(surface_view, dict) else {},
@@ -246,9 +246,9 @@ def _active_surface_context_from_session(session: dict[str, Any]) -> dict[str, A
     return {"active_query_surface": frame, "context_frames": [frame]}
 
 
-def _contract(query: QueryIR) -> QueryExecutionContract:
+def _contract(query: QueryRequest) -> QueryRequest:
     assert query.time_range is not None
-    return QueryExecutionContract.from_query_ir(query)
+    return query.model_copy(deep=True)
 
 
 @pytest.mark.asyncio
@@ -257,7 +257,7 @@ async def test_worker_restores_from_active_query_surface_and_marks_patch() -> No
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     active_query_session = {
         "session_active": True,
-        "query_contract": _contract(
+        "query_request": _contract(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
@@ -297,7 +297,7 @@ async def test_worker_ignores_legacy_stashed_query_session_input() -> None:
     legacy_stashed_query_session = {
         "session_active": True,
         "timestamp": 0.0,
-        "query_contract": _contract(
+        "query_request": _contract(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
@@ -377,7 +377,7 @@ async def test_worker_returns_pending_query_clarification_without_redis_persiste
 async def test_worker_returns_query_state_without_redis_frame_persistence() -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
-    query_contract = _contract(
+    query_request = _contract(
         _query_ir(
             intent=QueryIntent.ANALYTICS_SUMMARY,
             time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
@@ -411,7 +411,7 @@ async def test_worker_returns_query_state_without_redis_frame_persistence() -> N
             outcome=TransactionOutcome.OK,
             patch={
                 "session_active": True,
-                "query_contract": query_contract,
+                "query_request": query_request,
                 "query_result": query_result,
                 "flow_state": "complete",
             },
@@ -433,7 +433,7 @@ async def test_worker_returns_query_state_without_redis_frame_persistence() -> N
     assert result.outcome == TransactionOutcome.OK
     assert session_manager.saved_state is None
     assert result.patch is not None
-    assert result.patch["query_contract"] == query_contract
+    assert result.patch["query_request"] == query_request
     assert result.patch["query_result"] == query_result
 
 
@@ -456,7 +456,7 @@ async def test_worker_sets_followup_progress_stage_before_pipeline_run() -> None
     tracker = _ProgressTracker()
     active_query_session = {
         "session_active": True,
-        "query_contract": _contract(
+        "query_request": _contract(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
@@ -610,7 +610,7 @@ async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
             **_active_surface_context_from_session(
                 {
                     "session_active": True,
-                    "query_contract": _contract(
+                    "query_request": _contract(
                         _query_ir(
                             intent=QueryIntent.TRANSACTION_SEARCH,
                             time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -695,7 +695,7 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
             **_active_surface_context_from_session(
                 {
                     "session_active": True,
-                    "query_contract": _contract(
+                    "query_request": _contract(
                         _query_ir(
                             intent=QueryIntent.ANALYTICS_SUMMARY,
                             time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
@@ -806,7 +806,7 @@ async def test_worker_logs_active_surface_session_shape(monkeypatch: pytest.Monk
 
     active_query_session = {
         "session_active": True,
-        "query_contract": _contract(
+        "query_request": _contract(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
@@ -838,7 +838,7 @@ async def test_worker_logs_active_surface_session_shape(monkeypatch: pytest.Monk
         {
             "session_source": "orchestrator_context",
             "session_active": True,
-            "has_query_contract": True,
+            "has_query_request": True,
             "has_query_result": True,
             "has_surface": True,
             "has_query_frames": True,
@@ -900,7 +900,7 @@ async def test_worker_recovers_ambiguous_last_week_followup_from_stashed_session
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     active_query_session = {
         "session_active": True,
-        "query_contract": _contract(
+        "query_request": _contract(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
@@ -926,16 +926,16 @@ async def test_worker_recovers_ambiguous_last_week_followup_from_stashed_session
 
     async def _fake_execute(state: dict[str, Any], worker_context: Any) -> TransactionResult:
         del worker_context
-        query_contract = state["query_contract"]
-        if isinstance(query_contract, dict):
-            query_contract = QueryExecutionContract.model_validate(query_contract)
-        captured_ranges.append((query_contract.time_start, query_contract.time_end))
+        query_request = state["query_request"]
+        if isinstance(query_request, dict):
+            query_request = QueryRequest.model_validate(query_request)
+        captured_ranges.append((query_request.time_start, query_request.time_end))
         return TransactionResult(
             outcome=TransactionOutcome.OK,
             response="Recovered last week summary.",
             patch={
                 "session_active": True,
-                "query_contract": query_contract,
+                "query_request": query_request,
                 "query_result": QueryResult(summary_text="Recovered last week summary.", items=[]),
                 "flow_state": "complete",
             },
@@ -966,7 +966,7 @@ async def test_worker_reuses_active_query_scope_for_how_much_total_followup() ->
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     active_query_session = {
         "session_active": True,
-        "query_contract": _contract(
+        "query_request": _contract(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 19), granularity="month"),
@@ -989,20 +989,20 @@ async def test_worker_reuses_active_query_scope_for_how_much_total_followup() ->
             reason="llm_total_followup",
         )
 
-    captured_contracts: list[QueryExecutionContract] = []
+    captured_contracts: list[QueryRequest] = []
 
     async def _fake_execute(state: dict[str, Any], worker_context: Any) -> TransactionResult:
         del worker_context
-        query_contract = state["query_contract"]
-        if isinstance(query_contract, dict):
-            query_contract = QueryExecutionContract.model_validate(query_contract)
-        captured_contracts.append(query_contract)
+        query_request = state["query_request"]
+        if isinstance(query_request, dict):
+            query_request = QueryRequest.model_validate(query_request)
+        captured_contracts.append(query_request)
         return TransactionResult(
             outcome=TransactionOutcome.OK,
             response="Total sent to Mum this month.",
             patch={
                 "session_active": True,
-                "query_contract": query_contract,
+                "query_request": query_request,
                 "query_result": QueryResult(summary_text="Total sent to Mum this month.", items=[]),
                 "flow_state": "complete",
             },
@@ -1025,15 +1025,15 @@ async def test_worker_reuses_active_query_scope_for_how_much_total_followup() ->
 
     assert result.outcome == TransactionOutcome.OK
     assert len(captured_contracts) == 1
-    query_contract = captured_contracts[0]
-    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_contract.time_start == date(2026, 3, 1)
-    assert query_contract.time_end == date(2026, 3, 19)
-    assert query_contract.filters is not None
-    assert query_contract.filters.transaction_type == "debit"
-    assert query_contract.filters.merchant == ["mum"]
-    assert query_contract.aggregation is not None
-    assert query_contract.aggregation.type == "sum"
+    query_request = captured_contracts[0]
+    assert query_request.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_request.time_start == date(2026, 3, 1)
+    assert query_request.time_end == date(2026, 3, 19)
+    assert query_request.filters is not None
+    assert query_request.filters.transaction_type == "debit"
+    assert query_request.filters.merchant == ["mum"]
+    assert query_request.aggregation is not None
+    assert query_request.aggregation.type == "sum"
 
 
 @pytest.mark.asyncio
@@ -1082,7 +1082,7 @@ async def test_worker_reuses_context_scope_for_time_delta_followup() -> None:
             outcome=TransactionOutcome.OK,
             patch={
                 "flow_state": "executing",
-                "query_contract": initial_contract,
+                "query_request": initial_contract,
             },
         )
 
@@ -1176,7 +1176,7 @@ async def test_worker_reuses_context_scope_for_filter_delta_followup() -> None:
             outcome=TransactionOutcome.OK,
             patch={
                 "flow_state": "executing",
-                "query_contract": initial_contract,
+                "query_request": initial_contract,
             },
         )
 
@@ -1265,7 +1265,7 @@ async def test_worker_restores_context_analytics_followup_for_time_delta(
             outcome=TransactionOutcome.OK,
             patch={
                 "flow_state": "executing",
-                "query_contract": initial_contract,
+                "query_request": initial_contract,
             },
         )
 
@@ -1315,11 +1315,11 @@ async def test_worker_restores_context_analytics_followup_for_time_delta(
     assert second_result.outcome == TransactionOutcome.OK
     assert provider.calls == 2
     assert second_result.patch is not None
-    query_contract = second_result.patch["query_contract"]
-    assert isinstance(query_contract, QueryExecutionContract)
-    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_contract.time_start == date(2026, 3, 19)
-    assert query_contract.time_end == date(2026, 3, 19)
+    query_request = second_result.patch["query_request"]
+    assert isinstance(query_request, QueryRequest)
+    assert query_request.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_request.time_start == date(2026, 3, 19)
+    assert query_request.time_end == date(2026, 3, 19)
 
     query_result = second_result.patch["query_result"]
     assert isinstance(query_result, QueryResult)
@@ -1359,7 +1359,7 @@ async def test_worker_count_time_delta_followup_renders_yesterday(
             outcome=TransactionOutcome.OK,
             patch={
                 "flow_state": "executing",
-                "query_contract": initial_contract,
+                "query_request": initial_contract,
             },
         )
 
@@ -1408,10 +1408,10 @@ async def test_worker_count_time_delta_followup_renders_yesterday(
     assert second_result.outcome == TransactionOutcome.OK
     assert second_result.response == "You made *2* transactions yesterday."
     assert second_result.patch is not None
-    query_contract = second_result.patch["query_contract"]
-    assert isinstance(query_contract, QueryExecutionContract)
-    assert query_contract.time_start == date(2026, 3, 18)
-    assert query_contract.time_end == date(2026, 3, 18)
+    query_request = second_result.patch["query_request"]
+    assert isinstance(query_request, QueryRequest)
+    assert query_request.time_start == date(2026, 3, 18)
+    assert query_request.time_end == date(2026, 3, 18)
 
     show_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
 
@@ -1439,11 +1439,11 @@ async def test_worker_count_time_delta_followup_renders_yesterday(
 
     assert third_result.outcome == TransactionOutcome.OK
     assert third_result.patch is not None
-    query_contract = third_result.patch["query_contract"]
-    assert isinstance(query_contract, QueryExecutionContract)
-    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
-    assert query_contract.time_start == date(2026, 3, 18)
-    assert query_contract.time_end == date(2026, 3, 18)
+    query_request = third_result.patch["query_request"]
+    assert isinstance(query_request, QueryRequest)
+    assert query_request.intent == QueryIntent.TRANSACTION_LIST
+    assert query_request.time_start == date(2026, 3, 18)
+    assert query_request.time_end == date(2026, 3, 18)
     query_result = third_result.patch["query_result"]
     assert isinstance(query_result, QueryResult)
     assert {item.description for item in query_result.items or []} == {"Fuel", "Groceries"}
@@ -1474,7 +1474,7 @@ async def test_worker_count_zero_summary_uses_natural_copy(
             outcome=TransactionOutcome.OK,
             patch={
                 "flow_state": "executing",
-                "query_contract": initial_contract,
+                "query_request": initial_contract,
             },
         )
 
@@ -1526,7 +1526,7 @@ async def test_worker_restores_context_time_comparison_followup_for_time_delta()
             outcome=TransactionOutcome.OK,
             patch={
                 "flow_state": "executing",
-                "query_contract": initial_contract,
+                "query_request": initial_contract,
             },
         )
 
@@ -1576,11 +1576,11 @@ async def test_worker_restores_context_time_comparison_followup_for_time_delta()
     assert second_result.outcome == TransactionOutcome.OK
     assert provider.calls == 4
     assert second_result.patch is not None
-    query_contract = second_result.patch["query_contract"]
-    assert isinstance(query_contract, QueryExecutionContract)
-    assert query_contract.intent == QueryIntent.TIME_COMPARISON
-    assert query_contract.time_start == date(2026, 3, 9)
-    assert query_contract.time_end == date(2026, 3, 15)
+    query_request = second_result.patch["query_request"]
+    assert isinstance(query_request, QueryRequest)
+    assert query_request.intent == QueryIntent.TIME_COMPARISON
+    assert query_request.time_start == date(2026, 3, 9)
+    assert query_request.time_end == date(2026, 3, 15)
 
     query_result = second_result.patch["query_result"]
     assert isinstance(query_result, QueryResult)

@@ -52,7 +52,7 @@ def test_context_read_fastpath_rules_removed_from_planner_prompt() -> None:
     assert "R18_FASTPATH_SUBTYPE" not in runtime_prompt
 
 
-def test_interrupt_status_query_contract_present() -> None:
+def test_interrupt_status_query_request_present() -> None:
     """Interrupt router prompt should include status-query decision + subtype contract."""
     assert (
         "decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query"

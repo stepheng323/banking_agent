@@ -6,12 +6,11 @@ import pytest
 
 from banking.transactions.query.models.domain import (
     Aggregation,
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
     TimeRange,
 )
 from banking.transactions.query.worker import QueryWorker
+from tests.query.factories import make_query_request
 
 WorkerContext = namedtuple("WorkerContext", ["redis", "tracer", "queue", "user_id"])
 
@@ -63,8 +62,8 @@ async def test_analytics_drill_down_executes():
             )
         ],
     )
-    contract = QueryExecutionContract.from_query_ir(
-        QueryIR(
+    contract = (
+        make_query_request(
             intent=QueryIntent.ANALYTICS_SUMMARY,
             time_range=TimeRange(start=date.today(), end=date.today()),
             aggregation=Aggregation(type="sum", group_by="merchant", sort_by="amount"),
@@ -78,7 +77,7 @@ async def test_analytics_drill_down_executes():
         "today": date.today(),
         "query_session": {
             "session_active": True,
-            "query_contract": contract.model_dump(mode="json"),
+            "query_request": contract.model_dump(mode="json"),
             "query_result": {
                 "surface_view": surface.model_dump(mode="json"),
                 "items": [
@@ -99,5 +98,5 @@ async def test_analytics_drill_down_executes():
 
     print("FLOW STATE:", state.get("flow_state"))
     print("OUTCOME:", res.outcome)
-    if "query_contract" in state:
-        print("NEW INTENT:", state["query_contract"].intent)
+    if "query_request" in state:
+        print("NEW INTENT:", state["query_request"].intent)

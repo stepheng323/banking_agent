@@ -4,7 +4,14 @@ from banking.transactions.query.continuations.amount_rescope import (
     amount_rescope_filter_patch,
     rebuild_with_amount_rescope,
 )
-from banking.transactions.query.models.domain import Filters, QueryExecutionContract, QueryIntent, QueryIR, TimeRange
+from banking.transactions.query.models.operations import (
+    AmountRange,
+    CounterpartySelector,
+    Money,
+    NamedCounterparty,
+    TransactionPredicate,
+)
+from tests.query.factories import query_scope, retrieve_request
 
 
 def test_amount_rescope_parses_strict_lower_bound_followup() -> None:
@@ -17,11 +24,14 @@ def test_amount_rescope_parses_strict_lower_bound_followup() -> None:
 
 
 def test_amount_rescope_preserves_existing_scope_and_replaces_amount() -> None:
-    base = QueryExecutionContract.from_query_ir(
-        QueryIR(
-            intent=QueryIntent.TRANSACTION_LIST,
-            filters=Filters(counterparty=["Tolu"], min_amount=50000, min_amount_inclusive=False),
-            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 27)),
+    base = retrieve_request(
+        query_scope(
+            date(2026, 6, 1),
+            date(2026, 6, 27),
+            predicate=TransactionPredicate(
+                counterparty=CounterpartySelector(role="recipient", reference=NamedCounterparty(name="Tolu")),
+                amount=AmountRange(minimum=Money(amount=50000), minimum_inclusive=False),
+            ),
         )
     )
     patch = amount_rescope_filter_patch("What about above 4k")

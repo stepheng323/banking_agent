@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from banking.transactions.query.models.domain import QueryExecutionContract
+from banking.transactions.query.models.domain import QueryRequest
 from banking.transactions.query.models.extraction import (
     FactQueryKind,
     QueryAggregation,
@@ -14,6 +14,13 @@ from banking.transactions.query.models.extraction import (
     QueryTimeRange,
     TimeReference,
 )
+from banking.transactions.query.models.operations import (
+    CompareOperation,
+    ExplicitBaseline,
+    PreviousEquivalentBaseline,
+    RetrieveOperation,
+    YearAgoBaseline,
+)
 from banking.transactions.query.services.parsing.parser import QueryParser
 
 
@@ -23,7 +30,12 @@ class _DummyLLM:
         raise NotImplementedError
 
 
-def test_build_query_contract_from_extraction_preserves_lagos_today_window() -> None:
+def _comparison_baseline(request: QueryRequest):
+    assert isinstance(request.operation, CompareOperation)
+    return request.operation.comparison.baseline
+
+
+def test_build_query_request_from_extraction_preserves_lagos_today_window() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 6)
     extraction = QueryExtractionResult(
@@ -32,8 +44,8 @@ def test_build_query_contract_from_extraction_preserves_lagos_today_window() -> 
         raw_query="how much did I spend today",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert contract.time_start == today
     assert contract.time_end == today
@@ -50,8 +62,8 @@ def test_unspecified_time_defaults_to_month_to_date_after_first_week() -> None:
         raw_query="show my transactions",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.time_range.start == date(2026, 6, 1)
     assert query_ir.time_range.end == today
@@ -68,8 +80,8 @@ def test_missing_time_defaults_to_month_to_date_after_first_week() -> None:
         raw_query="how much came in",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.time_range.start == date(2026, 6, 1)
     assert query_ir.time_range.end == today
@@ -94,8 +106,8 @@ def test_default_time_stays_rolling_30_days_during_first_week(include_unspecifie
             raw_query="show my transactions",
         )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.time_range.start == date(2026, 5, 7)
     assert query_ir.time_range.end == today
@@ -117,8 +129,8 @@ def test_explicit_recent_30_days_stays_rolling_window() -> None:
         raw_query="show recent transactions",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.time_range.start == date(2026, 5, 31)
     assert query_ir.time_range.end == today
@@ -136,8 +148,8 @@ def test_explicit_time_comparison_extraction_compiles_to_time_comparison() -> No
         raw_query="compare my spending this month vs last month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.TIME_COMPARISON
     assert contract.intent == QueryIntent.TIME_COMPARISON
@@ -153,8 +165,8 @@ def test_explicit_beneficiary_summary_extraction_compiles_count_ranking() -> Non
         raw_query="Who did I send money to the most this week",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert contract.intent == QueryIntent.BENEFICIARY_SUMMARY
@@ -175,8 +187,8 @@ def test_intent_beneficiary_hint_compiles_to_beneficiary_summary() -> None:
         raw_query="who did I send money to this month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert contract.intent == QueryIntent.BENEFICIARY_SUMMARY
@@ -197,8 +209,8 @@ def test_incoming_beneficiary_hint_compiles_to_amount_ranked_grouped_summary() -
         raw_query="who sent me money this month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert query_ir.filters is not None
@@ -221,8 +233,8 @@ def test_explicit_amount_ranked_beneficiary_summary_compiles_amount_sort() -> No
         raw_query="Who got the most money this month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert contract.intent == QueryIntent.BENEFICIARY_SUMMARY
@@ -241,8 +253,8 @@ def test_parser_lexically_recovers_plain_recipient_summary_text() -> None:
         raw_query="Who did I send money to this month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert contract.intent == QueryIntent.BENEFICIARY_SUMMARY
@@ -261,8 +273,8 @@ def test_parser_does_not_lexically_upgrade_comparison_text() -> None:
         raw_query="compare my spending this month vs last month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.TRANSACTION_LIST
     assert contract.intent == QueryIntent.TRANSACTION_LIST
@@ -279,8 +291,8 @@ def test_explicit_largest_transfer_extraction_compiles_to_largest_analytics_quer
         raw_query="Whats my highest single transfer this month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.ANALYTICS_SUMMARY
     assert contract.intent == QueryIntent.ANALYTICS_SUMMARY
@@ -303,8 +315,8 @@ def test_parser_does_not_lexically_upgrade_highest_single_transfer_text() -> Non
         raw_query="Whats my most single transfer this month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.TRANSACTION_LIST
     assert contract.intent == QueryIntent.TRANSACTION_LIST
@@ -321,8 +333,8 @@ def test_explicit_this_week_without_days_back_compiles_to_calendar_week_to_date(
         raw_query="how much did I spend this week",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.time_range.start == date(2026, 3, 16)
     assert query_ir.time_range.end == today
@@ -339,8 +351,8 @@ def test_explicit_this_month_without_days_back_compiles_to_calendar_month_to_dat
         raw_query="how much did I spend this month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.time_range.start == date(2026, 6, 1)
     assert query_ir.time_range.end == today
@@ -357,8 +369,8 @@ def test_came_in_query_compiles_to_credit_sum_only() -> None:
         raw_query="How much came in this month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.ANALYTICS_SUMMARY
     assert query_ir.filters is not None
@@ -373,7 +385,7 @@ def test_failed_transaction_query_compiles_to_status_filter() -> None:
     result = parser.parse_deterministic("Show failed transaction for this month", today=today, language="en")
 
     assert result is not None
-    contract = QueryExecutionContract.model_validate(result.query_contract)
+    contract = QueryRequest.model_validate(result.query_request)
     assert contract.intent == QueryIntent.TRANSACTION_LIST
     assert contract.filters is not None
     assert contract.filters.status == "failed"
@@ -389,8 +401,8 @@ def test_can_i_send_amount_compiles_to_affordability_amount_check() -> None:
         raw_query="Can I send 100k?",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.AFFORDABILITY
     assert query_ir.amount_check == 100000
@@ -403,7 +415,7 @@ def test_cashflow_by_account_compiles_to_account_breakdown() -> None:
     result = parser.parse_deterministic("Breakdown my cash flow by account", today=date(2026, 6, 27), language="en")
 
     assert result is not None
-    contract = QueryExecutionContract.model_validate(result.query_contract)
+    contract = QueryRequest.model_validate(result.query_request)
     assert contract.intent == QueryIntent.CASH_FLOW_SUMMARY
     assert contract.aggregation is not None
     assert contract.aggregation.group_by == "account"
@@ -418,8 +430,8 @@ def test_where_did_my_money_go_compiles_to_category_breakdown() -> None:
         raw_query="Where did my money go this month?",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.aggregation is not None
     assert query_ir.aggregation.type == "breakdown"
@@ -432,7 +444,7 @@ def test_where_did_my_money_go_compiles_to_category_breakdown() -> None:
 
 def test_amount_filter_above_is_strict_and_and_above_is_inclusive() -> None:
     parser = QueryParser(_DummyLLM())
-    strict_ir = parser.build_query_ir_from_extraction(
+    strict_ir = parser.build_query_request_from_extraction(
         QueryExtractionResult(
             intent=QueryIntent.TRANSACTION_LIST,
             filters=QueryFilters(transaction_type="debit", min_amount=50000),
@@ -441,7 +453,7 @@ def test_amount_filter_above_is_strict_and_and_above_is_inclusive() -> None:
         today=date(2026, 6, 27),
         language="en",
     )
-    inclusive_ir = parser.build_query_ir_from_extraction(
+    inclusive_ir = parser.build_query_request_from_extraction(
         QueryExtractionResult(
             intent=QueryIntent.TRANSACTION_LIST,
             filters=QueryFilters(transaction_type="debit", min_amount=50000),
@@ -468,8 +480,8 @@ def test_explicit_last_month_without_days_back_compiles_to_full_previous_month()
         raw_query="show my transactions last month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.time_range.start == date(2026, 2, 1)
     assert query_ir.time_range.end == date(2026, 2, 28)
@@ -477,9 +489,9 @@ def test_explicit_last_month_without_days_back_compiles_to_full_previous_month()
     assert contract.time_end == date(2026, 2, 28)
 
 
-def test_contract_compiles_from_query_ir() -> None:
+def test_query_request_compiles_from_extraction() -> None:
     parser = QueryParser(_DummyLLM())
-    query_ir = parser.build_query_ir_from_extraction(
+    query_ir = parser.build_query_request_from_extraction(
         QueryExtractionResult(
             intent=QueryIntent.TRANSACTION_LIST,
             time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday"),
@@ -488,7 +500,7 @@ def test_contract_compiles_from_query_ir() -> None:
         today=date(2026, 3, 6),
         language="en",
     )
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    contract = (query_ir)
 
     assert contract.time_start == date(2026, 3, 5)
     assert contract.time_end == date(2026, 3, 5)
@@ -505,13 +517,11 @@ def test_structured_comparison_year_ago_compiles_to_contract() -> None:
         raw_query="compare this month to same period last year",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 6), language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=date(2026, 3, 6), language="en")
+    contract = (query_ir)
 
-    assert query_ir.comparison is not None
-    assert query_ir.comparison.mode == "year_ago"
-    assert contract.comparison is not None
-    assert contract.comparison.mode == "year_ago"
+    assert isinstance(_comparison_baseline(query_ir), YearAgoBaseline)
+    assert isinstance(_comparison_baseline(contract), YearAgoBaseline)
 
 
 def test_structured_comparison_explicit_period_compiles_to_explicit_range() -> None:
@@ -523,16 +533,14 @@ def test_structured_comparison_explicit_period_compiles_to_explicit_range() -> N
         raw_query="compare this month vs last month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 6), language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=date(2026, 3, 6), language="en")
+    contract = (query_ir)
 
-    assert query_ir.comparison is not None
-    assert query_ir.comparison.mode == "explicit_range"
-    assert query_ir.comparison.explicit_range is not None
-    assert query_ir.comparison.explicit_range.start == date(2026, 2, 1)
-    assert query_ir.comparison.explicit_range.end == date(2026, 2, 6)
-    assert contract.comparison is not None
-    assert contract.comparison.mode == "explicit_range"
+    baseline = _comparison_baseline(query_ir)
+    assert isinstance(baseline, ExplicitBaseline)
+    assert baseline.period.start == date(2026, 2, 1)
+    assert baseline.period.end == date(2026, 2, 6)
+    assert isinstance(_comparison_baseline(contract), ExplicitBaseline)
 
 
 def test_structured_comparison_last_month_aligns_to_current_window_duration() -> None:
@@ -544,16 +552,14 @@ def test_structured_comparison_last_month_aligns_to_current_window_duration() ->
         raw_query="compare this month vs last month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 7), language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=date(2026, 3, 7), language="en")
+    contract = (query_ir)
 
-    assert query_ir.comparison is not None
-    assert query_ir.comparison.mode == "explicit_range"
-    assert query_ir.comparison.explicit_range is not None
-    assert query_ir.comparison.explicit_range.start == date(2026, 2, 1)
-    assert query_ir.comparison.explicit_range.end == date(2026, 2, 7)
-    assert contract.comparison is not None
-    assert contract.comparison.mode == "explicit_range"
+    baseline = _comparison_baseline(query_ir)
+    assert isinstance(baseline, ExplicitBaseline)
+    assert baseline.period.start == date(2026, 2, 1)
+    assert baseline.period.end == date(2026, 2, 7)
+    assert isinstance(_comparison_baseline(contract), ExplicitBaseline)
 
 
 def test_structured_comparison_last_week_compiles_to_explicit_range() -> None:
@@ -565,16 +571,14 @@ def test_structured_comparison_last_week_compiles_to_explicit_range() -> None:
         raw_query="compare this week vs last week",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 6), language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=date(2026, 3, 6), language="en")
+    contract = (query_ir)
 
-    assert query_ir.comparison is not None
-    assert query_ir.comparison.mode == "explicit_range"
-    assert query_ir.comparison.explicit_range is not None
-    assert query_ir.comparison.explicit_range.start == date(2026, 2, 23)
-    assert query_ir.comparison.explicit_range.end == date(2026, 2, 27)
-    assert contract.comparison is not None
-    assert contract.comparison.mode == "explicit_range"
+    baseline = _comparison_baseline(query_ir)
+    assert isinstance(baseline, ExplicitBaseline)
+    assert baseline.period.start == date(2026, 2, 23)
+    assert baseline.period.end == date(2026, 2, 27)
+    assert isinstance(_comparison_baseline(contract), ExplicitBaseline)
 
 
 def test_structured_comparison_last_week_aligns_to_current_window_duration() -> None:
@@ -586,16 +590,14 @@ def test_structured_comparison_last_week_aligns_to_current_window_duration() -> 
         raw_query="compare this week vs last week",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 6), language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=date(2026, 3, 6), language="en")
+    contract = (query_ir)
 
-    assert query_ir.comparison is not None
-    assert query_ir.comparison.mode == "explicit_range"
-    assert query_ir.comparison.explicit_range is not None
-    assert query_ir.comparison.explicit_range.start == date(2026, 2, 23)
-    assert query_ir.comparison.explicit_range.end == date(2026, 2, 27)
-    assert contract.comparison is not None
-    assert contract.comparison.mode == "explicit_range"
+    baseline = _comparison_baseline(query_ir)
+    assert isinstance(baseline, ExplicitBaseline)
+    assert baseline.period.start == date(2026, 2, 23)
+    assert baseline.period.end == date(2026, 2, 27)
+    assert isinstance(_comparison_baseline(contract), ExplicitBaseline)
 
 
 def test_structured_comparison_explicit_period_handles_leap_february() -> None:
@@ -607,16 +609,14 @@ def test_structured_comparison_explicit_period_handles_leap_february() -> None:
         raw_query="compare this month with last month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2024, 3, 6), language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=date(2024, 3, 6), language="en")
+    contract = (query_ir)
 
-    assert query_ir.comparison is not None
-    assert query_ir.comparison.mode == "explicit_range"
-    assert query_ir.comparison.explicit_range is not None
-    assert query_ir.comparison.explicit_range.start == date(2024, 2, 1)
-    assert query_ir.comparison.explicit_range.end == date(2024, 2, 6)
-    assert contract.comparison is not None
-    assert contract.comparison.mode == "explicit_range"
+    baseline = _comparison_baseline(query_ir)
+    assert isinstance(baseline, ExplicitBaseline)
+    assert baseline.period.start == date(2024, 2, 1)
+    assert baseline.period.end == date(2024, 2, 6)
+    assert isinstance(_comparison_baseline(contract), ExplicitBaseline)
 
 
 def test_structured_comparison_invalid_explicit_period_falls_back_to_previous_equivalent() -> None:
@@ -628,14 +628,11 @@ def test_structured_comparison_invalid_explicit_period_falls_back_to_previous_eq
         raw_query="compare this month to banana week",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 6), language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=date(2026, 3, 6), language="en")
+    contract = (query_ir)
 
-    assert query_ir.comparison is not None
-    assert query_ir.comparison.mode == "previous_equivalent"
-    assert query_ir.comparison.explicit_range is None
-    assert contract.comparison is not None
-    assert contract.comparison.mode == "previous_equivalent"
+    assert isinstance(_comparison_baseline(query_ir), PreviousEquivalentBaseline)
+    assert isinstance(_comparison_baseline(contract), PreviousEquivalentBaseline)
 
 
 def test_recipient_queries_compile_to_counterparty_filter() -> None:
@@ -652,8 +649,8 @@ def test_recipient_queries_compile_to_counterparty_filter() -> None:
         result_reference="latest",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.filters is not None
     assert query_ir.filters.counterparty == ["Mum"]
@@ -673,7 +670,7 @@ def test_request_shape_fact_overrides_grouped_summary_without_keyword_recovery()
         raw_query="restated follow-up",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert query_ir.answer_fact_field == "date"
 
@@ -690,7 +687,7 @@ def test_who_sent_me_query_sets_counterparty_answer_fact() -> None:
         raw_query="who sent me 500k last week",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert query_ir.filters is not None
     assert query_ir.filters.transaction_type == "credit"
@@ -708,8 +705,8 @@ def test_who_sent_me_most_money_compiles_to_credit_beneficiary_summary() -> None
         result_limit=1,
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert query_ir.filters is not None
@@ -732,8 +729,8 @@ def test_beneficiary_aggregation_limit_one_compiles_to_single_result_limit() -> 
         raw_query="semantic singular beneficiary winner",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert query_ir.result_limit == 1
@@ -750,8 +747,8 @@ def test_explicit_top_senders_query_does_not_compile_to_single_result_limit() ->
         raw_query="show top senders this month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert query_ir.result_limit is None
@@ -770,7 +767,7 @@ def test_counterparty_placeholder_is_ignored_for_sender_fact_queries() -> None:
         raw_query="who sent me 500k last week",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert query_ir.filters is not None
     assert query_ir.filters.counterparty is None
@@ -799,8 +796,8 @@ def test_raw_text_alone_does_not_infer_fact_fields(raw_query: str, intent: Query
         **extraction_kwargs,
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 28), language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=date(2026, 3, 28), language="en")
+    contract = (query_ir)
 
     assert query_ir.answer_fact_field is None
     assert contract.answer_fact_field is None
@@ -832,7 +829,7 @@ def test_typed_fact_query_kind_compiles_to_answer_fact_field(
         result_reference="latest",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 28), language="en")
+    query_ir = parser.build_query_request_from_extraction(extraction, today=date(2026, 3, 28), language="en")
 
     assert query_ir.answer_fact_field == expected
 
@@ -848,15 +845,15 @@ def test_existence_request_shape_compiles_to_direct_sum_query() -> None:
         raw_query="did I send money to Mum this month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
+    contract = (query_ir)
 
-    assert query_ir.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_ir.request_shape == "existence"
-    assert query_ir.filters is not None
-    assert query_ir.filters.counterparty == ["Mum"]
-    assert query_ir.filters.transaction_type == "debit"
-    assert contract.request_shape == "existence"
+    assert isinstance(query_ir.operation, RetrieveOperation)
+    assert query_ir.operation.projection.shape == "existence"
+    assert query_ir.operation.scope.predicate.counterparty is not None
+    assert query_ir.operation.scope.predicate.direction == "debit"
+    assert isinstance(contract.operation, RetrieveOperation)
+    assert contract.operation.projection.shape == "existence"
 
 
 def test_spending_by_account_overrides_wrong_extracted_category_grouping() -> None:
@@ -869,7 +866,7 @@ def test_spending_by_account_overrides_wrong_extracted_category_grouping() -> No
         raw_query="break down my spending by account",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert query_ir.aggregation is not None
     assert query_ir.aggregation.type == "breakdown"
@@ -887,7 +884,7 @@ def test_amount_filtered_people_query_compiles_to_beneficiary_summary_with_rolli
         raw_query="show people I sent 20k to in the last 2 weeks",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert query_ir.aggregation is not None
@@ -909,7 +906,7 @@ def test_greater_than_amount_people_query_compiles_to_beneficiary_summary_with_m
         raw_query="show people I sent greater than 20k to in the last 2 weeks",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert query_ir.filters is not None
@@ -930,7 +927,7 @@ def test_plain_people_query_compiles_to_beneficiary_summary_without_literal_peop
         raw_query="show people I sent money to this month",
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert query_ir.filters is not None
@@ -964,7 +961,7 @@ def test_multilingual_recipient_summary_queries_compile_to_beneficiary_summary(
         raw_query=question,
     )
 
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language=language)
+    query_ir = parser.build_query_request_from_extraction(extraction, today=today, language=language)
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert query_ir.filters is not None

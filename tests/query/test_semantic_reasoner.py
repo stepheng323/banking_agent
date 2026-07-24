@@ -8,9 +8,8 @@ from banking.transactions.query.contracts import SelectionPayload, SurfaceItemVi
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
-    QueryExecutionContract,
     QueryFrame,
-    QueryIR,
+    QueryRequest,
     QueryResultItem,
     TimeRange,
 )
@@ -30,16 +29,17 @@ from banking.transactions.query.services.reasoning.models import (
     SemanticReasonerContext,
 )
 from banking.transactions.query.services.reasoning.reasoner import QuerySemanticReasoner
+from tests.query.factories import make_query_request
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: object) -> QueryRequest:
     fallback_day = date(2026, 3, 20)
     defaults: dict[str, object] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
     defaults.update(kwargs)
-    return QueryIR(**defaults)
+    return make_query_request(**defaults)
 
 
 class _FailingStructured:
@@ -100,10 +100,10 @@ def _grouped_summary_surface_view(**context: object) -> SurfaceView:
 
 
 def _contract(
-    query: QueryIR,
-) -> QueryExecutionContract:
+    query: QueryRequest,
+) -> QueryRequest:
     assert query.time_range is not None
-    return QueryExecutionContract.from_query_ir(query)
+    return query.model_copy(deep=True)
 
 
 def test_reasoner_serializes_focused_surface_contract() -> None:
@@ -187,7 +187,7 @@ async def test_reasoner_uses_deterministic_receipt_action_without_llm() -> None:
             message="receipt",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -216,7 +216,7 @@ async def test_reasoner_uses_deterministic_first_item_detail_without_llm() -> No
             message="Show the first one",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -259,7 +259,7 @@ async def test_reasoner_uses_semantic_contract_for_visible_bank_fact() -> None:
             message="What bank was that?",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -319,7 +319,7 @@ async def test_reasoner_does_not_shortcut_fresh_credit_total_as_focused_amount_f
             message="How much came in this month",
             today=date(2026, 6, 27),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.BENEFICIARY_SUMMARY,
                     time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 27)),
@@ -359,7 +359,7 @@ async def test_reasoner_uses_llm_for_show_more_details() -> None:
             message="show more details",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -392,7 +392,7 @@ async def test_reasoner_uses_llm_new_query_for_recent_transaction_reset() -> Non
             message="show my recent transactions",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -424,7 +424,7 @@ async def test_reasoner_uses_llm_new_query_for_recent_transaction_reset_with_exp
             message="show my recent transactions in the last 2 weeks",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -456,7 +456,7 @@ async def test_reasoner_uses_llm_new_query_for_day_scoped_singular_list_reset() 
             message="show today's transaction",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -491,7 +491,7 @@ async def test_reasoner_uses_llm_scoped_recipient_delta() -> None:
             message="What about tolu?",
             today=date(2026, 4, 6),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 4, 1), end=date(2026, 4, 6)),
@@ -524,7 +524,7 @@ async def test_reasoner_uses_surface_view_for_deterministic_receipt_action_witho
             message="receipt",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -567,7 +567,7 @@ async def test_reasoner_uses_llm_for_active_result_fact_answer() -> None:
             message="was it successful?",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -605,7 +605,7 @@ async def test_reasoner_uses_llm_for_active_result_conversational_reaction() -> 
             message="That's a lot",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.ANALYTICS_SUMMARY,
                     time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
@@ -641,7 +641,7 @@ async def test_reasoner_uses_llm_for_active_result_appreciation_reaction() -> No
             message="Nice",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -675,7 +675,7 @@ async def test_reasoner_ends_active_result_session_for_thank_you_with_emoji_with
             message="Thank you 😊",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.ANALYTICS_SUMMARY,
                     time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
@@ -734,7 +734,7 @@ async def test_reasoner_uses_llm_for_beneficiary_summary_followup() -> None:
             message="When was Kunle's transaction?",
             today=date(2026, 3, 28),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.BENEFICIARY_SUMMARY,
                     time_range=TimeRange(start=date(2026, 3, 14), end=date(2026, 3, 28)),
@@ -771,7 +771,7 @@ async def test_reasoner_logs_deterministic_surface_action_without_llm(
             message="receipt",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -836,7 +836,7 @@ async def test_reasoner_logs_llm_fact_answer_decision(
             message="who was it to?",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -891,7 +891,7 @@ async def test_reasoner_logs_llm_backed_fresh_query_decision(monkeypatch: pytest
             message="can you show my last transaction",
             today=date(2026, 3, 13),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -934,7 +934,7 @@ async def test_reasoner_passes_through_replace_scope_followup_intent() -> None:
             message="for last week only",
             today=date(2026, 3, 14),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 14)),
@@ -968,7 +968,7 @@ async def test_reasoner_passes_through_possessive_week_replace_scope_followup_in
             message="Only this week's",
             today=date(2026, 3, 19),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 2, 17), end=date(2026, 3, 19)),
@@ -1005,7 +1005,7 @@ async def test_reasoner_passes_through_contrastive_last_week_replace_scope_follo
             message="What about the week prior",
             today=date(2026, 3, 19),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.ANALYTICS_SUMMARY,
                     time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19)),
@@ -1041,7 +1041,7 @@ async def test_reasoner_passes_through_today_replace_scope_followup_intent() -> 
             message="fetch today only",
             today=date(2026, 3, 19),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 19)),
@@ -1079,7 +1079,7 @@ async def test_reasoner_passes_through_contrastive_yesterday_replace_scope_follo
             message="what about the day before",
             today=date(2026, 3, 19),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19)),
@@ -1120,7 +1120,7 @@ async def test_reasoner_passes_through_single_item_contrastive_yesterday_replace
             message="no transaction the day prior?",
             today=date(2026, 3, 19),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_SEARCH,
                     time_range=TimeRange(start=date(2026, 3, 17), end=date(2026, 3, 19)),
@@ -1162,7 +1162,7 @@ async def test_reasoner_passes_through_contrastive_last_week_replace_scope_with_
             message="What about the week before",
             today=date(2026, 3, 19),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.ANALYTICS_SUMMARY,
                     time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19)),
@@ -1199,7 +1199,7 @@ async def test_reasoner_uses_deterministic_continue_pagination_without_llm() -> 
             message="next page",
             today=date(2026, 3, 14),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 3, 8), end=date(2026, 3, 14)),
@@ -1232,7 +1232,7 @@ async def test_reasoner_uses_deterministic_previous_pagination_without_llm() -> 
             message="previous page",
             today=date(2026, 3, 14),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 3, 8), end=date(2026, 3, 14)),
@@ -1265,7 +1265,7 @@ async def test_reasoner_passes_through_show_evidence_followup_intent() -> None:
             message="Show me",
             today=date(2026, 3, 14),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.ANALYTICS_SUMMARY,
                     time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 14)),
@@ -1300,7 +1300,7 @@ async def test_reasoner_passes_through_grouped_total_followup_intent() -> None:
             message="so what the total?",
             today=date(2026, 3, 30),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.BENEFICIARY_SUMMARY,
                     time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 30)),
@@ -1335,7 +1335,7 @@ async def test_reasoner_passes_through_unclear_followup_contract() -> None:
             message="for last week only",
             today=date(2026, 3, 14),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.ANALYTICS_SUMMARY,
                     time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 14)),
@@ -1369,7 +1369,7 @@ async def test_reasoner_passes_through_last_month_replace_scope_followup_intent(
             message="for last month only",
             today=date(2026, 3, 19),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 1, 1), end=date(2026, 3, 19)),
@@ -1414,7 +1414,7 @@ async def test_reasoner_logs_single_llm_trace_metadata(monkeypatch: pytest.Monke
             message="can we compare that against last week",
             today=date(2026, 3, 14),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 14)),
@@ -1517,7 +1517,7 @@ async def test_reasoner_bounds_surface_items_and_omits_unneeded_frames() -> None
             frame_id=f"qf_{index}",
             turn_index=index + 1,
             summary_text=f"summary {index}",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -1532,7 +1532,7 @@ async def test_reasoner_bounds_surface_items_and_omits_unneeded_frames() -> None
             message="what about the week before",
             today=date(2026, 3, 19),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.ANALYTICS_SUMMARY,
                     time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19)),
@@ -1572,7 +1572,7 @@ async def test_reasoner_bounds_frames_for_historical_profile() -> None:
             frame_id=f"qf_{index}",
             turn_index=index + 1,
             summary_text=f"summary {index}",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.TRANSACTION_LIST,
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
@@ -1587,7 +1587,7 @@ async def test_reasoner_bounds_frames_for_historical_profile() -> None:
             message="compare that with the earlier result",
             today=date(2026, 3, 19),
             language="en",
-            query_contract=_contract(
+            query_request=_contract(
                 _query_ir(
                     intent=QueryIntent.ANALYTICS_SUMMARY,
                     time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19)),
@@ -1631,7 +1631,7 @@ async def test_extraction_step_preserves_session_for_conversational_reaction() -
             "today": date(2026, 3, 14),
             "query_session": {
                 "session_active": True,
-                "query_contract": session_contract,
+                "query_request": session_contract,
                 "query_result": {
                     "summary_text": "You spent money in that period.",
                     "items": [],
@@ -1658,7 +1658,7 @@ async def test_extraction_step_fresh_query_uses_deterministic_parser_without_par
             result_limit=1,
             result_reference="latest",
         ),
-        query_contract=_contract(
+        query_request=_contract(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=date(2026, 2, 11), end=date(2026, 3, 13)),
@@ -1708,7 +1708,7 @@ async def test_extraction_step_fresh_query_falls_back_to_parser_parse_when_not_d
         return QueryParseResult(
             outcome=ResolverOutcome.OK,
             extraction=parsed_extraction,
-            query_contract=_contract(parsed_query).model_dump(mode="json"),
+            query_request=_contract(parsed_query).model_dump(mode="json"),
         )
 
     step.parser.parse_deterministic = lambda *args, **kwargs: None  # type: ignore[method-assign]
@@ -1760,14 +1760,14 @@ async def test_extraction_step_does_not_reparse_support_problem_as_query_continu
         },
         {
             "session_active": True,
-            "query_contract": session_contract.model_dump(),
+            "query_request": session_contract.model_dump(),
             "query_result": {"items": []},
         },
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
     assert updates["response"] == "I'm not sure what you're referring to. Could you rephrase?"
-    assert "query_contract" not in updates
+    assert "query_request" not in updates
 
 
 @pytest.mark.asyncio
@@ -1807,7 +1807,7 @@ async def test_extraction_step_active_result_aggregate_can_reuse_reasoner_extrac
             "today": date(2026, 3, 13),
             "query_session": {
                 "session_active": True,
-                "query_contract": session_contract,
+                "query_request": session_contract,
                 "query_result": {
                     "summary_text": "Transactions",
                     "items": [QueryResultItem(description="Txn", amount=1000, date=date(2026, 3, 13)).model_dump()],
@@ -1856,7 +1856,7 @@ async def test_extraction_step_active_result_new_query_compiles_without_parser_p
             "today": date(2026, 3, 13),
             "query_session": {
                 "session_active": True,
-                "query_contract": session_contract,
+                "query_request": session_contract,
                 "query_result": {
                     "summary_text": "You spent money in that period.",
                     "items": [],
@@ -1898,7 +1898,7 @@ async def test_extraction_step_active_result_incomplete_new_query_does_not_repar
             "today": date(2026, 3, 13),
             "query_session": {
                 "session_active": True,
-                "query_contract": session_contract,
+                "query_request": session_contract,
                 "query_result": {
                     "summary_text": "Transactions",
                     "items": [],
@@ -1910,3 +1910,139 @@ async def test_extraction_step_active_result_incomplete_new_query_does_not_repar
 
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
     assert result.patch["_query_reasoner_to_parser_suppressed"] is True
+
+
+@pytest.mark.asyncio
+async def test_extraction_step_grouped_total_followup_compiles_spend_vs_earn_to_cash_flow() -> None:
+    """In-vs-out compare on an analytics grouped surface compiles to cash flow."""
+    step = ExtractionStep(_FailingLLM())
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 7, 1), end=date(2026, 7, 24)),
+            filters=Filters(),
+            aggregation=Aggregation(type="breakdown", group_by="transaction_type"),
+        )
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="grouped_total_followup",
+            followup_intent="refine_existing",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    result = await step.run(
+        {
+            "message": "Did I spend more than I earned this month?",
+            "language": "en",
+            "today": date(2026, 7, 24),
+            "query_session": {
+                "session_active": True,
+                "query_request": session_contract,
+                "query_result": {
+                    "summary_text": "Breakdown by transaction type.",
+                    "items": [],
+                    "surface_view": _grouped_summary_surface_view(group_by="transaction_type").model_dump(mode="json"),
+                },
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["flow_state"] == "executing"
+    assert result.patch["query_request"].intent == QueryIntent.CASH_FLOW_SUMMARY
+    assert result.patch["_query_session_transition"] == "replace_session_new_query"
+
+
+@pytest.mark.asyncio
+async def test_extraction_step_grouped_total_followup_beneficiary_summary_still_totals() -> None:
+    """Recipient-grouped summaries keep the original total-over-scope behavior."""
+    step = ExtractionStep(_FailingLLM())
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.BENEFICIARY_SUMMARY,
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 30)),
+            filters=Filters(transaction_type="debit"),
+            aggregation=Aggregation(type="sum", sort_by="count"),
+        )
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="grouped_total_followup",
+            followup_intent="refine_existing",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    result = await step.run(
+        {
+            "message": "so what the total?",
+            "language": "en",
+            "today": date(2026, 3, 30),
+            "query_session": {
+                "session_active": True,
+                "query_request": session_contract,
+                "query_result": {
+                    "summary_text": "Top recipients.",
+                    "items": [],
+                    "surface_view": _grouped_summary_surface_view(view="summary").model_dump(mode="json"),
+                },
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["flow_state"] == "executing"
+    assert result.patch["query_request"].intent == QueryIntent.ANALYTICS_SUMMARY
+    assert result.patch["query_request"].aggregation.type == "sum"
+
+
+@pytest.mark.asyncio
+async def test_extraction_step_grouped_total_followup_non_compare_clarifies_with_response() -> None:
+    """Unsupported grouped-total follow-ups clarify with a non-empty response."""
+    step = ExtractionStep(_FailingLLM())
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 7, 1), end=date(2026, 7, 24)),
+            filters=Filters(transaction_type="debit"),
+            aggregation=Aggregation(type="breakdown", group_by="category"),
+        )
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="grouped_total_followup",
+            followup_intent="refine_existing",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    result = await step.run(
+        {
+            "message": "what about the one before?",
+            "language": "en",
+            "today": date(2026, 7, 24),
+            "query_session": {
+                "session_active": True,
+                "query_request": session_contract,
+                "query_result": {
+                    "summary_text": "Spending by category.",
+                    "items": [],
+                    "surface_view": _grouped_summary_surface_view(group_by="category").model_dump(mode="json"),
+                },
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.response

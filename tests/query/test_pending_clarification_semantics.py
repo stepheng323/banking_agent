@@ -4,9 +4,8 @@ import pytest
 
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
@@ -21,16 +20,17 @@ from banking.transactions.query.models.extraction import (
 )
 from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
+from tests.query.factories import make_query_request
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: object) -> QueryRequest:
     fallback_day = date(2026, 3, 28)
     defaults: dict[str, object] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
     defaults.update(kwargs)
-    return QueryIR(**defaults)
+    return make_query_request(**defaults)
 
 
 class _DummyStructured:
@@ -45,8 +45,8 @@ class _DummyLLM:
         return _DummyStructured()
 
 
-def _contract(query: QueryIR) -> QueryExecutionContract:
-    return QueryExecutionContract.from_query_ir(query)
+def _contract(query: QueryRequest) -> QueryRequest:
+    return query.model_copy(deep=True)
 
 
 def _pending_state() -> PendingClarificationState:
@@ -122,7 +122,7 @@ async def test_pending_clarification_time_reply_patches_and_executes() -> None:
         return QueryParseResult(
             outcome=ResolverOutcome.OK,
             extraction=extraction,
-            query_contract=contract.model_dump(),
+            query_request=contract.model_dump(),
             patch={},
         )
 
@@ -192,12 +192,12 @@ async def test_reasoner_fresh_query_without_raw_query_injects_message_for_debit_
         language="en",
     )
 
-    query_contract = updates["query_contract"]
-    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_contract.filters is not None
-    assert query_contract.filters.transaction_type == "debit"
-    assert query_contract.time_start == date(2026, 3, 16)
-    assert query_contract.time_end == today
+    query_request = updates["query_request"]
+    assert query_request.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_request.filters is not None
+    assert query_request.filters.transaction_type == "debit"
+    assert query_request.time_start == date(2026, 3, 16)
+    assert query_request.time_end == today
 
 
 @pytest.mark.asyncio
@@ -259,7 +259,7 @@ async def test_pending_clarification_recent_list_interrupts_and_clears_old_scope
                 intent=QueryIntent.TRANSACTION_LIST,
                 raw_query=question,
             ),
-            query_contract=contract.model_dump(),
+            query_request=contract.model_dump(),
             patch={},
         )
 
@@ -307,7 +307,7 @@ async def test_pending_clarification_day_scoped_list_interrupts_and_executes_new
                 intent=QueryIntent.TRANSACTION_LIST,
                 raw_query=question,
             ),
-            query_contract=contract.model_dump(),
+            query_request=contract.model_dump(),
             patch={},
         )
 

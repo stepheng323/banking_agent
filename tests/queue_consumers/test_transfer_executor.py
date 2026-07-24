@@ -613,7 +613,7 @@ async def test_transfer_executor_grouped_legs_emit_one_summary_on_last_completio
     assert "Transfers Complete" in summary_text
     assert "Mercy Johnson" in summary_text
     assert "Tolu Adedayo" in summary_text
-    assert "Some transactions completed, but others failed." in summary_text
+    assert "Some transactions could not be completed." in summary_text
     publisher.publish.assert_not_awaited()
 
     stored = json.loads(redis_client.hashes["async-group:group-2:legs"]["1"])
@@ -680,8 +680,7 @@ async def test_transfer_executor_grouped_processing_leg_still_emits_summary() ->
     assert "Transfers Update" in summary_text
     assert "Mercy Johnson" in summary_text
     assert "Tolu Adedayo" in summary_text
-    assert "awaiting provider confirmation" in summary_text
-    assert "You'll be notified when the final update arrives." in summary_text
+    assert "Some transactions completed; others are still being processed." in summary_text
 
     stored = json.loads(redis_client.hashes["async-group:group-3:legs"]["2"])
     assert stored["payload"]["final_status"] == "processing"

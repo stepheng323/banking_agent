@@ -34,6 +34,7 @@ ReadinessScenarioName = Literal[
     "mvp",
     "query",
     "query-deep",
+    "query-longtail",
     "latency",
     "llm-latency",
     "planner",

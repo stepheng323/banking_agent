@@ -53,6 +53,15 @@ _ROUTING_DECISION_EVENT_MAX_ONE: tuple[tuple[str, int], ...] = (
     ("semantic_router_llm_call", 1),
 )
 
+# Dead-end replies that must never answer a legitimate query phrasing.
+_QUERY_LONGTAIL_FORBIDDEN: tuple[str, ...] = (
+    "I'm not sure what you're referring to",
+    "I couldn't understand that query",
+    "Something went wrong",
+    "I can help with banking tasks",
+    "I can't handle that yet",
+)
+
 
 def _planner_clean_single_call_expectation() -> ReadinessExpectation:
     return ReadinessExpectation(
@@ -320,6 +329,71 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
                 ReadinessTurn(
                     "More",
                     ReadinessExpectation(expect_any=("transaction", "showing", "more", "page")),
+                    modes=("dry-run",),
+                ),
+            ),
+        ),
+        "query-longtail": ReadinessScenario(
+            id="query-longtail",
+            description=(
+                "Long-tail query phrasings that historically dead-ended: recap-shaped "
+                "spending questions, spend-vs-earn cash flow, and terse continuations."
+            ),
+            turns=(
+                ReadinessTurn(
+                    "How much did I spend this month?",
+                    ReadinessExpectation(
+                        expect_any=("spent", "₦"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                    ),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Compare to how much came in",
+                    ReadinessExpectation(
+                        expect_any=("credit", "came in", "₦"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                    ),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Did I spend more than I earned this month?",
+                    ReadinessExpectation(
+                        expect_any=("came in", "went out", "cash flow", "up", "down", "credit"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                    ),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "What of last week",
+                    ReadinessExpectation(
+                        expect_any=("₦",),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                    ),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Show them",
+                    ReadinessExpectation(
+                        expect_any=("transaction", "showing", "₦"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                    ),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "How much did I spend?",
+                    ReadinessExpectation(
+                        expect_any=("spent", "₦"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                    ),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "I said yesterday",
+                    ReadinessExpectation(
+                        expect_any=("yesterday", "₦", "didn't spend"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                    ),
                     modes=("dry-run",),
                 ),
             ),

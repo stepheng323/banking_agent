@@ -30,6 +30,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "mvp",
             "query",
             "query-deep",
+            "query-longtail",
             "latency",
             "llm-latency",
             "planner",

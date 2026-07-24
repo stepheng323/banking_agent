@@ -86,7 +86,11 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
         footer = render_message(footer_key, locale, {"count": str(len(completed_tasks))})
     else:
         # Default success footer
-        footer = render_message("transaction_summary.multi.success_footer", locale, {"count": str(len(completed_tasks))})
+        footer = render_message(
+            "transaction_summary.multi.success_footer",
+            locale,
+            {"count": str(len(completed_tasks))}
+        )
 
     lines.append(footer)
 
@@ -175,7 +179,11 @@ def format_multi_action_summary_blocks(completed_tasks: list, locale: str = "en"
         footer = render_message(footer_key, locale, {"count": str(len(completed_tasks))})
     else:
         # Default success footer
-        footer = render_message("transaction_summary.multi.success_footer", locale, {"count": str(len(completed_tasks))})
+        footer = render_message(
+            "transaction_summary.multi.success_footer",
+            locale,
+            {"count": str(len(completed_tasks))}
+        )
 
     if footer:
         blocks.append({"type": "text", "text": _strip_markup(footer)})

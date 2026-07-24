@@ -3,28 +3,28 @@ from datetime import date
 from banking.transactions.query.models.domain import (
     Filters,
     QueryAnswerStrategy,
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
     TimeRange,
 )
 from banking.transactions.query.services.answers.strategy import select_answer_strategy
+from tests.query.factories import make_query_request
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: object) -> QueryRequest:
     fallback_day = date(2026, 3, 28)
     defaults: dict[str, object] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
     defaults.update(kwargs)
-    return QueryIR(**defaults)
+    return make_query_request(**defaults)
 
 
-def _query_contract(query: QueryIR) -> QueryExecutionContract:
-    return QueryExecutionContract.from_query_ir(query)
+def _query_request(query: QueryRequest) -> QueryRequest:
+    return query.model_copy(deep=True)
 
 
 def test_select_answer_strategy_uses_direct_answer_for_single_fact_match() -> None:
@@ -46,7 +46,7 @@ def test_select_answer_strategy_uses_direct_answer_for_single_fact_match() -> No
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -69,7 +69,7 @@ def test_select_answer_strategy_does_not_direct_answer_structural_empty_list_sum
     result = QueryResult(
         summary_text="accounts:4|showing:1-0|total:0",
         items=[],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=date(2026, 3, 28), end=date(2026, 3, 28)),
@@ -95,7 +95,7 @@ def test_select_answer_strategy_direct_answers_analytics_sum_without_list_dump()
                 metadata={"type": "debit"},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 filters=Filters(transaction_type="debit"),
@@ -123,7 +123,7 @@ def test_single_beneficiary_summary_sets_followup_referent() -> None:
                 metadata={"recipient_name": "Cowrywise", "count": 3},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.BENEFICIARY_SUMMARY,
                 filters=Filters(transaction_type="debit"),
@@ -159,7 +159,7 @@ def test_select_answer_strategy_uses_localized_reply_for_single_fact_match() -> 
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -194,7 +194,7 @@ def test_select_answer_strategy_uses_latest_counterparty_reply_with_compact_evid
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit"),
@@ -225,7 +225,7 @@ def test_select_answer_strategy_uses_latest_amount_reply() -> None:
                 metadata={"type": "debit", "recipient_name": "Mum", "recipient_bank_name": "Opay"},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit"),
@@ -262,7 +262,7 @@ def test_select_answer_strategy_uses_latest_fact_without_ambiguity_for_multiple_
                 metadata={"type": "debit", "recipient_name": "Tolu Adebayo", "recipient_bank_name": "First Bank"},
             ),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Tolu Adebayo"]),
@@ -296,7 +296,7 @@ def test_select_answer_strategy_uses_posted_status_for_history_item_without_stat
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 16)),
@@ -331,7 +331,7 @@ def test_select_answer_strategy_localizes_posted_status_for_pidgin() -> None:
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 16)),
@@ -370,7 +370,7 @@ def test_select_answer_strategy_explains_failed_bank_posted_mismatch() -> None:
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 answer_fact_field="status",
@@ -408,7 +408,7 @@ def test_select_answer_strategy_explains_processing_bank_posted_status() -> None
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 answer_fact_field="status",
@@ -444,7 +444,7 @@ def test_select_answer_strategy_uses_status_aliases() -> None:
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit"),
@@ -474,7 +474,7 @@ def test_select_answer_strategy_uses_latest_bank_reply() -> None:
                 metadata={"type": "debit", "recipient_name": "Mum", "recipient_bank_name": "Opay"},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit"),
@@ -499,7 +499,7 @@ def test_select_answer_strategy_uses_clarify_for_ambiguous_fact_match() -> None:
             QueryResultItem(id="tx1", description="Transfer to Mum", amount=50000, date=date(2026, 3, 24)),
             QueryResultItem(id="tx2", description="Transfer to Mum", amount=20000, date=date(2026, 3, 20)),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -533,7 +533,7 @@ def test_select_answer_strategy_answers_reference_fact_directly() -> None:
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -569,7 +569,7 @@ def test_select_answer_strategy_prefers_provider_reference_for_reference_fact() 
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -604,7 +604,7 @@ def test_select_answer_strategy_answers_existence_yes_with_total() -> None:
                 metadata={"type": "debit", "recipient_name": "Mum"},
             ),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -625,7 +625,7 @@ def test_select_answer_strategy_answers_existence_no_without_coverage_disclaimer
     result = QueryResult(
         summary_text="You didn't spend anything in that period.",
         items=[],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -660,7 +660,7 @@ def test_select_answer_strategy_uses_compact_followup_fact_answer_without_eviden
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -676,4 +676,4 @@ def test_select_answer_strategy_uses_compact_followup_fact_answer_without_eviden
     assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
     assert selected.answer_context is not None
     assert selected.answer_context.primary_text == "You paid Mum on March 24, 2026."
-    assert selected.answer_context.secondary_text is None
+    assert selected.answer_context.secondary_text == "₦50,000 • Opay"

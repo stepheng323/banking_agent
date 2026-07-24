@@ -6,12 +6,8 @@ from banking.transactions.query.handlers.time_comparison import (
     _format_period_label,
     handle_time_comparison,
 )
-from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
-    QueryIntent,
-    QueryIR,
-    TimeRange,
-)
+from banking.transactions.query.models.operations import ResolvedPeriod
+from tests.query.factories import compare_request, query_scope
 
 
 class _Provider:
@@ -19,19 +15,19 @@ class _Provider:
 
 
 def test_format_period_label_keeps_full_month_name() -> None:
-    label = _format_period_label(TimeRange(start=date(2026, 2, 1), end=date(2026, 2, 28), granularity="month"))
+    label = _format_period_label(ResolvedPeriod(start=date(2026, 2, 1), end=date(2026, 2, 28), granularity="month"))
 
     assert label == "February 2026"
 
 
 def test_format_period_label_uses_date_span_for_partial_month() -> None:
-    label = _format_period_label(TimeRange(start=date(2026, 2, 1), end=date(2026, 2, 7), granularity="month"))
+    label = _format_period_label(ResolvedPeriod(start=date(2026, 2, 1), end=date(2026, 2, 7), granularity="month"))
 
     assert label == "Feb 01 - Feb 07"
 
 
 def test_format_period_label_uses_date_span_for_partial_week() -> None:
-    label = _format_period_label(TimeRange(start=date(2026, 2, 23), end=date(2026, 2, 27), granularity="week"))
+    label = _format_period_label(ResolvedPeriod(start=date(2026, 2, 23), end=date(2026, 2, 27), granularity="week"))
 
     assert label == "Feb 23 - Feb 27"
 
@@ -40,10 +36,7 @@ def test_format_period_label_uses_date_span_for_partial_week() -> None:
 async def test_time_comparison_uses_naira_amounts_without_kobo_division(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    current_query = QueryIR(
-        intent=QueryIntent.TIME_COMPARISON,
-        time_range=TimeRange(start=date(2026, 3, 8), end=date(2026, 3, 14), granularity="week"),
-    )
+    current_query = compare_request(query_scope(date(2026, 3, 8), date(2026, 3, 14), granularity="week"))
     calls = 0
 
     async def _fake_fetch_and_filter(*args, **kwargs):  # type: ignore[no-untyped-def]
@@ -64,7 +57,7 @@ async def test_time_comparison_uses_naira_amounts_without_kobo_division(
 
     result = await handle_time_comparison(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(current_query),
+        (current_query),
         account_id="acc_1",
         account_ids=["acc_1"],
         language="en",

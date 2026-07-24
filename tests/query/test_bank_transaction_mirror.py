@@ -13,7 +13,7 @@ from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     TimeRange,
 )
 from banking.transactions.query.services.fetching.bank_transaction_mirror import _mirror_row_from_transaction
@@ -23,16 +23,17 @@ from banking.transactions.query.services.fetching.fetch import (
     fetch_transactions_base,
 )
 from shared.clients.abstractions.banking import TransactionData, TransactionPageData
+from tests.query.factories import make_query_request
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: object) -> QueryRequest:
     fallback_day = date(2026, 3, 28)
     defaults: dict[str, object] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
     defaults.update(kwargs)
-    return QueryIR(**defaults)
+    return make_query_request(**defaults)
 
 
 def test_missing_mirror_table_error_is_detected_without_full_sqlalchemy_exception() -> None:
@@ -269,7 +270,7 @@ def _query(
     start_date: date,
     end_date: date,
     filters: Filters | None = None,
-) -> QueryIR:
+) -> QueryRequest:
     return _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=start_date, end=end_date),

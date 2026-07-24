@@ -2,6 +2,7 @@
 
 import json
 import time
+from datetime import date
 
 import pytest
 from langchain_core.runnables import RunnableConfig
@@ -42,6 +43,7 @@ from banking.presentation.i18n.bridge import (
 )
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from banking.transactions.query.models.domain import Aggregation, Filters, QueryIntent, QueryRequest, TimeRange
 from banking.transactions.shared.confirmation.models import ConfirmationDecision
 from shared.config.settings import settings
 from shared.types.balance import BalanceQueryContract
@@ -54,6 +56,7 @@ from shared.types.conversation_sets import (
 )
 from shared.types.planner import ContextFrameFollowupDecision, ScheduleSetEditDelta, SemanticRouteDecision
 from shared.types.read import ReadRequest
+from tests.query.factories import make_query_request
 
 
 def _apply_updates(state: OrchestratorState, updates: dict[str, object]) -> OrchestratorState:
@@ -96,17 +99,15 @@ def _unsupported_params(key: str, *, locale: str | None = None) -> dict[str, obj
 def _active_query_context_frame(
     *,
     summary_text: str = "Query result",
-    query_contract: dict[str, object] | None = None,
+    query_request: QueryRequest | None = None,
     frame_id: str = "active-query-frame",
 ) -> ContextFrame:
-    contract = query_contract or {
-        "intent": "transaction_list",
-        "time_start": "2026-03-01",
-        "time_end": "2026-03-19",
-        "timezone": "Africa/Lagos",
-        "filters": {"transaction_type": "debit"},
-        "result_limit": 5,
-    }
+    contract = query_request or make_query_request(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 19)),
+        filters=Filters(transaction_type="debit"),
+        result_limit=5,
+    )
     return ContextFrame(
         frame_id=frame_id,
         frame_type=ContextFrameType.TRANSACTION_LIST,
@@ -122,7 +123,7 @@ def _active_query_context_frame(
         metadata={
             "source": "query",
             "summary_text": summary_text,
-            "query_contract": contract,
+            "query_request": contract.model_dump(mode="json"),
             "surface_mode": "direct_answer",
             "surface_context": {"mode": "direct_answer"},
         },
@@ -2731,12 +2732,10 @@ async def test_gate_query_followup_preempts_stale_unsupported_boundary_llm() -> 
                 metadata={
                     "source": "query",
                     "summary_text": "Airtime for My Number",
-                    "query_contract": {
-                        "intent": "transaction_list",
-                        "time_start": "2026-03-01",
-                        "time_end": "2026-03-19",
-                        "timezone": "Africa/Lagos",
-                    },
+                    "query_request": make_query_request(
+                        intent=QueryIntent.TRANSACTION_LIST,
+                        time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 19)),
+                    ).model_dump(mode="json"),
                     "surface_mode": "transaction_list",
                 },
             )
@@ -2783,15 +2782,13 @@ async def test_gate_active_query_owns_direct_context_answer_followup() -> None:
         context_frames=[
             _active_query_context_frame(
                 summary_text="Acme Corp sent you the most this month: ₦950,000.",
-                query_contract={
-                    "intent": "beneficiary_summary",
-                    "time_start": "2026-06-01",
-                    "time_end": "2026-06-27",
-                    "timezone": "Africa/Lagos",
-                    "filters": {"transaction_type": "credit"},
-                    "aggregation": {"type": "sum", "sort_by": "amount", "limit": 5},
-                    "result_limit": 1,
-                },
+                query_request=make_query_request(
+                    intent=QueryIntent.BENEFICIARY_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 27)),
+                    filters=Filters(transaction_type="credit"),
+                    aggregation=Aggregation(type="sum", sort_by="amount", limit=5),
+                    result_limit=1,
+                ),
             )
         ],
     )
@@ -3124,16 +3121,14 @@ async def test_gate_latest_fact_next_followup_stays_in_active_query_session() ->
         context_frames=[
             _active_query_context_frame(
                 summary_text="The last person you sent money to was Mum.",
-                query_contract={
-                    "intent": "transaction_search",
-                    "time_start": "2026-04-01",
-                    "time_end": "2026-04-10",
-                    "timezone": "Africa/Lagos",
-                    "filters": {"transaction_type": "debit"},
-                    "result_limit": 1,
-                    "result_reference": "latest",
-                    "answer_fact_field": "counterparty",
-                },
+                query_request=make_query_request(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_range=TimeRange(start=date(2026, 4, 1), end=date(2026, 4, 10)),
+                    filters=Filters(transaction_type="debit"),
+                    result_limit=1,
+                    result_reference="latest",
+                    answer_fact_field="counterparty",
+                ),
             )
         ],
     )
@@ -9365,18 +9360,16 @@ async def test_gate_routes_show_me_active_query_followup_directly_to_query_worke
         context_frames=[
             _active_query_context_frame(
                 summary_text="You spent ₦60,000 on mum this week.",
-                query_contract={
-                    "intent": "analytics_summary",
-                    "time_start": "2026-03-16",
-                    "time_end": "2026-03-19",
-                    "timezone": "Africa/Lagos",
-                    "normalized_query": {
-                        "intent": "analytics_summary",
-                        "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
-                        "filters": {"transaction_type": "debit", "merchant": ["mum"]},
-                        "accounts_scope": "all",
-                    },
-                },
+                query_request=make_query_request(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_range=TimeRange(
+                        start=date(2026, 3, 16),
+                        end=date(2026, 3, 19),
+                        granularity="week",
+                    ),
+                    filters=Filters(transaction_type="debit", merchant=["mum"]),
+                    aggregation=Aggregation(type="sum"),
+                ),
             )
         ],
     )
@@ -9419,18 +9412,16 @@ async def test_gate_routes_last_week_active_query_followup_directly_to_query_wor
         context_frames=[
             _active_query_context_frame(
                 summary_text="You spent ₦60,000 on mum this week.",
-                query_contract={
-                    "intent": "analytics_summary",
-                    "time_start": "2026-03-16",
-                    "time_end": "2026-03-19",
-                    "timezone": "Africa/Lagos",
-                    "normalized_query": {
-                        "intent": "analytics_summary",
-                        "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
-                        "filters": {"transaction_type": "debit", "merchant": ["mum"]},
-                        "accounts_scope": "all",
-                    },
-                },
+                query_request=make_query_request(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_range=TimeRange(
+                        start=date(2026, 3, 16),
+                        end=date(2026, 3, 19),
+                        granularity="week",
+                    ),
+                    filters=Filters(transaction_type="debit", merchant=["mum"]),
+                    aggregation=Aggregation(type="sum"),
+                ),
             )
         ],
     )
@@ -9472,18 +9463,15 @@ async def test_gate_routes_how_much_total_active_query_followup_directly_to_quer
         context_frames=[
             _active_query_context_frame(
                 summary_text="You showed 5 transactions to Mum this month.",
-                query_contract={
-                    "intent": "transaction_list",
-                    "time_start": "2026-03-01",
-                    "time_end": "2026-03-19",
-                    "timezone": "Africa/Lagos",
-                    "normalized_query": {
-                        "intent": "transaction_list",
-                        "time_range": {"start": "2026-03-01", "end": "2026-03-19", "granularity": "month"},
-                        "filters": {"transaction_type": "debit", "merchant": ["mum"]},
-                        "accounts_scope": "all",
-                    },
-                },
+                query_request=make_query_request(
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    time_range=TimeRange(
+                        start=date(2026, 3, 1),
+                        end=date(2026, 3, 19),
+                        granularity="month",
+                    ),
+                    filters=Filters(transaction_type="debit", merchant=["mum"]),
+                ),
             )
         ],
     )
@@ -9539,18 +9527,16 @@ async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monke
         context_frames=[
             _active_query_context_frame(
                 summary_text="You spent ₦60,000 on mum this week.",
-                query_contract={
-                    "intent": "analytics_summary",
-                    "time_start": "2026-03-16",
-                    "time_end": "2026-03-19",
-                    "timezone": "Africa/Lagos",
-                    "normalized_query": {
-                        "intent": "analytics_summary",
-                        "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
-                        "filters": {"transaction_type": "debit", "merchant": ["mum"]},
-                        "accounts_scope": "all",
-                    },
-                },
+                query_request=make_query_request(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_range=TimeRange(
+                        start=date(2026, 3, 16),
+                        end=date(2026, 3, 19),
+                        granularity="week",
+                    ),
+                    filters=Filters(transaction_type="debit", merchant=["mum"]),
+                    aggregation=Aggregation(type="sum"),
+                ),
             )
         ],
     )

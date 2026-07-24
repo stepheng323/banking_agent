@@ -7,15 +7,16 @@ from banking.transactions.query.actions import handle_drill_down
 from banking.transactions.query.contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import (
     Filters,
-    QueryExecutionContract,
     QueryFrame,
     QueryFrameFacts,
     QueryIntent,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
 )
 from banking.transactions.query.services.conversation.resolver import build_query_conversation_updates
 from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
+from tests.query.factories import make_query_request
 
 
 def _payload(entity_id: str, label: str) -> SelectionPayload:
@@ -72,8 +73,8 @@ def _query_result() -> QueryResult:
     )
 
 
-def _contract() -> QueryExecutionContract:
-    return QueryExecutionContract(
+def _contract() -> QueryRequest:
+    return make_query_request(
         intent=QueryIntent.TRANSACTION_LIST,
         time_start=date(2026, 4, 10),
         time_end=date(2026, 5, 10),
@@ -84,7 +85,7 @@ def _frame_with_items(frame_id: str, items: list[dict[str, object]]) -> QueryFra
     return QueryFrame(
         frame_id=frame_id,
         turn_index=1,
-        query_contract=_contract(),
+        query_request=_contract(),
         summary_text="Transactions",
         surface_type=SurfaceViewMode.TRANSACTION_LIST,
         visible_items=items,
@@ -415,7 +416,7 @@ async def test_query_drill_down_does_not_fallback_to_item_zero_for_bad_selection
 
 @pytest.mark.asyncio
 async def test_query_drill_down_retains_parent_list_pagination_for_completeness_followup() -> None:
-    query_result = _query_result().model_copy(update={"has_more": True, "query_contract": _contract()})
+    query_result = _query_result().model_copy(update={"has_more": True, "query_request": _contract()})
 
     result = await handle_drill_down(
         {

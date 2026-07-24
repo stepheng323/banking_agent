@@ -1,4 +1,5 @@
 import time
+from datetime import date
 from typing import cast
 
 import pytest
@@ -24,6 +25,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
     build_surface_answer_context_for_state,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks as _plan_tasks
+from banking.transactions.query.models.domain import QueryIntent, TimeRange
 from shared.types.balance import BalanceFollowupDelta, BalanceOperation
 from shared.types.conversation_sets import (
     AccountLifecycleContract,
@@ -44,6 +46,7 @@ from shared.types.planner import (
 )
 from shared.types.read import ReadRequest
 from tests.orchestrator.routing_fixtures import finalize_test_directive
+from tests.query.factories import make_query_request
 
 
 class _SurfaceFollowupPlanner:
@@ -376,7 +379,11 @@ async def test_transaction_surface_selection_promotes_detail_frame_for_pronoun_f
     assert "Which" not in second_updates["final_response"]
 
 
-def test_transaction_detail_promotion_preserves_query_contract_and_list_context() -> None:
+def test_transaction_detail_promotion_preserves_query_request_and_list_context() -> None:
+    query_request = make_query_request(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 31)),
+    )
     source_frame = _transaction_list_frame().model_copy(
         update={
             "metadata": {
@@ -384,12 +391,7 @@ def test_transaction_detail_promotion_preserves_query_contract_and_list_context(
                 "surface_mode": "transaction_list",
                 "summary_text": "I found 43 transactions this month.",
                 "has_more": True,
-                "query_contract": {
-                    "intent": "transaction_list",
-                    "time_start": "2026-05-01",
-                    "time_end": "2026-05-31",
-                    "timezone": "Africa/Lagos",
-                },
+                "query_request": query_request.model_dump(mode="json"),
                 "query_frame": {"frame_id": "old-list-frame"},
             }
         }
@@ -413,7 +415,7 @@ def test_transaction_detail_promotion_preserves_query_contract_and_list_context(
     detail_frame = frames[-1]
     assert detail_frame.frame_type == ContextFrameType.TRANSACTION_DETAIL
     assert detail_frame.metadata["source"] == "query"
-    assert detail_frame.metadata["query_contract"]["intent"] == "transaction_list"
+    assert detail_frame.metadata["query_request"]["operation"]["kind"] == "retrieve"
     assert detail_frame.metadata["surface_mode"] == "direct_answer"
     assert detail_frame.metadata["surface_context"]["selected_item_id"] == "tx-2"
     assert detail_frame.metadata["surface_context"]["parent_visible_count"] == 2
@@ -2086,7 +2088,11 @@ async def test_schedule_surface_check_again_refetches_schedule_list() -> None:
 
 
 @pytest.mark.asyncio
-async def test_query_surface_check_again_reruns_active_query_contract() -> None:
+async def test_query_surface_check_again_reruns_active_query_request() -> None:
+    query_request = make_query_request(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 31)),
+    )
     frame = ContextFrame(
         frame_id="query_surface_1780841843",
         frame_type=ContextFrameType.TRANSACTION_LIST,
@@ -2116,7 +2122,10 @@ async def test_query_surface_check_again_reruns_active_query_contract() -> None:
     updates = await _run_context_frame_gate_stage(
         state,
         planner,
-        query_session_snapshot={"session_active": False, "query_contract": {"intent": "transaction_list"}},
+        query_session_snapshot={
+            "session_active": False,
+            "query_request": query_request.model_dump(mode="json"),
+        },
     )
 
     assert updates is not None

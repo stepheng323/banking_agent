@@ -7,14 +7,13 @@ from banking.transactions.query.handlers.analytics import handle_analytics
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
     TimeRange,
 )
 from banking.transactions.query.presentation.formatter import QueryFormatter
 from banking.transactions.query.presentation.scope import build_transaction_heading
 from banking.transactions.query.services.answers.strategy import select_answer_strategy
+from tests.query.factories import make_query_request
 
 
 class _Provider:
@@ -54,8 +53,8 @@ async def test_analytics_sum_response_is_compact_and_human(monkeypatch: pytest.M
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="sum"),
                 filters=Filters(transaction_type="debit"),
@@ -117,8 +116,8 @@ async def test_analytics_sum_excludes_failed_and_reversed_transactions(monkeypat
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="sum"),
                 filters=Filters(transaction_type="debit"),
@@ -164,8 +163,8 @@ async def test_analytics_sum_response_names_retained_account_scope(monkeypatch: 
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="sum"),
                 filters=Filters(transaction_type="debit", account_filter="First Bank"),
@@ -211,8 +210,8 @@ async def test_analytics_sum_response_names_recipient_scope(monkeypatch: pytest.
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="sum"),
                 filters=Filters(transaction_type="debit", counterparty=["tolu"]),
@@ -234,8 +233,8 @@ def test_transaction_heading_title_cases_lowercase_recipient_scope(monkeypatch: 
     )
 
     heading = build_transaction_heading(
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.TRANSACTION_LIST,
                 filters=Filters(transaction_type="debit", counterparty=["tolu"]),
                 time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 20)),
@@ -261,8 +260,8 @@ async def test_analytics_sum_no_spending_today_is_humanized(monkeypatch: pytest.
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="sum"),
                 filters=Filters(transaction_type="debit"),
@@ -293,8 +292,8 @@ async def test_analytics_transaction_type_breakdown_uses_human_label(monkeypatch
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="breakdown", group_by="transaction_type"),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
@@ -324,8 +323,8 @@ async def test_analytics_account_breakdown_groups_by_source_account_label() -> N
 
     result = await handle_analytics(
         provider,  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="breakdown", group_by="account"),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
@@ -357,8 +356,8 @@ async def test_analytics_account_breakdown_includes_safe_account_suffix_when_ava
 
     result = await handle_analytics(
         provider,  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="breakdown", group_by="account"),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
@@ -400,8 +399,8 @@ async def test_category_breakdown_marks_provider_category_as_provider_confidence
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="breakdown", group_by="category"),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
@@ -439,8 +438,8 @@ async def test_category_breakdown_marks_narration_category_as_inferred(monkeypat
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="breakdown", group_by="category"),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
@@ -485,8 +484,8 @@ async def test_single_largest_debit_renders_detail_not_heading_only(monkeypatch:
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_query_ir(
-            QueryIR(
+        (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="largest", limit=1),
                 filters=Filters(transaction_type="debit"),

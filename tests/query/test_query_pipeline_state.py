@@ -3,24 +3,25 @@ from datetime import date
 import pytest
 
 from banking.runtime.results import TransactionOutcome, TransactionResult
-from banking.transactions.query.models.domain import QueryExecutionContract, QueryIntent, QueryIR, TimeRange
+from banking.transactions.query.models.domain import QueryIntent, TimeRange
 from banking.transactions.query.pipeline import QueryPipeline, QueryStep
+from tests.query.factories import make_query_request
 
 
 class _NewContractStep(QueryStep):
     async def run(self, state: dict, worker_context: object = None) -> TransactionResult:
         del state, worker_context
-        contract = QueryExecutionContract.from_query_ir(
-            QueryIR(
+        contract = (
+            make_query_request(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 27)),
             )
         )
-        return TransactionResult(outcome=TransactionOutcome.OK, patch={"query_contract": contract})
+        return TransactionResult(outcome=TransactionOutcome.OK, patch={"query_request": contract})
 
 
 @pytest.mark.asyncio
-async def test_pipeline_clears_stale_selection_when_new_query_contract_is_patched() -> None:
+async def test_pipeline_clears_stale_selection_when_new_query_request_is_patched() -> None:
     result = await QueryPipeline([_NewContractStep()]).run(
         {
             "selected_item_index": 0,
@@ -32,7 +33,7 @@ async def test_pipeline_clears_stale_selection_when_new_query_contract_is_patche
     )
 
     assert result.patch is not None
-    assert "query_contract" in result.patch
+    assert "query_request" in result.patch
     assert "selected_item_index" not in result.patch
     assert "selected_item_id" not in result.patch
     assert "selected_payload" not in result.patch

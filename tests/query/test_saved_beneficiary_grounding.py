@@ -5,12 +5,13 @@ from banking.transactions.query.continuations.beneficiary_grounding import (
     recipient_clarification_candidates,
 )
 from banking.transactions.query.continuations.clarification_state import resolve_selection_clarification
-from banking.transactions.query.models.domain import Filters, QueryExecutionContract, QueryIntent
+from banking.transactions.query.models.domain import Filters, QueryIntent, QueryRequest
 from banking.transactions.query.models.extraction import ClarificationOperation, PendingClarificationState
+from tests.query.factories import make_query_request
 
 
-def _contract(recipient: str) -> QueryExecutionContract:
-    return QueryExecutionContract(
+def _contract(recipient: str) -> QueryRequest:
+    return make_query_request(
         intent=QueryIntent.TRANSACTION_LIST,
         time_start=date(2026, 7, 1),
         time_end=date(2026, 7, 19),
@@ -74,11 +75,11 @@ def test_selected_saved_recipient_resumes_query_with_exact_filter() -> None:
         clarification_type="selection",
         candidate_payloads=[candidate],
         original_operation=ClarificationOperation(grounded_operation="recipient_filter"),
-        query_contract=_contract("Tolu").model_dump(mode="json"),
+        query_request=_contract("Tolu").model_dump(mode="json"),
     )
 
     updates = resolve_selection_clarification(pending, "1", locale="en", session={})
 
     assert updates is not None
     assert updates["continuation_type"] == "recipient_filter"
-    assert updates["query_contract"].filters.counterparty == ["Tolu Adebayo"]
+    assert updates["query_request"].filters.counterparty == ["Tolu Adebayo"]

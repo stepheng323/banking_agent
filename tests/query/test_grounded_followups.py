@@ -8,25 +8,26 @@ from banking.transactions.query.contracts import SurfaceViewMode
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
-    QueryExecutionContract,
     QueryFrame,
     QueryFrameFacts,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     TimeRange,
 )
+from banking.transactions.query.models.operations import CompareOperation, ExplicitBaseline
 from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
+from tests.query.factories import make_query_request
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: object) -> QueryRequest:
     fallback_day = date(2026, 3, 28)
     defaults: dict[str, object] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
     defaults.update(kwargs)
-    return QueryIR(**defaults)
+    return make_query_request(**defaults)
 
 
 class _DummyStructured:
@@ -41,8 +42,8 @@ class _DummyLLM:
         return _DummyStructured()
 
 
-def _contract(query: QueryIR) -> QueryExecutionContract:
-    return QueryExecutionContract.from_query_ir(query)
+def _contract(query: QueryRequest) -> QueryRequest:
+    return query.model_copy(deep=True)
 
 
 def _analytics_frame(
@@ -57,7 +58,7 @@ def _analytics_frame(
     return QueryFrame(
         frame_id=frame_id,
         turn_index=turn_index,
-        query_contract=_contract(
+        query_request=_contract(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=start, end=end, granularity="week"),
@@ -83,7 +84,7 @@ def _transaction_list_frame(
     return QueryFrame(
         frame_id=frame_id,
         turn_index=turn_index,
-        query_contract=_contract(
+        query_request=_contract(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=start, end=end, granularity="month"),
@@ -138,20 +139,19 @@ async def test_grounded_compare_both_compiles_time_comparison_contract() -> None
         {"message": "compare both", "today": date(2026, 3, 19), "language": "en"},
         {
             "session_active": True,
-            "query_contract": second.query_contract.model_dump(),
+            "query_request": second.query_request.model_dump(),
             "query_result": {"items": []},
             "query_frames": [first.model_dump(), second.model_dump()],
         },
     )
 
-    query_contract = updates["query_contract"]
-    assert query_contract.intent == QueryIntent.TIME_COMPARISON
-    assert query_contract.comparison is not None
-    assert query_contract.comparison.mode == "explicit_range"
-    assert query_contract.comparison.explicit_range is not None
-    assert query_contract.comparison.explicit_range.start == date(2026, 3, 9)
-    assert query_contract.filters is not None
-    assert query_contract.filters.merchant == ["mum"]
+    query_request = updates["query_request"]
+    assert isinstance(query_request.operation, CompareOperation)
+    baseline = query_request.operation.comparison.baseline
+    assert isinstance(baseline, ExplicitBaseline)
+    assert baseline.period.start == date(2026, 3, 9)
+    assert query_request.filters is not None
+    assert query_request.filters.merchant == ["mum"]
 
 
 @pytest.mark.asyncio
@@ -192,7 +192,7 @@ async def test_grounded_which_one_was_higher_uses_memory_answer() -> None:
         {"message": "which one was higher", "today": date(2026, 3, 19), "language": "en"},
         {
             "session_active": True,
-            "query_contract": second.query_contract.model_dump(),
+            "query_request": second.query_request.model_dump(),
             "query_result": {"items": []},
             "query_frames": [first.model_dump(), second.model_dump()],
         },
@@ -243,16 +243,16 @@ async def test_grounded_first_one_reopens_selected_frame() -> None:
         {"message": "what about the first one", "today": date(2026, 3, 19), "language": "en"},
         {
             "session_active": True,
-            "query_contract": second.query_contract.model_dump(),
+            "query_request": second.query_request.model_dump(),
             "query_result": {"items": []},
             "query_frames": [first.model_dump(), second.model_dump()],
         },
     )
 
-    query_contract = updates["query_contract"]
-    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_contract.time_start == date(2026, 3, 16)
-    assert query_contract.time_end == date(2026, 3, 19)
+    query_request = updates["query_request"]
+    assert query_request.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_request.time_start == date(2026, 3, 16)
+    assert query_request.time_end == date(2026, 3, 19)
 
 
 @pytest.mark.asyncio
@@ -285,18 +285,18 @@ async def test_grounded_show_transactions_for_that_one_compiles_transaction_list
         {"message": "show transactions for that one", "today": date(2026, 3, 19), "language": "en"},
         {
             "session_active": True,
-            "query_contract": first.query_contract.model_dump(),
+            "query_request": first.query_request.model_dump(),
             "query_result": {"items": []},
             "query_frames": [first.model_dump()],
         },
     )
 
-    query_contract = updates["query_contract"]
-    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
-    assert query_contract.aggregation is None
-    assert query_contract.time_start == date(2026, 3, 16)
-    assert query_contract.filters is not None
-    assert query_contract.filters.merchant == ["mum"]
+    query_request = updates["query_request"]
+    assert query_request.intent == QueryIntent.TRANSACTION_LIST
+    assert query_request.aggregation is None
+    assert query_request.time_start == date(2026, 3, 16)
+    assert query_request.filters is not None
+    assert query_request.filters.merchant == ["mum"]
 
 
 @pytest.mark.asyncio
@@ -327,19 +327,19 @@ async def test_grounded_reuse_frame_is_ignored_for_aggregate_over_active_transac
         {"message": "How much debit in total?", "today": date(2026, 3, 19), "language": "en"},
         {
             "session_active": True,
-            "query_contract": active_list.query_contract.model_dump(),
+            "query_request": active_list.query_request.model_dump(),
             "query_result": {"items": []},
             "query_frames": [active_list.model_dump()],
         },
     )
 
-    query_contract = updates["query_contract"]
-    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_contract.filters is not None
-    assert query_contract.filters.transaction_type == "debit"
-    assert query_contract.aggregation is not None
-    assert query_contract.aggregation.type == "sum"
+    query_request = updates["query_request"]
+    assert query_request.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_request.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_request.filters is not None
+    assert query_request.filters.transaction_type == "debit"
+    assert query_request.aggregation is not None
+    assert query_request.aggregation.type == "sum"
 
 
 @pytest.mark.asyncio
@@ -356,7 +356,7 @@ async def test_grounded_compare_with_incompatible_frames_requests_clarification(
     incompatible = QueryFrame(
         frame_id="qf_2",
         turn_index=2,
-        query_contract=_contract(
+        query_request=_contract(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 15), granularity="week"),
@@ -387,7 +387,7 @@ async def test_grounded_compare_with_incompatible_frames_requests_clarification(
         {"message": "compare both", "today": date(2026, 3, 19), "language": "en"},
         {
             "session_active": True,
-            "query_contract": analytics.query_contract.model_dump(),
+            "query_request": analytics.query_request.model_dump(),
             "query_result": {"items": []},
             "query_frames": [analytics.model_dump(), incompatible.model_dump()],
         },

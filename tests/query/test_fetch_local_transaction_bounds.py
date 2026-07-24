@@ -7,25 +7,25 @@ import pytest
 from banking.transactions.query.handlers.transactions import handle_transaction_list
 from banking.transactions.query.models.domain import (
     Filters,
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     TimeRange,
 )
 from banking.transactions.query.presentation.formatter import QueryFormatter
 from banking.transactions.query.services.fetching.fetch import apply_filters
 from banking.transactions.services.unified_transactions import UnifiedTransactionService
 from shared.config.settings import settings
+from tests.query.factories import make_query_request
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: object) -> QueryRequest:
     fallback_day = date(2026, 3, 6)
     defaults: dict[str, object] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
     defaults.update(kwargs)
-    return QueryIR(**defaults)
+    return make_query_request(**defaults)
 
 
 class _Provider:
@@ -59,7 +59,7 @@ class _ProviderWithRows:
         return list(self.rows)
 
 
-def _query_for_today(today: date) -> QueryIR:
+def _query_for_today(today: date) -> QueryRequest:
     return _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=today, end=today),
@@ -67,8 +67,8 @@ def _query_for_today(today: date) -> QueryIR:
     )
 
 
-def _contract(query: QueryIR) -> QueryExecutionContract:
-    return QueryExecutionContract.from_query_ir(query)
+def _contract(query: QueryRequest) -> QueryRequest:
+    return query.model_copy(deep=True)
 
 
 def test_amount_filter_respects_strict_minimum_bound() -> None:
@@ -200,7 +200,7 @@ async def test_today_query_with_no_bank_feed_rows_returns_no_results_copy(
         user_id="user_1",
         language="en",
     )
-    result.query_contract = _contract(query)
+    result.query_request = _contract(query)
 
     assert QueryFormatter.format(result, locale="en") == "You had no debit transactions today."
 

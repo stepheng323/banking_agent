@@ -31,7 +31,7 @@ def _pending() -> PendingClarificationState:
             drill_down_action="answer_fact",
             fact_field="bank",
         ),
-        query_contract=None,
+        query_request=None,
         locale="en",
         session={"current_page": 1},
         turn_id="turn-1",

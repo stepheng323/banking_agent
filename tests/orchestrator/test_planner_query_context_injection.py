@@ -1,10 +1,14 @@
+from datetime import date
+
 import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
+from banking.transactions.query.models.domain import Filters, QueryIntent, TimeRange
 from shared.types.planner import PlannerOutput
+from tests.query.factories import make_query_request
 
 
 class _CapturingPlanner:
@@ -49,6 +53,11 @@ class _RedisWithoutQuerySession:
 @pytest.mark.asyncio
 async def test_planner_injects_filter_refinement_guidance_for_active_query_session() -> None:
     planner = _CapturingPlanner()
+    query_request = make_query_request(
+        intent=QueryIntent.TRANSACTION_LIST,
+        filters=Filters(transaction_type="debit"),
+        time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 31)),
+    )
     state = OrchestratorState(
         user_id="u_query_ctx_1",
         phone_number="2348000000100",
@@ -74,13 +83,7 @@ async def test_planner_injects_filter_refinement_guidance_for_active_query_sessi
                 metadata={
                     "source": "query",
                     "summary_text": "Recent debit transactions",
-                    "query_contract": {
-                        "intent": "transaction_list",
-                        "time_start": "2026-03-01",
-                        "time_end": "2026-03-31",
-                        "timezone": "Africa/Lagos",
-                        "filters": {"transaction_type": "debit"},
-                    },
+                    "query_request": query_request.model_dump(mode="json"),
                     "surface_mode": "transaction_list",
                 },
             )

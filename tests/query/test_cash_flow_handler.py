@@ -4,13 +4,8 @@ from typing import Any
 import pytest
 
 from banking.transactions.query.handlers.cash_flow import handle_cash_flow
-from banking.transactions.query.models.domain import (
-    Aggregation,
-    QueryExecutionContract,
-    QueryIntent,
-    QueryIR,
-    TimeRange,
-)
+from banking.transactions.query.models.operations import CashFlowSummarySpec
+from tests.query.factories import query_scope, summarize_request
 
 
 class _Provider:
@@ -64,12 +59,9 @@ class _Provider:
 
 @pytest.mark.asyncio
 async def test_cash_flow_by_account_returns_account_breakdown() -> None:
-    contract = QueryExecutionContract.from_query_ir(
-        QueryIR(
-            intent=QueryIntent.CASH_FLOW_SUMMARY,
-            aggregation=Aggregation(type="breakdown", group_by="account"),
-            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 27)),
-        )
+    contract = summarize_request(
+        query_scope(date(2026, 6, 1), date(2026, 6, 27)),
+        CashFlowSummarySpec(group_by="account"),
     )
 
     result = await handle_cash_flow(

@@ -130,7 +130,7 @@ async def test_async_completion_latest_terminal_state_wins_before_finalization()
     assert "Transfers Complete" in summary["text"]
     assert "Mum" in summary["text"]
     assert "Gaines" in summary["text"]
-    assert "Transfers completed successfully" in summary["text"]
+    assert "All 2 transactions completed successfully." in summary["text"]
     assert "✗" not in summary["text"]
 
 
@@ -243,7 +243,7 @@ async def test_async_completion_mixed_batch_summary_waits_for_last_leg() -> None
     assert "Mum" in summary["text"]
     assert "08031234567" in summary["text"]
     assert "Reason: Provider down" in summary["text"]
-    assert "Some transactions completed, but others failed." in summary["text"]
+    assert "Some transactions could not be completed." in summary["text"]
     actionable_payload = summary["actionable_payload"]
     assert actionable_payload["task_type"] == "batch"
     assert {item["task_type"] for item in actionable_payload["tasks"]} == {"transfer", "airtime"}
@@ -289,7 +289,7 @@ async def test_async_completion_transfer_summary_sends_initial_then_final_update
     assert summary["stage"] == "initial"
     assert "✓ ₦10,000 → Mum" in summary["text"]
     assert "… ₦6,000 → Tolu" in summary["text"]
-    assert "You'll be notified when the final update arrives." in summary["text"]
+    assert "Some transactions completed; others are still being processed." in summary["text"]
 
     final_summary = await record_group_leg_and_maybe_build_summary(
         redis_client,

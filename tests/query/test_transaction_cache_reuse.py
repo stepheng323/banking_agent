@@ -8,9 +8,8 @@ import pytest
 from banking.transactions.query.handlers.transactions import handle_transaction_list
 from banking.transactions.query.models.domain import (
     Filters,
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     TimeRange,
 )
 from banking.transactions.query.services.fetching.fetch import (
@@ -20,16 +19,17 @@ from banking.transactions.query.services.fetching.fetch import (
     decide_transaction_cache_reuse,
 )
 from shared.config.settings import settings
+from tests.query.factories import make_query_request
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: object) -> QueryRequest:
     fallback_day = date(2026, 3, 4)
     defaults: dict[str, object] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
     defaults.update(kwargs)
-    return QueryIR(**defaults)
+    return make_query_request(**defaults)
 
 
 class _Provider:
@@ -77,7 +77,7 @@ class _ConcurrentProvider:
             self.in_flight -= 1
 
 
-def _query(filters: Filters) -> QueryIR:
+def _query(filters: Filters) -> QueryRequest:
     today = date(2026, 3, 4)
     return _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
@@ -86,8 +86,8 @@ def _query(filters: Filters) -> QueryIR:
     )
 
 
-def _contract(query: QueryIR) -> QueryExecutionContract:
-    return QueryExecutionContract.from_query_ir(query)
+def _contract(query: QueryRequest) -> QueryRequest:
+    return (query)
 
 
 @pytest.mark.asyncio

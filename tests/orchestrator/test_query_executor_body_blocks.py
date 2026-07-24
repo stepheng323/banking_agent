@@ -13,14 +13,14 @@ from banking.transactions.query.models.domain import (
     Filters,
     QueryAnswerContext,
     QueryAnswerStrategy,
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
     TimeRange,
 )
 from banking.transactions.query.utils.timezone import lagos_today
+from tests.query.factories import make_query_request
 
 
 class _InjectedQueryWorker:
@@ -37,10 +37,10 @@ class _InjectedQueryWorker:
         )
 
 
-def _query_contract() -> QueryExecutionContract:
+def _query_request() -> QueryRequest:
     today = lagos_today()
-    return QueryExecutionContract.from_query_ir(
-        QueryIR(
+    return (
+        make_query_request(
             intent=QueryIntent.TRANSACTION_LIST,
             filters=Filters(transaction_type="debit"),
             time_range=TimeRange(start=today, end=today),
@@ -49,7 +49,7 @@ def _query_contract() -> QueryExecutionContract:
 
 
 def _query_context_frame() -> ContextFrame:
-    contract = _query_contract()
+    contract = _query_request()
     return ContextFrame(
         frame_id="query_surface_1",
         frame_type=ContextFrameType.TRANSACTION_DETAIL,
@@ -74,7 +74,7 @@ def _query_context_frame() -> ContextFrame:
             "source": "query",
             "surface_mode": "direct_answer",
             "summary_text": "Money sent",
-            "query_contract": contract.model_dump(mode="json"),
+            "query_request": contract.model_dump(mode="json"),
             "surface_context": {"mode": "direct_answer", "type": "single_transaction"},
         },
     )
@@ -110,7 +110,7 @@ async def test_query_executor_attaches_mobile_body_blocks_to_say_outbox() -> Non
                 },
             )
         ],
-        query_contract=_query_contract(),
+        query_request=_query_request(),
     )
     worker = _InjectedQueryWorker(query_result)
     ctx = ExecutionTurnContext(
@@ -152,7 +152,7 @@ async def test_query_executor_passes_active_query_surface_context_to_worker() ->
     query_result = QueryResult(
         summary_text="accounts:1|showing:0-0|total:0",
         items=[],
-        query_contract=_query_contract(),
+        query_request=_query_request(),
     )
     worker = _InjectedQueryWorker(query_result)
     ctx = ExecutionTurnContext(
@@ -169,7 +169,7 @@ async def test_query_executor_passes_active_query_surface_context_to_worker() ->
     worker_context = worker.calls[0]["context"]
     assert "active_query_session" not in worker_context
     active_surface = worker_context["active_query_surface"]
-    assert active_surface["metadata"]["query_contract"]["intent"] == "transaction_list"
+    assert active_surface["metadata"]["query_request"]["operation"]["kind"] == "retrieve"
     assert active_surface["metadata"]["surface_mode"] == "direct_answer"
 
 
@@ -189,7 +189,7 @@ async def test_query_executor_does_not_attach_body_blocks_for_empty_direct_answe
     query_result = QueryResult(
         summary_text="accounts:1|showing:1-0|total:0",
         items=[],
-        query_contract=_query_contract(),
+        query_request=_query_request(),
     )
     worker = _InjectedQueryWorker(query_result)
     ctx = ExecutionTurnContext(
@@ -231,8 +231,8 @@ async def test_query_executor_does_not_attach_body_blocks_for_direct_fact_answer
                 metadata={"type": "debit", "counterparty": "Netflix", "reference": "txn_010"},
             )
         ],
-        query_contract=QueryExecutionContract.from_query_ir(
-            QueryIR(
+        query_request=(
+            make_query_request(
                 intent=QueryIntent.TRANSACTION_DETAIL,
                 time_range=TimeRange(start=lagos_today(), end=lagos_today()),
                 answer_fact_field="reference",

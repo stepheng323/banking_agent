@@ -7,21 +7,21 @@ from banking.transactions.query.handlers.beneficiary import handle_beneficiary_s
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     TimeRange,
 )
+from tests.query.factories import make_query_request
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: object) -> QueryRequest:
     fallback_day = date(2026, 3, 28)
     defaults: dict[str, object] = {
         "intent": QueryIntent.BENEFICIARY_SUMMARY,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
     defaults.update(kwargs)
-    return QueryIR(**defaults)
+    return make_query_request(**defaults)
 
 
 class _ProviderStub:
@@ -97,8 +97,8 @@ class _CreditProviderStub:
         ]
 
 
-def _contract(query: QueryIR) -> QueryExecutionContract:
-    return QueryExecutionContract.from_query_ir(query)
+def _contract(query: QueryRequest) -> QueryRequest:
+    return (query)
 
 
 @pytest.mark.asyncio

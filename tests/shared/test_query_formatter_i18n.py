@@ -16,67 +16,31 @@ from banking.transactions.query.models.domain import (
     Filters,
     QueryAnswerContext,
     QueryAnswerStrategy,
-    QueryExecutionContract,
-    QueryExecutionPlan,
     QueryIntent,
-    QueryIntentSpec,
-    QueryIR,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
     TimeRange,
-    build_query_execution_plan_from_fields,
-    derive_query_intent_spec_from_fields,
 )
 from banking.transactions.query.presentation.formatter import QueryFormatter
 from banking.transactions.query.presentation.surface_builder import build_surface_view
 from banking.transactions.query.services.answers.strategy import select_answer_strategy
 from banking.transactions.query.utils.timezone import lagos_today
+from tests.query.factories import make_query_request
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: object) -> QueryRequest:
     fallback_day = lagos_today()
     defaults: dict[str, object] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
     defaults.update(kwargs)
-    return QueryIR(**defaults)
+    return make_query_request(**defaults)
 
 
-def _query_contract(query: QueryIR) -> QueryExecutionContract:
-    intent_spec: QueryIntentSpec = query.intent_spec or derive_query_intent_spec_from_fields(
-        intent=query.intent,
-        filters=query.filters,
-        aggregation=query.aggregation,
-        answer_fact_field=query.answer_fact_field,
-    )
-    fallback_day = lagos_today()
-    execution_plan: QueryExecutionPlan = build_query_execution_plan_from_fields(
-        intent_spec=intent_spec,
-        time_range=query.time_range,
-        filters=query.filters,
-        aggregation=query.aggregation,
-        result_limit=query.result_limit,
-        result_reference=query.result_reference,
-    )
-    fallback_day = lagos_today()
-    return QueryExecutionContract(
-        intent=query.intent,
-        time_start=fallback_day,
-        time_end=fallback_day,
-        filters=query.filters.model_copy(deep=True) if query.filters is not None else None,
-        aggregation=query.aggregation.model_copy(deep=True) if query.aggregation is not None else None,
-        accounts_scope=query.accounts_scope,
-        account_name=query.account_name,
-        amount_check=query.amount_check,
-        item_name=query.item_name,
-        analysis_type=query.analysis_type,
-        result_limit=query.result_limit,
-        result_reference=query.result_reference,
-        answer_fact_field=query.answer_fact_field,
-        intent_spec=intent_spec,
-        execution_plan=execution_plan,
-    )
+def _query_request(query: QueryRequest) -> QueryRequest:
+    return query.model_copy(deep=True)
 
 
 def _contract_without_time(
@@ -84,9 +48,9 @@ def _contract_without_time(
     intent: QueryIntent,
     filters: Filters | None = None,
     aggregation: Aggregation | None = None,
-) -> QueryExecutionContract:
+) -> QueryRequest:
     fallback_day = lagos_today()
-    return QueryExecutionContract(
+    return make_query_request(
         intent=intent,
         time_start=fallback_day,
         time_end=fallback_day,
@@ -139,7 +103,7 @@ def test_formatter_renders_beneficiary_summary_from_presentation_plan() -> None:
                 metadata={"count": 1, "recipient_name": "Tolu"},
             ),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.BENEFICIARY_SUMMARY,
                 time_range=TimeRange(start=today.replace(day=1), end=today, granularity="month"),
@@ -209,7 +173,7 @@ def test_formatter_renders_credit_beneficiary_summary_as_top_senders() -> None:
                 metadata={"count": 1, "recipient_name": "Slot Systems"},
             ),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.BENEFICIARY_SUMMARY,
                 time_range=TimeRange(start=today.replace(day=1), end=today, granularity="month"),
@@ -277,7 +241,7 @@ def test_formatter_renders_singular_beneficiary_ranking_without_full_list() -> N
                 metadata={"count": 1, "recipient_name": "Techcorp Nigeria Ltd"},
             ),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.BENEFICIARY_SUMMARY,
                 time_range=TimeRange(start=today.replace(day=1), end=today, granularity="month"),
@@ -339,7 +303,7 @@ def test_formatter_builds_beneficiary_surface_with_extended_fact_capabilities() 
                 metadata={"count": 1, "recipient_name": "Acme Corp"},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.BENEFICIARY_SUMMARY,
                 time_range=TimeRange(start=today.replace(day=1), end=today, granularity="month"),
@@ -377,7 +341,7 @@ def test_singular_beneficiary_ranking_builds_focused_surface_for_followups() -> 
                 metadata={"count": 1, "recipient_name": "Techcorp Nigeria Ltd"},
             ),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.BENEFICIARY_SUMMARY,
                 time_range=TimeRange(start=today.replace(day=1), end=today, granularity="month"),
@@ -421,7 +385,7 @@ def test_singular_category_breakdown_builds_focused_group_bucket_surface_for_fol
                 metadata={"count": 19, "key": "transfers"},
             ),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=today.replace(day=1), end=today, granularity="month"),
@@ -465,7 +429,7 @@ def test_singular_account_breakdown_builds_focused_account_surface_for_followups
                 metadata={"count": 2, "key": "Access Bank"},
             ),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=today.replace(day=1), end=today, granularity="month"),
@@ -498,7 +462,7 @@ def test_formatter_uses_summary_list_plan_for_summary_only_results() -> None:
     result = QueryResult(
         summary_text="You can afford ₦20,000 right now.",
         answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
-        query_contract=_query_contract(_query_ir(intent=QueryIntent.AFFORDABILITY)),
+        query_request=_query_request(_query_ir(intent=QueryIntent.AFFORDABILITY)),
     )
 
     assert QueryFormatter.format(result, locale="en") == "You can afford ₦20,000 right now."
@@ -578,7 +542,7 @@ def test_formatter_uses_typed_breakdown_heading_from_query_scope() -> None:
                 metadata={"count": 2},
             )
         ],
-        query_contract=_contract_without_time(
+        query_request=_contract_without_time(
             intent=QueryIntent.ANALYTICS_SUMMARY,
             aggregation=Aggregation(type="breakdown", group_by="merchant"),
         ),
@@ -606,7 +570,7 @@ def test_formatter_uses_typed_breakdown_heading_from_query_scope() -> None:
     )
 
     response = QueryFormatter.format(result, locale="en")
-    assert response.splitlines()[0] == "Here is your 📊 Breakdown by merchant:"
+    assert response.splitlines()[0] == "Here is your 📊 Breakdown by merchant — Today:"
     assert "Food" in response
 
 
@@ -699,7 +663,7 @@ def test_formatter_no_results_with_type_for_today() -> None:
     result = QueryResult(
         summary_text="",
         items=[],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 filters=Filters(transaction_type="credit"),
@@ -716,7 +680,7 @@ def test_formatter_no_results_with_type_for_period() -> None:
     result = QueryResult(
         summary_text="",
         items=[],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 filters=Filters(transaction_type="debit"),
@@ -733,7 +697,7 @@ def test_formatter_account_scoped_no_results_uses_normalized_bank_copy() -> None
     result = QueryResult(
         summary_text="accounts:1|showing:1-0|total:0",
         items=[],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 filters=Filters(account_filter="gtb"),
@@ -750,7 +714,7 @@ def test_formatter_no_results_without_type_for_yesterday_uses_direct_fact() -> N
     result = QueryResult(
         summary_text="",
         items=[],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 time_range=TimeRange(start=yesterday, end=yesterday),
@@ -768,7 +732,7 @@ def test_formatter_search_shaped_no_results_for_yesterday_stays_generic() -> Non
     result = QueryResult(
         summary_text="",
         items=[],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(merchant=["mum"]),
@@ -784,13 +748,13 @@ def test_formatter_no_results_without_type_uses_generic_message() -> None:
     result = QueryResult(
         summary_text="",
         items=[],
-        query_contract=_contract_without_time(intent=QueryIntent.TRANSACTION_LIST),
+        query_request=_contract_without_time(intent=QueryIntent.TRANSACTION_LIST),
     )
 
-    assert QueryFormatter.format(result, locale="en") == "No matching transactions found for your search."
+    assert QueryFormatter.format(result, locale="en") == "You had no transactions today."
 
 
-def _sample_list_result(query_snapshot: QueryIR) -> QueryResult:
+def _sample_list_result(query_snapshot: QueryRequest) -> QueryResult:
     return QueryResult(
         summary_text="accounts:1|showing:1-2|total:2",
         items=[
@@ -809,7 +773,7 @@ def _sample_list_result(query_snapshot: QueryIR) -> QueryResult:
                 metadata={"type": "credit", "bank_name": "Zenith"},
             ),
         ],
-        query_contract=_query_contract(query_snapshot),
+        query_request=_query_request(query_snapshot),
     )
 
 
@@ -820,7 +784,7 @@ def test_formatter_heading_uses_credit_context() -> None:
             filters=Filters(transaction_type="credit"),
         )
     )
-    result.query_contract = _contract_without_time(
+    result.query_request = _contract_without_time(
         intent=QueryIntent.TRANSACTION_LIST,
         filters=Filters(transaction_type="credit"),
     )
@@ -848,7 +812,7 @@ def test_formatter_preserves_paginated_credit_list_shape_for_single_remaining_it
                 metadata={"type": "credit", "bank_name": "Zenith Bank"},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 filters=Filters(transaction_type="credit"),
@@ -876,7 +840,7 @@ def test_formatter_heading_uses_category_spending_for_debit() -> None:
             filters=Filters(transaction_type="debit", category=["food"]),
         )
     )
-    result.query_contract = _contract_without_time(
+    result.query_request = _contract_without_time(
         intent=QueryIntent.TRANSACTION_LIST,
         filters=Filters(transaction_type="debit", category=["food"]),
     )
@@ -918,7 +882,7 @@ def test_formatter_direct_answer_uses_answer_strategy_without_transaction_card()
                 metadata={"type": "debit", "bank_name": "Zenith Bank", "recipient_name": "Mum"},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -958,7 +922,7 @@ def test_direct_analytics_answer_builds_summary_scope_surface_without_evidence_f
                 metadata={"type": "debit", "counterparty": "Dad"},
             ),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 filters=Filters(transaction_type="debit"),
@@ -986,7 +950,7 @@ def test_formatter_fact_no_results_prefers_natural_copy_under_direct_answer() ->
     result = QueryResult(
         summary_text="",
         items=[],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -1007,7 +971,7 @@ def test_formatter_unscoped_latest_fact_no_results_drops_bounded_period_copy() -
     result = QueryResult(
         summary_text="",
         items=[],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -1073,7 +1037,7 @@ def test_formatter_one_account_result_uses_conversational_lead_without_paginatio
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 filters=Filters(account_filter="gtb"),
@@ -1102,7 +1066,7 @@ def test_formatter_paginated_transaction_list_uses_natural_continuation_copy() -
     result = QueryResult(
         summary_text="accounts:1|showing:1-5|total:9",
         items=items,
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=date(2026, 6, 11), end=date(2026, 6, 11)),
@@ -1136,7 +1100,7 @@ def test_formatter_groups_transaction_rows_under_one_date_heading() -> None:
                 metadata={"type": "debit", "transaction_type": "transfer", "counterparty": "Mum"},
             ),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 filters=Filters(transaction_type="debit"),
@@ -1182,7 +1146,7 @@ def test_formatter_single_item_fact_query_leads_with_requested_date() -> None:
                 metadata={"type": "debit", "bank_name": "First Bank", "counterparty": "Netflix"},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", merchant=["netflix"]),
@@ -1217,7 +1181,7 @@ def test_formatter_single_item_fact_query_leads_with_counterparty() -> None:
                 metadata={"type": "credit", "bank_name": "Zenith Bank", "counterparty": "Johnson Mary"},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="credit"),
@@ -1256,7 +1220,7 @@ def test_formatter_uses_shared_plan_for_single_transfer_detail_surface() -> None
                 },
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit"),
@@ -1304,7 +1268,7 @@ def test_formatter_direct_answer_uses_localized_reply_in_yoruba() -> None:
                 metadata={"type": "debit", "bank_name": "Zenith Bank", "recipient_name": "Mum"},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -1337,7 +1301,7 @@ def test_formatter_single_item_detail_suppresses_synthetic_reference() -> None:
                 metadata={"type": "debit", "bank_name": "Zenith Bank"},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
@@ -1373,7 +1337,7 @@ def test_formatter_no_results_does_not_leak_structural_account_summary_for_trans
     result = QueryResult(
         summary_text="accounts:2|showing:1-0|total:0",
         items=[],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=today, end=today),
@@ -1392,7 +1356,7 @@ def test_formatter_no_results_accepts_zero_zero_structural_summary_for_transacti
     result = QueryResult(
         summary_text="accounts:2|showing:0-0|total:0",
         items=[],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=today, end=today),
@@ -1437,7 +1401,7 @@ def test_formatter_account_breakdown_preserves_account_labels_and_generic_total(
                 metadata={"count": 1},
             ),
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="breakdown", group_by="account"),
@@ -1508,7 +1472,7 @@ def test_formatter_breakdown_heading_includes_amount_scope_and_period(
                 metadata={"count": 2},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 filters=Filters(transaction_type="debit", min_amount=20000),
@@ -1563,7 +1527,7 @@ def test_formatter_credit_account_breakdown_uses_income_direction(
                 metadata={"count": 1},
             )
         ],
-        query_contract=_query_contract(
+        query_request=_query_request(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 filters=Filters(transaction_type="credit"),

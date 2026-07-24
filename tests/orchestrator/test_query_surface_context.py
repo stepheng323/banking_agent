@@ -24,13 +24,13 @@ from banking.transactions.query.models.domain import (
     Filters,
     QueryAnswerContext,
     QueryAnswerStrategy,
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
     TimeRange,
 )
+from tests.query.factories import make_query_request
 
 
 class _RedisStub:
@@ -43,9 +43,9 @@ class _RedisStub:
         return self.payload
 
 
-def _contract() -> QueryExecutionContract:
-    return QueryExecutionContract.from_query_ir(
-        QueryIR(
+def _contract() -> QueryRequest:
+    return (
+        make_query_request(
             intent=QueryIntent.BENEFICIARY_SUMMARY,
             time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 28)),
             result_limit=1,
@@ -86,7 +86,7 @@ def _query_frame(*, created_at: int | None = None, ttl_seconds: int = 600) -> Co
             "source": "query",
             "surface_mode": "direct_answer",
             "summary_text": "Acme Corp sent you the most this month: ₦950,000.",
-            "query_contract": contract.model_dump(mode="json"),
+            "query_request": contract.model_dump(mode="json"),
             "surface_context": {
                 "mode": "direct_answer",
                 "focus_type": "beneficiary",
@@ -97,8 +97,8 @@ def _query_frame(*, created_at: int | None = None, ttl_seconds: int = 600) -> Co
 
 
 def _transaction_list_frame(*, created_at: int | None = None) -> ContextFrame:
-    contract = QueryExecutionContract.from_query_ir(
-        QueryIR(
+    contract = (
+        make_query_request(
             intent=QueryIntent.TRANSACTION_LIST,
             time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 29)),
         )
@@ -150,7 +150,7 @@ def _transaction_list_frame(*, created_at: int | None = None) -> ContextFrame:
             "source": "query",
             "surface_mode": "transaction_list",
             "summary_text": "I found 37 transactions in the last 30 days.",
-            "query_contract": contract.model_dump(mode="json"),
+            "query_request": contract.model_dump(mode="json"),
         },
     )
 
@@ -179,7 +179,10 @@ def test_query_context_for_worker_builds_surface_context_from_frame() -> None:
 
     worker_context = build_query_context_for_worker(state)
 
-    assert worker_context["active_query_surface"]["metadata"]["query_contract"]["intent"] == "beneficiary_summary"
+    operation = worker_context["active_query_surface"]["metadata"]["query_request"]["operation"]
+    assert operation["kind"] == "summarize"
+    assert operation["summary"]["type"] == "grouped"
+    assert operation["summary"]["dimension"] == "counterparty"
     assert worker_context["active_query_surface"]["metadata"]["surface_mode"] == "direct_answer"
     assert worker_context["active_query_surface"]["items"][0]["label"] == "Acme Corp"
 
@@ -218,8 +221,8 @@ def test_direct_query_answer_pushes_latest_query_surface_frame() -> None:
         current_wave_len=1,
         accumulator=ExecutionAccumulator({}),
     )
-    contract = QueryExecutionContract.from_query_ir(
-        QueryIR(
+    contract = (
+        make_query_request(
             intent=QueryIntent.ANALYTICS_SUMMARY,
             filters=Filters(transaction_type="debit"),
             aggregation=Aggregation(type="sum"),
@@ -229,7 +232,7 @@ def test_direct_query_answer_pushes_latest_query_surface_frame() -> None:
     result = QueryResult(
         summary_text="You spent ₦1,460,052 this month, across 52 transactions.",
         items=[],
-        query_contract=contract,
+        query_request=contract,
     )
 
     push_query_surface_frame(ctx, result)
@@ -238,10 +241,10 @@ def test_direct_query_answer_pushes_latest_query_surface_frame() -> None:
     assert active is not None
     assert active.frame_type == ContextFrameType.GENERIC
     assert active.metadata["surface_mode"] == "direct_answer"
-    assert active.metadata["query_contract"]["intent"] == "analytics_summary"
+    assert active.metadata["query_request"]["operation"]["kind"] == "summarize"
     assert active.items[0].label == "You spent ₦1,460,052 this month, across 52 transactions."
     worker_context = build_query_context_for_worker(state)
-    assert worker_context["active_query_surface"]["metadata"]["query_contract"]["intent"] == "analytics_summary"
+    assert worker_context["active_query_surface"]["metadata"]["query_request"]["operation"]["kind"] == "summarize"
 
 
 def test_direct_analytics_answer_with_evidence_items_pushes_summary_scope_frame() -> None:
@@ -257,8 +260,8 @@ def test_direct_analytics_answer_with_evidence_items_pushes_summary_scope_frame(
         current_wave_len=1,
         accumulator=ExecutionAccumulator({}),
     )
-    contract = QueryExecutionContract.from_query_ir(
-        QueryIR(
+    contract = (
+        make_query_request(
             intent=QueryIntent.ANALYTICS_SUMMARY,
             filters=Filters(transaction_type="debit"),
             aggregation=Aggregation(type="sum"),
@@ -283,7 +286,7 @@ def test_direct_analytics_answer_with_evidence_items_pushes_summary_scope_frame(
                 metadata={"type": "debit", "counterparty": "Dad"},
             ),
         ],
-        query_contract=contract,
+        query_request=contract,
         answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
         answer_context=QueryAnswerContext(primary_text="You spent ₦75,000 this month, across 2 transactions."),
     )
@@ -313,7 +316,9 @@ async def test_query_session_loader_prefers_context_frame_over_redis() -> None:
 
     assert source == "context_frame"
     assert isinstance(snapshot, dict)
-    assert snapshot["query_contract"]["intent"] == "beneficiary_summary"
+    operation = snapshot["query_request"]["operation"]
+    assert operation["kind"] == "summarize"
+    assert operation["summary"]["dimension"] == "counterparty"
     assert redis.get_calls == []
 
 

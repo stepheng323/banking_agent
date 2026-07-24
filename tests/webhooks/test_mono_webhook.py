@@ -1168,4 +1168,4 @@ class TestMonoWebhookTransferUpdates:
         text = delivery_service.deliver_text.await_args.kwargs["text"]
         assert "✓ ₦10,000 → Mum (Mercy Johnson)" in text
         assert "✗ ₦10,000 → Tolu Adedayo" in text
-        assert "Some transactions completed, but others failed." in text
+        assert "Some transactions could not be completed." in text

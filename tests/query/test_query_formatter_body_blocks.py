@@ -4,9 +4,8 @@ from banking.transactions.query.models.domain import (
     Filters,
     QueryAnswerContext,
     QueryAnswerStrategy,
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
     TimeRange,
@@ -14,6 +13,7 @@ from banking.transactions.query.models.domain import (
 from banking.transactions.query.presentation.formatter import QueryFormatter
 from banking.transactions.query.utils.timezone import lagos_today
 from shared.messaging.body_blocks import render_body_blocks_text
+from tests.query.factories import make_query_request
 
 
 def _contract(
@@ -22,9 +22,9 @@ def _contract(
     filters: Filters | None = None,
     time_start: date = date(2026, 6, 11),
     time_end: date = date(2026, 6, 11),
-) -> QueryExecutionContract:
-    return QueryExecutionContract.from_query_ir(
-        QueryIR(
+) -> QueryRequest:
+    return (
+        make_query_request(
             intent=intent,
             filters=filters,
             time_range=TimeRange(start=time_start, end=time_end),
@@ -79,7 +79,7 @@ def test_transaction_list_blocks_use_mobile_spacing_instead_of_dense_rows() -> N
                 },
             ),
         ],
-        query_contract=_contract(filters=Filters(transaction_type="debit")),
+        query_request=_contract(filters=Filters(transaction_type="debit")),
     )
 
     rendered = render_body_blocks_text(QueryFormatter.format_blocks(result, locale="en"))
@@ -115,7 +115,7 @@ def test_show_evidence_blocks_replace_free_form_prefix_with_localized_lead() -> 
                 },
             )
         ],
-        query_contract=contract,
+        query_request=contract,
     )
 
     rendered = render_body_blocks_text(QueryFormatter.format_blocks(result, locale="en"))
@@ -144,7 +144,7 @@ def test_failed_transaction_list_blocks_do_not_label_failed_transfer_as_sent() -
                 },
             )
         ],
-        query_contract=_contract(filters=Filters(transaction_type="debit")),
+        query_request=_contract(filters=Filters(transaction_type="debit")),
     )
 
     rendered = render_body_blocks_text(QueryFormatter.format_blocks(result, locale="en"))
@@ -160,7 +160,7 @@ def test_empty_structural_summary_blocks_never_leak_internal_metadata() -> None:
     result = QueryResult(
         summary_text="accounts:4|showing:1-0|total:0",
         items=[],
-        query_contract=_contract(
+        query_request=_contract(
             filters=Filters(transaction_type="debit"),
             time_start=today,
             time_end=today,

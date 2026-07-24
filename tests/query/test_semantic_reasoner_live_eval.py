@@ -11,9 +11,8 @@ import pytest
 from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import (
     Filters,
-    QueryExecutionContract,
     QueryIntent,
-    QueryIR,
+    QueryRequest,
     QueryResultItem,
     TimeRange,
 )
@@ -26,20 +25,21 @@ from banking.transactions.query.services.reasoning.models import (
     SemanticReasonerContext,
 )
 from banking.transactions.query.services.reasoning.reasoner import QuerySemanticReasoner
+from tests.query.factories import make_query_request
 
 
-def _query_ir(**kwargs: object) -> QueryIR:
+def _query_ir(**kwargs: object) -> QueryRequest:
     fallback_day = date(2026, 3, 20)
     defaults: dict[str, object] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
     }
     defaults.update(kwargs)
-    return QueryIR(**defaults)
+    return make_query_request(**defaults)
 
 
-def _contract(query: QueryIR) -> QueryExecutionContract:
-    return QueryExecutionContract.from_query_ir(query)
+def _contract(query: QueryRequest) -> QueryRequest:
+    return query.model_copy(deep=True)
 
 
 def _live_chat_model() -> Any:
@@ -58,7 +58,7 @@ def _active_transaction_list_context(message: str, *, language: str = "en") -> S
         message=message,
         today=date(2026, 3, 20),
         language=language,
-        query_contract=_contract(
+        query_request=_contract(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 20), granularity="month"),
@@ -93,7 +93,7 @@ def _active_summary_context(message: str) -> SemanticReasonerContext:
         message=message,
         today=date(2026, 3, 20),
         language="en",
-        query_contract=_contract(
+        query_request=_contract(
             _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 20), granularity="week"),
