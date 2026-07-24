@@ -609,6 +609,47 @@
       "timeframe_on_date": "on {date}",
       "timeframe_range": "from {start} to {end}"
     },
+    "insight": {
+      "unavailable": "This kind insight never dey available yet.",
+      "missing_directive": "I need small more detail before I fit run that insight.",
+      "period_required": "Tell me the period wey you wan understand.",
+      "variance_no_change": "Your spending no change from the previous period wey match am.",
+      "variance_summary": "Your spending {direction} by {amount}. This period: {current}; previous period: {baseline}.",
+      "increased": "increase",
+      "decreased": "reduce",
+      "driver": "{label} {direction} reach {amount} ({change}).",
+      "unclassified": "We never classify am",
+      "uncertain_value": "{amount} come from transactions wey we still dey verify wetin e mean.",
+      "measure": {
+        "spending": "money wey you spend",
+        "income": "money wey enter",
+        "net_cash_flow": "money wey remain after movement",
+        "inflow": "money wey enter",
+        "outflow": "money wey comot"
+      },
+      "change_increased": "e rise {pct}",
+      "change_decreased": "e drop {pct}",
+      "change_unchanged": "e no change",
+      "change_new": "e just start",
+      "change_ended": "e don stop",
+      "dimension": {
+        "category": "Spending group",
+        "counterparty": "Person or business",
+        "account": "Account",
+        "event_type": "Kind of transaction",
+        "cash_flow_class": "Kind of money movement"
+      },
+      "dimension_heading": "*{dimension}*",
+      "dimension_measure_heading": "*{measure} according to {dimension}*",
+      "evidence_summary": "I see {count} transactions wey cause that change.",
+      "metric_summary": "{measure} {direction} by {change} ({relative_change}). This period {current}, previous one {baseline}.",
+      "metric_summary_no_change": "{measure} no change; e remain {current} (previous one {baseline}).",
+      "overview_headline": "See how your money change:",
+      "residual": "Other money movement: {amount}",
+      "coverage_partial": "Some account data still dey process, so this one na partial view.",
+      "coverage_unavailable": "I no fit confirm whether all the account data dey complete, so take this one as estimate.",
+      "coverage_required": "I no fit calculate that one well because all the account data for that period never sync finish."
+    },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",
       "heading_top": "Top",
@@ -818,9 +859,9 @@
       "found_names": "I find {found_names}.",
       "queued_next_notice": "Also for this batch:\n{queued_intents}",
       "batch_input": {
-        "heading": "I'm setting up your {count} requests.",
-        "first": "First, {item}.",
-        "next": "Next, {item}.",
+        "heading": "I dey arrange your {count} requests.",
+        "first": "Make we start with {item}.",
+        "next": "After that, {item}.",
         "still_needed": "Wetin still remain: {items}.",
         "remaining_more": "{items}; plus {count} more detail(s)",
         "choose_transfer_recipient": "choose who go receive {amount}",
@@ -832,8 +873,8 @@
         "network": "which network",
         "account": "the account information",
         "detail": "one other thing",
-        "selection_resolved": "Done. {amount} will go to {recipient}.",
-        "next_prompt": "Next, {prompt}"
+        "selection_resolved": "Done. {amount} go enter {recipient}.",
+        "next_prompt": "Next one: {prompt}"
       },
       "need_some_details": "I need some details.",
       "auth_reason_transfer": "Transfer authorization",

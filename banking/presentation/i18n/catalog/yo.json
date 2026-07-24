@@ -609,6 +609,47 @@
       "timeframe_on_date": "ni {date}",
       "timeframe_range": "from {start} to {end}"
     },
+    "insight": {
+      "unavailable": "Iru alaye yi ko si nile bayii.",
+      "missing_directive": "Mo nilo alaye diẹ sii lati ṣe itupalẹ naa.",
+      "period_required": "Jowo so akoko ti o fe lati mo sii.",
+      "variance_no_change": "Inawo re ko yipada lati akoko ti o baamu tele.",
+      "variance_summary": "Inawo re {direction} pelu {amount}. Akoko yii: {current}; akoko tele: {baseline}.",
+      "increased": "po si",
+      "decreased": "dinku",
+      "driver": "{label} {direction} pelu {amount} ({change}).",
+      "unclassified": "A ko tii pin si ẹka",
+      "uncertain_value": "{amount} wa lati awon transaction ti a tun n jerisi itumo won.",
+      "measure": {
+        "spending": "inawo",
+        "income": "owo ti n wọle",
+        "net_cash_flow": "iṣan owo apapọ",
+        "inflow": "owo wọle",
+        "outflow": "owo jade"
+      },
+      "change_increased": "soke {pct}",
+      "change_decreased": "isalẹ {pct}",
+      "change_unchanged": "ko yipada",
+      "change_new": "tuntun",
+      "change_ended": "pari",
+      "dimension": {
+        "category": "Ẹka",
+        "counterparty": "Ẹni tabi ile-iṣẹ",
+        "account": "Akanti",
+        "event_type": "Iru iṣẹlẹ",
+        "cash_flow_class": "Ẹka iṣan owo"
+      },
+      "dimension_heading": "*{dimension}*",
+      "dimension_measure_heading": "*{measure} nipa {dimension}*",
+      "evidence_summary": "Mo ri transaction {count} ti o fa ayipada naa.",
+      "metric_summary": "{measure} {direction} pẹlu {change} ({relative_change}). Bayii {current}, tẹlẹ {baseline}.",
+      "metric_summary_no_change": "{measure} ko yipada, o wa ni {current} (tele {baseline}).",
+      "overview_headline": "Eyi ni bi owo rẹ ṣe yipada:",
+      "residual": "Awọn iṣẹ owo miiran: {amount}",
+      "coverage_partial": "Diẹ ninu data akanti si n ṣiṣẹ, nitorina eyi ko pe patapata.",
+      "coverage_unavailable": "N ko le jẹrisi pe gbogbo data akanti pe, nitorina ka eyi si iṣiro isunmọ.",
+      "coverage_required": "N ko le se iṣiro naa ni deede nitori data akanti fun akoko yii ko tii pe."
+    },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",
       "heading_top": "Top",
@@ -818,9 +859,9 @@
       "found_names": "Mo ri {found_names}.",
       "queued_next_notice": "Also in this batch:\n{queued_intents}",
       "batch_input": {
-        "heading": "I'm setting up your {count} requests.",
-        "first": "First, {item}.",
-        "next": "Next, {item}.",
+        "heading": "Mo n ṣeto awọn ibeere {count} rẹ.",
+        "first": "Ni akọkọ, {item}.",
+        "next": "Lẹ́yìn náà, {item}.",
         "still_needed": "Ohun to si ku: {items}.",
         "remaining_more": "{items}; ati alaye {count} miiran",
         "choose_transfer_recipient": "yan eni to maa gba {amount}",
@@ -832,8 +873,8 @@
         "network": "netiwoki",
         "account": "alaye akanti",
         "detail": "alaye miiran",
-        "selection_resolved": "Done. {amount} will go to {recipient}.",
-        "next_prompt": "Next, {prompt}"
+        "selection_resolved": "O ti ṣetan. {amount} yoo lọ si {recipient}.",
+        "next_prompt": "Igbesẹ to tẹle: {prompt}"
       },
       "need_some_details": "Mo nilo some details.",
       "auth_reason_transfer": "Authorization Transfer",

@@ -609,6 +609,47 @@
       "timeframe_on_date": "a {date}",
       "timeframe_range": "from {start} to {end}"
     },
+    "insight": {
+      "unavailable": "Wannan bayanin bai samu ba tukuna.",
+      "missing_directive": "Ina bukatar karin bayani domin gudanar da wannan binciken.",
+      "period_required": "Ka fada lokacin da kake son fahimta.",
+      "variance_no_change": "Kashe kudinka bai canza daga lokacin baya makamanci ba.",
+      "variance_summary": "Kashe kudinka ya {direction} da {amount}. Wannan lokaci: {current}; lokacin baya: {baseline}.",
+      "increased": "karu",
+      "decreased": "ragu",
+      "driver": "{label} ya {direction} da {amount} ({change}).",
+      "unclassified": "Ba a rarraba ba",
+      "uncertain_value": "{amount} daga transactions da har yanzu muna tantance ma'anarsu.",
+      "measure": {
+        "spending": "kashe kudi",
+        "income": "kudin shiga",
+        "net_cash_flow": "ragowar zirga-zirgar kudi",
+        "inflow": "kudin da ya shigo",
+        "outflow": "kudin da ya fita"
+      },
+      "change_increased": "ya karu {pct}",
+      "change_decreased": "ya ragu {pct}",
+      "change_unchanged": "babu canji",
+      "change_new": "sabo",
+      "change_ended": "ya kare",
+      "dimension": {
+        "category": "Rukuni",
+        "counterparty": "Abokin mu'amala",
+        "account": "Asusu",
+        "event_type": "Nau'in lamari",
+        "cash_flow_class": "Rukunin zirga-zirgar kudi"
+      },
+      "dimension_heading": "*{dimension}*",
+      "dimension_measure_heading": "*{measure} ta {dimension}*",
+      "evidence_summary": "Na sami mu'amaloli {count} da suka haifar da wannan canjin.",
+      "metric_summary": "{measure} ya {direction} da {change} ({relative_change}). Yanzu {current}, baya {baseline}.",
+      "metric_summary_no_change": "{measure} bai canza ba a {current} (baya {baseline}).",
+      "overview_headline": "Ga yadda kudadenka suka canza:",
+      "residual": "Sauran zirga-zirgar kudi: {amount}",
+      "coverage_partial": "Ana ci gaba da sarrafa wasu bayanan asusu, don haka wannan bayani bai cika ba.",
+      "coverage_unavailable": "Ban iya tabbatar da cewa duk bayanan asusu sun cika ba, don haka wannan kiyasi ne.",
+      "coverage_required": "Ba zan iya lissafa hakan daidai ba saboda bayanan asusun wannan lokacin ba su gama daidaituwa ba."
+    },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",
       "heading_top": "Top",
@@ -818,9 +859,9 @@
       "found_names": "Na samu {found_names}.",
       "queued_next_notice": "Also in this batch:\n{queued_intents}",
       "batch_input": {
-        "heading": "I'm setting up your {count} requests.",
-        "first": "First, {item}.",
-        "next": "Next, {item}.",
+        "heading": "Ina shirya bukatunka {count}.",
+        "first": "Da farko, {item}.",
+        "next": "Sa'an nan, {item}.",
         "still_needed": "Har yanzu ana bukata: {items}.",
         "remaining_more": "{items}; da wasu bayanai {count}",
         "choose_transfer_recipient": "zabi wanda zai karbi {amount}",
@@ -832,8 +873,8 @@
         "network": "cibiyar sadarwa",
         "account": "bayanan asusu",
         "detail": "wani bayani",
-        "selection_resolved": "Done. {amount} will go to {recipient}.",
-        "next_prompt": "Next, {prompt}"
+        "selection_resolved": "An gama. Za a tura {amount} zuwa {recipient}.",
+        "next_prompt": "Mataki na gaba: {prompt}"
       },
       "need_some_details": "Ina bukatar some details.",
       "auth_reason_transfer": "Authorization na Transfer",

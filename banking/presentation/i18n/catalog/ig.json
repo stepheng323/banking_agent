@@ -609,6 +609,47 @@
       "timeframe_on_date": "na {date}",
       "timeframe_range": "from {start} to {end}"
     },
+    "insight": {
+      "unavailable": "Nnyocha a adịghị ugbu a.",
+      "missing_directive": "Achọrọ m nkọwa ọzọ iji mee nyocha ahụ.",
+      "period_required": "Biko kwuo oge ịchọrọ ịghọta.",
+      "variance_no_change": "Mmefu gị agbanweghị site n'oge gara aga kwekọrọ.",
+      "variance_summary": "Mmefu gị {direction} site na {amount}. Oge a: {current}; oge gara aga: {baseline}.",
+      "increased": "bawanyere",
+      "decreased": "belatara",
+      "driver": "{label} {direction} site na {amount} ({change}).",
+      "unclassified": "Ekewabeghị ya",
+      "uncertain_value": "{amount} sitere na transactions anyị ka na-enyocha ihe ha pụtara.",
+      "measure": {
+        "spending": "mmefu",
+        "income": "ego mbata",
+        "net_cash_flow": "ngụkọta ije ego",
+        "inflow": "ego batara",
+        "outflow": "ego pụrụ"
+      },
+      "change_increased": "rịgoro {pct}",
+      "change_decreased": "gbadara {pct}",
+      "change_unchanged": "enweghị mgbanwe",
+      "change_new": "ọhụrụ",
+      "change_ended": "kwụsịrị",
+      "dimension": {
+        "category": "Ụdị",
+        "counterparty": "Onye azụmahịa",
+        "account": "Akaụntụ",
+        "event_type": "Ụdị ihe mere",
+        "cash_flow_class": "Ụdị ije ego"
+      },
+      "dimension_heading": "*{dimension}*",
+      "dimension_measure_heading": "*{measure} site na {dimension}*",
+      "evidence_summary": "Ahụrụ m azụmahịa {count} kpatara mgbanwe ahụ.",
+      "metric_summary": "{measure} {direction} site na {change} ({relative_change}). Ugbu a {current}, mbụ {baseline}.",
+      "metric_summary_no_change": "{measure} agbanweghị, ọ bụ {current} (gara aga {baseline}).",
+      "overview_headline": "Lee otu ego gị siri gbanwee:",
+      "residual": "Ije ego ndị ọzọ: {amount}",
+      "coverage_partial": "A ka na-ahazi ụfọdụ data akaụntụ, ya mere nke a ezughị oke.",
+      "coverage_unavailable": "Enweghị m ike ikwenye na data akaụntụ niile zuru ezu, ya mere were nke a dịka atụmatụ.",
+      "coverage_required": "Enweghị m ike ịgbakọ ya nke ọma n'ihi na data akaụntụ nke oge ahụ ezubeghị oke."
+    },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",
       "heading_top": "Top",
@@ -818,9 +859,9 @@
       "found_names": "Achọtara m {found_names}.",
       "queued_next_notice": "Also in this batch:\n{queued_intents}",
       "batch_input": {
-        "heading": "I'm setting up your {count} requests.",
-        "first": "First, {item}.",
-        "next": "Next, {item}.",
+        "heading": "Ana m ahazi arịrịọ gị {count}.",
+        "first": "Nke mbụ, {item}.",
+        "next": "Mgbe ahụ, {item}.",
         "still_needed": "Ihe ka di mkpa: {items}.",
         "remaining_more": "{items}; na nkowa {count} ozo",
         "choose_transfer_recipient": "horo onye ga-anata {amount}",
@@ -832,8 +873,8 @@
         "network": "network",
         "account": "nkwa akauntu",
         "detail": "nkwa ozo",
-        "selection_resolved": "Done. {amount} will go to {recipient}.",
-        "next_prompt": "Next, {prompt}"
+        "selection_resolved": "Emechaala. A ga-eziga {amount} na {recipient}.",
+        "next_prompt": "Nzọụkwụ ọzọ: {prompt}"
       },
       "need_some_details": "Achọrọ m some details.",
       "auth_reason_transfer": "Authorization Transfer",

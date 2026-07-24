@@ -306,8 +306,8 @@
     },
     "drill_down": {
       "no_items": "No items to drill down into.",
-      "invalid_selection": "",
-      "details_intro": ""
+      "invalid_selection": "I couldn't match that choice. Choose one of the {count} transactions I showed.",
+      "details_intro": "Here are the transaction details:"
     },
     "receipt": {
       "only_transfer": "Receipts are only available for bank transfers. This is a {transaction_type}.",
@@ -442,13 +442,13 @@
       "reply_number_or_rephrase": "Reply with the number or rephrase.",
       "context_suffix": " ({context})",
       "option_line": "{index}️⃣ {amount} — {description}",
-      "missing_scope": "",
-      "grounded_query_failed": "",
-      "exhausted": "",
-      "multiple_matches": "",
-      "memory_unavailable": "",
-      "cancelled": "",
-      "recent_read_only": ""
+      "missing_scope": "Which earlier result or transaction did you mean?",
+      "grounded_query_failed": "I understand the earlier result, but I need a clearer account, transaction, or time scope.",
+      "exhausted": "I still can't match that choice. Please describe the transaction again.",
+      "multiple_matches": "I found several matching transactions. Which one do you mean?\n\n{options}",
+      "memory_unavailable": "I don't have enough detail from that earlier result anymore. Ask me to run the search again.",
+      "cancelled": "Okay, I've cancelled that selection.",
+      "recent_read_only": "I can only use that closed result for read-only questions. Ask me to start a new transfer or support request instead."
     },
     "notice": {
       "clamped_days": "Showing last {days_back} days (max available)."
@@ -585,6 +585,47 @@
       "timeframe_this_month": " this month",
       "timeframe_month": " in {month}",
       "timeframe_last_30_days": " in the last 30 days"
+    },
+    "insight": {
+      "unavailable": "That insight is not available yet.",
+      "missing_directive": "I need more context to run that insight.",
+      "period_required": "Please tell me the period you want to understand.",
+      "variance_no_change": "Your spending did not change from the comparable previous period.",
+      "variance_summary": "Your spending {direction} by {amount}. Current period: {current}; previous comparable period: {baseline}.",
+      "increased": "increased",
+      "decreased": "decreased",
+      "driver": "{label} {direction} by {amount} ({change}).",
+      "unclassified": "Unclassified",
+      "uncertain_value": "{amount} is from transactions whose meaning is still being verified.",
+      "measure": {
+        "spending": "spending",
+        "income": "income",
+        "net_cash_flow": "net cash flow",
+        "inflow": "money in",
+        "outflow": "money out"
+      },
+      "change_increased": "up {pct}",
+      "change_decreased": "down {pct}",
+      "change_unchanged": "no change",
+      "change_new": "new",
+      "change_ended": "ended",
+      "dimension": {
+        "category": "Category",
+        "counterparty": "Counterparty",
+        "account": "Account",
+        "event_type": "Event type",
+        "cash_flow_class": "Cash flow class"
+      },
+      "dimension_heading": "*{dimension}*",
+      "dimension_measure_heading": "*{measure} by {dimension}*",
+      "evidence_summary": "I found {count} transactions behind that change.",
+      "metric_summary": "{measure} {direction} by {change} ({relative_change}). Current {current}, previous {baseline}.",
+      "metric_summary_no_change": "{measure} stayed the same at {current} (previous {baseline}).",
+      "overview_headline": "Here's how your finances changed:",
+      "residual": "Other activity: {amount}",
+      "coverage_partial": "Some account data is still being processed, so this is a partial view.",
+      "coverage_unavailable": "I could not confirm full account coverage, so treat this as an estimate.",
+      "coverage_required": "I can't calculate that reliably because the requested account period is not fully synchronized yet."
     },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",
