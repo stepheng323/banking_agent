@@ -648,7 +648,12 @@
       "residual": "Awọn iṣẹ owo miiran: {amount}",
       "coverage_partial": "Diẹ ninu data akanti si n ṣiṣẹ, nitorina eyi ko pe patapata.",
       "coverage_unavailable": "N ko le jẹrisi pe gbogbo data akanti pe, nitorina ka eyi si iṣiro isunmọ.",
-      "coverage_required": "N ko le se iṣiro naa ni deede nitori data akanti fun akoko yii ko tii pe."
+      "coverage_required": "N ko le se iṣiro naa ni deede nitori data akanti fun akoko yii ko tii pe.",
+      "duplicates": {
+        "none": "No probable duplicate transactions found in this period.",
+        "found": "Found {count} probable duplicate transactions totaling {total_value}.",
+        "group_label": "{count} identical transactions"
+      }
     },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",

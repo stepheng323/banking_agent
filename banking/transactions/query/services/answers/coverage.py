@@ -99,7 +99,14 @@ def _resolve_window(
         except ValueError:
             pass
     if query_request is not None:
-        return query_request.time_start, query_request.time_end
+        # Coverage can be asked from any active query surface.  Assessments
+        # (for example, "Can I send 35k?") intentionally have no transaction
+        # period, but they can still explain a linked account's mandate or
+        # synchronization state.  Treat the window as unavailable instead of
+        # forcing the transaction-only convenience properties.
+        period = query_request.time_range
+        if period is not None:
+            return period.start, period.end
     return None, None
 
 

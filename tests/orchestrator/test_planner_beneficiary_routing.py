@@ -32,8 +32,6 @@ class _RedisWithSuggestionOnly:
     async def get(self, key: str) -> str | None:
         if ":beneficiary_suggestion" in key:
             return '{"recipient_name":"Tolu Adedayo","recipient_account":"0760505261","bank_name":"First Bank"}'
-        if "query:session:" in key:
-            return None
         return None
 
     async def delete(self, key: str) -> int:

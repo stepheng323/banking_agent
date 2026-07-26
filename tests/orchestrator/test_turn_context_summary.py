@@ -153,11 +153,6 @@ async def test_load_query_session_snapshot_prefers_context_frame_over_pending_cl
 
 
 async def test_load_query_session_snapshot_no_longer_prefers_redis() -> None:
-    class _Redis:
-        async def get(self, key: str) -> str:
-            assert key == "query:session:2348000000301"
-            return '{"session_active": true, "query_result": {"summary_text": "You spent ₦5,000 today."}}'
-
     state = OrchestratorState(
         user_id="u_ctx_redis",
         phone_number="2348000000301",

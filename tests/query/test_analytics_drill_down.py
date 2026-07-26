@@ -39,7 +39,7 @@ async def test_analytics_drill_down_executes():
     reasoner = AsyncMock()
     reasoner.reason.return_value = MockDecision()
 
-    worker = QueryWorker(llm=llm, banking_provider=banking, session_manager=AsyncMock())
+    worker = QueryWorker(llm=llm, banking_provider=banking)
     worker.extractor.reasoner = reasoner
 
     # Build active session

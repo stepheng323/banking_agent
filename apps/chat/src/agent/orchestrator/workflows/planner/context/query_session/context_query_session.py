@@ -16,7 +16,7 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_STASHED_COMPAT_KEYS = {
+_QUERY_SNAPSHOT_KEYS = {
     "session_active",
     "query_request",
     "query_result",
@@ -51,7 +51,7 @@ async def _load_query_session_snapshot(
     *,
     snapshot_logger: Any | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Project the canonical query context frame, with compact stashed compatibility fallback."""
+    """Project the canonical query context frame or pending clarification snapshot."""
     query_session_snapshot: dict[str, Any] | None = None
     query_session_source: str | None = None
 
@@ -95,7 +95,7 @@ async def _load_query_session_snapshot(
 
 def _pending_clarification_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Build an active query snapshot from first-class pending clarification state."""
-    compact = {key: value for key, value in snapshot.items() if key in _STASHED_COMPAT_KEYS}
+    compact = {key: value for key, value in snapshot.items() if key in _QUERY_SNAPSHOT_KEYS}
     compact["session_active"] = True
     return compact
 

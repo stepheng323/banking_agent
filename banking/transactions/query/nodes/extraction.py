@@ -338,7 +338,6 @@ class ExtractionStep(QueryStep):
             surface_view=surface_view,
             query_frames=query_frames,
             pending_clarification=pending_clarification,
-            stashed_sessions=state.get("stashed_sessions"),
             turn_id=state.get("turn_id"),
             inbound_message_id=state.get("inbound_message_id"),
         )

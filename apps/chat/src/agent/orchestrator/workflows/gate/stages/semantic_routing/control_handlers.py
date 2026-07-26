@@ -138,7 +138,7 @@ async def semantic_cancel_updates(
     locale = ctx.current_locale
     if has_cancelable_state(ctx.state):
         text = cancelled_message(ctx.state, locale)
-        updates.update(await build_cancellation_reset_updates(ctx.state, ctx.redis_client))
+        updates.update(await build_cancellation_reset_updates(ctx.state))
     else:
         text = clarify_message(ctx.state, locale)
     return direct_response(

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, Any, ClassVar, Literal, TypeAlias, cast
+from typing import Annotated, Any, ClassVar, Literal, TypeAlias, Union, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -292,10 +292,18 @@ class CompareOperation(QueryModel):
     comparison: PeriodComparisonSpec
 
 
-class VarianceDriversSpec(QueryModel):
-    type: Literal["variance_drivers"] = "variance_drivers"
-    baseline: ComparisonBaseline = Field(default_factory=PreviousEquivalentBaseline)
+class InsightSpecBase(QueryModel):
+    insight_type: str
     analysis_basis: Literal["ledger_transactions", "economic_events"] = "economic_events"
+    confidence_policy: Literal["include", "exclude_uncertain", "segment_uncertain"] = "segment_uncertain"
+    completeness_policy: Literal["disclose", "require_complete"] = "disclose"
+    evidence_limit: int = Field(default=5, ge=1, le=20)
+
+
+class VarianceDriversSpec(InsightSpecBase):
+    type: Literal["variance_drivers"] = "variance_drivers"
+    insight_type: Literal["variance_drivers"] = "variance_drivers"
+    baseline: ComparisonBaseline = Field(default_factory=PreviousEquivalentBaseline)
     measure: Literal["spending", "income", "net_cash_flow", "cash_flow_overview"] = "spending"
     dimensions: list[Literal["category", "counterparty", "account", "event_type", "cash_flow_class"]] = Field(
         default_factory=lambda: cast(
@@ -303,9 +311,6 @@ class VarianceDriversSpec(QueryModel):
             ["category", "counterparty"],
         )
     )
-    confidence_policy: Literal["include", "exclude_uncertain", "segment_uncertain"] = "segment_uncertain"
-    evidence_limit: int = Field(default=5, ge=1, le=20)
-    completeness_policy: Literal["disclose", "require_complete"] = "disclose"
     evidence: InsightEvidenceSelection | None = None
 
     @model_validator(mode="after")
@@ -314,10 +319,78 @@ class VarianceDriversSpec(QueryModel):
         return self
 
 
+class ProbableDuplicatesSpec(InsightSpecBase):
+    type: Literal["probable_duplicates"] = "probable_duplicates"
+    insight_type: Literal["probable_duplicates"] = "probable_duplicates"
+    min_confidence: float = Field(default=0.80)
+    lookback_days: int = Field(default=90)
+    evidence: InsightEvidenceSelection | None = None
+
+
+class RecurringPatternsSpec(InsightSpecBase):
+    type: Literal["recurring_patterns"] = "recurring_patterns"
+    insight_type: Literal["recurring_patterns"] = "recurring_patterns"
+    lookback_days: int = Field(default=180, ge=60, le=365)
+    evidence: InsightEvidenceSelection | None = None
+
+
+class AnomaliesSpec(InsightSpecBase):
+    type: Literal["anomalies"] = "anomalies"
+    insight_type: Literal["anomalies"] = "anomalies"
+    baseline_days: int = Field(default=90)
+    min_comparable_observations: int = Field(default=6)
+    min_covered_days: int = Field(default=42)
+    evidence: InsightEvidenceSelection | None = None
+
+
+class CounterpartyConcentrationSpec(InsightSpecBase):
+    type: Literal["counterparty_concentration"] = "counterparty_concentration"
+    insight_type: Literal["counterparty_concentration"] = "counterparty_concentration"
+    measure: Literal["spending", "income", "inflow", "outflow"] = "spending"
+    evidence: InsightEvidenceSelection | None = None
+
+
+class ForecastSpec(InsightSpecBase):
+    type: Literal["forecast"] = "forecast"
+    insight_type: Literal["forecast"] = "forecast"
+    horizon_days: int = Field(default=30, ge=7, le=90)
+    history_days: int = Field(default=180)
+    evidence: InsightEvidenceSelection | None = None
+
+
+class RunwaySpec(InsightSpecBase):
+    type: Literal["runway"] = "runway"
+    insight_type: Literal["runway"] = "runway"
+    baseline_days: int = Field(default=90)
+    evidence: InsightEvidenceSelection | None = None
+
+
+class CashFlowQualitySpec(InsightSpecBase):
+    type: Literal["cash_flow_quality"] = "cash_flow_quality"
+    insight_type: Literal["cash_flow_quality"] = "cash_flow_quality"
+    min_complete_months: int = Field(default=3)
+    evidence: InsightEvidenceSelection | None = None
+
+
+InsightSpec: TypeAlias = Annotated[
+    Union[
+        VarianceDriversSpec,
+        ProbableDuplicatesSpec,
+        RecurringPatternsSpec,
+        AnomaliesSpec,
+        CounterpartyConcentrationSpec,
+        ForecastSpec,
+        RunwaySpec,
+        CashFlowQualitySpec,
+    ],
+    Field(discriminator="insight_type"),
+]
+
+
 class AnalyzeOperation(QueryModel):
     kind: Literal["analyze"] = "analyze"
     scope: QueryScope
-    analysis: VarianceDriversSpec
+    analysis: InsightSpec
 
 
 class AffordabilitySpec(QueryModel):

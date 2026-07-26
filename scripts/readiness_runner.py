@@ -233,7 +233,10 @@ async def reset_redis_session(
 ) -> int:
     patterns = [
         f"checkpoint:{channel}:{phone}:*",
+        f"checkpoint_blobs:{channel}:{phone}:*",
         f"checkpoint_write:{channel}:{phone}:*",
+        f"checkpoint_writes:{channel}:{phone}:*",
+        f"checkpoint_v2:{channel}:{phone}:*",
         f"write_keys_zset:{channel}:{phone}:*",
         f"checkpoint_latest:{channel}:{phone}:*",
         f"checkpoint_ttl_refresh:{channel}:{phone}",
@@ -244,17 +247,24 @@ async def reset_redis_session(
         # repeated readiness scenario starts as an actually fresh turn rather
         # than inheriting a background history write or an old flow marker.
         f"user:{phone}:*",
-        f"query:session:{phone}",
         f"context_frames:{phone}",
         f"support_context:{phone}",
     ]
     if user_id:
         patterns.append(f"support_context:{user_id}")
-    deleted = 0
-    for pattern in patterns:
-        keys = [key async for key in redis_client.scan_iter(match=pattern)]
-        if keys:
-            deleted += int(await redis_client.delete(*keys))
+
+    lua_script = """
+    local deleted = 0
+    for _, pattern in ipairs(KEYS) do
+        local keys = redis.call('KEYS', pattern)
+        if #keys > 0 then
+            deleted = deleted + redis.call('DEL', unpack(keys))
+        end
+    end
+    return deleted
+    """
+    deleted = int(await redis_client.eval(lua_script, len(patterns), *patterns))
+
     if checkpointer is not None:
         await checkpointer.adelete_thread(f"{channel}:{phone}")
     return deleted

@@ -21,10 +21,23 @@ from banking.transactions.query.models.extraction import (
     TimeReference,
 )
 from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
-from banking.transactions.query.session import QuerySessionManager, _session_has_surface_view
-from banking.transactions.query.worker import QueryWorker
+from banking.transactions.query.session import _session_has_surface_view
+from banking.transactions.query.worker import QueryWorker as RuntimeQueryWorker
 from shared.config.settings import settings
 from tests.query.factories import make_query_request
+
+
+def _build_query_worker(
+    llm: Any,
+    banking_provider: Any,
+    _obsolete_session_manager: Any | None = None,
+) -> RuntimeQueryWorker:
+    """Build the current stateless worker while old fixtures are retired."""
+    del _obsolete_session_manager
+    return RuntimeQueryWorker(llm=llm, banking_provider=banking_provider)
+
+
+QueryWorker = _build_query_worker
 
 
 @pytest.fixture(autouse=True)
@@ -132,28 +145,6 @@ class _ProgressTracker:
 
     async def set_stage(self, stage_key: str, *, stage_metadata: dict[str, Any] | None = None) -> None:
         self.stage_calls.append((stage_key, stage_metadata))
-
-
-class _RedisStoreStub:
-    def __init__(self) -> None:
-        self.saved: dict[str, str] = {}
-        self.expire_calls: list[tuple[str, int]] = []
-
-    async def get(self, key: str) -> str | None:
-        return self.saved.get(key)
-
-    async def set(self, key: str, value: str, ex: int | None = None) -> bool:
-        del ex
-        self.saved[key] = value
-        return True
-
-    async def delete(self, key: str) -> int:
-        self.saved.pop(key, None)
-        return 1
-
-    async def expire(self, key: str, ttl: int) -> bool:
-        self.expire_calls.append((key, ttl))
-        return True
 
 
 def _active_session_from_result(result: TransactionResult) -> dict[str, Any]:
@@ -286,6 +277,56 @@ async def test_worker_restores_from_active_query_surface_and_marks_patch() -> No
 
     assert result.outcome == TransactionOutcome.OK
     assert session_manager.saved_state is None
+
+
+@pytest.mark.asyncio
+async def test_worker_prefers_pending_clarification_over_visible_query_surface() -> None:
+    """An unresolved selection must survive alongside its original result frame."""
+    session_manager = _SessionManager()
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    query_request = _contract(
+        _query_ir(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
+        )
+    )
+    pending = PendingClarificationState(
+        original_query="Show the 25k one",
+        current_intent=QueryIntent.TRANSACTION_LIST,
+        original_extraction=QueryExtractionResult(intent=QueryIntent.TRANSACTION_LIST),
+        resolver_message="Choose one.",
+        language="en",
+    )
+    pending_snapshot = {
+        "session_active": True,
+        "pending_clarification": pending.model_dump(mode="json"),
+        "query_request": query_request.model_dump(mode="json"),
+        "query_result": {"summary_text": "Transactions", "items": []},
+    }
+
+    async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del worker_context
+        assert state["query_session"]["pending_clarification"] == pending.model_dump(mode="json")
+        return TransactionResult(outcome=TransactionOutcome.NEEDS_INPUT, response="Choose one.", patch={})
+
+    worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "What bank is that?"},
+        context={
+            "phone_number": "2348000000309",
+            "user_id": "u1",
+            "accounts": [],
+            "language": "en",
+            "today": date(2026, 3, 4),
+            "pending_query_clarification": pending_snapshot,
+            **_active_surface_context_from_session(
+                {"query_request": query_request.model_dump(mode="json"), "query_result": {"summary_text": "Transactions"}}
+            ),
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
 
 
 @pytest.mark.asyncio
@@ -890,7 +931,7 @@ async def test_worker_does_not_load_redis_query_session(
 
     assert result.outcome == TransactionOutcome.OK
     assert session_manager.load_calls == []
-    assert session_manager.cleared_key == "query:session:2348000000311"
+    assert session_manager.cleared_key is None
     assert warnings == []
 
 
@@ -1038,8 +1079,7 @@ async def test_worker_reuses_active_query_scope_for_how_much_total_followup() ->
 
 @pytest.mark.asyncio
 async def test_worker_reuses_context_scope_for_time_delta_followup() -> None:
-    redis = _RedisStoreStub()
-    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    session_manager = _SessionManager()
     provider = _RecordingProvider(
         transactions=[
             {
@@ -1140,8 +1180,7 @@ async def test_worker_reuses_context_scope_for_time_delta_followup() -> None:
 
 @pytest.mark.asyncio
 async def test_worker_reuses_context_scope_for_filter_delta_followup() -> None:
-    redis = _RedisStoreStub()
-    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    session_manager = _SessionManager()
     provider = _RecordingProvider(
         transactions=[
             {
@@ -1238,8 +1277,7 @@ async def test_worker_restores_context_analytics_followup_for_time_delta(
 ) -> None:
     monkeypatch.setattr("banking.transactions.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 19))
 
-    redis = _RedisStoreStub()
-    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    session_manager = _SessionManager()
     provider = _WindowedProvider(
         {
             "acc_1": [
@@ -1333,8 +1371,7 @@ async def test_worker_count_time_delta_followup_renders_yesterday(
 ) -> None:
     monkeypatch.setattr("banking.transactions.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 19))
 
-    redis = _RedisStoreStub()
-    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    session_manager = _SessionManager()
     provider = _WindowedProvider(
         {
             "acc_1": [
@@ -1456,8 +1493,7 @@ async def test_worker_count_zero_summary_uses_natural_copy(
 ) -> None:
     monkeypatch.setattr("banking.transactions.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 19))
 
-    redis = _RedisStoreStub()
-    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    session_manager = _SessionManager()
     provider = _WindowedProvider({"acc_1": []})
     worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
     initial_contract = _contract(
@@ -1497,8 +1533,7 @@ async def test_worker_count_zero_summary_uses_natural_copy(
 
 @pytest.mark.asyncio
 async def test_worker_restores_context_time_comparison_followup_for_time_delta() -> None:
-    redis = _RedisStoreStub()
-    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    session_manager = _SessionManager()
     provider = _WindowedProvider(
         {
             "acc_1": [

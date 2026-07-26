@@ -55,21 +55,16 @@ go to their domain. If grounding is insufficient, use planner_ambiguous.
 8. Set detected language when clear. If uncertain, use planner_ambiguous with empty execs.
 
 Read contract rules:
-- For every supported read, emit read_subject, response_shape, and only explicit entity_name/bank_name/status/reference
-filters. Never emit read fields for a mutation.
-- Shapes: count=fact_count, existence=yes/no=fact_bool, one scalar or identity=fact_value,
-  readiness/state=fact_status, collection=surface_list, one entity=surface_detail, receipt=surface_actionable.
-- Preserve only explicit filters: beneficiary/person -> entity_name; linked bank -> bank_name; state -> status;
-  ticket/transaction code -> reference. Do not infer a missing filter.
-- A question about whether a specifically named person or alias is a saved beneficiary is beneficiary/fact_bool with
-  that name as entity_name. It is an existence read, not an unfiltered beneficiary count.
-- Account-linkage membership questions are linked_account/fact_bool with an explicit bank in bank_name. Never inherit
-  beneficiary subject or beneficiary filters merely because the preceding read displayed beneficiaries.
+- For supported reads, emit read_subject, response_shape, and only explicit entity_name/bank_name/status/reference;
+  never emit read fields for a mutation.
+- Shapes: count=fact_count; existence=fact_bool; scalar/identity=fact_value; readiness/state=fact_status;
+  collection=surface_list; entity=surface_detail; receipt=surface_actionable.
+- Never infer filters. Named-beneficiary membership is beneficiary/fact_bool plus entity_name; linked-account
+  membership is linked_account/fact_bool plus bank_name. Never carry beneficiary filters into an account read.
 - Examples: "How many Tolu beneficiaries" -> beneficiary/fact_count/entity_name=Tolu;
   "How much is in Access" -> balance/fact_value/bank_name=Access;
   "Do I have pending schedules" -> schedule/fact_bool/status=pending.
-- Specialized balance, beneficiary, schedule, and linked-account worker contracts are derived deterministically from
-  these canonical read fields. Do not emit records, IDs, balances, or mutation targets.
+- Derive worker contracts deterministically; never emit records, IDs, balances, or mutation targets.
 
 Compact examples: "show my credits this month" -> domain_query; "why did my spending increase this month" ->
 domain_query; "what drove my income change" -> domain_query; "how did my finances change" -> domain_query;

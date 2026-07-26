@@ -166,9 +166,11 @@ def test_query_conversation_resolver_rejects_missing_amount_without_fallback() -
     )
 
     assert updates is not None
-    assert updates["response"] == "I don't see ₦20,000 in the transactions I showed."
+    assert "Choose one" in updates["response"]
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["pending_clarification"] is not None
     assert "selected_item_index" not in updates
-    assert "current_page" not in updates
+    assert updates["current_page"] == 0
 
 
 def test_query_conversation_resolver_does_not_pick_nearest_amount() -> None:
@@ -185,7 +187,9 @@ def test_query_conversation_resolver_does_not_pick_nearest_amount() -> None:
     )
 
     assert updates is not None
-    assert updates["response"] == "I don't see ₦20,000 in the transactions I showed."
+    assert "Choose one" in updates["response"]
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["pending_clarification"] is not None
     assert "selected_item_id" not in updates
 
 
@@ -320,7 +324,9 @@ def test_query_conversation_resolver_does_not_search_old_frames_without_prior_re
     )
 
     assert updates is not None
-    assert updates["response"] == "I don't see ₦20,000 in the transactions I showed."
+    assert "Choose one" in updates["response"]
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["pending_clarification"] is not None
     assert "selected_item_id" not in updates
 
 

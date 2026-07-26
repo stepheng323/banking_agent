@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.continuations.clarification_state import (
     build_selection_clarification_updates,
@@ -61,6 +62,35 @@ def build_query_conversation_updates(
             has_current_surface=surface_view is not None,
             frame_count=len(query_frames or []),
         )
+        candidates = [
+            clarification_candidate(payload=item.payload, label=item.label)
+            for item in (surface_view.items if surface_view is not None else [])
+            if item.payload is not None
+        ]
+        if candidates:
+            clarification_updates = build_selection_clarification_updates(
+                candidates=candidates,
+                operation=ClarificationOperation(
+                    continuation_type="drill_down",
+                    drill_down_action=getattr(decision, "drill_down_action", None) or "view_details",
+                    fact_field=resolve_requested_fact_field(decision),
+                    grounded_operation=getattr(decision, "grounded_operation", None),
+                ),
+                query_request=query_result.query_request if query_result is not None else None,
+                locale=locale,
+                session=session or {},
+                turn_id=turn_id,
+            )
+            # The prior list is still the right surface, but the requested
+            # reference did not resolve.  Reuse localized invalid-selection
+            # copy rather than falsely claiming that these candidates matched
+            # the missing amount/name.
+            clarification_updates["response"] = render_message(
+                "query.drill_down.invalid_selection",
+                locale,
+                {"count": len(candidates)},
+            )
+            return clarification_updates
         return {
             "transaction_outcome": TransactionOutcome.OK,
             "response": miss_response,

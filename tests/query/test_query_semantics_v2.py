@@ -21,9 +21,11 @@ from banking.transactions.query.models.operations import (
     ExactAmount,
     ExplicitBaseline,
     Money,
+    NamedAccount,
     QueryRequest,
     ResolvedPeriod,
     RetrieveOperation,
+    SummarizeOperation,
     UnspecifiedCounterparty,
     VarianceDriversSpec,
 )
@@ -79,6 +81,39 @@ def test_approximate_amount_uses_disclosed_ten_percent_tolerance() -> None:
     assert isinstance(amount, ApproximateAmount)
     assert amount.minimum == Decimal("45000")
     assert amount.maximum == Decimal("55000")
+
+
+def test_explicit_bank_filter_compiles_to_named_account_scope() -> None:
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.TRANSACTION_LIST,
+        filters=QueryFilters(bank="GTBank"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="Show my GTBank transactions this month",
+    )
+
+    request = compile_query_request(_parser(), extraction, today=date(2026, 7, 24))
+
+    assert isinstance(request.operation, RetrieveOperation)
+    assert isinstance(request.operation.scope.accounts, NamedAccount)
+    assert request.operation.scope.accounts.name == "GTBank"
+
+
+def test_directional_total_repairs_misclassified_fact_to_analytics() -> None:
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.TRANSACTION_DETAIL,
+        filters=QueryFilters(category="food"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        request_shape="fact",
+        raw_query="How much did I spend on food this month?",
+    )
+
+    request = compile_query_request(_parser(), extraction, today=date(2026, 7, 24))
+
+    assert isinstance(request.operation, SummarizeOperation)
+    assert request.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert request.filters is not None
+    assert request.filters.transaction_type == "debit"
+    assert request.filters.category == ["food"]
 
 
 def test_explicit_period_requires_valid_bounds() -> None:

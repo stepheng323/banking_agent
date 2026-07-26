@@ -3,7 +3,6 @@ from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
     build_cancellation_reset_updates,
     cancelled_message,
     clarify_message,
-    clear_query_session,
     has_cancelable_state,
     is_explicit_cancel_message,
 )
@@ -76,7 +75,6 @@ async def _stage_cancel(ctx: GateContext) -> RouteResolution | None:
         and ctx.query_session_snapshot.get("session_active")
         and ctx.query_session_snapshot.get("pending_clarification")
     ):
-        await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
         return direct_response(
             ctx,
             response=render_message("query.session.goodbye", ctx.current_locale),
@@ -87,7 +85,7 @@ async def _stage_cancel(ctx: GateContext) -> RouteResolution | None:
         )
 
     if has_cancelable_state(ctx.state):
-        cleanup_updates = await build_cancellation_reset_updates(ctx.state, ctx.redis_client)
+        cleanup_updates = await build_cancellation_reset_updates(ctx.state)
         return direct_response(
             ctx,
             response=cancelled_message(ctx.state, ctx.current_locale),

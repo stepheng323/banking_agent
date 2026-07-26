@@ -1,4 +1,3 @@
-import json
 from typing import Any
 
 import pytest
@@ -99,15 +98,6 @@ class _RedisWithQuerySession:
     async def get(self, key: str) -> str | None:
         if ":beneficiary_suggestion" in key:
             return None
-        if ":query:session:" in key:
-            return None
-        if "query:session:" in key:
-            return json.dumps(
-                {
-                    "session_active": True,
-                    "query_result": {"summary_text": "You spent ₦5,000 today."},
-                }
-            )
         return None
 
     async def delete(self, key: str) -> int:

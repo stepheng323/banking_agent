@@ -98,7 +98,6 @@ def build_chat_domain_services(
     query_worker = build_query_worker(
         llm=query_llm,
         banking_provider=providers.bank_data_provider,
-        redis_client=shared_redis,
     )
 
     task_state_service = TaskStateService()

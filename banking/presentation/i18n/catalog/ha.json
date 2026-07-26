@@ -648,7 +648,12 @@
       "residual": "Sauran zirga-zirgar kudi: {amount}",
       "coverage_partial": "Ana ci gaba da sarrafa wasu bayanan asusu, don haka wannan bayani bai cika ba.",
       "coverage_unavailable": "Ban iya tabbatar da cewa duk bayanan asusu sun cika ba, don haka wannan kiyasi ne.",
-      "coverage_required": "Ba zan iya lissafa hakan daidai ba saboda bayanan asusun wannan lokacin ba su gama daidaituwa ba."
+      "coverage_required": "Ba zan iya lissafa hakan daidai ba saboda bayanan asusun wannan lokacin ba su gama daidaituwa ba.",
+      "duplicates": {
+        "none": "No probable duplicate transactions found in this period.",
+        "found": "Found {count} probable duplicate transactions totaling {total_value}.",
+        "group_label": "{count} identical transactions"
+      }
     },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",

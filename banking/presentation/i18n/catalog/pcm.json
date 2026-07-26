@@ -648,7 +648,12 @@
       "residual": "Other money movement: {amount}",
       "coverage_partial": "Some account data still dey process, so this one na partial view.",
       "coverage_unavailable": "I no fit confirm whether all the account data dey complete, so take this one as estimate.",
-      "coverage_required": "I no fit calculate that one well because all the account data for that period never sync finish."
+      "coverage_required": "I no fit calculate that one well because all the account data for that period never sync finish.",
+      "duplicates": {
+        "none": "No probable duplicate transactions found in this period.",
+        "found": "Found {count} probable duplicate transactions totaling {total_value}.",
+        "group_label": "{count} identical transactions"
+      }
     },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",

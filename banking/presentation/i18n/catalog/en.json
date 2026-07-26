@@ -625,7 +625,12 @@
       "residual": "Other activity: {amount}",
       "coverage_partial": "Some account data is still being processed, so this is a partial view.",
       "coverage_unavailable": "I could not confirm full account coverage, so treat this as an estimate.",
-      "coverage_required": "I can't calculate that reliably because the requested account period is not fully synchronized yet."
+      "coverage_required": "I can't calculate that reliably because the requested account period is not fully synchronized yet.",
+      "duplicates": {
+        "none": "No probable duplicate transactions found in this period.",
+        "found": "Found {count} probable duplicate transactions totaling {total_value}.",
+        "group_label": "{count} identical transactions"
+      }
     },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",

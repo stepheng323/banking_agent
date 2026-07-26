@@ -38,7 +38,11 @@ async def handle_transaction_detail(
             has_more=False,
         )
 
-    resolution_policy = contract.resolution_policy or "ask_if_ambiguous"
+    # Query Semantics v2 keeps selection policy on RetrieveOperation. Older
+    # callers may still expose the legacy convenience property, so this guard
+    # keeps a malformed/legacy detail request recoverable rather than leaking a
+    # generic execution error to the customer.
+    resolution_policy = getattr(contract, "resolution_policy", None) or "ask_if_ambiguous"
 
     if resolution_policy == "strict_single" and len(transactions) > 1:
         # Strictly one requested, but found multiple.

@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import Any
-
-from pydantic import BaseModel
-
+from banking.transactions.query.insights.probable_duplicates import (
+    build_probable_duplicates_items,
+    build_probable_duplicates_surface,
+    execute_probable_duplicates,
+    format_probable_duplicates,
+    resolve_probable_duplicates_evidence,
+)
+from banking.transactions.query.insights.registry import InsightDefinition, insight_registry
 from banking.transactions.query.insights.variance import execute_variance_drivers
 from banking.transactions.query.models.domain import QueryRequest
+from banking.transactions.query.models.extraction import ProbableDuplicatesSpec, VarianceDriversSpec
 from banking.transactions.query.models.operations import AnalyzeOperation
-from banking.transactions.query.services.analysis.kernel.contracts import VarianceAnalysisResult
+from banking.transactions.query.presentation.insights.variance import (
+    build_variance_query_items,
+    build_variance_surface_view,
+    format_variance_result,
+)
+from banking.transactions.query.services.analysis.kernel.contracts import (
+    ProbableDuplicatesResult,
+    VarianceAnalysisResult,
+)
 from banking.transactions.query.services.analysis.kernel.service import AnalysisService
-
-InsightExecutor = Callable[..., Awaitable[BaseModel]]
 
 
 async def execute_variance(
@@ -31,6 +41,8 @@ async def execute_variance(
     if not isinstance(operation, AnalyzeOperation):
         raise ValueError("variance execution requires an AnalyzeOperation")
     analysis = operation.analysis
+    if not isinstance(analysis, VarianceDriversSpec):
+        raise ValueError("variance execution requires a VarianceDriversSpec")
 
     basis = analysis.analysis_basis
     current_dataset = await service.load_dataset(
@@ -80,32 +92,28 @@ async def execute_variance(
     )
 
 
-INSIGHT_EXECUTORS: dict[str, InsightExecutor] = {
-    "variance_drivers": execute_variance,
-}
-
-
-async def execute_insight(
-    insight_type: str,
-    service: AnalysisService,
-    contract: QueryRequest,
-    account_id: str,
-    account_ids: list[str],
-    accounts_info: list[dict] | None,
-    *,
-    user_id: str | None,
-    language: str = "en",
-) -> BaseModel:
-    """Dispatch an insight executor by type."""
-    executor = INSIGHT_EXECUTORS.get(insight_type)
-    if executor is None:
-        raise NotImplementedError(f"insight type not implemented: {insight_type}")
-    return await executor(
-        service=service,
-        contract=contract,
-        account_id=account_id,
-        account_ids=account_ids,
-        accounts_info=accounts_info,
-        user_id=user_id,
-        language=language,
+insight_registry.register(
+    InsightDefinition(
+        insight_type="variance_drivers",
+        spec_type=VarianceDriversSpec,
+        result_type=VarianceAnalysisResult,
+        executor=execute_variance,
+        formatter=format_variance_result,
+        surface_builder=build_variance_surface_view,
+        item_builder=build_variance_query_items,
+        evidence_resolver=None,  # Variance currently doesn't implement a custom resolver
     )
+)
+
+insight_registry.register(
+    InsightDefinition(
+        insight_type="probable_duplicates",
+        spec_type=ProbableDuplicatesSpec,
+        result_type=ProbableDuplicatesResult,
+        executor=execute_probable_duplicates,
+        formatter=format_probable_duplicates,
+        surface_builder=build_probable_duplicates_surface,
+        item_builder=build_probable_duplicates_items,
+        evidence_resolver=resolve_probable_duplicates_evidence,
+    )
+)

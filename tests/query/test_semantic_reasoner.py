@@ -33,6 +33,7 @@ from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.services.reasoning.models import (
     QuerySemanticDecision,
     SemanticReasonerContext,
+    TransactionListDecision,
 )
 from banking.transactions.query.services.reasoning.reasoner import QuerySemanticReasoner
 from tests.query.factories import make_query_request
@@ -87,6 +88,26 @@ def _direct_answer_surface_view(**context: object) -> SurfaceView:
 
 def _transaction_list_surface_view(**context: object) -> SurfaceView:
     return SurfaceView(mode=SurfaceViewMode.TRANSACTION_LIST, context=context)
+
+
+def test_narrow_reasoner_adapter_ignores_unrecognized_provider_fields() -> None:
+    """Schema drift must not turn a visible-item follow-up into a new query."""
+    decision = TransactionListDecision.model_validate(
+        {
+            "decision": "continuation",
+            "continuation_type": "drill_down",
+            "target_amount": 25000,
+            # A legacy parser field occasionally echoed by the provider. It
+            # is not part of the narrow continuation contract.
+            "request_shape": "detail",
+        }
+    )
+
+    public = decision.to_public_decision()
+
+    assert public.decision == "continuation"
+    assert public.continuation_type == "drill_down"
+    assert public.target_amount == 25000
 
 
 def _transaction_surface_item(index: int = 1) -> SurfaceItemView:
@@ -2013,6 +2034,191 @@ async def test_extraction_step_grouped_total_followup_compiles_spend_vs_earn_to_
     assert result.patch["flow_state"] == "executing"
     assert result.patch["query_request"].intent == QueryIntent.CASH_FLOW_SUMMARY
     assert result.patch["_query_session_transition"] == "replace_session_new_query"
+
+
+@pytest.mark.asyncio
+async def test_active_summary_spend_vs_earn_preempts_single_item_reasoning() -> None:
+    """A direct total remains a summary scope for a later cash-flow question."""
+    step = ExtractionStep(_FailingLLM())
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 7, 1), end=date(2026, 7, 24)),
+            filters=Filters(transaction_type="credit"),
+            aggregation=Aggregation(type="sum"),
+        )
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            drill_down_action="answer_fact",
+            fact_field="amount",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Did I spend more than I earned this month?", "today": date(2026, 7, 24), "language": "en"},
+        {
+            "session_active": True,
+            "query_request": session_contract.model_dump(),
+            "query_result": {"summary_text": "Income this month.", "items": []},
+        },
+    )
+
+    query_request = updates["query_request"]
+    assert query_request.intent == QueryIntent.CASH_FLOW_SUMMARY
+    assert query_request.time_start == date(2026, 7, 1)
+    assert query_request.time_end == date(2026, 7, 24)
+
+
+@pytest.mark.asyncio
+async def test_grouped_account_rank_preserves_grounded_summary_scope() -> None:
+    step = ExtractionStep(_FailingLLM())
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 7, 1), end=date(2026, 7, 24)),
+            filters=Filters(transaction_type="debit"),
+            aggregation=Aggregation(type="breakdown", group_by="account", limit=5),
+        )
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            rank="largest",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Which account did I spend from most?", "today": date(2026, 7, 24), "language": "en"},
+        {
+            "session_active": True,
+            "query_request": session_contract.model_dump(),
+            "query_result": {"summary_text": "Spending by account.", "items": []},
+        },
+    )
+
+    query_request = updates["query_request"]
+    assert query_request.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_request.filters is not None
+    assert query_request.filters.transaction_type == "debit"
+    assert query_request.aggregation is not None
+    assert query_request.aggregation.group_by == "account"
+    assert query_request.aggregation.limit == 1
+
+
+@pytest.mark.asyncio
+async def test_grouped_account_followup_does_not_let_advisory_clarification_override_scope() -> None:
+    """A typed aggregate continuation owns the grouped surface even if rank is omitted."""
+    step = ExtractionStep(_FailingLLM())
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 7, 1), end=date(2026, 7, 24)),
+            filters=Filters(transaction_type="debit"),
+            aggregation=Aggregation(type="breakdown", group_by="account", limit=5),
+        )
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            answer_mode="ask_clarify",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Which account did I spend from most?", "today": date(2026, 7, 24), "language": "en"},
+        {
+            "session_active": True,
+            "query_request": session_contract.model_dump(),
+            "query_result": {"summary_text": "Spending by account.", "items": []},
+        },
+    )
+
+    query_request = updates["query_request"]
+    assert updates["flow_state"] == "executing"
+    assert query_request.aggregation is not None
+    assert query_request.aggregation.group_by == "account"
+    assert query_request.aggregation.limit == 5
+
+
+@pytest.mark.asyncio
+async def test_grouped_followup_without_typed_target_replays_safe_grouped_scope() -> None:
+    step = ExtractionStep(_FailingLLM())
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 7, 1), end=date(2026, 7, 24)),
+            filters=Filters(transaction_type="debit"),
+            aggregation=Aggregation(type="breakdown", group_by="account", limit=5),
+        )
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="grouped_total_followup",
+            followup_intent="refine_existing",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    updates = await step._handle_continuation(
+        {"message": "Which account was highest?", "today": date(2026, 7, 24), "language": "en"},
+        {
+            "session_active": True,
+            "query_request": session_contract.model_dump(),
+            "query_result": {"summary_text": "Spending by account.", "items": []},
+        },
+    )
+
+    query_request = updates["query_request"]
+    assert query_request.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_request.aggregation is not None
+    assert query_request.aggregation.group_by == "account"
+    assert query_request.aggregation.limit == 5
+
+
+@pytest.mark.asyncio
+async def test_active_query_affordability_uses_deterministic_read_contract() -> None:
+    step = ExtractionStep(_FailingLLM())
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(start=date(2026, 7, 20), end=date(2026, 7, 24)),
+        )
+    )
+
+    result = await step.run(
+        {
+            "message": "Can I send 35k?",
+            "language": "en",
+            "today": date(2026, 7, 24),
+            "query_session": {
+                "session_active": True,
+                "query_request": session_contract,
+                "query_result": {"summary_text": "Transactions", "items": []},
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["query_request"].intent == QueryIntent.AFFORDABILITY
+    assert result.patch["_query_llm_calls_used"] == 0
 
 
 @pytest.mark.asyncio

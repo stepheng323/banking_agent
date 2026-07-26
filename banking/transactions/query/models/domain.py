@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from banking.transactions.query.contracts import FocusedReferent, SurfaceView, SurfaceViewMode
+from banking.transactions.query.contracts import FocusedReferent, InsightEvidenceSelection, SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.operations import QueryRequest
 
 
@@ -149,7 +149,7 @@ class QueryAnswerStrategy(str, Enum):
     SUMMARY_LIST = "summary_list"
     TRANSACTION_LIST = "transaction_list"
     CLARIFY = "clarify"
-    VARIANCE_INSIGHT = "variance_insight"
+    INSIGHT = "insight"
 
 
 class QueryAnswerContext(BaseModel):
@@ -348,12 +348,7 @@ def get_transaction_category(transaction: dict[str, Any]) -> str | None:
     resolved = normalize_category(transaction.get("resolved_category"))
     if resolved:
         return resolved
-
-    category, _source = resolve_transaction_category(
-        transaction.get("category"),
-        transaction.get("narration", ""),
-    )
-    return category
+    return normalize_category(transaction.get("category"))
 
 
 def match_transaction_category(transaction: dict[str, Any], categories: list[str]) -> bool:
@@ -374,3 +369,16 @@ def match_transaction_category(transaction: dict[str, Any], categories: list[str
             return True
 
     return match_category(transaction.get("narration", ""), categories)
+
+
+class InsightResultEnvelope(BaseModel):
+    """Common metadata returned with any insight result."""
+
+    coverage: float
+    analyzed_period_start: date | None = None
+    analyzed_period_end: date | None = None
+    history_used_days: int
+    excluded_value: float = 0.0
+    uncertain_value: float = 0.0
+    minimum_data_status: Literal["met", "insufficient_history", "partial_coverage"] = "met"
+    evidence_selectors: list[InsightEvidenceSelection] = Field(default_factory=list)

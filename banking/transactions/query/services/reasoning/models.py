@@ -234,7 +234,12 @@ class ActiveContinuationDecision(BaseModel):
 class _NarrowActiveDecision(BaseModel):
     """Common fields retained by every surface-specific LLM contract."""
 
-    model_config = ConfigDict(extra="forbid", json_schema_extra=_strip_llm_schema_annotations)
+    # These are provider-facing adapters, not persisted query contracts.  A
+    # provider can occasionally echo a legacy parser-only field even though
+    # the generated narrow schema excludes it.  Discard unknown optional
+    # fields so an otherwise grounded decision does not erase the active
+    # query session and fall through to a fresh query.
+    model_config = ConfigDict(extra="ignore", json_schema_extra=_strip_llm_schema_annotations)
 
     decision: Literal["continuation", "fresh_query", "reinterpret_query", "new_query", "end_session"]
     confidence: float | None = None
@@ -309,6 +314,7 @@ class GroupedSummaryDecision(_NarrowActiveDecision):
     time_range: TimeRange | None = None
     filters: Filters | None = None
     result_limit: int | None = None
+    rank: QueryRankType | None = None
     target_text: str | None = None
     recipient_name: str | None = None
     coverage_intent: CoverageIntentType | None = None
@@ -331,7 +337,9 @@ class HistoricalFrameDecision(_NarrowActiveDecision):
 class PendingClarificationDecision(BaseModel):
     """Structured output for pending-clarification turns."""
 
-    model_config = ConfigDict(extra="forbid", json_schema_extra=_strip_llm_schema_annotations)
+    # See _NarrowActiveDecision: provider output is an untrusted adapter at
+    # this boundary.  The public/persisted decision remains typed below.
+    model_config = ConfigDict(extra="ignore", json_schema_extra=_strip_llm_schema_annotations)
 
     decision: Literal["clarification_answer", "fresh_query", "reinterpret_query", "new_query", "end_session"]
     confidence: float | None = Field(default=None)
@@ -384,7 +392,6 @@ class SemanticReasonerContext:
     items: list[QueryResultItem] | None = None
     surface_view: SurfaceView | None = None
     query_frames: list[QueryFrame] | None = None
-    stashed_sessions: list[dict[str, Any]] | None = None
     turn_id: str | None = None
     inbound_message_id: str | None = None
 

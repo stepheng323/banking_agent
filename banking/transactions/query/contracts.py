@@ -8,7 +8,7 @@ from rendered text.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, Field
 
@@ -31,7 +31,7 @@ class SurfaceViewMode(str, Enum):
     TRANSACTION_LIST = "transaction_list"
     GROUPED_SUMMARY = "grouped_summary"
     CLARIFICATION = "clarification"
-    VARIANCE_INSIGHT = "variance_insight"
+    INSIGHT = "insight"
 
 
 class PresentationMode(str, Enum):
@@ -41,7 +41,7 @@ class PresentationMode(str, Enum):
     SUMMARY_LIST = "summary_list"
     TRANSACTION_LIST = "transaction_list"
     CLARIFY = "clarify"
-    VARIANCE_INSIGHT = "variance_insight"
+    INSIGHT = "insight"
 
 
 FactCapability = Literal[
@@ -58,18 +58,70 @@ FactCapability = Literal[
 ]
 
 
-class InsightEvidenceSelection(BaseModel):
-    """Stable analytical selector that can be compiled into evidence rows."""
+class InsightEvidenceSelectionBase(BaseModel):
+    """Base analytical selector that can be compiled into evidence rows."""
 
+    basis: Literal["ledger_transactions", "economic_events"]
+
+
+class VarianceDriversEvidenceSelection(InsightEvidenceSelectionBase):
+    insight_type: Literal["variance_drivers"] = "variance_drivers"
     measure: str
     dimension: Literal["category", "counterparty", "account", "event_type", "cash_flow_class"]
     bucket_key: str
-    basis: Literal["ledger_transactions", "economic_events"]
     metric: Literal["spending", "income", "inflow", "outflow", "net_cash_flow"]
     current_start: str
     current_end: str
     baseline_start: str
     baseline_end: str
+
+
+class ProbableDuplicatesEvidenceSelection(InsightEvidenceSelectionBase):
+    insight_type: Literal["probable_duplicates"] = "probable_duplicates"
+    duplicate_group_id: str
+
+
+class RecurringPatternsEvidenceSelection(InsightEvidenceSelectionBase):
+    insight_type: Literal["recurring_patterns"] = "recurring_patterns"
+    series_id: str
+
+
+class AnomaliesEvidenceSelection(InsightEvidenceSelectionBase):
+    insight_type: Literal["anomalies"] = "anomalies"
+    anomaly_id: str
+
+
+class CounterpartyConcentrationEvidenceSelection(InsightEvidenceSelectionBase):
+    insight_type: Literal["counterparty_concentration"] = "counterparty_concentration"
+    counterparty_name: str
+
+
+class ForecastEvidenceSelection(InsightEvidenceSelectionBase):
+    insight_type: Literal["forecast"] = "forecast"
+    component_id: str
+
+
+class RunwayEvidenceSelection(InsightEvidenceSelectionBase):
+    insight_type: Literal["runway"] = "runway"
+    assumption_id: str
+
+
+class CashFlowQualityEvidenceSelection(InsightEvidenceSelectionBase):
+    insight_type: Literal["cash_flow_quality"] = "cash_flow_quality"
+    factor_id: str
+
+
+InsightEvidenceSelection = Annotated[
+    VarianceDriversEvidenceSelection
+    | ProbableDuplicatesEvidenceSelection
+    | RecurringPatternsEvidenceSelection
+    | AnomaliesEvidenceSelection
+    | CounterpartyConcentrationEvidenceSelection
+    | ForecastEvidenceSelection
+    | RunwayEvidenceSelection
+    | CashFlowQualityEvidenceSelection,
+    Field(discriminator="insight_type"),
+]
 
 
 class SelectionPayload(BaseModel):

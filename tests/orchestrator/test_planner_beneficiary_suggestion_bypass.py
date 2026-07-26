@@ -87,8 +87,6 @@ class _RedisWithPendingSuggestion:
                     "bank_name": "First Bank",
                 }
             )
-        if "query:session:" in key:
-            return None
         return None
 
     async def delete(self, key: str) -> int:

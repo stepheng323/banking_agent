@@ -173,9 +173,6 @@ ACTIVE RESULT SURFACE
 - items:
 {items_section}
 
-STASHED SESSIONS SNAPSHOT
-{stashed_sessions_section}
-
 RECENT QUERY FRAMES
 {query_frames_section}
 
@@ -199,16 +196,18 @@ INTENTS
 - time_comparison: compare periods ("this month vs last month")
 - cash_flow_summary: strict bidirectional comparisons only - net cash, inflow vs outflow (e.g. "did I spend more than I earned/received", "cash flow")
 - affordability: "can I afford", "do I have enough"
-- insight: explain a financial change or driver (for example why spending, income, or revenue changed). Set
-  `insight.insight_type=variance_drivers`, preserve the requested period/filters. Default to
-  `analysis_basis=economic_events`; only use `ledger_transactions` if the user explicitly says
-  "transactions", "ledger", or asks for raw bank movements. Infer `insight.measure`:
-    - explicit spending/outflow question → "spending"
-    - explicit income/inflow question → "income"
-    - explicit net/cash-flow question → "net_cash_flow"
-    - broad "how did my finances change" / "what drove the change" → "cash_flow_overview"
-  Default `insight.dimensions` to ["category", "counterparty"]; honor explicit requests like
-  "by account", "by event type", "by cash flow class". Remove duplicate dimensions.
+- insight: explain a financial change, detect patterns, check quality, or predict the future. Set
+  `insight.insight_type` to one of:
+  - `variance_drivers`: explain why spending/income changed. (Infer `insight.measure`: spending, income, net_cash_flow, cash_flow_overview)
+  - `probable_duplicates`: detect double charges or duplicate transactions
+  - `recurring_patterns`: find subscriptions or repeating payments
+  - `anomalies`: detect unusual, abnormal, or large transactions
+  - `counterparty_concentration`: check dependence on a single person/merchant (Infer `insight.measure`: spending, income)
+  - `forecast`: predict future spending/income or cash flow
+  - `runway`: calculate how long money will last (burn rate/runway)
+  - `cash_flow_quality`: analyze the quality or consistency of cash flow
+  Preserve the requested period/filters. Default to `analysis_basis=economic_events`; only use `ledger_transactions` if the user explicitly says "transactions", "ledger", or asks for raw bank movements.
+  For `variance_drivers`, default `insight.dimensions` to ["category", "counterparty"]; honor explicit requests like "by account", "by event type", "by cash flow class". Remove duplicate dimensions.
 
 FILTERS
 - recipient: merchant/person name when user refers to a sender, payee, or merchant
@@ -311,6 +310,13 @@ EXAMPLES
 "what caused my net cash flow to drop" → insight, variance_drivers, measure=net_cash_flow, dimensions=[category, counterparty]
 "which counterparties drove my spending up" → insight, variance_drivers, measure=spending, dimensions=[counterparty]
 "which account changed the most" → insight, variance_drivers, measure=cash_flow_overview, dimensions=[account]
+"are there any double charges" → insight, probable_duplicates
+"show my recurring payments" → insight, recurring_patterns
+"were there any unusual transactions last month" → insight, anomalies, explicit last_month
+"who do I spend the most money on" → insight, counterparty_concentration, measure=spending
+"what is my cash flow forecast for next month" → insight, forecast
+"how much runway do I have left" → insight, runway
+"what is the quality of my cash flow" → insight, cash_flow_quality
 
 TODAY: {today}
 USER MESSAGE: {question}

@@ -268,7 +268,25 @@ async def resolve_result_continuation_updates(
             updates["current_page"] = 0
             updates["show_expanded"] = False
         elif session_query_request.intent != QueryIntent.BENEFICIARY_SUMMARY:
-            return step._ambiguous_followup_updates(locale=locale, session=session)
+            active_aggregation = session_query_request.aggregation
+            if active_aggregation is None or active_aggregation.group_by != "account":
+                return step._ambiguous_followup_updates(locale=locale, session=session)
+            # The semantic contract has established that this is a grounded
+            # grouped follow-up but did not provide a narrower typed target.
+            # Re-run the authoritative grouped surface instead of treating a
+            # bucket as a transaction or demanding an unnecessary rephrase.
+            updates["query_request"] = rebuild_query_request(
+                session_query_request,
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=active_aggregation,
+                result_limit=None,
+                result_reference=None,
+                answer_fact_field=None,
+                continuation_type=cont_type,
+                continuation_delta_type=continuation_delta_type,
+            )
+            updates["current_page"] = 0
+            updates["show_expanded"] = False
         else:
             updates["query_request"] = rebuild_query_request(
                 session_query_request,

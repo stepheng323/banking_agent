@@ -6,6 +6,7 @@ import re
 from typing import Literal, cast
 
 from banking.transactions.query.capabilities import QUERY_LIMITS
+from banking.transactions.query.compiler import filtering
 from banking.transactions.query.models.domain import QueryFactField, QueryIntent
 from banking.transactions.query.models.extraction import (
     FactQueryKind,
@@ -19,6 +20,7 @@ from banking.transactions.query.models.extraction import (
 def normalize_query_extraction(extraction: QueryExtractionResult) -> QueryExtractionResult:
     extraction = _normalize_cash_flow_extraction(extraction)
     extraction = _normalize_affordability_extraction(extraction)
+    extraction = _normalize_directional_total_extraction(extraction)
     extraction = _normalize_spending_list_extraction(extraction)
 
     # 1. Transaction detail ambiguity handling
@@ -74,6 +76,12 @@ _AFFORDABILITY_PROBE_RE = re.compile(
 _SINGLE_DIRECTION_INFLOW_TOTAL_RE = re.compile(
     r"\b(?:how much|what amount|total)\b.{0,40}\b"
     r"(?:came in|come in|entered|was received|did i receive|have i received|received|credited)\b",
+    re.IGNORECASE,
+)
+_DIRECTIONAL_TOTAL_RE = re.compile(
+    r"\b(?:how\s+much|what\s+amount|total|sum)\b.{0,48}\b"
+    r"(?:spend|spent|spending|expense|expenses|debit|debits|outflow|went\s+out|"
+    r"receive|received|income|inflow|came\s+in|credited)\b",
     re.IGNORECASE,
 )
 
@@ -165,11 +173,42 @@ def _normalize_affordability_extraction(extraction: QueryExtractionResult) -> Qu
         return extraction
 
     extraction.intent = QueryIntent.AFFORDABILITY
-    extraction.request_shape = QueryRequestShape.FACT
+    extraction.request_shape = QueryRequestShape.AFFORDABILITY
     filters = extraction.filters or QueryFilters()
     filters.min_amount = amount
     filters.max_amount = amount
     extraction.filters = filters
+    return extraction
+
+
+def _normalize_directional_total_extraction(extraction: QueryExtractionResult) -> QueryExtractionResult:
+    """Make a directional amount question an aggregate, never a transaction fact.
+
+    Parser models occasionally retain a generic ``fact`` shape for an explicit
+    total question. The amount grammar and inferred cash-flow direction are
+    enough to compile the requested read operation deterministically, while
+    preserving category, account, recipient, status, and time filters.
+    """
+    raw_query = " ".join((extraction.raw_query or "").split())
+    if not raw_query or not _DIRECTIONAL_TOTAL_RE.search(raw_query):
+        return extraction
+    if extraction.intent in {QueryIntent.AFFORDABILITY, QueryIntent.CASH_FLOW_SUMMARY, QueryIntent.INSIGHT}:
+        return extraction
+    if extraction.answer_fact_field is not None or extraction.fact_query_kind is not None:
+        return extraction
+
+    direction = filtering.infer_transaction_type(
+        extracted_transaction_type=extraction.filters.transaction_type,
+        raw_query=raw_query,
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+    )
+    if direction not in {"credit", "debit"}:
+        return extraction
+
+    extraction.intent = QueryIntent.ANALYTICS_SUMMARY
+    extraction.request_shape = QueryRequestShape.ANALYTICS
+    extraction.aggregation = QueryAggregation(type="sum")
+    extraction.filters.transaction_type = direction
     return extraction
 
 

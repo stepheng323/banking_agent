@@ -228,6 +228,74 @@ async def compile_aggregate_continuation_updates(
             language=language,
         )
 
+    # A rank over an existing grouped surface is a request about its buckets,
+    # not a fresh transaction lookup. The reasoner supplies the semantic rank;
+    # runtime keeps the already-grounded group, filters, and period and applies
+    # the cardinality deterministically.
+    active_aggregation = session_query_request.aggregation
+    if (
+        getattr(decision, "rank", None) in {"largest", "smallest"}
+        and active_aggregation is not None
+        and active_aggregation.group_by is not None
+    ):
+        ranked_aggregation = active_aggregation.model_copy(update={"limit": 1, "type": "breakdown"})
+        query_request = rebuild_query_request(
+            session_query_request,
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            aggregation=ranked_aggregation,
+            result_limit=None,
+            result_reference=None,
+            answer_fact_field=None,
+            continuation_type="aggregate",
+            continuation_delta_type=getattr(decision, "delta_type", None),
+        )
+        logger.info(
+            "query_grouped_rank_continuation_compiled",
+            group_by=ranked_aggregation.group_by,
+            rank=getattr(decision, "rank", None),
+        )
+        return {
+            "query_request": query_request,
+            "resolver_message": None,
+            "flow_state": "executing",
+            "current_page": 0,
+            "session_active": True,
+            "pending_clarification": None,
+            "show_expanded": False,
+        }
+
+    # A typed aggregate continuation over an account breakdown is already
+    # safely grounded.  If the provider omits the optional rank/extraction
+    # patch, retain and replay that authoritative surface instead of replacing
+    # it with a generic sum or asking the user to repeat an unambiguous
+    # grouped question.  This is a conservative fallback: it exposes no new
+    # data and preserves every filter, account scope, and period.
+    if extraction is None and active_aggregation is not None and active_aggregation.group_by == "account":
+        query_request = rebuild_query_request(
+            session_query_request,
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            aggregation=active_aggregation,
+            result_limit=None,
+            result_reference=None,
+            answer_fact_field=None,
+            continuation_type="aggregate",
+            continuation_delta_type=getattr(decision, "delta_type", None),
+        )
+        logger.info(
+            "query_grouped_aggregate_scope_replayed",
+            group_by=active_aggregation.group_by,
+            reason="missing_optional_rank_or_extraction",
+        )
+        return {
+            "query_request": query_request,
+            "resolver_message": None,
+            "flow_state": "executing",
+            "current_page": 0,
+            "session_active": True,
+            "pending_clarification": None,
+            "show_expanded": False,
+        }
+
     extracted_contract: QueryRequest | None = None
     if extraction is not None:
         compiled = step.parser.compile_extraction(extraction, today=today, language=language)

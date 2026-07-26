@@ -92,7 +92,7 @@ async def test_planner_cancel_clears_query_and_task_state() -> None:
     assert updates["task_results"] == {}
     assert updates["pin_verified"] is False
     assert updates["preplanner_expected_transaction_executors"] == []
-    assert redis_client.deleted_keys == ["query:session:2348000000301"]
+    assert redis_client.deleted_keys == []
 
 
 @pytest.mark.asyncio

@@ -648,7 +648,12 @@
       "residual": "Ije ego ndị ọzọ: {amount}",
       "coverage_partial": "A ka na-ahazi ụfọdụ data akaụntụ, ya mere nke a ezughị oke.",
       "coverage_unavailable": "Enweghị m ike ikwenye na data akaụntụ niile zuru ezu, ya mere were nke a dịka atụmatụ.",
-      "coverage_required": "Enweghị m ike ịgbakọ ya nke ọma n'ihi na data akaụntụ nke oge ahụ ezubeghị oke."
+      "coverage_required": "Enweghị m ike ịgbakọ ya nke ọma n'ihi na data akaụntụ nke oge ahụ ezubeghị oke.",
+      "duplicates": {
+        "none": "No probable duplicate transactions found in this period.",
+        "found": "Found {count} probable duplicate transactions totaling {total_value}.",
+        "group_label": "{count} identical transactions"
+      }
     },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",

@@ -45,7 +45,7 @@ async def _build_cancellation_response(
             **context_read_updates,
         }
     cancel_message = cancelled_message(state, cancel_locale)
-    reset_updates = await build_cancellation_reset_updates(state, redis_client)
+    reset_updates = await build_cancellation_reset_updates(state)
     return {
         **reset_updates,
         "final_response": cancel_message,

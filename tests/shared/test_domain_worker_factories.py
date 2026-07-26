@@ -17,7 +17,6 @@ from banking.runtime.protocols import WorkerProtocol
 from banking.support.runtime import build_support_worker
 from banking.support.worker import SupportWorker
 from banking.transactions.query.runtime import build_query_worker
-from banking.transactions.query.session import QuerySessionManager
 from banking.transactions.query.worker import QueryWorker
 from banking.transfers.runtime import build_transfer_worker
 from banking.transfers.worker import TransferWorker
@@ -152,10 +151,8 @@ def test_query_factory_preserves_worker_protocol() -> None:
     worker = build_query_worker(
         llm=_LLMStub(),
         banking_provider=_BankingProviderStub(),  # type: ignore[arg-type]
-        redis_client=_RedisStub(),  # type: ignore[arg-type]
     )
 
     assert isinstance(worker, QueryWorker)
     assert worker.__class__.__module__ == "banking.transactions.query.worker"
-    assert isinstance(worker.session_manager, QuerySessionManager)
     assert isinstance(worker, WorkerProtocol)

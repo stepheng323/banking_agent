@@ -26,7 +26,7 @@ async def _expired_transaction_interrupt_updates(
     if expires_at is None or time.time() <= expires_at:
         return None
 
-    reset_updates = await build_cancellation_reset_updates(state, redis_client)
+    reset_updates = await build_cancellation_reset_updates(state)
     should_notify = await _expired_transaction_message_targets_stale_session(
         state=state,
         interrupt=interrupt,

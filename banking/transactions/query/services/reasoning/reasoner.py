@@ -322,10 +322,11 @@ class QuerySemanticReasoner:
     def _serialize_query_anchor(cls, query_request: QueryRequest | None) -> str:
         if query_request is None:
             return "none"
+        time_range = query_request.time_range
         payload = {
             "intent": query_request.intent.value,
-            "time_start": query_request.time_start.isoformat(),
-            "time_end": query_request.time_end.isoformat(),
+            "time_start": time_range.start.isoformat() if time_range is not None else None,
+            "time_end": time_range.end.isoformat() if time_range is not None else None,
             "filters": query_request.filters.model_dump(exclude_none=True)
             if query_request.filters is not None
             else None,
@@ -531,9 +532,6 @@ class QuerySemanticReasoner:
         query_frames_section, prompt_frame_count = self._serialize_query_frames(
             context.query_frames if prompt_profile == "historical_frames" else None
         )
-        stashed_sessions_section = (
-            self._serialize(context.stashed_sessions) if prompt_profile == "historical_frames" else "none"
-        )
         pending_clarification_section = (
             self._serialize(context.pending_clarification) if prompt_profile == "pending_clarification" else "none"
         )
@@ -547,7 +545,6 @@ class QuerySemanticReasoner:
             surface_type=prompt_surface_type,
             surface_context=self._serialize_surface_snapshot(surface_view=context.surface_view),
             items_section=items_section,
-            stashed_sessions_section=stashed_sessions_section,
             query_frames_section=query_frames_section,
         )
         messages = [

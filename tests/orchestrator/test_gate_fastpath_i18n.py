@@ -2590,10 +2590,8 @@ async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately(
     assert updates["current_wave_index"] == 0
 
 
-async def test_gate_explicit_cancel_with_active_state_skips_query_session_lookup() -> None:
-    redis_client = _TrackingRedisWithSession(
-        '{"session_active": true, "pending_clarification": {"kind": "pending_clarification"}}'
-    )
+async def test_gate_explicit_cancel_with_active_state_skips_legacy_query_storage() -> None:
+    redis_client = _TrackingRedis()
     state = OrchestratorState(
         user_id="u_gate_cancel_fast_1",
         phone_number="2348888888890",
@@ -2614,8 +2612,7 @@ async def test_gate_explicit_cancel_with_active_state_skips_query_session_lookup
 
     assert "direct_path_triggered" not in updates
     assert updates["final_response"] == render_cancelled_prompt("en")
-    assert redis_client.query_session_gets == 0
-    assert redis_client.deleted_keys == ["query:session:2348888888890"]
+    assert redis_client.deleted_keys == []
 
 
 async def test_gate_explicit_cancel_dismisses_pending_mandate_notice() -> None:
@@ -7707,19 +7704,6 @@ class _TrackingLocaleRedis(_TrackingRedis):
         return self.store.get(key)
 
 
-class _TrackingRedisWithSession(_TrackingRedis):
-    def __init__(self, payload: str | None) -> None:
-        super().__init__()
-        self.payload = payload
-        self.query_session_gets = 0
-
-    async def get(self, key: str) -> str | None:
-        if "query:session:" in key:
-            self.query_session_gets += 1
-            return self.payload
-        return None
-
-
 class _RedisWithSupportContext:
     def __init__(self, payload: dict[str, object]) -> None:
         self.payload = json.dumps(payload)
@@ -8295,18 +8279,12 @@ async def test_gate_semantic_router_can_answer_grounded_query_follow_up_without_
         loaded_context={"language": "en"},
     )
 
-    class _RedisWithQuerySession:
-        async def get(self, key: str) -> str | None:
-            if "query:session:" in key:
-                return '{"session_active": true, "query_result": {"summary_text": "Recent results include 3 debits and 1 credit."}}'
-            return None
-
     config: RunnableConfig = {
         "configurable": {
             "task_planner": planner,
             "semantic_router_llm": planner,
             "capability_classifier_llm": planner,
-            "redis_client": _RedisWithQuerySession(),
+            "redis_client": _TrackingRedis(),
         },
         "recursion_limit": 50,
     }
@@ -9664,9 +9642,7 @@ async def test_gate_explicit_cancel_during_pending_query_clarification_uses_quer
 
 
 async def test_gate_pending_query_clarification_time_reply_uses_semantic_router() -> None:
-    redis_client = _TrackingRedisWithSession(
-        '{"session_active": true, "pending_clarification": {"kind": "pending_clarification", "original_query": "How much did I spend last", "current_intent": "spending_total", "original_extraction": {"intent": "spending_total", "filters": {}, "time_range": {"reference_type": "vague", "days_back": 30}, "requested_capabilities": [], "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "raw_query": "How much did I spend last"}, "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "resolver_message": "What time period did you mean by last?", "language": "en"}}'
-    )
+    redis_client = _TrackingRedis()
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_query",

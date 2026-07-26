@@ -10,6 +10,7 @@ from banking.transactions.query.models.domain import (
     QueryRequest,
     TimeRange,
 )
+from banking.transactions.query.models.operations import AffordabilitySpec, AssessOperation, Money
 from banking.transactions.query.services.answers.coverage import build_query_coverage_answer
 from tests.query.factories import make_query_request
 
@@ -98,6 +99,34 @@ async def test_coverage_answer_explains_pending_mandate_for_target_account() -> 
 
     assert "authorization is pending" in answer
     assert "Complete the account authorization" in answer
+
+
+@pytest.mark.asyncio
+async def test_coverage_followup_after_affordability_can_explain_pending_account() -> None:
+    """A coverage question must not assume every active query has a period."""
+    affordability_contract = QueryRequest(
+        operation=AssessOperation(
+            assessment=AffordabilitySpec(amount=Money(amount=35000)),
+        )
+    )
+
+    answer = await build_query_coverage_answer(
+        accounts_info=[
+            {
+                "id": "linked_zenith",
+                "account_id": "acc_zenith",
+                "bank_name": "Zenith Bank",
+                "account_number": "6000009384",
+                "mandate_status": "pending",
+            }
+        ],
+        query_request=affordability_contract,
+        session={},
+        target_text="Zenith",
+    )
+
+    assert "Zenith Bank" in answer
+    assert "authorization is pending" in answer
 
 
 @pytest.mark.asyncio

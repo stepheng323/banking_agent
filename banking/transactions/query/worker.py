@@ -27,10 +27,7 @@ from banking.transactions.query.nodes.execution import ExecutionStep
 from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.nodes.generative_formatter import GenerativeFormattingStep
 from banking.transactions.query.pipeline import QueryPipeline
-from banking.transactions.query.session import (
-    QuerySessionManager,
-    _session_has_surface_view,
-)
+from banking.transactions.query.session import _session_has_surface_view
 from banking.transactions.query.utils.timezone import lagos_today
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.utils.logging import get_logger
@@ -49,15 +46,11 @@ class _InstrumentedQueryPipeline:
 class QueryWorker:
     """Worker for executing query tasks."""
 
-    def __init__(
-        self,
-        llm: Runnable,
-        banking_provider: BankDataProvider,
-        session_manager: QuerySessionManager,
-    ):
+    def __init__(self, llm: Runnable, banking_provider: BankDataProvider):
+        # Query continuation state is supplied only by the orchestrator's
+        # context frames and first-class pending clarification state.
         self.llm = llm
         self.banking_provider = banking_provider
-        self.session_manager = session_manager
 
         self.extractor = ExtractionStep(llm)
         self.executor = ExecutionStep()
@@ -359,21 +352,17 @@ class QueryWorker:
         """Run the query pipeline."""
         del user_message, pin_verified
         locale = LocaleManager.normalize(context.get("language")).value
+        phone_number = context.get("phone_number")
 
         # 1. Load Session
-        phone_number = context.get("phone_number")
-        session_key = f"query:session:{phone_number}"
-
         active_query_surface = context.get("active_query_surface")
         context_frames = context.get("context_frames", [])
 
-        if active_query_surface:
-            query_session = build_reasoner_context_from_frames(
-                active_frame=active_query_surface,
-                context_frames=context_frames,
-            )
-            session_source = "orchestrator_context"
-        elif isinstance(context.get("pending_query_clarification"), dict):
+        # A pending clarification is a live, resumable contract. It takes
+        # precedence over the still-visible query surface it came from; using
+        # the surface first would silently forget the unresolved reference on
+        # the next turn and answer a different visible item instead.
+        if isinstance(context.get("pending_query_clarification"), dict):
             pending_query_clarification = dict(cast(dict[str, Any], context["pending_query_clarification"]))
             query_session = {
                 "session_active": True,
@@ -389,6 +378,12 @@ class QueryWorker:
                 "timestamp": pending_query_clarification.get("timestamp"),
             }
             session_source = "pending_clarification"
+        elif active_query_surface:
+            query_session = build_reasoner_context_from_frames(
+                active_frame=active_query_surface,
+                context_frames=context_frames,
+            )
+            session_source = "orchestrator_context"
         elif isinstance(context.get("recent_query_context"), dict):
             recent = cast(dict[str, Any], context["recent_query_context"])
             raw_session = recent.get("session")
@@ -459,7 +454,6 @@ class QueryWorker:
             "current_page": query_session.get("current_page", 0),
             "page_size": 5,
             "today": today,
-            "stashed_sessions": context.get("stashed_sessions"),
             "recent_read_only": bool(query_session.get("recent_read_only")),
         }
 
@@ -509,13 +503,6 @@ class QueryWorker:
                 result=result,
                 session_source=session_source,
             )
-
-            # 5. Clear legacy Redis query sessions. The orchestrator checkpoint
-            # owns query follow-up state; the worker returns typed patches only.
-            if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT) and result.patch:
-                final_state = {**state, **result.patch}
-                if not final_state.get("session_active", False):
-                    await self.session_manager.clear(session_key)
 
             return result
 

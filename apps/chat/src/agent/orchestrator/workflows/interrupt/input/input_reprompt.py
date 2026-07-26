@@ -96,7 +96,7 @@ async def _reprompt_or_reset_updates(
         return _reprompt_updates(state, next_interrupt)
 
     locale = interrupt_state_view(state).current_locale
-    reset_updates = await build_cancellation_reset_updates(state, redis_client)
+    reset_updates = await build_cancellation_reset_updates(state)
     response_text = render_message("orchestrator.execution.input_attempts_exhausted", locale)
     logger.info(
         "interrupt_input_attempt_budget_exhausted",

@@ -129,21 +129,9 @@ def has_cancelable_state(state: OrchestratorState) -> bool:
     return False
 
 
-async def clear_query_session(redis_client: Any | None, phone_number: str) -> None:
-    if not redis_client:
-        return
-    try:
-        await redis_client.delete(f"query:session:{phone_number}")
-    except Exception:
-        # Best effort only; callers should not fail a cancellation because cleanup key deletion failed.
-        return
-
-
 async def build_cancellation_reset_updates(
     state: OrchestratorState,
-    redis_client: Any | None,
 ) -> dict[str, Any]:
-    await clear_query_session(redis_client, state.phone_number)
     return {
         "tasks": {},
         "waves": [],
@@ -170,7 +158,6 @@ __all__ = [
     "cancel_router_fallback_reason",
     "cancelled_message",
     "clarify_message",
-    "clear_query_session",
     "has_explicit_cancel",
     "has_cancelable_state",
     "is_explicit_cancel_message",

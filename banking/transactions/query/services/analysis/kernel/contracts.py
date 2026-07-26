@@ -242,3 +242,29 @@ class VarianceAnalysisResult(BaseModel):
     unavailable_reason: Literal["coverage_incomplete"] | None = None
 
     model_config = ConfigDict(frozen=True)
+
+
+class DuplicateCandidateGroup(BaseModel):
+    """A cluster of transactions that are likely duplicates."""
+
+    group_id: str
+    confidence: float
+    transactions: list[dict[str, Any]]
+    redundant_value: Decimal
+    metric: AnalysisMetric
+
+    model_config = ConfigDict(frozen=True)
+
+
+class ProbableDuplicatesResult(BaseModel):
+    """Result of probable duplicates detection."""
+
+    basis: AnalysisBasis
+    dataset: AnalysisDataset
+    candidates: list[DuplicateCandidateGroup] = Field(default_factory=list)
+    total_redundant_value: Decimal = Decimal("0")
+    coverage: CoverageStatus
+    available: bool = True
+    unavailable_reason: Literal["coverage_incomplete"] | None = None
+
+    model_config = ConfigDict(frozen=True)

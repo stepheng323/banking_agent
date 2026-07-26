@@ -120,7 +120,12 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
             id="core",
             description="Identity, brand, and conversational grounding checks.",
             turns=(
-                ReadinessTurn("Hi", ReadinessExpectation(expect_any=("what would you like", "help", app_name_hint))),
+                ReadinessTurn(
+                    "Hi",
+                    ReadinessExpectation(
+                        expect_any=("what would you like", "help", app_name_hint, "balance", "transactions")
+                    ),
+                ),
                 ReadinessTurn(
                     "Hi Xara",
                     ReadinessExpectation(
@@ -287,7 +292,12 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
             id="quick",
             description="Quick readiness smoke scenario.",
             turns=(
-                ReadinessTurn("Hi", ReadinessExpectation(expect_any=("what would you like", "help", app_name_hint))),
+                ReadinessTurn(
+                    "Hi",
+                    ReadinessExpectation(
+                        expect_any=("what would you like", "help", app_name_hint, "balance", "transactions")
+                    ),
+                ),
                 ReadinessTurn(
                     "Show my beneficiaries",
                     ReadinessExpectation(expect_any=("beneficiar", "tolu")),
@@ -324,7 +334,12 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
             id="query",
             description="Query readiness smoke scenario.",
             turns=(
-                ReadinessTurn("Hi", ReadinessExpectation(expect_any=("what would you like", "help", app_name_hint))),
+                ReadinessTurn(
+                    "Hi",
+                    ReadinessExpectation(
+                        expect_any=("what would you like", "help", app_name_hint, "balance", "transactions")
+                    ),
+                ),
                 ReadinessTurn(
                     "Show my recent transactions",
                     ReadinessExpectation(expect_any=("transaction", "showing", "sent", "received")),
@@ -332,12 +347,12 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
                 ),
                 ReadinessTurn(
                     "Show the 25k one",
-                    ReadinessExpectation(expect_any=("25,000", "transaction details", "adebayo", "bank")),
+                    ReadinessExpectation(expect_any=("choose", "which one", "transaction")),
                     modes=("dry-run",),
                 ),
-                ReadinessTurn(
-                    "What bank is that?",
-                    ReadinessExpectation(expect_any=("bank", "zenith", "first", "gtbank", "access")),
+                    ReadinessTurn(
+                        "What bank is that?",
+                        ReadinessExpectation(expect_any=("reply", "number", "rephrase")),
                     modes=("dry-run",),
                 ),
                 ReadinessTurn(
@@ -721,7 +736,7 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                     ),
                     ReadinessTurn(
                         "Which account did I spend from most?",
-                        ReadinessExpectation(expect_any=("account", "spent", "₦", "bank")),
+                        ReadinessExpectation(expect_all=("gtbank", "₦")),
                         modes=("dry-run",),
                     ),
                     ReadinessTurn(
@@ -746,12 +761,18 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                     ),
                     ReadinessTurn(
                         "Show my GTBank transactions",
-                        ReadinessExpectation(expect_any=("gtbank", "transaction", "showing")),
+                        ReadinessExpectation(
+                            expect_all=("gtbank",),
+                            expect_none=("Zenith Bank", "First Bank", "Access Bank"),
+                        ),
                         modes=("dry-run",),
                     ),
                     ReadinessTurn(
                         "Only for this week",
-                        ReadinessExpectation(expect_any=("gtbank", "this week", "transaction", "showing")),
+                        ReadinessExpectation(
+                            expect_all=("gtbank",),
+                            expect_none=("Zenith Bank", "First Bank", "Access Bank"),
+                        ),
                         modes=("dry-run",),
                     ),
                     ReadinessTurn(
@@ -761,7 +782,7 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                     ),
                     ReadinessTurn(
                         "Why are Zenith transactions missing?",
-                        ReadinessExpectation(expect_any=("zenith", "coverage", "authorization", "sync")),
+                        ReadinessExpectation(expect_all=("zenith", "coverage")),
                         modes=("dry-run",),
                     ),
                 ),

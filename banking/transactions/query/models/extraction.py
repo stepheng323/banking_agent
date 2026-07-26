@@ -1,7 +1,7 @@
 """Query extraction models for parser and reasoner outputs."""
 
 from enum import Enum
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, Union, cast
 
 from pydantic import BaseModel, Field
 
@@ -127,11 +127,20 @@ class QueryComparison(BaseModel):
     period: str | None = Field(default=None, description="Explicit comparison period when mode=explicit_period")
 
 
-class VarianceAnalysisExtraction(BaseModel):
-    """Extraction-only parameters for the implemented variance analysis."""
+class InsightSpecBase(BaseModel):
+    """Base policies shared by all insight specifications."""
 
-    type: Literal["variance_drivers"] = "variance_drivers"
+    insight_type: str
     analysis_basis: Literal["ledger_transactions", "economic_events"] = "economic_events"
+    confidence_policy: Literal["include", "exclude_uncertain", "segment_uncertain"] = "segment_uncertain"
+    completeness_policy: Literal["disclose", "require_complete"] = "disclose"
+    evidence_limit: int = Field(default=5, ge=1, le=20)
+
+
+class VarianceDriversSpec(InsightSpecBase):
+    """Extraction parameters for variance analysis."""
+
+    insight_type: Literal["variance_drivers"] = "variance_drivers"
     measure: Literal["spending", "income", "net_cash_flow", "cash_flow_overview"] = "spending"
     dimensions: list[Literal["category", "counterparty", "account", "event_type", "cash_flow_class"]] = Field(
         default_factory=lambda: cast(
@@ -139,10 +148,59 @@ class VarianceAnalysisExtraction(BaseModel):
             ["category", "counterparty"],
         )
     )
-    confidence_policy: Literal["include", "exclude_uncertain", "segment_uncertain"] = "segment_uncertain"
-    evidence_limit: int = Field(default=5, ge=1, le=20)
-    completeness_policy: Literal["disclose", "require_complete"] = "disclose"
     evidence: InsightEvidenceSelection | None = None
+
+
+class ProbableDuplicatesSpec(InsightSpecBase):
+    insight_type: Literal["probable_duplicates"] = "probable_duplicates"
+    min_confidence: float = Field(default=0.80)
+    lookback_days: int = Field(default=90)
+    evidence: InsightEvidenceSelection | None = None
+
+
+class RecurringPatternsSpec(InsightSpecBase):
+    insight_type: Literal["recurring_patterns"] = "recurring_patterns"
+    lookback_days: int = Field(default=180, ge=60, le=365)
+    evidence: InsightEvidenceSelection | None = None
+
+
+class AnomaliesSpec(InsightSpecBase):
+    insight_type: Literal["anomalies"] = "anomalies"
+    baseline_days: int = Field(default=90)
+    min_comparable_observations: int = Field(default=6)
+    min_covered_days: int = Field(default=42)
+    evidence: InsightEvidenceSelection | None = None
+
+
+class CounterpartyConcentrationSpec(InsightSpecBase):
+    insight_type: Literal["counterparty_concentration"] = "counterparty_concentration"
+    measure: Literal["spending", "income", "inflow", "outflow"] = "spending"
+    evidence: InsightEvidenceSelection | None = None
+
+
+class ForecastSpec(InsightSpecBase):
+    insight_type: Literal["forecast"] = "forecast"
+    horizon_days: int = Field(default=30, ge=7, le=90)
+    history_days: int = Field(default=180)
+    evidence: InsightEvidenceSelection | None = None
+
+
+class RunwaySpec(InsightSpecBase):
+    insight_type: Literal["runway"] = "runway"
+    baseline_days: int = Field(default=90)
+    evidence: InsightEvidenceSelection | None = None
+
+
+class CashFlowQualitySpec(InsightSpecBase):
+    insight_type: Literal["cash_flow_quality"] = "cash_flow_quality"
+    min_complete_months: int = Field(default=3)
+    evidence: InsightEvidenceSelection | None = None
+
+
+InsightSpec = Annotated[
+    VarianceDriversSpec | ProbableDuplicatesSpec | RecurringPatternsSpec | AnomaliesSpec | CounterpartyConcentrationSpec | ForecastSpec | RunwaySpec | CashFlowQualitySpec,
+    Field(discriminator="insight_type"),
+]
 
 
 class ClarificationPatch(BaseModel):
@@ -178,7 +236,7 @@ class ParserQueryExtraction(BaseModel):
         description="Relative positioning for results when user asks for most recent/oldest",
     )
     answer_fact_field: QueryFactField | None = Field(default=None)
-    insight: VarianceAnalysisExtraction | None = Field(default=None)
+    insight: InsightSpec | None = Field(default=None)
 
 
 class QueryExtractionResult(BaseModel):
@@ -200,7 +258,7 @@ class QueryExtractionResult(BaseModel):
         description="Relative positioning for results when user asks for most recent/oldest",
     )
     answer_fact_field: QueryFactField | None = Field(default=None)
-    insight: VarianceAnalysisExtraction | None = Field(default=None)
+    insight: InsightSpec | None = Field(default=None)
     clarification_patch: ClarificationPatch | None = Field(default=None)
 
     requested_capabilities: list[RequestedCapability] = Field(
@@ -229,7 +287,7 @@ class ReasonerQueryExtraction(BaseModel):
     result_limit: int | None = Field(default=None, ge=1, le=100)
     result_reference: Literal["latest", "oldest"] | None = Field(default=None)
     answer_fact_field: QueryFactField | None = Field(default=None)
-    insight: VarianceAnalysisExtraction | None = Field(default=None)
+    insight: InsightSpec | None = Field(default=None)
     raw_query: str | None = Field(default=None)
 
     def to_query_extraction_result(self) -> "QueryExtractionResult":

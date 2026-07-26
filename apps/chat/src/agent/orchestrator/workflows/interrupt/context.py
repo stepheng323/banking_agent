@@ -108,7 +108,7 @@ async def _cancel_updates(
     interrupt: Any,
     redis_client: Any | None,
 ) -> dict[str, Any]:
-    reset_updates = await build_cancellation_reset_updates(state, redis_client)
+    reset_updates = await build_cancellation_reset_updates(state)
     return {
         **reset_updates,
         "last_interrupt": interrupt,

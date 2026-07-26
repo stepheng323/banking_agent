@@ -24,9 +24,11 @@ from banking.transactions.query.continuations.time_rescope import (
 )
 from banking.transactions.query.models.domain import (
     QueryIntent,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
 )
+from banking.transactions.query.models.extraction import ResolverOutcome
 from banking.transactions.query.services.conversation.resolver import build_query_conversation_updates
 from banking.transactions.query.utils.timezone import lagos_today
 from shared.utils.logging import get_logger
@@ -105,6 +107,40 @@ def _repeat_existing_query_updates(
     }
 
 
+def _deterministic_active_affordability_updates(
+    step: Any,
+    *,
+    message: str,
+    today: date,
+    language: str,
+    state: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Promote a safe read-only affordability probe before semantic reasoning.
+
+    This uses the existing typed deterministic query compiler; it does not
+    infer a transfer or execute anything. It prevents an active transaction
+    result from turning an explicit affordability question into a fact lookup.
+    """
+    parsed = step.parser.parse_deterministic(message, today=today, language=language)
+    if parsed is None or parsed.outcome != ResolverOutcome.OK or not isinstance(parsed.query_request, dict):
+        return None
+    try:
+        request = QueryRequest.model_validate(parsed.query_request)
+    except Exception:
+        return None
+    if request.intent != QueryIntent.AFFORDABILITY:
+        return None
+
+    updates = compiler_paths.parse_result_to_updates(step, parsed, state=state, today=today, language=language)
+    updates.update(
+        {
+            "_query_llm_calls_used": 0,
+            "_query_single_llm_invariant": True,
+        }
+    )
+    return step._append_query_session_transition(updates, "replace_session_new_query")
+
+
 async def handle_continuation(step: Any, state: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
     """Handle possible continuation of previous query."""
     message = state.get("message", "")
@@ -147,6 +183,17 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         surface_type=surface_view.mode.value if surface_view is not None else None,
     )
     query_frames = step._load_query_frames(session)
+
+    deterministic_affordability = _deterministic_active_affordability_updates(
+        step,
+        message=message,
+        today=today,
+        language=locale,
+        state=state,
+    )
+    if deterministic_affordability is not None:
+        logger.info("query_continuation_resolution", path="deterministic_active_affordability")
+        return deterministic_affordability
 
     decision = await step.reasoner.reason(
         step._build_reasoner_context(
@@ -228,6 +275,31 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
                 **step._semantic_trace_updates(decision),
             },
             "end_query_session",
+        )
+
+    if session_query_request is not None and step._is_spend_vs_earn_compare_followup(
+        message=message,
+        query_request=session_query_request,
+    ):
+        logger.info(
+            "query_continuation_resolution",
+            path="grounded_spend_vs_earn_comparison",
+            semantic_decision=decision.decision,
+        )
+        return await resolve_result_continuation_updates(
+            step,
+            decision=decision,
+            cont_type="grouped_total_followup",
+            followup_intent="refine_existing",
+            state=state,
+            session=session,
+            session_query_request=session_query_request,
+            restored_query_result=restored_query_result,
+            surface_view=surface_view,
+            items=items,
+            message=message,
+            today=today,
+            locale=locale,
         )
 
     defer_to_low_confidence_recovery = (
@@ -388,11 +460,24 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         semantic_fact_updates.update(step._semantic_trace_updates(decision))
         return semantic_fact_updates
 
-    grounded_updates = resolve_grounded_followup(
-        step,
-        decision=decision,
-        session=session,
-        language=locale,
+    # Aggregate continuations own their typed scope and must reach the
+    # aggregate compiler. ``answer_mode=ask_clarify`` is advisory on a
+    # reasoner response; allowing it to preempt an established aggregate
+    # continuation turns a valid grouped follow-up into a generic rephrase.
+    # A declared grounded operation is different: it is an explicit frame
+    # request and therefore retains its existing higher-priority resolver.
+    grounded_updates = (
+        None
+        if (
+            cont_type in {"aggregate", "grouped_total_followup"}
+            and not getattr(decision, "grounded_operation", None)
+        )
+        else resolve_grounded_followup(
+            step,
+            decision=decision,
+            session=session,
+            language=locale,
+        )
     )
     if grounded_updates is not None and step._should_ignore_grounded_query_for_aggregate(
         grounded_updates=grounded_updates,

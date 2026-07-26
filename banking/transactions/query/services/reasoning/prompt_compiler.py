@@ -56,7 +56,11 @@ _LIST = """Transaction-list rules:
 _SUMMARY = """Grouped-summary rules:
 - Evidence/list asks expose underlying transactions; total, ranking, grouping, and comparisons use aggregate.
 - Preserve the summary scope when refining. A named bucket may populate recipient_name/target_text or extraction
-filters.
+  filters.
+- For an extremum over the current grouped result (for example, which account/category/counterparty was highest or
+  lowest), keep the same grouping and scope. Set rank=largest|smallest and return aggregate/refine_existing with a
+  complete analytics extraction whose aggregation has the active group_by and limit=1. Never reinterpret a grouped
+  bucket as a single transaction, existence query, or transaction fact.
 - A contrastive follow-up that changes money direction sets transaction_direction_delta=credit|debit and uses
   filter_delta/refine_existing. A request for both directions sets transaction_direction_delta=both. Preserve the
   active period and every unrelated filter; do not ask the user to confirm a clear direction change.

@@ -1,9 +1,7 @@
-"""Legacy query session cleanup helpers."""
+"""Read-only helpers for typed query continuation snapshots."""
 
 import time
 from typing import Any
-
-import redis.asyncio as redis
 
 from shared.utils.logging import get_logger
 
@@ -38,22 +36,3 @@ def is_query_session_stale(
 
     current_time = time.time() if now is None else float(now)
     return current_time - saved_at > ttl_seconds
-
-
-class QuerySessionManager:
-    """Clears legacy query compatibility keys from Redis.
-
-    Successful query meaning is owned by orchestrator context frames. Pending
-    compatibility state is passed through orchestrator checkpoint state, not
-    restored from ``query:session:{phone}``.
-    """
-
-    def __init__(self, redis_client: redis.Redis):
-        self.redis = redis_client
-
-    async def clear(self, key: str) -> None:
-        """Best-effort cleanup for old Redis query-session keys."""
-        try:
-            await self.redis.delete(key)
-        except Exception as e:
-            logger.error("clear_session_error", error=str(e))
