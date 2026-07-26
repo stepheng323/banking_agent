@@ -81,6 +81,7 @@ class QueryWorker:
             "direct_answer": "single_item",
             "transaction_list": "list",
             "grouped_summary": "summary",
+            "variance_insight": "variance_insight",
             "clarification": "clarification",
         }
         return mode_map.get(mode) if isinstance(mode, str) else None

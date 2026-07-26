@@ -428,6 +428,10 @@ Rules:
    - "Gosi m credit transactions m nke onwa a" -> domain_query
    - "Show my credit transactions for this month" -> domain_query
    - "How much did I spend yesterday" -> domain_query
+   - "Why did my spending increase this month" -> domain_query
+   - "What drove my income change this month" -> domain_query
+   - "How did my finances change this month" -> domain_query
+   - "Which account changed the most" after a financial comparison -> domain_query with mode=continuation
    - "Top recipients this month" -> domain_query
    - pending query clarification + "last 3 days" -> domain_query with mode=continuation
    - pending query clarification + "this month" -> domain_query with mode=continuation

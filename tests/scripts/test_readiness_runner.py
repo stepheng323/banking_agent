@@ -153,6 +153,17 @@ def test_repeat_scenarios_uses_fresh_scenario_identity_per_run() -> None:
     assert [scenario.id for scenario in repeated] == ["latency[run-1]", "latency[run-2]", "latency[run-3]"]
 
 
+def test_variance_insight_readiness_scenario_enforces_query_call_budget() -> None:
+    scenario = resolve_scenarios("variance-insight")[0]
+
+    assert scenario.tags == ("query", "insight", "variance", "acceptance")
+    assert len(scenario.turns) == 5
+    assert scenario.turns[0].expectation.llm_call_budget is not None
+    assert scenario.turns[1].expectation.llm_call_budget is not None
+    assert ("query_parser_llm_call", 0) in scenario.turns[1].expectation.llm_call_budget.max_event_counts
+    assert ("outbox_bridge_llm_call", 0) in scenario.turns[1].expectation.llm_call_budget.max_event_counts
+
+
 def test_assert_readiness_turn_checks_planner_quality_and_llm_counts() -> None:
     turn = ReadinessTurn(
         "send 5k to Ada",
@@ -204,9 +215,7 @@ def test_task_types_from_response_falls_back_to_route_shape() -> None:
     assert task_types_from_response({"turn_directive": {"path_shape": "deterministic_transfer_domain"}}) == (
         "transfer",
     )
-    assert task_types_from_response({"turn_directive": {"path_shape": "schedule_read_router_direct"}}) == (
-        "schedule",
-    )
+    assert task_types_from_response({"turn_directive": {"path_shape": "schedule_read_router_direct"}}) == ("schedule",)
     assert task_types_from_response({"turn_directive": {"path_shape": "meta_direct"}}) == ()
 
 
@@ -295,6 +304,41 @@ async def test_run_readiness_sequence_calls_before_each_scenario() -> None:
 
     assert result.passed
     assert started == ["one", "two"]
+
+
+@pytest.mark.asyncio
+async def test_run_readiness_sequence_calls_before_an_isolated_turn() -> None:
+    scenario = ReadinessScenario(
+        id="unit",
+        turns=(
+            ReadinessTurn("first"),
+            ReadinessTurn("fresh", reset_context_before=True),
+        ),
+    )
+    reset_turns: list[str] = []
+
+    async def before_turn(scenario_arg: ReadinessScenario, turn: ReadinessTurn, index: int) -> None:
+        del scenario_arg, index
+        if turn.reset_context_before:
+            reset_turns.append(turn.text)
+
+    async def invoke_turn(
+        scenario_arg: ReadinessScenario,
+        turn: ReadinessTurn,
+        index: int,
+    ) -> ReadinessInvocation:
+        del scenario_arg, turn, index
+        return ReadinessInvocation(response={"text": "ok"})
+
+    result = await run_readiness_sequence(
+        mode="deterministic",
+        scenarios=(scenario,),
+        invoke_turn=invoke_turn,
+        before_turn=before_turn,
+    )
+
+    assert result.passed
+    assert reset_turns == ["fresh"]
 
 
 @pytest.mark.asyncio

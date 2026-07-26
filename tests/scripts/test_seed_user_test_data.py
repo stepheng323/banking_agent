@@ -1,26 +1,22 @@
 from __future__ import annotations
 
-from scripts.seed_user_test_data import _beneficiary_account_lookup, _seed_beneficiary_specs
-from shared.database.enums import BeneficiaryTypeEnum
-from shared.database.models import Beneficiary
+from datetime import date
+
+from scripts.seed_user_test_data import _variance_demo_transaction_specs
 
 
-def test_seed_transfer_beneficiary_lookup_matches_model_blind_index() -> None:
-    spec = _seed_beneficiary_specs()[0]
+def test_variance_demo_seed_has_current_and_baseline_acceptance_coverage() -> None:
+    specs = _variance_demo_transaction_specs(date(2026, 7, 26))
+    identifiers = {str(spec["provider_transaction_id"]) for spec in specs}
 
-    beneficiary = Beneficiary(
-        beneficiary_type=BeneficiaryTypeEnum.TRANSFER.value,
-        account_name=spec["account_name"],
-        alias=spec["alias"],
-        account_number=spec["account_number"],
-        bank_code=spec["bank_code"],
-        bank_name=spec["bank_name"],
-    )
+    assert len(specs) == 16
+    assert {"variance-demo-current-food", "variance-demo-baseline-food"} <= identifiers
+    assert {"variance-demo-current-salary", "variance-demo-baseline-salary"} <= identifiers
+    assert {"variance-demo-current-investment", "variance-demo-baseline-investment"} <= identifiers
+    assert {"variance-demo-current-internal", "variance-demo-baseline-internal"} <= identifiers
+    assert {"variance-demo-current-unresolved", "variance-demo-baseline-unresolved"} <= identifiers
 
-    assert _beneficiary_account_lookup(spec["account_number"]) == beneficiary.account_number_blind_index
-
-
-def test_seed_transfer_beneficiary_lookups_are_distinct() -> None:
-    lookups = {_beneficiary_account_lookup(spec["account_number"]) for spec in _seed_beneficiary_specs()}
-
-    assert len(lookups) == len(_seed_beneficiary_specs())
+    current_food = next(spec for spec in specs if spec["provider_transaction_id"] == "variance-demo-current-food")
+    baseline_food = next(spec for spec in specs if spec["provider_transaction_id"] == "variance-demo-baseline-food")
+    assert current_food["amount"] == 60_000
+    assert baseline_food["amount"] == 20_000

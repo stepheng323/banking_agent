@@ -18,6 +18,7 @@ from banking.transactions.query.models.extraction import (
     ResolverOutcome,
     TimeReference,
 )
+from banking.transactions.query.models.operations import AnalyzeOperation
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -231,6 +232,35 @@ async def compile_aggregate_continuation_updates(
     if extraction is not None:
         compiled = step.parser.compile_extraction(extraction, today=today, language=language)
         extracted_contract = step._validated_query_request(compiled.query_request)
+        if (
+            extracted_contract is not None
+            and extracted_contract.intent == QueryIntent.INSIGHT
+            and session_query_request.intent == QueryIntent.INSIGHT
+            and isinstance(extracted_contract.operation, AnalyzeOperation)
+            and isinstance(session_query_request.operation, AnalyzeOperation)
+            and session_query_request.scope is not None
+        ):
+            # A variance follow-up changes the typed analysis directive, not the
+            # user’s already-grounded period, filters, or accounts.  Rebuilding
+            # from the fresh extraction would silently default its scope.
+            analysis = extracted_contract.operation.analysis.model_copy(update={"evidence": None})
+            query_request = QueryRequest(
+                operation=AnalyzeOperation(scope=session_query_request.scope, analysis=analysis)
+            )
+            logger.info(
+                "query_variance_insight_refinement_compiled",
+                measure=analysis.measure,
+                dimensions=analysis.dimensions,
+            )
+            return {
+                "query_request": query_request,
+                "resolver_message": None,
+                "flow_state": "executing",
+                "current_page": 0,
+                "session_active": True,
+                "pending_clarification": None,
+                "show_expanded": False,
+            }
         if extraction.intent == QueryIntent.CASH_FLOW_SUMMARY and extracted_contract is not None:
             cashflow_contract = extracted_contract.model_copy(
                 update={

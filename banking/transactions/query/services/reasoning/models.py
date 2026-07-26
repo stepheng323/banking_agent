@@ -89,6 +89,7 @@ ReasonerPromptProfileType = Literal[
     "focused_item",
     "transaction_list",
     "grouped_summary",
+    "variance_insight",
     "historical_frames",
     "pending_clarification",
 ]
@@ -242,6 +243,10 @@ class _NarrowActiveDecision(BaseModel):
     continuation_type: ContinuationType | None = None
     followup_intent: FollowupIntentType | None = None
     time_period: str | None = None
+    # Some providers echo the caller's raw text at the decision level. It is
+    # not a runtime decision field; accept and discard it so an otherwise
+    # valid continuation does not degrade into a fresh-query fallback.
+    raw_query: str | None = None
     response_text: str | None = None
     end_session_response: str | None = None
     end_session_kind: EndSessionKindType | None = None
@@ -254,6 +259,7 @@ class _NarrowActiveDecision(BaseModel):
 
     def to_public_decision(self) -> QuerySemanticDecision:
         payload = self.model_dump(exclude_none=True)
+        payload.pop("raw_query", None)
         extraction = self.extraction.to_query_extraction_result() if self.extraction is not None else None
         payload["extraction"] = extraction
         return QuerySemanticDecision.model_validate(payload)

@@ -36,6 +36,7 @@ async def run_readiness_sequence(
     scenarios: tuple[ReadinessScenario, ...],
     invoke_turn: Callable[[ReadinessScenario, ReadinessTurn, int], Awaitable[ReadinessInvocation]],
     before_scenario: Callable[[ReadinessScenario], Awaitable[None]] | None = None,
+    before_turn: Callable[[ReadinessScenario, ReadinessTurn, int], Awaitable[None]] | None = None,
     stop_on_fail: bool = False,
     enforce_route_expectations: bool = True,
 ) -> ReadinessRunResult:
@@ -46,6 +47,8 @@ async def run_readiness_sequence(
             await before_scenario(scenario)
         mode_turns = tuple(turn for turn in scenario.turns if mode in turn.modes)
         for index, turn in enumerate(mode_turns, start=1):
+            if before_turn is not None:
+                await before_turn(scenario, turn, index)
             started = time.perf_counter()
             invocation = await invoke_turn(scenario, turn, index)
             elapsed_ms = (time.perf_counter() - started) * 1000

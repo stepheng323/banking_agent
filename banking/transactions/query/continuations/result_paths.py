@@ -216,8 +216,8 @@ async def resolve_result_continuation_updates(
         }:
             return step._ambiguous_followup_updates(locale=locale, session=session)
 
-        selection_payload = None
-        if surface_view is not None and len(surface_view.items) == 1:
+        selection_payload = find_selection_payload(surface_view, label=message)
+        if selection_payload is None and surface_view is not None and len(surface_view.items) == 1:
             selection_payload = find_selection_payload(surface_view, index=0)
 
         if selection_payload is not None and (

@@ -19,6 +19,7 @@ from banking.transactions.query.models.domain import (
     QueryResultItem,
 )
 from banking.transactions.query.models.extraction import QueryExtractionResult
+from banking.transactions.query.presentation.selection_resolver import find_selection_payload
 from banking.transactions.query.prompts.main import (
     QUERY_SEMANTIC_REASONER_CONTEXT,
 )
@@ -78,6 +79,9 @@ class QuerySemanticReasoner:
                 typed_llm, reasoner_models.TransactionListDecision, method="function_calling"
             ),
             "grouped_summary": with_observable_structured_output(
+                typed_llm, reasoner_models.GroupedSummaryDecision, method="function_calling"
+            ),
+            "variance_insight": with_observable_structured_output(
                 typed_llm, reasoner_models.GroupedSummaryDecision, method="function_calling"
             ),
             "historical_frames": with_observable_structured_output(
@@ -301,6 +305,7 @@ class QuerySemanticReasoner:
             SurfaceViewMode.DIRECT_ANSWER: "single_item",
             SurfaceViewMode.TRANSACTION_LIST: "list",
             SurfaceViewMode.GROUPED_SUMMARY: "summary",
+            SurfaceViewMode.VARIANCE_INSIGHT: "variance_insight",
             SurfaceViewMode.CLARIFICATION: "clarification",
         }
         return mode_map.get(surface_view.mode, "none")
@@ -425,6 +430,18 @@ class QuerySemanticReasoner:
         surface_view: SurfaceView | None,
     ) -> reasoner_models.QuerySemanticDecision | None:
         surface_mode = cls._continuation_classifier_surface_type(surface_view=surface_view)
+        if surface_mode == SurfaceViewMode.VARIANCE_INSIGHT:
+            selection_payload = find_selection_payload(surface_view, label=message)
+            if selection_payload is not None and selection_payload.insight_evidence is not None:
+                return reasoner_models.QuerySemanticDecision(
+                    decision="continuation",
+                    confidence=1.0,
+                    reason="deterministic_variance_driver_evidence",
+                    continuation_type="show_evidence",
+                    followup_intent="refine_existing",
+                    target_text=selection_payload.label,
+                )
+            return None
         if surface_mode not in {SurfaceViewMode.DIRECT_ANSWER, SurfaceViewMode.TRANSACTION_LIST}:
             return None
         visible_followup = cls._deterministic_visible_followup(message=message, surface_view=surface_view)
@@ -499,13 +516,17 @@ class QuerySemanticReasoner:
             prompt_profile = "focused_item"
         elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.GROUPED_SUMMARY:
             prompt_profile = "grouped_summary"
+        elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.VARIANCE_INSIGHT:
+            prompt_profile = "variance_insight"
         elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.TRANSACTION_LIST:
             prompt_profile = "transaction_list"
         else:
             prompt_profile = "historical_frames"
         compiled_prompt = compile_query_reasoner_prompt(prompt_profile)
         items_section, prompt_item_count = self._serialize_items(
-            context.items if prompt_profile in {"focused_item", "transaction_list", "grouped_summary"} else None
+            context.items
+            if prompt_profile in {"focused_item", "transaction_list", "grouped_summary", "variance_insight"}
+            else None
         )
         query_frames_section, prompt_frame_count = self._serialize_query_frames(
             context.query_frames if prompt_profile == "historical_frames" else None
@@ -544,6 +565,7 @@ class QuerySemanticReasoner:
                 "focused_item": reasoner_models.FocusedItemDecision,
                 "transaction_list": reasoner_models.TransactionListDecision,
                 "grouped_summary": reasoner_models.GroupedSummaryDecision,
+                "variance_insight": reasoner_models.GroupedSummaryDecision,
                 "historical_frames": reasoner_models.HistoricalFrameDecision,
             }[prompt_profile]
             reasoner_schema = "active_continuation"

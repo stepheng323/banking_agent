@@ -208,10 +208,16 @@ async def run_deterministic_readiness(
             task_types=tuple(task.type for task in state.tasks.values()),
         )
 
+    async def before_turn(scenario: ReadinessScenario, turn: ReadinessTurn, index: int) -> None:
+        del index
+        if turn.reset_context_before:
+            states[scenario.id] = _base_deterministic_state(scenario_id=scenario.id)
+
     return await readiness_sequence.run_readiness_sequence(
         mode="deterministic",
         scenarios=scenarios,
         invoke_turn=invoke_turn,
+        before_turn=before_turn,
         stop_on_fail=stop_on_fail,
         enforce_route_expectations=True,
     )
@@ -451,11 +457,25 @@ async def run_dry_run_readiness(
             turn_timing=dict(response.get("turn_timing") or {}),
         )
 
+    async def before_turn(scenario: ReadinessScenario, turn: ReadinessTurn, index: int) -> None:
+        del scenario, index
+        if not turn.reset_context_before:
+            return
+        deleted = await reset_redis_session(
+            redis_client=redis_client,
+            phone=target_user.phone_number,
+            channel=channel,
+            user_id=str(user.id),
+            checkpointer=agent.orchestrator_handler.checkpointer,
+        )
+        print(f"[setup] reset Redis session keys before independent readiness turn: {deleted}")
+
     return await readiness_sequence.run_readiness_sequence(
         mode="dry-run",
         scenarios=scenarios,
         invoke_turn=invoke_turn,
         before_scenario=before_scenario,
+        before_turn=before_turn,
         stop_on_fail=stop_on_fail,
         enforce_route_expectations=False,
     )

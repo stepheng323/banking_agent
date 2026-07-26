@@ -110,7 +110,16 @@ def _row_key(row: dict[str, Any], dimension: Dimension) -> str:
     if dimension == Dimension.COUNTERPARTY:
         return _coalesce_key(row.get("counterparty"), row.get("counterparty_entity_id"))
     if dimension == Dimension.ACCOUNT:
-        return _coalesce_key(row.get("source_account_id"), row.get("account_id"), row.get("bank_name"), normalize=False)
+        # Account IDs are stable join keys, not safe presentation labels. The
+        # projection carries a linked-account/bank label for this dimension;
+        # only use an ID as a final internal fallback.
+        return _coalesce_key(
+            row.get("source_account_label"),
+            row.get("bank_name"),
+            row.get("source_account_id"),
+            row.get("account_id"),
+            normalize=False,
+        )
     if dimension == Dimension.EVENT_TYPE:
         return _coalesce_key(row.get("event_type"), row.get("transaction_type"))
     if dimension == Dimension.CASH_FLOW_CLASS:
@@ -123,6 +132,13 @@ def _human_label(key: str, dimension: Dimension, language: str = "en") -> str:
 
     if key == _UNRESOLVED_KEY or (dimension == Dimension.COUNTERPARTY and not key):
         return render_message("query.insight.unclassified", language)
+    if dimension == Dimension.ACCOUNT:
+        compact = key.replace("-", "")
+        if len(compact) == 32 and all(char in "0123456789abcdefABCDEF" for char in compact):
+            return render_message("context_frame.noun.linked_account", language)
+        # Bank/account labels are already presentation-safe. Preserve their
+        # provider casing (for example, GTBank) instead of title-casing them.
+        return key
     return key.replace("_", " ").title()
 
 

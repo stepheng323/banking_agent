@@ -272,6 +272,7 @@ PYTHONPATH=. uv run --extra all python -m scripts.readiness --mode dry-run --sce
 PYTHONPATH=. uv run --extra all python -m scripts.readiness --mode dry-run --scenario query --phone <TEST_PHONE_E164> --channel telegram --seed --reset-session
 PYTHONPATH=. uv run --extra all python -m scripts.readiness --mode dry-run --scenario faq --phone <TEST_PHONE_E164> --channel telegram --seed --reset-session
 PYTHONPATH=. uv run --extra all python -m scripts.readiness --mode dry-run --scenario query-deep --phone <TEST_PHONE_E164> --channel telegram --seed --reset-session
+PYTHONPATH=. uv run --extra all python -m scripts.readiness --mode dry-run --scenario variance-insight --phone <TEST_PHONE_E164> --channel telegram --seed --reset-session
 ```
 
 Manual smoke areas:
@@ -281,6 +282,7 @@ Manual smoke areas:
 - Beneficiary list, beneficiary follow-ups, ambiguous beneficiary selection.
 - Account list, bank-specific account follow-ups, pending mandate explanation.
 - Transaction query pagination, detail drill-down, fact follow-ups, and fresh-task exit from query memory.
+- Variance insight: spending and income drivers, cash-flow overview, typed driver evidence, and complete versus partial coverage wording. Reseed only a disposable user with `scripts.seed_user_test_data --reset-query-data --yes` after applying migrations.
 - Single transfer confirmation edits, PIN authorization, processing response, and receipt summary.
 - Airtime and data self-purchase, source account selection, confirmation, and execution.
 - Mixed batch edit/remove/restore flows with one final batch summary.

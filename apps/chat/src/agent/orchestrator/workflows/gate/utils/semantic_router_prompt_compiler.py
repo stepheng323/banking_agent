@@ -9,7 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_
     TurnContextSummary,
 )
 
-_PROMPT_VERSION = "v6"
+_PROMPT_VERSION = "v7"
 
 _DIRECT_REPLY = """You write one direct reply for a multilingual Nigerian banking assistant. Return only JSON.
 The turn is already constrained to direct_reply: do not route a banking task or invent account, amount, recipient,
@@ -26,7 +26,8 @@ Pidgin, Yoruba, Hausa, Igbo, and mixed wording; do not depend on exact phrases.
 Return only the required JSON. Decisions:
 - direct_reply: greeting, appreciation, check-in, identity, capability/meta, safe casual chat, or unsupported topic.
 - direct_context_answer: a short read-only fact fully grounded in supplied context.
-- domain_query: transaction history, debits/credits, totals, comparisons, pagination, details, or analytics.
+- domain_query: transaction history, debits/credits, totals, comparisons, pagination, details, analytics, or an
+  explanation of why spending, income, or cash flow changed between periods.
 - domain_account: balances, linked-account status/link/default/unlink/authorization.
 - domain_support: failed/reversed transactions, receipts, disputes, or ticket status.
 - domain_beneficiary: saved-recipient management.
@@ -70,7 +71,9 @@ filters. Never emit read fields for a mutation.
 - Specialized balance, beneficiary, schedule, and linked-account worker contracts are derived deterministically from
   these canonical read fields. Do not emit records, IDs, balances, or mutation targets.
 
-Compact examples: "show my credits this month" -> domain_query; "what is my balance" -> domain_account;
+Compact examples: "show my credits this month" -> domain_query; "why did my spending increase this month" ->
+domain_query; "what drove my income change" -> domain_query; "how did my finances change" -> domain_query;
+"what is my balance" -> domain_account;
 "send 5k to Mum" -> domain_transfer; "buy 2k airtime" -> domain_airtime; "buy 1GB data" -> domain_data;
 "send 5k to Mum and show my credits" -> planner_mixed with execs=["transfer"];
 "send 5k to Mum and buy airtime" -> planner_mixed with execs=["transfer","airtime"].

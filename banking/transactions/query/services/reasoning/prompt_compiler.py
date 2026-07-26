@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from banking.transactions.query.services.reasoning.models import ReasonerPromptProfileType
 
-_VERSION = "v3"
+_VERSION = "v4"
 
 _BASE = """You interpret one follow-up inside a multilingual banking transaction-query session. Return only JSON
 matching the supplied schema. Understand English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed wording.
@@ -63,6 +63,20 @@ filters.
 - Calculations remain deterministic; output only the requested operation and semantic patch.
 """
 
+_VARIANCE = """Variance-insight rules:
+- The active result compares the current period with its baseline. It is an insight contract, not a generic list or
+  historical-frame result. Keep decision=continuation for grounded refinements.
+- "What drove income/spending/net cash flow?" changes only insight.measure and preserves the active period, basis,
+  confidence policy, completeness policy, and filters. Return continuation_type=aggregate,
+  followup_intent=refine_existing, and a complete insight extraction.
+- "Which account/category/counterparty changed the most?" keeps the active measure unless the user changes it, and
+  returns a complete insight extraction whose dimensions contains the requested dimension.
+- "Show the transactions behind [driver]" uses show_evidence/refine_existing. A typed driver payload is resolved by
+  the runtime; never replace it with an unfiltered transaction list.
+- A request for an overall financial change uses measure=cash_flow_overview. Do not turn a variance refinement into a
+  normal analytics summary.
+"""
+
 _FRAMES = """Historical-frame rules:
 - For comparisons or references to earlier answers, populate referenced_frame_ids in requested order,
 grounded_operation=compare_frames|select_frame|show_transactions|reuse_frame, and answer_mode.
@@ -88,6 +102,7 @@ def compile_query_reasoner_prompt(profile: ReasonerPromptProfileType) -> Compile
         "focused_item": _FOCUSED,
         "transaction_list": _LIST,
         "grouped_summary": _SUMMARY,
+        "variance_insight": _VARIANCE,
         "historical_frames": _FRAMES,
         "pending_clarification": _CLARIFICATION,
     }[profile]

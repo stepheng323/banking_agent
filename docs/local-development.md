@@ -113,6 +113,7 @@ Example dry runs:
 PYTHONPATH=. uv run --extra all python -m scripts.readiness --mode dry-run --scenario quick --phone <TEST_PHONE_E164> --channel telegram --seed --reset-session
 PYTHONPATH=. uv run --extra all python -m scripts.readiness --mode dry-run --scenario mvp --phone <TEST_PHONE_E164> --channel telegram --seed --reset-session
 PYTHONPATH=. uv run --extra all python -m scripts.readiness --mode dry-run --scenario query --phone <TEST_PHONE_E164> --channel telegram --seed --reset-session
+PYTHONPATH=. uv run --extra all python -m scripts.readiness --mode dry-run --scenario variance-insight --phone <TEST_PHONE_E164> --channel telegram --seed --reset-session
 PYTHONPATH=. uv run --extra all python -m scripts.readiness --mode dry-run --scenario planner --phone <TEST_PHONE_E164> --channel telegram --seed --reset-session
 ```
 
@@ -133,6 +134,31 @@ make db-rollback
 ```
 
 `make db-reset` is destructive and should only be used against disposable local data.
+
+### Variance-insight demo data
+
+The variance acceptance fixture is local/demo-only. It seeds a complete current-versus-previous-month bank-feed window, then rebuilds the canonical query transactions, semantic projections, and economic events. It includes operating income and spending, internal movement, investing/financing movement, an unchanged category, and an unresolved narration.
+
+After the semantic-enrichment migration has been applied, reset and rebuild one disposable user explicitly:
+
+```bash
+make db-upgrade
+PYTHONPATH=. uv run python -m scripts.seed_user_test_data --phone <TEST_PHONE_E164> --reset-query-data --yes
+```
+
+The command only prints aggregate semantic counts and masked account suffixes. `--reset-query-data` deletes that user's query-side demo sources, projections, coverage windows, and economic events before rebuilding them; do not use it for production users.
+
+Acceptance transcript:
+
+```text
+Why did my spending increase this month?
+Show the food transactions behind that change.
+What drove my income change this month?
+How did my finances change this month?
+Which account changed the most?
+```
+
+Run it with `--scenario variance-insight --seed --reset-session`. A `require_complete` insight must decline a calculation when coverage is incomplete. A `disclose` insight may answer, but must state that its coverage is partial or unavailable.
 
 ## Safe Smoke Areas
 

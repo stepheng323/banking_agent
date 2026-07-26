@@ -35,6 +35,7 @@ ReadinessScenarioName = Literal[
     "query",
     "query-deep",
     "query-longtail",
+    "variance-insight",
     "latency",
     "llm-latency",
     "planner",
@@ -232,6 +233,10 @@ class ReadinessTurn:
     pin_flow_type: str = "transaction"
     modes: tuple[ReadinessMode, ...] = ("deterministic", "dry-run")
     mutation_id: str | None = None
+    # Some acceptance scenarios deliberately contain independent conversations
+    # under one report. Reset only durable conversational context before this
+    # turn; fixture data and the selected demo user remain unchanged.
+    reset_context_before: bool = False
 
 
 @dataclass(frozen=True)
@@ -606,9 +611,7 @@ class ReadinessRunResult:
 
         summary: list[dict[str, Any]] = []
         for route_signature, turns in groups.items():
-            completion = sorted(
-                float(turn.turn_timing.get("end_to_end_ms") or turn.latency_ms) for turn in turns
-            )
+            completion = sorted(float(turn.turn_timing.get("end_to_end_ms") or turn.latency_ms) for turn in turns)
             final_ready = sorted(
                 float(turn.turn_timing.get("end_to_end_final_ready_ms") or turn.latency_ms) for turn in turns
             )
@@ -731,6 +734,4 @@ def _llm_event_chain(llm_calls: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
 
 def _route_signature(route_metadata: dict[str, Any]) -> str:
     directive = _turn_directive_metadata(route_metadata) or {}
-    return "/".join(
-        str(directive.get(field) or "unknown") for field in ("path_shape", "owner", "decision")
-    )
+    return "/".join(str(directive.get(field) or "unknown") for field in ("path_shape", "owner", "decision"))

@@ -4,7 +4,13 @@ from datetime import date
 import pytest
 
 from banking.runtime.results import TransactionOutcome
-from banking.transactions.query.contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
+from banking.transactions.query.contracts import (
+    InsightEvidenceSelection,
+    SelectionPayload,
+    SurfaceItemView,
+    SurfaceView,
+    SurfaceViewMode,
+)
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
@@ -231,6 +237,57 @@ async def test_reasoner_uses_deterministic_first_item_detail_without_llm() -> No
     assert decision.drill_down_action == "view_details"
     assert decision.drill_down_index == 0
     assert decision.semantic_llm_used is False
+
+
+@pytest.mark.asyncio
+async def test_reasoner_resolves_a_variance_driver_to_typed_evidence_without_llm() -> None:
+    reasoner = QuerySemanticReasoner(_FailingLLM())
+    surface_view = SurfaceView(
+        mode=SurfaceViewMode.VARIANCE_INSIGHT,
+        items=[
+            SurfaceItemView(
+                id="spending-category-food",
+                label="Food",
+                payload=SelectionPayload(
+                    selection_kind="group_bucket",
+                    entity_type="variance_driver",
+                    entity_id="spending:category:food",
+                    label="Food",
+                    insight_evidence=InsightEvidenceSelection(
+                        measure="spending",
+                        dimension="category",
+                        bucket_key="food",
+                        basis="economic_events",
+                        metric="spending",
+                        current_start="2026-07-01",
+                        current_end="2026-07-26",
+                        baseline_start="2026-06-01",
+                        baseline_end="2026-06-30",
+                    ),
+                ),
+            )
+        ],
+        context={"view": "variance_insight"},
+    )
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="Show the food transactions behind that change.",
+            today=date(2026, 7, 26),
+            language="en",
+            query_request=_contract(
+                _query_ir(
+                    intent=QueryIntent.INSIGHT,
+                    time_range=TimeRange(start=date(2026, 7, 1), end=date(2026, 7, 26)),
+                )
+            ),
+            surface_view=surface_view,
+        )
+    )
+
+    assert decision.continuation_type == "show_evidence"
+    assert decision.followup_intent == "refine_existing"
+    assert decision.target_text == "Food"
 
 
 @pytest.mark.asyncio
