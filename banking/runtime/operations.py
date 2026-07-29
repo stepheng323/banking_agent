@@ -18,6 +18,7 @@ from shared.types.planner import (
     BeneficiaryTaskParameters,
     DataTaskParameters,
     EmptyTaskParameters,
+    QueryPreferenceTaskParameters,
     QueryTaskParameters,
     ScheduleTaskParameters,
     SupportTaskParameters,
@@ -316,6 +317,14 @@ _OPERATIONS = (
         TransactionResult,
         "READ_ONLY",
         policy_action="aggregate_group",
+    ),
+    _spec(
+        "query",
+        "query",
+        "update_query_preferences",
+        QueryPreferenceTaskParameters,
+        TransactionResult,
+        "MUTATION",
     ),
     _spec(
         "support",

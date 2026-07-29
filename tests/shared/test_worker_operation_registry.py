@@ -5,11 +5,17 @@ from shared.types.planner import _ACTION_TASK_MODELS
 
 def test_every_planner_action_has_one_canonical_worker_operation() -> None:
     for action, task_model in _ACTION_TASK_MODELS.items():
+        parameters = (
+            {"preferences_update": {"presentation_detail": "detailed"}}
+            if action == "update_query_preferences"
+            else None
+        )
         task = task_model(
             task_id="registry-test",
             action=action,
             instruction="test",
             risk=operation_spec(task_model.executor, action).risk,
+            **({"parameters": parameters} if parameters is not None else {}),
         )
         assert (task.executor, task.action) in WORKER_OPERATIONS
 

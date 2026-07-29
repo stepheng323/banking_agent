@@ -17,6 +17,10 @@ For continuation, always set continuation_type and followup_intent unless the sc
 Never guess a displayed item, fact, time, filter, or prior frame. The runtime validates selections and performs all
 totals, ranking, comparison, pagination, and account calculations deterministically.
 Omit every unused optional field. Do not emit nulls, empty strings/lists, or fields that the user did not supply.
+Explicit query preferences may fill only an aspect the current message and active contract leave unspecified.
+Current-turn wording and the active grounded contract always win. Never infer, change, or acknowledge a preference.
+When default_account_scope_available is true and account scope is genuinely unspecified, set
+extraction.use_default_account_scope=true. Keep it false for an explicit named-account or all-accounts request.
 
 Common continuation meanings: show_more for pagination or underlying rows; show_evidence for rows behind an aggregate;
 time_delta/filter_delta for scope changes; aggregate/grouped_total_followup for deterministic analysis; coverage for
@@ -29,6 +33,9 @@ Use repair when the user corrects a prior query interpretation (for example acco
 amount, category, period, measure, or grouping). Emit only a sparse repair_delta. Unmentioned fields are preserved.
 If there are two materially different grounded readings, include alternate_repair_delta; never invent candidates or
 raw database records. The runtime validates and applies every repair deterministically.
+
+Use update_preferences only for an explicit persistent instruction such as always/from now on, or an explicit reset.
+Emit preferences_update and no query extraction. Ordinary one-turn wording and corrections never change preferences.
 
 Use coverage_intent=result_completeness for whether matching rows/pages remain, data_coverage for linked-account sync or
 missing bank/account windows, and ambiguous when those cannot be distinguished. A fresh banking action outside query
@@ -66,6 +73,8 @@ _LIST = """Transaction-list rules:
   whether all rows or accounts are present.
 - A direct correction of the current list's recipient, account, direction, category, status, amount, or period uses
   continuation_type=repair and repair_delta. Do not turn a correction into a fresh parser request.
+- If the user asks for two or three materially distinct read sections that cannot be one canonical query, emit plan.
+  Every plan step must be completely scoped from the active contract and current message. Use only backward bindings.
 """
 
 _SUMMARY = """Grouped-summary rules:
@@ -86,6 +95,8 @@ _SUMMARY = """Grouped-summary rules:
   coverage for cross-answer challenges.
 - Calculations remain deterministic; output only the requested operation and semantic patch.
 - Direct corrections to a summary's scope, measure, statistic, or dimension use repair with a sparse repair_delta.
+- A request for the current summary plus distinct supporting/evidence analysis may emit a two- or three-step plan.
+  Preserve the active period and filters in every applicable step. Do not use a plan for one ordinary query.
 """
 
 _INSIGHT = """Insight rules:
@@ -121,6 +132,8 @@ _COMPOSITE = """Composite-result rules:
 - A request comparing or combining sections uses aggregate only when the existing typed contracts provide the needed
   values. Otherwise ask a specific clarification; never invent a calculation or hidden result.
 - Reconciliation may reference retained frames and must follow the same exact-frame rules as other surfaces.
+- A request that adds or replaces a distinct section may emit a complete plan of two or three steps. Retain unchanged
+  sections explicitly and keep one primary step. Never return a partial plan draft.
 """
 
 _FRAMES = """Historical-frame rules:

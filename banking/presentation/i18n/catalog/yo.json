@@ -304,6 +304,12 @@
     "common": {
       "transaction": "transaction"
     },
+    "preferences": {
+      "updated": "Maa lo awon asayan query transaction wonyi lati isinsinyi lo.",
+      "reset": "A ti tun awon asayan query transaction re se.",
+      "account_clarification": "Ewo ninu awon account ti o so mo ni ki n lo gege bi default fun query?",
+      "update_failed": "Mi o le se atunse awon asayan query re. Ko si ohun ti o yi pada."
+    },
     "drill_down": {
       "details_intro": "Eyi ni alaye transaction naa:",
       "no_items": "Mi o ni transaction naa mọ. Sọ fun mi lati tun search naa ṣe.",

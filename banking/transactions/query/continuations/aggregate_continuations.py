@@ -179,6 +179,14 @@ async def compile_aggregate_continuation_updates(
     parse_reasoner_extraction_to_updates: ParseReasonerExtractionToUpdates,
 ) -> dict[str, Any] | None:
     extraction = getattr(decision, "extraction", None)
+    if getattr(decision, "plan", None) is not None:
+        return await parse_reasoner_extraction_to_updates(
+            step,
+            decision,
+            state=state,
+            today=today,
+            language=language,
+        )
     if extraction is not None and not extraction.raw_query:
         extraction = extraction.model_copy(update={"raw_query": state.get("message", "")})
     if extraction is not None:

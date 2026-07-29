@@ -304,6 +304,12 @@
     "common": {
       "transaction": "transaction"
     },
+    "preferences": {
+      "updated": "Zan rika amfani da wadannan zabukan query na transaction daga yanzu.",
+      "reset": "An sake saita zabukan query na transaction dinka.",
+      "account_clarification": "Wane account da ka hada zan yi amfani da shi a matsayin default na query?",
+      "update_failed": "Ban iya sabunta zabukan query dinka ba. Babu abin da ya canza."
+    },
     "drill_down": {
       "details_intro": "Ga bayanan transaction ɗin:",
       "no_items": "Ba ni da wannan transaction ɗin yanzu. Ka ce in sake yin search.",

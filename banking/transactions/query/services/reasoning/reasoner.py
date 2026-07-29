@@ -604,6 +604,7 @@ class QuerySemanticReasoner:
             items_section=items_section,
             query_frames_section=query_frames_section,
             active_focus=self._serialize(context.active_focus) if context.active_focus is not None else "none",
+            query_preferences=self._serialize(context.query_preferences) if context.query_preferences else "none",
         )
         messages = [
             SystemMessage(content=compiled_prompt.system_prompt),

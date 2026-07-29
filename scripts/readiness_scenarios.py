@@ -900,6 +900,73 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                 ),
             ),
         )
+    if name == "query-self-healing":
+        return (
+            ReadinessScenario(
+                id="query-self-healing",
+                description="Repair, composite planning, evidence grounding, and explicit query preferences.",
+                category="query",
+                tags=("query", "self-healing", "composite", "acceptance"),
+                turns=(
+                    ReadinessTurn(
+                        "Break down my spending by category this month",
+                        ReadinessExpectation(
+                            expect_any=("category", "spending", "₦"),
+                            expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                            llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                        ),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "No, I meant income; keep the same month",
+                        ReadinessExpectation(
+                            expect_any=("income", "came in", "received", "₦"),
+                            expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                            llm_call_budget=_VARIANCE_CONTINUATION_BUDGET,
+                        ),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "Break that down by account and include the overall total",
+                        ReadinessExpectation(
+                            expect_any=("account", "total", "gtbank", "first bank", "access"),
+                            expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                            llm_call_budget=_VARIANCE_CONTINUATION_BUDGET,
+                        ),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "Show the transactions behind the first account section",
+                        ReadinessExpectation(
+                            expect_any=("transaction", "showing", "received"),
+                            expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                            llm_call_budget=_VARIANCE_CONTINUATION_BUDGET,
+                        ),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "Compare food spending this month with last month and show the transactions behind the change",
+                        ReadinessExpectation(
+                            expect_any=("food", "month", "transaction", "change"),
+                            expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                            llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                        ),
+                        modes=("dry-run",),
+                        reset_context_before=True,
+                    ),
+                    ReadinessTurn(
+                        "Always give me detailed transaction answers",
+                        ReadinessExpectation(
+                            expect_any=("preference", "from now", "detailed"),
+                            expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                            llm_call_budget=_PLANNER_SINGLE_CALL_BUDGET,
+                        ),
+                        modes=("dry-run",),
+                        reset_context_before=True,
+                    ),
+                ),
+            ),
+        )
     if name == "planner":
         return (
             ReadinessScenario(

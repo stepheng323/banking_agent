@@ -185,6 +185,17 @@ def test_insight_reconciliation_readiness_exercises_retained_evidence() -> None:
     assert scenario.turns[-1].expectation.llm_call_budget is not None
 
 
+def test_query_self_healing_readiness_covers_repairs_composites_and_preferences() -> None:
+    scenario = resolve_scenarios("query-self-healing")[0]
+
+    assert scenario.tags == ("query", "self-healing", "composite", "acceptance")
+    assert len(scenario.turns) == 6
+    assert all(turn.expectation.llm_call_budget is not None for turn in scenario.turns)
+    assert ("query_parser_llm_call", 0) in scenario.turns[1].expectation.llm_call_budget.max_event_counts
+    assert ("outbox_bridge_llm_call", 0) in scenario.turns[2].expectation.llm_call_budget.max_event_counts
+    assert ("planner_llm_call", 1) in scenario.turns[-1].expectation.llm_call_budget.required_event_counts
+
+
 def test_assert_readiness_turn_checks_planner_quality_and_llm_counts() -> None:
     turn = ReadinessTurn(
         "send 5k to Ada",

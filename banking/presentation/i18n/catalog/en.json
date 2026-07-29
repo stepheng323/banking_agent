@@ -304,6 +304,12 @@
     "common": {
       "transaction": "transaction"
     },
+    "preferences": {
+      "updated": "I’ll use those transaction-query preferences from now on.",
+      "reset": "Your transaction-query preferences have been reset.",
+      "account_clarification": "Which one of your linked accounts should I use as the query default?",
+      "update_failed": "I couldn’t update your transaction-query preferences. Nothing was changed."
+    },
     "drill_down": {
       "no_items": "No items to drill down into.",
       "invalid_selection": "I couldn't match that choice. Choose one of the {count} transactions I showed.",

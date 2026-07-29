@@ -34,6 +34,7 @@ ReadinessScenarioName = Literal[
     "mvp",
     "query",
     "query-deep",
+    "query-self-healing",
     "query-longtail",
     "variance-insight",
     "insight-suite",

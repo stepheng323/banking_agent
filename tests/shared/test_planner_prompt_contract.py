@@ -459,6 +459,18 @@ def test_runtime_planner_prompt_size_budget_targets() -> None:
     assert len(encoding.encode(expanded_prompt)) <= 1150
 
 
+def test_query_owned_planner_prompt_includes_explicit_preference_operation_only() -> None:
+    runtime_prompt, profile, _ = _build_prompt(
+        "Always show detailed transaction answers",
+        "None",
+        PlannerPromptSignals(forced_domain_owner="query"),
+    )
+
+    assert "update_query_preferences" in runtime_prompt
+    assert "Never infer preferences from corrections" in runtime_prompt
+    assert "query_preferences" in profile
+
+
 def test_runtime_planner_prompt_adds_money_move_examples_when_relevant() -> None:
     """Runtime prompt should include money-move examples for transaction turns."""
     runtime_prompt, profile, bundles = _build_prompt(

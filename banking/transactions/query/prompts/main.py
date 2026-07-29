@@ -189,6 +189,9 @@ RECENT QUERY FRAMES
 SEMANTIC FOCUS
 {active_focus}
 
+EXPLICIT QUERY PREFERENCES
+{query_preferences}
+
 SESSION METADATA
 - mode: {session_mode}
 - language: {language}

@@ -12,8 +12,13 @@ from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
     PendingClarificationState,
+    QueryAggregation,
     QueryExtractionResult,
     QueryParseResult,
+    QueryPlanDraft,
+    QueryPlanStepDraft,
+    QueryRequestShape,
+    QueryStepExtraction,
     QueryTimeRange,
     ResolverOutcome,
     TimeReference,
@@ -198,6 +203,95 @@ async def test_reasoner_fresh_query_without_raw_query_injects_message_for_debit_
     assert query_request.filters.transaction_type == "debit"
     assert query_request.time_start == date(2026, 3, 16)
     assert query_request.time_end == today
+
+
+@pytest.mark.asyncio
+async def test_active_reasoner_plan_compiles_without_fresh_parser_call() -> None:
+    step = ExtractionStep(_DummyLLM())
+    period = QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month")
+
+    def _fail_parse(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("an active-query plan must not call parser.parse")
+
+    step.parser.parse = _fail_parse  # type: ignore[method-assign]
+    updates = await step._parse_reasoner_extraction_to_updates(
+        QuerySemanticDecision(
+            decision="new_query",
+            continuation_type="aggregate",
+            semantic_llm_used=True,
+            plan=QueryPlanDraft(
+                steps=[
+                    QueryPlanStepDraft(
+                        step_id="by_account",
+                        role="primary",
+                        extraction=QueryStepExtraction(
+                            intent=QueryIntent.ANALYTICS_SUMMARY,
+                            request_shape=QueryRequestShape.ANALYTICS,
+                            time_range=period,
+                            aggregation=QueryAggregation(type="breakdown", group_by="bank"),
+                        ),
+                    ),
+                    QueryPlanStepDraft(
+                        step_id="overall",
+                        role="supporting",
+                        extraction=QueryStepExtraction(
+                            intent=QueryIntent.ANALYTICS_SUMMARY,
+                            request_shape=QueryRequestShape.ANALYTICS,
+                            time_range=period,
+                            aggregation=QueryAggregation(type="sum"),
+                        ),
+                    ),
+                ]
+            ),
+        ),
+        state={"message": "Break that down by account and include the total"},
+        today=date(2026, 3, 19),
+        language="en",
+    )
+
+    assert updates["flow_state"] == "executing"
+    assert updates["execute_query_plan"] is True
+    assert updates["execution_contract"]["kind"] == "plan"
+    assert len(updates["execution_contract"]["steps"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_invalid_active_reasoner_plan_clarifies_without_fresh_parser_call() -> None:
+    step = ExtractionStep(_DummyLLM())
+    period = QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month")
+    repeated = QueryStepExtraction(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        request_shape=QueryRequestShape.ANALYTICS,
+        time_range=period,
+        aggregation=QueryAggregation(type="sum"),
+    )
+
+    def _fail_parse(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("an invalid active-query plan must not call parser.parse")
+
+    step.parser.parse = _fail_parse  # type: ignore[method-assign]
+    updates = await step._parse_reasoner_extraction_to_updates(
+        QuerySemanticDecision(
+            decision="new_query",
+            continuation_type="aggregate",
+            semantic_llm_used=True,
+            plan=QueryPlanDraft(
+                steps=[
+                    QueryPlanStepDraft(step_id="first", role="primary", extraction=repeated),
+                    QueryPlanStepDraft(step_id="second", role="supporting", extraction=repeated),
+                ]
+            ),
+        ),
+        state={"message": "Give me that twice"},
+        today=date(2026, 3, 19),
+        language="en",
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["_query_reasoner_to_parser_suppressed"] is True
+    assert updates["session_active"] is True
 
 
 @pytest.mark.asyncio

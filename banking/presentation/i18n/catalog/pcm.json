@@ -304,6 +304,12 @@
     "common": {
       "transaction": "transaction"
     },
+    "preferences": {
+      "updated": "I go use these transaction-query settings from now.",
+      "reset": "I don reset your transaction-query settings.",
+      "account_clarification": "Which one of your linked accounts you want make I use as the query default?",
+      "update_failed": "I no fit update your transaction-query settings. Nothing change."
+    },
     "drill_down": {
       "details_intro": "See the transaction details:",
       "no_items": "I no get that transaction again. Tell me make I run the search again.",

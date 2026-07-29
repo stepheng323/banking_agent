@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from time import perf_counter
 from typing import Any, Literal, cast
@@ -31,7 +32,7 @@ from banking.transactions.query.models.extraction import (
     ResolverOutcome,
     TimeReference,
 )
-from banking.transactions.query.plan_compiler import QueryPlanCompileError, compile_query_plan_draft
+from banking.transactions.query.plan_compiler import QueryPlanCompileError, compile_query_plan_result
 from banking.transactions.query.prompts.main import QUERY_PARSER_PROMPT
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.observability.llm_call_metrics import record_llm_call, structured_output_metrics
@@ -175,6 +176,7 @@ def inflate_parser_extraction(
             result_reference=extraction.result_reference,
             answer_fact_field=extraction.answer_fact_field,
             insight=extraction.insight.model_copy(deep=True) if extraction.insight is not None else None,
+            use_default_account_scope=extraction.use_default_account_scope,
         )
 
     inflated.raw_query = question
@@ -552,7 +554,13 @@ def parse_deterministic(
     return None
 
 
-async def parse(parser: Any, question: str, today: Any, language: str = "en") -> QueryParseResult:
+async def parse(
+    parser: Any,
+    question: str,
+    today: Any,
+    language: str = "en",
+    query_preferences: dict[str, Any] | None = None,
+) -> QueryParseResult:
     if lexical_recovery.looks_like_support_problem_statement(question):
         logger.info("query_parser_support_problem_guarded")
         return QueryParseResult(
@@ -566,6 +574,15 @@ async def parse(parser: Any, question: str, today: Any, language: str = "en") ->
         return deterministic
 
     prompt = QUERY_PARSER_PROMPT.format(today=today.isoformat(), question=question)
+    if query_preferences:
+        prompt += (
+            "\n\nEXPLICIT USER QUERY PREFERENCES\n"
+            f"{json.dumps(query_preferences, sort_keys=True, separators=(',', ':'))}\n"
+            "Apply a preference only when the user left that aspect genuinely unspecified. "
+            "Current-turn wording always wins. Never infer or modify preferences. "
+            "When default_account_scope_available is true and account scope is unspecified, set "
+            "use_default_account_scope=true; keep it false for explicit named-account or all-accounts scope."
+        )
     structured_llm = cast(Any, parser.llm).with_structured_output(ParserQueryExtraction)
 
     try:
@@ -622,7 +639,7 @@ async def parse(parser: Any, question: str, today: Any, language: str = "en") ->
         )
         if parser_extraction.plan is not None:
             try:
-                plan = compile_query_plan_draft(
+                return compile_query_plan_result(
                     parser,
                     parser_extraction.plan,
                     today=today,
@@ -634,18 +651,6 @@ async def parse(parser: Any, question: str, today: Any, language: str = "en") ->
                     outcome=ResolverOutcome.NEEDS_INPUT,
                     resolver_message=render_message("query.clarify.unsure_rephrase", language),
                 )
-            primary = next(step for step in plan.steps if step.role == "primary")
-            primary_draft = next(step for step in parser_extraction.plan.steps if step.step_id == primary.step_id)
-            return QueryParseResult(
-                outcome=ResolverOutcome.OK,
-                extraction=parser._inflate_parser_extraction(
-                    ParserQueryExtraction(**primary_draft.extraction.model_dump(mode="python")),
-                    question=question,
-                    language=language,
-                ),
-                query_request=primary.request.model_dump(mode="json"),
-                execution_contract=plan.model_dump(mode="json"),
-            )
         extraction = parser._inflate_parser_extraction(parser_extraction, question=question, language=language)
         return parser._finalize_extraction(extraction, today=today, language=language)
     except Exception as e:

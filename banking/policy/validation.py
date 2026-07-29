@@ -76,6 +76,7 @@ REQUIRED_DOMAIN_ACTIONS: dict[str, set[str]] = {
         "aggregate_sum",
         "aggregate_group",
         "time_comparison",
+        "update_query_preferences",
         "export_pdf",
         "export_csv",
     },

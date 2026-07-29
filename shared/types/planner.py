@@ -18,6 +18,7 @@ from shared.types.conversation_sets import (
     SetAmountAllocation,
     SetScopeDelta,
 )
+from shared.types.query_preferences import QueryPreferenceUpdate
 from shared.types.read import ReadRequest, ReadSubject, ResponseShape
 
 QueryInsightType: TypeAlias = Literal[
@@ -261,6 +262,14 @@ class QueryTaskParameters(BaseTaskParameters):
     read_request: ReadRequest | None = None
 
 
+class QueryPreferenceTaskParameters(BaseTaskParameters):
+    """Explicit query-preference mutation parameters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    preferences_update: QueryPreferenceUpdate
+
+
 class SupportTaskParameters(BaseTaskParameters):
     """Support/FAQ task parameters."""
 
@@ -281,6 +290,7 @@ PlannerTaskParameters: TypeAlias = (
     | BeneficiaryTaskParameters
     | ScheduleTaskParameters
     | QueryTaskParameters
+    | QueryPreferenceTaskParameters
     | SupportTaskParameters
     | EmptyTaskParameters
 )
@@ -628,9 +638,16 @@ class BeneficiaryPlannedTask(BasePlannedTask):
 
 
 class QueryPlannedTask(BasePlannedTask):
-    action: Literal["transaction_search", "transaction_list", "beneficiary_summary"]
+    action: Literal["transaction_search", "transaction_list", "beneficiary_summary", "update_query_preferences"]
     executor: ClassVar[Literal["query"]] = "query"
-    parameters: QueryTaskParameters = Field(default_factory=QueryTaskParameters)
+    parameters: QueryTaskParameters | QueryPreferenceTaskParameters = Field(default_factory=QueryTaskParameters)
+
+    @model_validator(mode="after")
+    def validate_query_action_parameters(self) -> "QueryPlannedTask":
+        is_preference_update = self.action == "update_query_preferences"
+        if is_preference_update != isinstance(self.parameters, QueryPreferenceTaskParameters):
+            raise ValueError("query action and parameter contract do not match")
+        return self
 
 
 class SupportPlannedTask(BasePlannedTask):
@@ -766,6 +783,7 @@ _ACTION_TASK_MODELS: dict[str, PlannerTaskModel] = {
     "transaction_search": QueryPlannedTask,
     "transaction_list": QueryPlannedTask,
     "beneficiary_summary": QueryPlannedTask,
+    "update_query_preferences": QueryPlannedTask,
     "handle_request": SupportPlannedTask,
     "report_issue": SupportPlannedTask,
     "list_support_tickets": SupportPlannedTask,
@@ -811,6 +829,7 @@ _ACTION_PARAMETER_MODELS: dict[str, type[BaseTaskParameters]] = {
     "transaction_search": QueryTaskParameters,
     "transaction_list": QueryTaskParameters,
     "beneficiary_summary": QueryTaskParameters,
+    "update_query_preferences": QueryPreferenceTaskParameters,
     "handle_request": SupportTaskParameters,
     "report_issue": SupportTaskParameters,
     "list_support_tickets": SupportTaskParameters,

@@ -10,7 +10,13 @@ from banking.transactions.query.models.conversation import (
     QueryPlanStep,
     QueryTurnPlan,
 )
-from banking.transactions.query.models.extraction import QueryExtractionResult, QueryPlanDraft, ResolverOutcome
+from banking.transactions.query.models.extraction import (
+    ParserQueryExtraction,
+    QueryExtractionResult,
+    QueryParseResult,
+    QueryPlanDraft,
+    ResolverOutcome,
+)
 from banking.transactions.query.models.operations import QueryRequest
 
 
@@ -57,4 +63,34 @@ def compile_query_plan_draft(
         raise QueryPlanCompileError("the query plan shape is invalid") from exc
 
 
-__all__ = ["QueryPlanCompileError", "compile_query_plan_draft"]
+def compile_query_plan_result(
+    parser: Any,
+    draft: QueryPlanDraft,
+    *,
+    today: date,
+    language: str,
+    raw_query: str,
+) -> QueryParseResult:
+    """Compile a plan and expose its primary request through the existing parser contract."""
+    plan = compile_query_plan_draft(
+        parser,
+        draft,
+        today=today,
+        language=language,
+        raw_query=raw_query,
+    )
+    primary = next(step for step in plan.steps if step.role == "primary")
+    primary_draft = next(step for step in draft.steps if step.step_id == primary.step_id)
+    return QueryParseResult(
+        outcome=ResolverOutcome.OK,
+        extraction=parser._inflate_parser_extraction(
+            ParserQueryExtraction(**primary_draft.extraction.model_dump(mode="python")),
+            question=raw_query,
+            language=language,
+        ),
+        query_request=primary.request.model_dump(mode="json"),
+        execution_contract=plan.model_dump(mode="json"),
+    )
+
+
+__all__ = ["QueryPlanCompileError", "compile_query_plan_draft", "compile_query_plan_result"]

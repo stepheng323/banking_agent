@@ -20,6 +20,11 @@ class UserRepository(BaseRepository[User]):
         result = await self.db.execute(select(User).filter(User.phone_number == phone_number))
         return result.scalars().first()
 
+    async def get_by_id_for_update(self, user_id: str) -> User | None:
+        """Lock one user row while mutating checkpoint-free profile metadata."""
+        result = await self.db.execute(select(User).filter(User.id == user_id).with_for_update())
+        return result.scalars().first()
+
     async def get_by_email(self, email: str) -> User | None:
         """Get user by email."""
         result = await self.db.execute(select(User).filter(User.email == email))

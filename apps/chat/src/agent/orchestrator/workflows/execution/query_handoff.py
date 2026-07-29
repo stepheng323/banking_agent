@@ -14,4 +14,13 @@ def _next_query_handoff_transfer_task_id(tasks: dict[str, Any]) -> str:
     return candidate
 
 
-__all__ = ["_next_query_handoff_transfer_task_id"]
+def _next_query_handoff_preference_task_id(tasks: dict[str, Any]) -> str:
+    index = 1
+    candidate = f"query_handoff_preferences_{index}"
+    while candidate in tasks:
+        index += 1
+        candidate = f"query_handoff_preferences_{index}"
+    return candidate
+
+
+__all__ = ["_next_query_handoff_preference_task_id", "_next_query_handoff_transfer_task_id"]

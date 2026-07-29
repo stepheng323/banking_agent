@@ -199,6 +199,7 @@ class QueryStepExtraction(BaseModel):
     )
     answer_fact_field: QueryFactField | None = Field(default=None)
     insight: InsightSpec | None = Field(default=None)
+    use_default_account_scope: bool = False
 
 
 class QueryPlanBindingDraft(BaseModel):
@@ -247,6 +248,7 @@ class QueryExtractionResult(BaseModel):
     answer_fact_field: QueryFactField | None = Field(default=None)
     insight: InsightSpec | None = Field(default=None)
     clarification_patch: ClarificationPatch | None = Field(default=None)
+    use_default_account_scope: bool = False
 
     requested_capabilities: list[RequestedCapability] = Field(
         default_factory=list,
@@ -275,6 +277,7 @@ class ReasonerQueryExtraction(BaseModel):
     result_reference: Literal["latest", "oldest"] | None = Field(default=None)
     answer_fact_field: QueryFactField | None = Field(default=None)
     insight: InsightSpec | None = Field(default=None)
+    use_default_account_scope: bool = False
     raw_query: str | None = Field(default=None)
 
     def to_query_extraction_result(self) -> "QueryExtractionResult":
@@ -291,6 +294,7 @@ class ReasonerQueryExtraction(BaseModel):
             result_reference=self.result_reference,
             answer_fact_field=self.answer_fact_field,
             insight=self.insight.model_copy(deep=True) if self.insight is not None else None,
+            use_default_account_scope=self.use_default_account_scope,
             raw_query=self.raw_query,
         )
 

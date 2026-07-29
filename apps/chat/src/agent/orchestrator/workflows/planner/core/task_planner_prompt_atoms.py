@@ -13,6 +13,10 @@ PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
 - Shapes: fact_count|fact_bool|fact_status|surface_list|surface_detail|surface_paginated|
   surface_actionable. People batches require recipient_allocations; funding splits use explicit_split."""
 
+PLANNER_QUERY_PREFERENCE_PROMPT = """## QUERY PREFERENCES
+- Explicit set/reset -> update_query_preferences (MUTATION, no confirmation/PIN).
+- Never infer preferences from corrections."""
+
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Keep recipient exact.
 - Selector refs: previous or index.

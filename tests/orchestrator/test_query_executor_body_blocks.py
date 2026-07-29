@@ -38,6 +38,19 @@ class _InjectedQueryWorker:
         )
 
 
+class _PreferenceHandoffWorker:
+    async def run(self, *, payload: dict[str, Any], context: dict[str, Any]) -> TransactionResult:
+        del payload, context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "query_preferences_handoff": {
+                    "presentation_detail": "detailed",
+                }
+            },
+        )
+
+
 def _query_request() -> QueryRequest:
     today = lagos_today()
     return (
@@ -139,6 +152,39 @@ async def test_query_executor_attaches_mobile_body_blocks_to_say_outbox() -> Non
         {"type": "text", "text": "I found one debit transaction today."},
         {"type": "text", "text": f"*{today_str}*\n• ₦30,000 — Sent to Mum · Wema · ···2221"},
     ]
+
+
+async def test_query_executor_materializes_preference_handoff_as_next_query_task() -> None:
+    task = TaskSpec(
+        id="query_1",
+        type="query",
+        stage=TaskStage.DRAFT,
+        payload={"action": "transaction_list"},
+    )
+    state = OrchestratorState(
+        user_id="user-1",
+        phone_number="2348000000001",
+        loaded_context={"user_id": "user-1", "language": "en"},
+        tasks={"query_1": task},
+        waves=[["query_1"]],
+        current_wave_index=0,
+    )
+    ctx = ExecutionTurnContext(
+        state=state,
+        config={"configurable": {}},
+        services=OrchestrationServices.from_mapping({"query": _PreferenceHandoffWorker()}),
+        current_wave_len=1,
+        accumulator=ExecutionAccumulator(state.tasks),
+    )
+
+    await QueryTaskExecutor().execute(task, "query_1", ctx)
+
+    updates = ctx.accumulator.to_updates()
+    preference_task = updates["tasks"]["query_handoff_preferences_1"]
+    assert preference_task.type == "query"
+    assert preference_task.payload["action"] == "update_query_preferences"
+    assert preference_task.payload["preferences_update"]["presentation_detail"] == "detailed"
+    assert updates["waves"][1] == ["query_handoff_preferences_1"]
 
 
 async def test_query_executor_passes_active_query_surface_context_to_worker() -> None:

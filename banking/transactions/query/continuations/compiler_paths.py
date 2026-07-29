@@ -26,6 +26,7 @@ from banking.transactions.query.models.extraction import (
     ResolverOutcome,
 )
 from banking.transactions.query.models.operations import QueryRequest
+from banking.transactions.query.plan_compiler import QueryPlanCompileError, compile_query_plan_result
 from banking.transactions.query.utils.timezone import lagos_today
 from shared.utils.logging import get_logger
 
@@ -143,7 +144,33 @@ async def parse_new_query(step: Any, state: dict[str, Any]) -> dict[str, Any]:
         updates.update({"_query_llm_calls_used": 0, "_query_single_llm_invariant": True})
         return updates
 
-    result = await step.parser.parse(message, today=today, language=language)
+    raw_preferences = state.get("query_preferences")
+    parser_preferences = None
+    if isinstance(raw_preferences, dict):
+        parser_preferences = {
+            key: raw_preferences[key]
+            for key in (
+                "default_shape",
+                "relative_period_mode",
+                "default_activity_measure",
+                "default_status_inclusion",
+            )
+            if raw_preferences.get(key) is not None
+        } or None
+        if raw_preferences.get("default_account_refs"):
+            parser_preferences = {
+                **(parser_preferences or {}),
+                "default_account_scope_available": True,
+            }
+    if parser_preferences is None:
+        result = await step.parser.parse(message, today=today, language=language)
+    else:
+        result = await step.parser.parse(
+            message,
+            today=today,
+            language=language,
+            query_preferences=parser_preferences,
+        )
     result = _apply_router_insight_hint(step, result, state, today=today, language=language)
     step._log_query_trace(
         state=state,
@@ -185,8 +212,44 @@ async def parse_reasoner_extraction_to_updates(
         }
 
     extraction = getattr(decision, "extraction", None)
+    plan_draft = getattr(decision, "plan", None)
     confidence = getattr(decision, "confidence", None)
     started_at = perf_counter()
+    if plan_draft is not None:
+        try:
+            result = compile_query_plan_result(
+                step.parser,
+                plan_draft,
+                today=today,
+                language=language,
+                raw_query=str(state.get("message") or ""),
+            )
+        except QueryPlanCompileError:
+            logger.info(
+                "query_reasoner_plan_rejected",
+                semantic_decision=getattr(decision, "decision", None),
+                continuation_type=getattr(decision, "continuation_type", None),
+            )
+            return {
+                "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+                "response": render_message("query.clarify.unsure_rephrase", language),
+                "flow_state": "parsing",
+                "session_active": True,
+                "_query_reasoner_to_parser_suppressed": True,
+            }
+        step._log_query_trace(
+            state=state,
+            phase="semantic_compile",
+            latency_ms=(perf_counter() - started_at) * 1000.0,
+            outcome="OK",
+            resolution_source="reasoner_plan_compile",
+            semantic_decision=getattr(decision, "decision", None),
+            continuation_type=getattr(decision, "continuation_type", None),
+            llm_calls_used=1 if getattr(decision, "semantic_llm_used", False) else 0,
+            single_llm_invariant=True,
+            reasoner_schema=getattr(decision, "semantic_reasoner_schema", None),
+        )
+        return parse_result_to_updates(step, result, state=state, today=today, language=language)
     if (
         extraction is None
         and getattr(decision, "semantic_llm_used", False)
@@ -306,6 +369,10 @@ def parse_result_to_updates(
 ) -> dict[str, Any]:
     """Translate parser outcomes into extraction-step state updates."""
     del message_override
+    raw_preferences = state.get("query_preferences")
+    prefer_detailed = (
+        isinstance(raw_preferences, dict) and raw_preferences.get("presentation_detail") == "detailed"
+    )
 
     if result.outcome == ResolverOutcome.NEEDS_INPUT:
         clarify_fallback = render_message("query.clarify.default", language)
@@ -352,6 +419,18 @@ def parse_result_to_updates(
             today=today,
             language=language,
         )
+    preferred_account_ids: list[str] | None = None
+    raw_preferences = state.get("query_preferences")
+    if (
+        result.extraction.use_default_account_scope
+        and isinstance(raw_preferences, dict)
+        and isinstance(raw_preferences.get("default_account_refs"), list)
+    ):
+        preferred_account_ids = [
+            str(account_id)
+            for account_id in raw_preferences["default_account_refs"]
+            if isinstance(account_id, str) and account_id
+        ] or None
 
     raw_beneficiaries = state.get("beneficiaries")
     beneficiaries: list[Any] = raw_beneficiaries if isinstance(raw_beneficiaries, list) else []
@@ -369,7 +448,7 @@ def parse_result_to_updates(
             turn_id=state.get("turn_id"),
         )
 
-    return {
+    updates = {
         "query_request": query_request,
         "execution_contract": result.execution_contract,
         "execute_query_plan": bool(result.execution_contract),
@@ -378,5 +457,8 @@ def parse_result_to_updates(
         "current_page": 0,
         "session_active": True,
         "pending_clarification": None,
-        "show_expanded": False,
+        "show_expanded": prefer_detailed,
     }
+    if preferred_account_ids is not None:
+        updates["account_ids"] = preferred_account_ids
+    return updates

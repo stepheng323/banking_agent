@@ -278,6 +278,24 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         delta_type=decision.delta_type,
     )
 
+    if cont_type == "update_preferences" and getattr(decision, "preferences_update", None) is not None:
+        logger.info(
+            "query_preferences_handoff_created",
+            changed_field_count=len(decision.preferences_update.model_fields_set),
+            reset_all=decision.preferences_update.reset_all,
+        )
+        return {
+            "transaction_outcome": TransactionOutcome.OK,
+            "flow_state": "complete",
+            "session_active": True,
+            "query_preferences_handoff": decision.preferences_update.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_defaults=True,
+            ),
+            **step._semantic_trace_updates(decision),
+        }
+
     if cont_type == "repair":
         repair_updates = resolve_repair(
             request=session_query_request,

@@ -19,7 +19,10 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import 
 from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import context_surface
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
-from apps.chat.src.agent.orchestrator.workflows.execution.query_handoff import _next_query_handoff_transfer_task_id
+from apps.chat.src.agent.orchestrator.workflows.execution.query_handoff import (
+    _next_query_handoff_preference_task_id,
+    _next_query_handoff_transfer_task_id,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import _apply_result_patch
 from apps.chat.src.agent.orchestrator.workflows.execution.session_stack import (
     pop_active_session,
@@ -139,11 +142,15 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         ctx.accumulator.clear_pending_query_clarification()
 
     handoff_payload = None
+    preference_handoff = None
     followup_referent: FocusedReferent | dict[str, Any] | None = None
     if result.patch and isinstance(result.patch, dict):
         candidate = result.patch.get("query_transfer_handoff")
         if isinstance(candidate, dict):
             handoff_payload = candidate
+        preference_candidate = result.patch.get("query_preferences_handoff")
+        if isinstance(preference_candidate, dict):
+            preference_handoff = preference_candidate
         query_result = result.patch.get("query_result")
         referent_candidate = getattr(query_result, "followup_referent", None)
         if isinstance(referent_candidate, FocusedReferent | dict):
@@ -245,6 +252,25 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
 
             if not result.response:
                 ctx.accumulator.say("Okay. I will resend that transfer now.")
+        elif preference_handoff:
+            tasks = dict(ctx.accumulator.get_tasks(task_map(ctx.state)))
+            preference_task_id = _next_query_handoff_preference_task_id(tasks)
+            tasks[preference_task_id] = TaskSpec(
+                id=preference_task_id,
+                type="query",
+                stage=TaskStage.DRAFT,
+                payload={
+                    "action": "update_query_preferences",
+                    "instruction": turn.last_message_text_or("Update query preferences"),
+                    "preferences_update": preference_handoff,
+                },
+            )
+            ctx.accumulator.set_tasks(tasks)
+
+            waves = list(ctx.accumulator.get_waves(wave_list(ctx.state)))
+            insert_index = min(next_wave_index(ctx.state), len(waves))
+            waves.insert(insert_index, [preference_task_id])
+            ctx.accumulator.set_waves(waves)
 
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
         compact_session = _compact_query_session_patch(result.patch)

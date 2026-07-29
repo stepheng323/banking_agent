@@ -37,6 +37,7 @@ from banking.transactions.query.services.reasoning.models import (
     TransactionListDecision,
 )
 from banking.transactions.query.services.reasoning.reasoner import QuerySemanticReasoner
+from shared.types.query_preferences import QueryPreferenceUpdate
 from tests.query.factories import make_query_request
 
 
@@ -1786,6 +1787,48 @@ async def test_extraction_step_preserves_session_for_conversational_reaction() -
     assert result.patch["session_active"] is False
     assert result.patch["flow_state"] == "complete"
     assert result.patch["_query_session_transition"] == "exit_query_session_conversational"
+
+
+@pytest.mark.asyncio
+async def test_active_query_explicit_preference_becomes_typed_operation_handoff() -> None:
+    step = ExtractionStep(_FailingLLM())
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 14)),
+        )
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="update_preferences",
+            preferences_update=QueryPreferenceUpdate(presentation_detail="detailed"),
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    result = await step.run(
+        {
+            "message": "Always give me detailed transaction answers",
+            "language": "en",
+            "today": date(2026, 3, 14),
+            "query_session": {
+                "session_active": True,
+                "query_request": session_contract,
+                "query_result": {
+                    "summary_text": "You spent money in that period.",
+                    "items": [],
+                    "surface_view": _grouped_summary_surface_view(type="spending_total").model_dump(mode="json"),
+                },
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["flow_state"] == "complete"
+    assert result.patch["session_active"] is True
+    assert result.patch["query_preferences_handoff"] == {"presentation_detail": "detailed"}
 
 
 @pytest.mark.asyncio

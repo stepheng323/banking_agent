@@ -26,10 +26,15 @@ from banking.transactions.query.nodes.execution import ExecutionStep
 from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.nodes.generative_formatter import GenerativeFormattingStep
 from banking.transactions.query.pipeline import QueryPipeline
+from banking.transactions.query.preferences import (
+    QueryPreferenceAccountError,
+    persist_query_preferences,
+)
 from banking.transactions.query.session import _session_has_surface_view
 from banking.transactions.query.session_state import project_query_session_v3
 from banking.transactions.query.utils.timezone import lagos_today
 from shared.clients.abstractions.banking import BankDataProvider
+from shared.types.query_preferences import QueryPreferenceUpdate, query_preferences_from_profile
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -355,6 +360,42 @@ class QueryWorker:
         del user_message, pin_verified
         locale = LocaleManager.normalize(context.get("language")).value
         phone_number = context.get("phone_number")
+        preferences = query_preferences_from_profile(context.get("profile"))
+
+        if payload.get("action") == "update_query_preferences":
+            raw_update = payload.get("preferences_update")
+            user_id = context.get("user_id")
+            try:
+                update = QueryPreferenceUpdate.model_validate(raw_update)
+                if not user_id:
+                    raise ValueError("query preference update requires a user")
+                updated = await persist_query_preferences(
+                    user_id=str(user_id),
+                    phone_number=str(phone_number) if phone_number else None,
+                    update=update,
+                    accounts=list(context.get("accounts") or []),
+                )
+            except QueryPreferenceAccountError:
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    response=render_message("query.preferences.account_clarification", locale),
+                )
+            except Exception:
+                logger.exception("query_preferences_update_failed")
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message("query.preferences.update_failed", locale),
+                )
+            response = (
+                render_message("query.preferences.reset", locale)
+                if update.reset_all
+                else render_message("query.preferences.updated", locale)
+            )
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                response=response,
+                patch={"query_preferences": updated.model_dump(mode="json")},
+            )
 
         # 1. Load Session
         active_query_surface = context.get("active_query_surface")
@@ -465,6 +506,12 @@ class QueryWorker:
             "flow_state": "parsing",
             "current_page": query_session.get("current_page", 0),
             "page_size": 5,
+            "show_expanded": (
+                bool(query_session.get("show_expanded"))
+                if query_session.get("show_expanded") is not None
+                else preferences.presentation_detail == "detailed"
+            ),
+            "query_preferences": preferences.model_dump(mode="json"),
             "today": today,
             "recent_read_only": bool(query_session.get("recent_read_only")),
         }

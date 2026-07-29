@@ -304,6 +304,12 @@
     "common": {
       "transaction": "transaction"
     },
+    "preferences": {
+      "updated": "Aga m eji nhoro query transaction ndia site ugbu a gaa n’ihu.",
+      "reset": "Emeghariala nhoro query transaction gi.",
+      "account_clarification": "Kedu account ejikọrọ ka m jiri dika default maka query?",
+      "update_failed": "Enweghi m ike imelite nhoro query gi. O dighi ihe gbanwere."
+    },
     "drill_down": {
       "details_intro": "Lee nkọwa transaction ahụ:",
       "no_items": "Enweghị m transaction ahụ ọzọ. Gwa m ka m mee search ọzọ.",

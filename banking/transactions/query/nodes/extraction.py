@@ -352,6 +352,22 @@ class ExtractionStep(QueryStep):
         query_frames: list[QueryFrame] | None = None,
         pending_clarification: PendingClarificationState | None = None,
     ) -> SemanticReasonerContext:
+        raw_preferences = state.get("query_preferences")
+        reasoner_preferences = None
+        if isinstance(raw_preferences, dict):
+            reasoner_preferences = {
+                key: raw_preferences[key]
+                for key in (
+                    "default_shape",
+                    "relative_period_mode",
+                    "default_activity_measure",
+                    "default_status_inclusion",
+                )
+                if raw_preferences.get(key) is not None
+            }
+            if raw_preferences.get("default_account_refs"):
+                reasoner_preferences["default_account_scope_available"] = True
+            reasoner_preferences = reasoner_preferences or None
         return SemanticReasonerContext(
             message=message,
             today=today,
@@ -362,6 +378,7 @@ class ExtractionStep(QueryStep):
             query_frames=query_frames,
             pending_clarification=pending_clarification,
             active_focus=_restore_active_focus(state.get("active_focus")),
+            query_preferences=reasoner_preferences,
             turn_id=state.get("turn_id"),
             inbound_message_id=state.get("inbound_message_id"),
         )

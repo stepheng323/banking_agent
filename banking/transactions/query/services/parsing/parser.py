@@ -189,8 +189,15 @@ class QueryParser:
         question: str,
         today: date,
         language: str = "en",
+        query_preferences: dict[str, Any] | None = None,
     ) -> "QueryParseResult":
-        return await finalize_compiler.parse(self, question, today=today, language=language)
+        return await finalize_compiler.parse(
+            self,
+            question,
+            today=today,
+            language=language,
+            query_preferences=query_preferences,
+        )
 
     def resolve_existing_extraction(
         self,

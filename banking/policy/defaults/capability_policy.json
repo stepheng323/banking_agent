@@ -131,6 +131,9 @@
         "time_comparison": {
           "supported": true
         },
+        "update_query_preferences": {
+          "supported": true
+        },
         "export_pdf": {
           "supported": false,
           "limitation_message": "I can't generate a PDF in chat yet, but I can pull up the transactions here now. Want the last 5?"

@@ -21,8 +21,10 @@ from banking.transactions.query.models.extraction import (
     ClarificationPatch,
     PendingClarificationState,
     QueryExtractionResult,
+    QueryPlanDraft,
     ReasonerQueryExtraction,
 )
+from shared.types.query_preferences import QueryPreferenceUpdate
 
 DecisionType = Literal[
     "fresh_query",
@@ -50,6 +52,7 @@ ContinuationType = Literal[
     "recheck",
     "reconcile",
     "repair",
+    "update_preferences",
 ]
 
 FollowupIntentType = Literal["refine_existing", "replace_scope", "continue_pagination", "previous_pagination", "none"]
@@ -130,6 +133,8 @@ class QuerySemanticDecision(BaseModel):
     clarification_patch: ClarificationPatch | None = Field(default=None)
     repair_delta: QueryScopeDelta | None = Field(default=None)
     alternate_repair_delta: QueryScopeDelta | None = Field(default=None)
+    plan: QueryPlanDraft | None = Field(default=None)
+    preferences_update: QueryPreferenceUpdate | None = Field(default=None)
 
     continuation_type: ContinuationType | None = Field(default=None)
     followup_intent: FollowupIntentType | None = Field(default=None)
@@ -258,6 +263,7 @@ class _NarrowActiveDecision(BaseModel):
     extraction: ReasonerQueryExtraction | None = None
     repair_delta: QueryScopeDelta | None = None
     alternate_repair_delta: QueryScopeDelta | None = None
+    preferences_update: QueryPreferenceUpdate | None = None
     continuation_type: ContinuationType | None = None
     followup_intent: FollowupIntentType | None = None
     time_period: str | None = None
@@ -323,6 +329,7 @@ class TransactionListDecision(_NarrowActiveDecision):
     recipient_name: str | None = None
     result_limit: int | None = None
     result_reference: ResultReferenceType | None = None
+    plan: QueryPlanDraft | None = None
 
 
 class CompositeDecision(TransactionListDecision):
@@ -349,6 +356,7 @@ class GroupedSummaryDecision(_NarrowActiveDecision):
     drill_down_index: int | None = None
     drill_down_action: DrillDownActionType | None = None
     fact_field: FactFieldType | None = None
+    plan: QueryPlanDraft | None = None
 
 
 class InsightDecision(BaseModel):
@@ -458,6 +466,7 @@ class SemanticReasonerContext:
     surface_view: SurfaceView | None = None
     query_frames: list[QueryFrame] | None = None
     active_focus: QueryFocus | None = None
+    query_preferences: dict[str, Any] | None = None
     turn_id: str | None = None
     inbound_message_id: str | None = None
 

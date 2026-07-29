@@ -7,6 +7,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt
     PLANNER_MIXED_OUTPUT_QUALITY_PROMPT,
     PLANNER_MIXED_TX_PRECISION_PROMPT,
     PLANNER_OUTPUT_QUALITY_PROMPT,
+    PLANNER_QUERY_PREFERENCE_PROMPT,
     PLANNER_RULE_ATOMS,
     PLANNER_RULE_SEMANTIC_GUARD_IDS,
     PLANNER_RUNTIME_COMMON_EXAMPLES,
@@ -85,6 +86,9 @@ def compile_planner_system_prompt(
     if "executor_coverage_guard" in bundles and prompt_input.signals.expected_transaction_executors:
         sections.append(_coverage_guard_section(prompt_input.signals.expected_transaction_executors))
         profile_parts.append("guard_exec_cov")
+    if prompt_input.signals.forced_domain_owner == "query":
+        sections.append(PLANNER_QUERY_PREFERENCE_PROMPT)
+        profile_parts.append("query_preferences")
 
     sections.append(PLANNER_RUNTIME_PROMPT_SUFFIX)
 
