@@ -31,6 +31,7 @@ from banking.transactions.query.models.extraction import (
     ResolverOutcome,
     TimeReference,
 )
+from banking.transactions.query.plan_compiler import QueryPlanCompileError, compile_query_plan_draft
 from banking.transactions.query.prompts.main import QUERY_PARSER_PROMPT
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.observability.llm_call_metrics import record_llm_call, structured_output_metrics
@@ -611,7 +612,41 @@ async def parse(parser: Any, question: str, today: Any, language: str = "en") ->
                 **extract_provider_llm_metadata(raw_extraction),
             },
         )
-        extraction = parser._inflate_parser_extraction(raw_extraction, question=question, language=language)
+        if isinstance(raw_extraction, QueryExtractionResult):
+            extraction = parser._inflate_parser_extraction(raw_extraction, question=question, language=language)
+            return parser._finalize_extraction(extraction, today=today, language=language)
+        parser_extraction = (
+            raw_extraction
+            if isinstance(raw_extraction, ParserQueryExtraction)
+            else ParserQueryExtraction.model_validate(raw_extraction)
+        )
+        if parser_extraction.plan is not None:
+            try:
+                plan = compile_query_plan_draft(
+                    parser,
+                    parser_extraction.plan,
+                    today=today,
+                    language=language,
+                    raw_query=question,
+                )
+            except QueryPlanCompileError:
+                return QueryParseResult(
+                    outcome=ResolverOutcome.NEEDS_INPUT,
+                    resolver_message=render_message("query.clarify.unsure_rephrase", language),
+                )
+            primary = next(step for step in plan.steps if step.role == "primary")
+            primary_draft = next(step for step in parser_extraction.plan.steps if step.step_id == primary.step_id)
+            return QueryParseResult(
+                outcome=ResolverOutcome.OK,
+                extraction=parser._inflate_parser_extraction(
+                    ParserQueryExtraction(**primary_draft.extraction.model_dump(mode="python")),
+                    question=question,
+                    language=language,
+                ),
+                query_request=primary.request.model_dump(mode="json"),
+                execution_contract=plan.model_dump(mode="json"),
+            )
+        extraction = parser._inflate_parser_extraction(parser_extraction, question=question, language=language)
         return parser._finalize_extraction(extraction, today=today, language=language)
     except Exception as e:
         logger.error("parse_error", error=str(e))

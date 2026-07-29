@@ -161,6 +161,13 @@ Populate: intent, filters, time_range, comparison, aggregation, request_shape, f
 
 MULTILINGUAL: Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, and mixed phrasing.
 
+MULTI-STEP READS:
+- Use plan only when the user asks for two or three distinct analytical sections or a result must bind into a later
+  evidence query. Ordinary comparisons and grouped summaries remain one extraction.
+- Plan steps are read-only, ordered, have exactly one primary role, and may depend only on earlier step IDs.
+- Use typed bindings only for top_group, selected_group, scalar, or period into category, counterparty, account,
+  amount, or period. Never plan transfers or other mutations.
+
 Return STRICT JSON only."""
 
 QUERY_SEMANTIC_REASONER_CONTEXT = """\

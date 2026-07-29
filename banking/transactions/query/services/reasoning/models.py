@@ -93,6 +93,7 @@ ReasonerPromptProfileType = Literal[
     "transaction_list",
     "grouped_summary",
     "insight",
+    "composite",
     "historical_frames",
     "pending_clarification",
 ]
@@ -143,6 +144,7 @@ class QuerySemanticDecision(BaseModel):
     target_text: str | None = Field(default=None)
     target_amount: float | None = Field(default=None)
     target_index: int | None = Field(default=None)
+    target_step_id: str | None = Field(default=None)
     requested_field: QueryTargetFieldType | None = Field(default=None)
     rank: QueryRankType | None = Field(default=None)
     page_direction: PageDirectionType | None = Field(default=None)
@@ -321,6 +323,13 @@ class TransactionListDecision(_NarrowActiveDecision):
     recipient_name: str | None = None
     result_limit: int | None = None
     result_reference: ResultReferenceType | None = None
+
+
+class CompositeDecision(TransactionListDecision):
+    """A follow-up targeting one visible section of a multi-step answer."""
+
+    target_step_id: str | None = None
+    grounded_operation: GroundedOperationType | None = None
 
 
 class GroupedSummaryDecision(_NarrowActiveDecision):

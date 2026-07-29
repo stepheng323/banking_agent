@@ -24,7 +24,7 @@ from banking.transactions.query.continuations.time_rescope import (
     maybe_recover_time_rescope_continuation,
 )
 from banking.transactions.query.conversation_focus import resolve_focus
-from banking.transactions.query.models.conversation import QueryFocus
+from banking.transactions.query.models.conversation import QueryFocus, QueryTurnPlan
 from banking.transactions.query.models.domain import (
     QueryIntent,
     QueryRequest,
@@ -70,6 +70,17 @@ def _restore_focus(raw: object) -> QueryFocus | None:
         except Exception:
             return None
     return None
+
+
+def _plan_step_request(raw_contract: object, step_id: str | None) -> QueryRequest | None:
+    if not step_id:
+        return None
+    try:
+        plan = raw_contract if isinstance(raw_contract, QueryTurnPlan) else QueryTurnPlan.model_validate(raw_contract)
+    except Exception:
+        return None
+    step = next((candidate for candidate in plan.steps if candidate.step_id == step_id), None)
+    return step.request if step is not None else None
 
 
 def _normalize_show_existing_message(message: str) -> str:
@@ -169,7 +180,13 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
     if focus is not None and focus.frame_id:
         focused_frame = next((frame for frame in query_frames if frame.frame_id == focus.frame_id), None)
         if focused_frame is not None:
-            session_query_request = focused_frame.query_request
+            session_query_request = (
+                _plan_step_request(focused_frame.execution_contract, focus.step_id) or focused_frame.query_request
+            )
+    if focus is not None:
+        session_query_request = (
+            _plan_step_request(session.get("execution_contract"), focus.step_id) or session_query_request
+        )
 
     items: list[QueryResultItem] = []
     restored_query_result: QueryResult | None = None
@@ -227,6 +244,10 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             query_frames=query_frames,
         )
     )
+    target_step_id = getattr(decision, "target_step_id", None)
+    session_query_request = (
+        _plan_step_request(session.get("execution_contract"), target_step_id) or session_query_request
+    )
     cont_type = decision.continuation_type or "unclear"
 
     if state.get("recent_read_only") and getattr(decision, "drill_down_action", None) in {
@@ -271,6 +292,8 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
                 else (focus.frame_id if focus is not None else None)
             ),
             turn_id=state.get("turn_id"),
+            execution_contract=session.get("execution_contract"),
+            target_step_id=target_step_id or (focus.step_id if focus is not None else None),
         )
         repair_updates.update(step._semantic_trace_updates(decision))
         return repair_updates

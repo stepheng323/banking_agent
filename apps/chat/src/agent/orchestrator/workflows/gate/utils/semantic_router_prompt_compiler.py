@@ -56,7 +56,8 @@ go to their domain. If grounding is insufficient, use planner_ambiguous.
 9. For a clear analytical domain_query, set q_insight to exactly one of variance_drivers, probable_duplicates,
 recurring_patterns, anomalies, counterparty_concentration, forecast, runway, or cash_flow_quality. Otherwise null.
 Insight meanings: variance=period drivers; duplicates=duplicate observations; recurring=regular series;
-anomalies=outliers; concentration=largest spending counterparty share; forecast=future spending; runway=balance duration;
+anomalies=outliers; concentration=largest spending counterparty share; forecast=future spending;
+runway=balance duration;
 cash-flow quality=complete-month income versus spending.
 Never set q_insight=counterparty_concentration for "who did I send/transfer/pay money to" — that's a recipient ranking.
 

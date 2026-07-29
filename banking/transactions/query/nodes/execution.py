@@ -9,12 +9,13 @@ from banking.transactions.query.actions import handle_drill_down
 from banking.transactions.query.contracts import SelectionPayload, SurfaceViewMode
 from banking.transactions.query.conversation_focus import advance_focus
 from banking.transactions.query.executor import QueryExecutor
-from banking.transactions.query.models.conversation import QueryFocus
+from banking.transactions.query.models.conversation import QueryFocus, QueryTurnPlan
 from banking.transactions.query.models.operations import QueryRequest
 from banking.transactions.query.pipeline import QueryStep
 from banking.transactions.query.presentation.formatter import QueryFormatter
 from banking.transactions.query.presentation.surface_builder import build_surface_view
 from banking.transactions.query.services.answers.strategy import select_answer_strategy
+from banking.transactions.query.turn_plan import execute_query_turn_plan
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -142,23 +143,113 @@ class ExecutionStep(QueryStep):
         executor = QueryExecutor(worker_context.banking_provider)
         resolved_account_id = str(account_id)
 
-        result = await executor.execute(
-            query=query_request,
-            account_id=resolved_account_id,
-            account_ids=account_ids,
-            accounts_info=accounts_info,
-            current_page=current_page,
-            page_size=page_size,
-            user_id=user_id,
-            language=locale,
-            continuation_type=state.get("continuation_type"),
-            continuation_delta_type=state.get("continuation_delta_type"),
-            session_cache=session_cache,
-            trace_context={
-                "turn_id": state.get("turn_id"),
-                "inbound_message_id": state.get("inbound_message_id"),
-            },
-        )
+        async def execute_request(request: QueryRequest, *, page: int = 0) -> Any:
+            step_result = await executor.execute(
+                query=request,
+                account_id=resolved_account_id,
+                account_ids=account_ids,
+                accounts_info=accounts_info,
+                current_page=page,
+                page_size=page_size,
+                user_id=user_id,
+                language=locale,
+                continuation_type=state.get("continuation_type"),
+                continuation_delta_type=state.get("continuation_delta_type"),
+                session_cache=session_cache,
+                trace_context={
+                    "turn_id": state.get("turn_id"),
+                    "inbound_message_id": state.get("inbound_message_id"),
+                },
+            )
+            if step_result.query_request is None:
+                step_result.query_request = request
+            step_result.interpretation = self._build_interpretation(request)
+            step_result = select_answer_strategy(step_result, locale=locale)
+            step_result.surface_view = build_surface_view(step_result)
+            return step_result
+
+        raw_execution_contract = state.get("execution_contract")
+        plan = None
+        if state.get("execute_query_plan") and isinstance(raw_execution_contract, QueryTurnPlan):
+            plan = raw_execution_contract
+        elif (
+            state.get("execute_query_plan")
+            and isinstance(raw_execution_contract, dict)
+            and raw_execution_contract.get("kind") == "plan"
+        ):
+            try:
+                plan = QueryTurnPlan.model_validate(raw_execution_contract)
+            except Exception:
+                plan = None
+        if plan is not None:
+            turn_result = await execute_query_turn_plan(plan, execute_request)
+            completed = [section.result for section in turn_result.sections if section.result is not None]
+            if not completed:
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message("query.error.general", locale),
+                )
+            primary_section = next(
+                (
+                    section
+                    for section in turn_result.sections
+                    if section.role == "primary" and section.result is not None
+                ),
+                None,
+            )
+            primary = (
+                primary_section.result
+                if primary_section is not None and primary_section.result is not None
+                else completed[0]
+            )
+            responses = [
+                QueryFormatter.format(
+                    section.result,
+                    current_page=0,
+                    show_expanded=False,
+                    has_more=section.result.has_more,
+                    locale=locale,
+                )
+                for section in turn_result.sections
+                if section.result is not None
+            ]
+            required_step_ids = {step.step_id for step in plan.steps if step.required}
+            if any(
+                section.step_id in required_step_ids and section.unavailable_reason is not None
+                for section in turn_result.sections
+            ):
+                responses.append(render_message("query.error.general", locale))
+            focus = advance_focus(
+                request=primary.query_request or query_request,
+                previous=self._active_focus(state.get("active_focus")),
+                continuation_type=state.get("continuation_type"),
+                turn_id=state.get("turn_id"),
+            )
+            if primary_section is not None:
+                focus = focus.model_copy(update={"step_id": primary_section.step_id})
+            composite = primary.model_copy(deep=True)
+            composite.summary_text = turn_result.summary_text
+            composite.items = [item for result_item in completed for item in (result_item.items or [])]
+            composite.surface_view = turn_result.surface_view
+            composite.conversation_focus = focus
+            composite.execution_contract = plan
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                response="\n\n".join(responses),
+                patch={
+                    "query_result": composite,
+                    "query_turn_result": turn_result,
+                    "query_request": primary.query_request or query_request,
+                    "execution_contract": plan,
+                    "active_focus": focus,
+                    "session_active": True,
+                    "flow_state": "complete",
+                    "current_page": 0,
+                    "page_size": page_size,
+                },
+            )
+
+        result = await execute_request(query_request, page=current_page)
         if result.query_request is None:
             result.query_request = query_request
         result.interpretation = self._build_interpretation(

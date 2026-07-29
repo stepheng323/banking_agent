@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.message_keys import MessageKey
@@ -57,7 +57,7 @@ def _render_driver(driver: VarianceDriver, language: str) -> str:
 
 
 def _render_metric_headline(comparison: PeriodComparison, language: str) -> str:
-    measure_key = f"query.insight.measure.{comparison.metric.value}"
+    measure_key = cast(MessageKey, f"query.insight.measure.{comparison.metric.value}")
     measure_label = render_message(measure_key, language)
     change_text = _format_relative_change(comparison.absolute_delta, comparison.relative_delta, language)
 
@@ -108,11 +108,14 @@ def format_variance_result(result: VarianceAnalysisResult, language: str = "en")
     for view in result.dimension_views:
         if not view.drivers:
             continue
-        heading_key = f"query.insight.dimension.{view.dimension.value}"
+        heading_key = cast(MessageKey, f"query.insight.dimension.{view.dimension.value}")
         dimension_label = render_message(heading_key, language)
         lines.append("")
         if result.measure == "cash_flow_overview":
-            measure_label = render_message(f"query.insight.measure.{view.metric.value}", language)
+            measure_label = render_message(
+                cast(MessageKey, f"query.insight.measure.{view.metric.value}"),
+                language,
+            )
             lines.append(
                 render_message(
                     "query.insight.dimension_measure_heading",

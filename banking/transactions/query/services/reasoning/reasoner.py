@@ -84,6 +84,9 @@ class QuerySemanticReasoner:
             "insight": with_observable_structured_output(
                 typed_llm, reasoner_models.InsightDecision, method="function_calling"
             ),
+            "composite": with_observable_structured_output(
+                typed_llm, reasoner_models.CompositeDecision, method="function_calling"
+            ),
             "historical_frames": with_observable_structured_output(
                 typed_llm, reasoner_models.HistoricalFrameDecision, method="function_calling"
             ),
@@ -292,6 +295,27 @@ class QuerySemanticReasoner:
                 "group_by": item.payload.group_by,
                 "group_key": item.payload.group_key,
             }
+        if surface_view.mode == SurfaceViewMode.COMPOSITE:
+            payload["sections"] = [
+                {
+                    "step_id": section.step_id,
+                    "role": section.role,
+                    "mode": section.mode.value,
+                    "lead_text": section.lead_text,
+                    "items": [
+                        {
+                            "id": item.id,
+                            "label": item.label,
+                            "amount": item.amount,
+                            "selection_kind": item.payload.selection_kind,
+                            "entity_type": item.payload.entity_type,
+                        }
+                        for item in section.items[:5]
+                    ],
+                    "unavailable": section.unavailable_reason is not None,
+                }
+                for section in surface_view.sections
+            ]
         return QuerySemanticReasoner._serialize(payload or None)
 
     @staticmethod
@@ -306,6 +330,7 @@ class QuerySemanticReasoner:
             SurfaceViewMode.TRANSACTION_LIST: "list",
             SurfaceViewMode.GROUPED_SUMMARY: "summary",
             SurfaceViewMode.INSIGHT: "insight",
+            SurfaceViewMode.COMPOSITE: "composite",
             SurfaceViewMode.CLARIFICATION: "clarification",
         }
         return mode_map.get(surface_view.mode, "none")
@@ -383,6 +408,8 @@ class QuerySemanticReasoner:
                         "id": item.get("id"),
                         "label": str(item.get("label") or "")[:120],
                         "amount": item.get("amount"),
+                        "step_id": item.get("step_id"),
+                        "section_role": item.get("section_role"),
                     }
                     for item in frame.visible_items[:5]
                     if isinstance(item, dict)
@@ -414,7 +441,11 @@ class QuerySemanticReasoner:
         surface_view: SurfaceView | None,
     ) -> reasoner_models.QuerySemanticDecision | None:
         surface_mode = cls._continuation_classifier_surface_type(surface_view=surface_view)
-        if surface_mode not in {SurfaceViewMode.DIRECT_ANSWER, SurfaceViewMode.TRANSACTION_LIST}:
+        if surface_mode not in {
+            SurfaceViewMode.DIRECT_ANSWER,
+            SurfaceViewMode.TRANSACTION_LIST,
+            SurfaceViewMode.COMPOSITE,
+        }:
             return None
         if not cls._has_visible_items(surface_view):
             return None
@@ -425,6 +456,11 @@ class QuerySemanticReasoner:
             return None
         if not re.search(r"\b(?:show|open|view|see|details?|transaction|payment|transfer|one)\b", normalized):
             return None
+        target_step_id = None
+        if surface_view is not None and ordinal_index < len(surface_view.items):
+            metadata = surface_view.items[ordinal_index].metadata
+            if isinstance(metadata, dict) and isinstance(metadata.get("step_id"), str):
+                target_step_id = metadata["step_id"]
         return reasoner_models.QuerySemanticDecision(
             decision="continuation",
             confidence=1.0,
@@ -432,6 +468,7 @@ class QuerySemanticReasoner:
             continuation_type="drill_down",
             drill_down_index=ordinal_index,
             drill_down_action="view_details",
+            target_step_id=target_step_id,
         )
 
     @classmethod
@@ -455,11 +492,11 @@ class QuerySemanticReasoner:
                     target_text=selection_payload.label,
                 )
             return None
-        if surface_mode not in {SurfaceViewMode.DIRECT_ANSWER, SurfaceViewMode.TRANSACTION_LIST}:
-            return None
         visible_followup = cls._deterministic_visible_followup(message=message, surface_view=surface_view)
         if visible_followup is not None:
             return visible_followup
+        if surface_mode not in {SurfaceViewMode.DIRECT_ANSWER, SurfaceViewMode.TRANSACTION_LIST}:
+            return None
         shortcut = resolve_query_shortcut(message, language)
         if shortcut is None or shortcut.kind not in {"actionable", "pagination"}:
             return None
@@ -531,6 +568,8 @@ class QuerySemanticReasoner:
             prompt_profile = "grouped_summary"
         elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.INSIGHT:
             prompt_profile = "insight"
+        elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.COMPOSITE:
+            prompt_profile = "composite"
         elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.TRANSACTION_LIST:
             prompt_profile = "transaction_list"
         else:
@@ -538,7 +577,7 @@ class QuerySemanticReasoner:
         compiled_prompt = compile_query_reasoner_prompt(prompt_profile)
         items_section, prompt_item_count = self._serialize_items(
             context.items
-            if prompt_profile in {"focused_item", "transaction_list", "grouped_summary", "insight"}
+            if prompt_profile in {"focused_item", "transaction_list", "grouped_summary", "insight", "composite"}
             else None
         )
         query_frames_section, prompt_frame_count = self._serialize_query_frames(
@@ -546,7 +585,9 @@ class QuerySemanticReasoner:
             # frames. Other surfaces can still emit a reconcile decision from
             # the user's target and resolve it deterministically at runtime,
             # avoiding a standing prompt-size cost on fast list/fact paths.
-            context.query_frames if prompt_profile in {"historical_frames", "grouped_summary", "insight"} else None
+            context.query_frames
+            if prompt_profile in {"historical_frames", "grouped_summary", "insight", "composite"}
+            else None
         )
         pending_clarification_section = (
             self._serialize(context.pending_clarification) if prompt_profile == "pending_clarification" else "none"
@@ -580,6 +621,7 @@ class QuerySemanticReasoner:
                 "transaction_list": reasoner_models.TransactionListDecision,
                 "grouped_summary": reasoner_models.GroupedSummaryDecision,
                 "insight": reasoner_models.InsightDecision,
+                "composite": reasoner_models.CompositeDecision,
                 "historical_frames": reasoner_models.HistoricalFrameDecision,
             }[prompt_profile]
             reasoner_schema = "active_continuation"

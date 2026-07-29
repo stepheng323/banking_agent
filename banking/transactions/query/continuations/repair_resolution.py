@@ -10,8 +10,10 @@ from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.continuations.repair import QueryRepairError, apply_query_scope_delta
 from banking.transactions.query.models.conversation import (
     PendingInterpretationProposal,
+    QueryExecutionContract,
     QueryInterpretationProposal,
     QueryScopeDelta,
+    QueryTurnPlan,
     SingleQueryExecution,
 )
 from banking.transactions.query.models.operations import QueryRequest
@@ -52,10 +54,14 @@ def _proposal_updates(
     session: dict[str, Any],
     source_frame_id: str | None,
     turn_id: str | None,
+    execution_contract: object | None,
+    target_step_id: str | None,
 ) -> dict[str, Any]:
     try:
-        primary_contract = apply_query_scope_delta(request, primary)
-        alternate_contract = apply_query_scope_delta(request, alternate)
+        primary_request = apply_query_scope_delta(request, primary)
+        alternate_request = apply_query_scope_delta(request, alternate)
+        primary_contract = _replace_execution_request(execution_contract, target_step_id, primary_request)
+        alternate_contract = _replace_execution_request(execution_contract, target_step_id, alternate_request)
     except QueryRepairError:
         return {
             "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
@@ -64,19 +70,23 @@ def _proposal_updates(
             "flow_state": "parsing",
         }
     if primary_contract == alternate_contract:
-        return _execute_updates(primary_contract, session=session, source_frame_id=source_frame_id)
+        return _execute_updates(
+            primary_request,
+            execution_contract=primary_contract,
+            source_frame_id=source_frame_id,
+        )
 
     proposals = [
         QueryInterpretationProposal(
             proposal_id="option_1",
-            contract=SingleQueryExecution(request=primary_contract),
+            contract=primary_contract,
             source_frame_id=source_frame_id,
             difference_fields=_proposal_label(primary, 1).split(", "),
             confidence=confidence,
         ),
         QueryInterpretationProposal(
             proposal_id="option_2",
-            contract=SingleQueryExecution(request=alternate_contract),
+            contract=alternate_contract,
             source_frame_id=source_frame_id,
             difference_fields=_proposal_label(alternate, 2).split(", "),
             confidence=max(0.0, confidence - 0.01),
@@ -101,9 +111,41 @@ def _proposal_updates(
     }
 
 
-def _execute_updates(request: QueryRequest, *, session: dict[str, Any], source_frame_id: str | None) -> dict[str, Any]:
+def _replace_execution_request(
+    raw_contract: object | None,
+    target_step_id: str | None,
+    request: QueryRequest,
+) -> QueryExecutionContract:
+    if raw_contract is None:
+        return SingleQueryExecution(request=request)
+    try:
+        plan = raw_contract if isinstance(raw_contract, QueryTurnPlan) else QueryTurnPlan.model_validate(raw_contract)
+    except Exception:
+        return SingleQueryExecution(request=request)
+    if target_step_id is None:
+        raise QueryRepairError("a composite repair requires a target section")
+    if not any(step.step_id == target_step_id for step in plan.steps):
+        raise QueryRepairError("the selected composite section is unavailable")
+    return plan.model_copy(
+        update={
+            "steps": [
+                step.model_copy(update={"request": request}) if step.step_id == target_step_id else step
+                for step in plan.steps
+            ]
+        }
+    )
+
+
+def _execute_updates(
+    request: QueryRequest,
+    *,
+    execution_contract: QueryExecutionContract,
+    source_frame_id: str | None,
+) -> dict[str, Any]:
     return {
         "query_request": request,
+        "execution_contract": execution_contract,
+        "execute_query_plan": isinstance(execution_contract, QueryTurnPlan),
         "flow_state": "executing",
         "session_active": True,
         "pending_query_input": None,
@@ -125,6 +167,8 @@ def resolve_repair(
     session: dict[str, Any],
     source_frame_id: str | None,
     turn_id: str | None,
+    execution_contract: object | None = None,
+    target_step_id: str | None = None,
 ) -> dict[str, Any]:
     """Apply an unambiguous correction or retain two validated choices."""
     if request is None or primary is None:
@@ -145,6 +189,8 @@ def resolve_repair(
             session=session,
             source_frame_id=source_frame_id,
             turn_id=turn_id,
+            execution_contract=execution_contract,
+            target_step_id=target_step_id,
         )
     if score < _LOW_CONFIDENCE:
         return {
@@ -155,6 +201,7 @@ def resolve_repair(
         }
     try:
         repaired = apply_query_scope_delta(request, primary)
+        repaired_execution = _replace_execution_request(execution_contract, target_step_id, repaired)
     except QueryRepairError:
         return {
             "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
@@ -171,7 +218,11 @@ def resolve_repair(
             "session_active": True,
             "flow_state": "parsing",
         }
-    return _execute_updates(repaired, session=session, source_frame_id=source_frame_id)
+    return _execute_updates(
+        repaired,
+        execution_contract=repaired_execution,
+        source_frame_id=source_frame_id,
+    )
 
 
 def resolve_pending_proposal(
@@ -201,7 +252,19 @@ def resolve_pending_proposal(
     if index is not None and 0 <= index < len(pending.proposals):
         contract = pending.proposals[index].contract
         if isinstance(contract, SingleQueryExecution):
-            return _execute_updates(contract.request, session=session, source_frame_id=pending.source_frame_id)
+            return _execute_updates(
+                contract.request,
+                execution_contract=contract,
+                source_frame_id=pending.source_frame_id,
+            )
+        if isinstance(contract, QueryTurnPlan):
+            primary = next((step for step in contract.steps if step.role == "primary"), None)
+            if primary is not None:
+                return _execute_updates(
+                    primary.request,
+                    execution_contract=contract,
+                    source_frame_id=pending.source_frame_id,
+                )
     attempts = pending.attempt_count + 1
     if attempts >= 2:
         return {

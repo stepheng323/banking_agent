@@ -78,6 +78,7 @@ def _compact_query_session_patch(patch: dict[str, Any] | None) -> dict[str, Any]
         show_expanded=bool(patch.get("show_expanded")),
         timestamp=patch.get("timestamp"),
         pending_input=pending_input,
+        execution_contract=patch.get("execution_contract"),
         cache={
             key: value
             for key, value in patch.items()

@@ -182,8 +182,8 @@ class ClarificationPatch(BaseModel):
     confidence: float = Field(default=1.0)
 
 
-class ParserQueryExtraction(BaseModel):
-    """Minimal parser-only extraction returned by the fresh-query LLM path."""
+class QueryStepExtraction(BaseModel):
+    """One compact extraction used by a bounded read-only query plan."""
 
     intent: QueryIntent = Field(default=QueryIntent.TRANSACTION_LIST)
     filters: QueryFilters = Field(default_factory=QueryFilters)
@@ -199,6 +199,31 @@ class ParserQueryExtraction(BaseModel):
     )
     answer_fact_field: QueryFactField | None = Field(default=None)
     insight: InsightSpec | None = Field(default=None)
+
+
+class QueryPlanBindingDraft(BaseModel):
+    source_step_id: str
+    source: Literal["top_group", "selected_group", "scalar", "period"]
+    target: Literal["category", "counterparty", "account", "period", "amount"]
+
+
+class QueryPlanStepDraft(BaseModel):
+    step_id: str = Field(min_length=1, max_length=24)
+    role: Literal["primary", "supporting", "evidence"]
+    extraction: QueryStepExtraction
+    depends_on: list[str] = Field(default_factory=list, max_length=2)
+    required: bool = True
+    bindings: list[QueryPlanBindingDraft] = Field(default_factory=list, max_length=2)
+
+
+class QueryPlanDraft(BaseModel):
+    steps: list[QueryPlanStepDraft] = Field(min_length=2, max_length=3)
+
+
+class ParserQueryExtraction(QueryStepExtraction):
+    """Minimal parser-only extraction returned by the fresh-query LLM path."""
+
+    plan: QueryPlanDraft | None = None
 
 
 class QueryExtractionResult(BaseModel):
@@ -284,6 +309,7 @@ class QueryParseResult(BaseModel):
     outcome: ResolverOutcome
     extraction: QueryExtractionResult | None = None
     query_request: dict[str, Any] | None = Field(default=None, description="Compiled Query Semantics v2 request")
+    execution_contract: dict[str, Any] | None = None
     resolver_message: str | None = Field(default=None, description="Message to show user (e.g. clarification)")
     notices: list[str] = Field(default_factory=list, description="Infos like 'Clamped to 30 days'")
     pending_clarification: dict[str, Any] | None = Field(

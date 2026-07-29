@@ -30,7 +30,7 @@ class QueryRepairError(ValueError):
 
 def _mutate_values(current: Sequence[str], mutation: str | None, values: Sequence[str], field: str) -> list[str]:
     if mutation is None:
-        return current
+        return list(current)
     if mutation == "clear":
         return []
     if mutation == "replace":

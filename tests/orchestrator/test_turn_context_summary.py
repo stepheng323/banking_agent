@@ -40,7 +40,8 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_
     summary_to_state_payload,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
-from banking.transactions.query.models.domain import QueryIntent, TimeRange
+from banking.transactions.query.grounding.frames import build_query_frame
+from banking.transactions.query.models.domain import QueryIntent, QueryResult, TimeRange
 from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
@@ -74,6 +75,11 @@ def _query_surface_frame(*, summary_text: str = "Netflix was ₦5,000.") -> Cont
             result_limit=1,
         )
     )
+    query_frame = build_query_frame(
+        query_request=contract,
+        result=QueryResult(summary_text=summary_text, query_request=contract),
+        turn_index=1,
+    )
     return ContextFrame(
         frame_id="query_surface_1",
         frame_type=ContextFrameType.TRANSACTION_DETAIL,
@@ -89,7 +95,7 @@ def _query_surface_frame(*, summary_text: str = "Netflix was ₦5,000.") -> Cont
             "source": "query",
             "surface_mode": "direct_answer",
             "summary_text": summary_text,
-            "query_request": contract.model_dump(mode="json"),
+            "query_frame": query_frame.model_dump(mode="json"),
             "surface_context": {"mode": "direct_answer", "type": "single_transaction"},
         },
     )
@@ -149,7 +155,8 @@ async def test_load_query_session_snapshot_prefers_context_frame_over_pending_cl
 
     assert source == "context_frame"
     assert snapshot is not None
-    assert snapshot["query_result"]["summary_text"] == "Netflix was ₦5,000."
+    assert snapshot["schema_version"] == 3
+    assert snapshot["display_result"]["summary_text"] == "Netflix was ₦5,000."
 
 
 async def test_load_query_session_snapshot_no_longer_prefers_redis() -> None:

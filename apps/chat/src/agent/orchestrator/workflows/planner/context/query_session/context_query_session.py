@@ -60,6 +60,7 @@ async def _load_query_session_snapshot(
         query_session_snapshot = build_query_session_snapshot_from_surface(active_query_surface)
         if query_session_snapshot is not None:
             query_session_snapshot["active_query_surface"] = active_query_surface
+            query_session_snapshot["_query_session_source"] = "context_frame"
             query_session_source = "context_frame"
 
     if query_session_snapshot is None and isinstance(state_view.pending_query_clarification, dict):
@@ -79,14 +80,18 @@ async def _load_query_session_snapshot(
                 query_session_source = "recent_closed_context"
 
     snapshot = query_session_snapshot if isinstance(query_session_snapshot, dict) else {}
+    display_result = snapshot.get("display_result")
     active_logger = snapshot_logger or logger
     active_logger.info(
         "planner_query_session_snapshot",
         query_session_source=query_session_source or "none",
         session_active=bool(snapshot.get("session_active")),
-        has_query_request=bool(snapshot.get("query_request")),
-        has_query_result=bool(snapshot.get("query_result")),
-        has_surface=_session_has_surface_view(snapshot),
+        has_query_request=bool(snapshot.get("query_request") or snapshot.get("execution_contract")),
+        has_query_result=bool(snapshot.get("query_result") or display_result),
+        has_surface=(
+            _session_has_surface_view(snapshot)
+            or bool(isinstance(display_result, dict) and display_result.get("surface_view"))
+        ),
         has_query_frames=bool(snapshot.get("query_frames")),
     )
 

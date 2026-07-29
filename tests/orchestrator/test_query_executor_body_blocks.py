@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.executors.query import
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import SelectionPayload
+from banking.transactions.query.grounding.frames import build_query_frame
 from banking.transactions.query.models.domain import (
     Filters,
     QueryAnswerContext,
@@ -50,6 +51,11 @@ def _query_request() -> QueryRequest:
 
 def _query_context_frame() -> ContextFrame:
     contract = _query_request()
+    query_frame = build_query_frame(
+        query_request=contract,
+        result=QueryResult(summary_text="Money sent", query_request=contract),
+        turn_index=1,
+    )
     return ContextFrame(
         frame_id="query_surface_1",
         frame_type=ContextFrameType.TRANSACTION_DETAIL,
@@ -74,7 +80,7 @@ def _query_context_frame() -> ContextFrame:
             "source": "query",
             "surface_mode": "direct_answer",
             "summary_text": "Money sent",
-            "query_request": contract.model_dump(mode="json"),
+            "query_frame": query_frame.model_dump(mode="json"),
             "surface_context": {"mode": "direct_answer", "type": "single_transaction"},
         },
     )
@@ -169,7 +175,7 @@ async def test_query_executor_passes_active_query_surface_context_to_worker() ->
     worker_context = worker.calls[0]["context"]
     assert "active_query_session" not in worker_context
     active_surface = worker_context["active_query_surface"]
-    assert active_surface["metadata"]["query_request"]["operation"]["kind"] == "retrieve"
+    assert active_surface["metadata"]["query_frame"]["query_request"]["operation"]["kind"] == "retrieve"
     assert active_surface["metadata"]["surface_mode"] == "direct_answer"
 
 

@@ -4,14 +4,18 @@ from __future__ import annotations
 
 from typing import Any, Literal, cast
 
+from pydantic import TypeAdapter
+
 from banking.transactions.query.conversation_focus import focus_for_request, resolve_focus
 from banking.transactions.query.grounding.frames import restore_query_frames
 from banking.transactions.query.models.conversation import (
     PendingFieldClarification,
     PendingInterpretationProposal,
+    QueryExecutionContract,
     QueryFocus,
     QueryInputCandidate,
     QuerySessionV3,
+    QueryTurnPlan,
     SingleQueryExecution,
 )
 from banking.transactions.query.models.domain import QueryIntent, QueryResult
@@ -59,6 +63,7 @@ def build_query_session_v3(
     show_expanded: bool = False,
     timestamp: float | None = None,
     active_focus: QueryFocus | None = None,
+    execution_contract: object | None = None,
     display_frame_id: str | None = None,
     pending_input: PendingFieldClarification | PendingInterpretationProposal | None = None,
     recent_read_only: bool = False,
@@ -78,8 +83,20 @@ def build_query_session_v3(
         focus = resolve_focus(frames=frames, active_focus=None)
     if focus is None and request is not None:
         focus = focus_for_request(request)
+    resolved_execution: QueryExecutionContract | None = None
+    if execution_contract is not None:
+        try:
+            resolved_execution = TypeAdapter(QueryExecutionContract).validate_python(execution_contract)
+        except Exception:
+            resolved_execution = None
+    if resolved_execution is None and parsed_result is not None:
+        resolved_execution = parsed_result.execution_contract
+    if resolved_execution is None and frames:
+        resolved_execution = frames[-1].execution_contract
+    if resolved_execution is None and request is not None:
+        resolved_execution = SingleQueryExecution(request=request)
     return QuerySessionV3(
-        execution_contract=SingleQueryExecution(request=request) if request is not None else None,
+        execution_contract=resolved_execution,
         active_focus=focus,
         display_frame_id=display_frame_id or (frames[-1].frame_id if frames else None),
         display_result=_safe_result_snapshot(result),
@@ -203,12 +220,20 @@ def project_query_session_v3(raw: object) -> dict[str, Any] | None:
     except Exception:
         return None
     contract = session.execution_contract
-    request = contract.request if isinstance(contract, SingleQueryExecution) else None
+    request: QueryRequest | None
+    if isinstance(contract, SingleQueryExecution):
+        request = contract.request
+    elif isinstance(contract, QueryTurnPlan):
+        primary = next((step for step in contract.steps if step.role == "primary"), None)
+        request = primary.request if primary is not None else None
+    else:
+        request = None
     pending = session.pending_input
     legacy_pending = legacy_pending_from_input(pending) if isinstance(pending, PendingFieldClarification) else None
     return {
         "session_active": session.session_active,
         "query_request": request.model_dump(mode="json") if request is not None else None,
+        "execution_contract": contract.model_dump(mode="json") if contract is not None else None,
         "query_result": session.display_result,
         "query_frames": session.query_frames,
         "pending_query_input": pending.model_dump(mode="json") if pending is not None else None,

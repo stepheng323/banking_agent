@@ -43,7 +43,15 @@ from banking.presentation.i18n.bridge import (
 )
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
-from banking.transactions.query.models.domain import Aggregation, Filters, QueryIntent, QueryRequest, TimeRange
+from banking.transactions.query.grounding.frames import build_query_frame
+from banking.transactions.query.models.domain import (
+    Aggregation,
+    Filters,
+    QueryIntent,
+    QueryRequest,
+    QueryResult,
+    TimeRange,
+)
 from banking.transactions.shared.confirmation.models import ConfirmationDecision
 from shared.config.settings import settings
 from shared.types.balance import BalanceQueryContract
@@ -108,6 +116,11 @@ def _active_query_context_frame(
         filters=Filters(transaction_type="debit"),
         result_limit=5,
     )
+    query_frame = build_query_frame(
+        query_request=contract,
+        result=QueryResult(summary_text=summary_text, query_request=contract),
+        turn_index=1,
+    )
     return ContextFrame(
         frame_id=frame_id,
         frame_type=ContextFrameType.TRANSACTION_LIST,
@@ -123,7 +136,7 @@ def _active_query_context_frame(
         metadata={
             "source": "query",
             "summary_text": summary_text,
-            "query_request": contract.model_dump(mode="json"),
+            "query_frame": query_frame.model_dump(mode="json"),
             "surface_mode": "direct_answer",
             "surface_context": {"mode": "direct_answer"},
         },

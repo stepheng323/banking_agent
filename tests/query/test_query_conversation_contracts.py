@@ -17,8 +17,20 @@ from banking.transactions.query.models.conversation import (
     SingleQueryExecution,
 )
 from banking.transactions.query.models.domain import QueryIntent, QueryResult
-from banking.transactions.query.models.extraction import PendingClarificationState, QueryExtractionResult
+from banking.transactions.query.models.extraction import (
+    ParserQueryExtraction,
+    PendingClarificationState,
+    QueryAggregation,
+    QueryExtractionResult,
+    QueryPlanDraft,
+    QueryPlanStepDraft,
+    QueryRequestShape,
+    QueryStepExtraction,
+    QueryTimeRange,
+    TimeReference,
+)
 from banking.transactions.query.models.operations import GroupedSummarySpec, TransactionPredicate
+from banking.transactions.query.services.parsing.parser import QueryParser
 from banking.transactions.query.session_state import (
     build_query_session_v3,
     pending_input_from_legacy,
@@ -258,6 +270,64 @@ def test_v3_checkpoint_persists_field_input_without_flat_clarification_authority
     assert projected["pending_clarification"]["kind"] == "pending_clarification"
 
 
+def test_v3_plan_projection_exposes_primary_request_without_losing_plan() -> None:
+    primary = _request()
+    supporting = retrieve_request(query_scope(date(2026, 6, 1), date(2026, 6, 29)))
+    plan = QueryTurnPlan(
+        steps=[
+            QueryPlanStep(step_id="current", request=primary, role="primary"),
+            QueryPlanStep(step_id="baseline", request=supporting, role="supporting"),
+        ]
+    )
+    persisted = build_query_session_v3(
+        request=primary,
+        result=None,
+        raw_frames=[],
+        execution_contract=plan,
+    ).model_dump(mode="json")
+
+    projected = project_query_session_v3(persisted)
+
+    assert projected is not None
+    assert projected["query_request"] == primary.model_dump(mode="json")
+    assert projected["execution_contract"]["kind"] == "plan"
+
+
+def test_composite_repair_updates_only_the_targeted_plan_step() -> None:
+    primary = _request()
+    supporting = retrieve_request(
+        query_scope(
+            date(2026, 7, 1),
+            date(2026, 7, 29),
+            predicate=TransactionPredicate(direction="debit"),
+        )
+    )
+    plan = QueryTurnPlan(
+        steps=[
+            QueryPlanStep(step_id="food", request=primary, role="primary"),
+            QueryPlanStep(step_id="overall", request=supporting, role="supporting"),
+        ]
+    )
+
+    updates = resolve_repair(
+        request=supporting,
+        primary=QueryScopeDelta(direction_mutation="replace", direction="credit"),
+        alternate=None,
+        confidence=0.9,
+        locale="en",
+        session={},
+        source_frame_id="qf_1",
+        turn_id="turn_2",
+        execution_contract=plan,
+        target_step_id="overall",
+    )
+
+    repaired_plan = updates["execution_contract"]
+    assert isinstance(repaired_plan, QueryTurnPlan)
+    assert repaired_plan.steps[0].request == primary
+    assert repaired_plan.steps[1].request.scope.predicate.direction == "credit"
+
+
 @pytest.mark.asyncio
 async def test_turn_plan_executes_in_order_and_binds_top_group() -> None:
     summary = summarize_request(
@@ -314,3 +384,66 @@ async def test_turn_plan_executes_in_order_and_binds_top_group() -> None:
     assert calls[1].scope.predicate.categories == ["food"]
     assert result.surface_view is not None
     assert result.surface_view.mode.value == "composite"
+    frame = build_query_frame(
+        query_request=summary,
+        result=QueryResult(
+            summary_text=result.summary_text,
+            query_request=summary,
+            surface_view=result.surface_view,
+            execution_contract=plan,
+        ),
+        turn_index=1,
+    )
+    assert frame.visible_items[0]["step_id"] == "summary"
+    assert frame.visible_items[0]["section_role"] == "primary"
+
+
+@pytest.mark.asyncio
+async def test_fresh_parser_compiles_bounded_plan_in_its_existing_call() -> None:
+    period = QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month")
+    draft = ParserQueryExtraction(
+        plan=QueryPlanDraft(
+            steps=[
+                QueryPlanStepDraft(
+                    step_id="by_account",
+                    role="primary",
+                    extraction=QueryStepExtraction(
+                        intent=QueryIntent.ANALYTICS_SUMMARY,
+                        request_shape=QueryRequestShape.ANALYTICS,
+                        time_range=period,
+                        aggregation=QueryAggregation(type="breakdown", group_by="bank"),
+                    ),
+                ),
+                QueryPlanStepDraft(
+                    step_id="overall",
+                    role="supporting",
+                    extraction=QueryStepExtraction(
+                        intent=QueryIntent.ANALYTICS_SUMMARY,
+                        request_shape=QueryRequestShape.ANALYTICS,
+                        time_range=period,
+                        aggregation=QueryAggregation(type="sum"),
+                    ),
+                ),
+            ]
+        )
+    )
+
+    class Structured:
+        async def ainvoke(self, prompt, config=None):
+            del prompt, config
+            return draft
+
+    class LLM:
+        def with_structured_output(self, schema):
+            del schema
+            return Structured()
+
+    result = await QueryParser(LLM()).parse(
+        "Break down my spending by account and give me the overall total",
+        today=date(2026, 7, 29),
+        language="en",
+    )
+
+    assert result.execution_contract is not None
+    assert result.execution_contract["kind"] == "plan"
+    assert len(result.execution_contract["steps"]) == 2

@@ -30,7 +30,10 @@ def _binding_value(binding: QueryPlanBinding, result: QueryResult) -> str | floa
         period = result.query_request.period if result.query_request is not None else None
         if period is None:
             return None
-        return {"start": period.start.isoformat(), "end": period.end.isoformat(), "granularity": period.granularity}
+        value = {"start": period.start.isoformat(), "end": period.end.isoformat()}
+        if period.granularity is not None:
+            value["granularity"] = period.granularity
+        return value
     if binding.source == "scalar":
         if result.items and len(result.items) == 1:
             return result.items[0].amount
@@ -63,6 +66,8 @@ def _apply_binding(
     if binding.target == "account":
         return apply_query_scope_delta(request, QueryScopeDelta(account_mutation="replace", account_names=[str(value)]))
     if binding.target == "amount":
+        if isinstance(value, dict):
+            raise QueryRepairError("the amount binding is invalid")
         return apply_query_scope_delta(request, QueryScopeDelta(amount_mutation="replace", min_amount=float(value)))
     if binding.target == "period" and isinstance(value, dict):
         return apply_query_scope_delta(request, QueryScopeDelta(period_mutation="replace", period=value))
@@ -88,6 +93,7 @@ async def execute_query_turn_plan(plan: QueryTurnPlan, execute_request: ExecuteR
     sections: list[QuerySectionResult] = []
     surface_sections: list[SurfaceSection] = []
     primary_summary = ""
+    composite_items = []
     for step in plan.steps:
         try:
             request = _bound_request(step, completed)
@@ -111,15 +117,22 @@ async def execute_query_turn_plan(plan: QueryTurnPlan, execute_request: ExecuteR
         sections.append(QuerySectionResult(step_id=step.step_id, role=step.role, result=result))
         surface = result.surface_view
         if surface is not None:
+            section_items = [
+                item.model_copy(
+                    update={"metadata": {**item.metadata, "step_id": step.step_id, "section_role": step.role}}
+                )
+                for item in surface.items
+            ]
             surface_sections.append(
                 SurfaceSection(
                     step_id=step.step_id,
                     role=step.role,
                     mode=surface.mode,
                     lead_text=surface.lead_text,
-                    items=surface.items,
+                    items=section_items,
                 )
             )
+            composite_items.extend(section_items)
         if step.role == "primary":
             primary_summary = result.summary_text
 
@@ -128,7 +141,12 @@ async def execute_query_turn_plan(plan: QueryTurnPlan, execute_request: ExecuteR
         summary_text=primary_summary,
         sections=sections,
         has_more=any(section.result.has_more for section in sections if section.result is not None),
-        surface_view=SurfaceView(mode=SurfaceViewMode.COMPOSITE, lead_text=primary_summary, sections=surface_sections),
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.COMPOSITE,
+            lead_text=primary_summary,
+            items=composite_items,
+            sections=surface_sections,
+        ),
     )
 
 

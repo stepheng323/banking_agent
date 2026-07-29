@@ -7,6 +7,7 @@ from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.contracts import (
     SelectionPayload,
     SurfaceItemView,
+    SurfaceSection,
     SurfaceView,
     SurfaceViewMode,
     VarianceDriversEvidenceSelection,
@@ -124,6 +125,67 @@ def _transaction_surface_item(index: int = 1) -> SurfaceItemView:
 
 def _grouped_summary_surface_view(**context: object) -> SurfaceView:
     return SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY, context=context)
+
+
+def _composite_surface_view() -> SurfaceView:
+    item = _transaction_surface_item(1).model_copy(update={"metadata": {"step_id": "evidence"}})
+    return SurfaceView(
+        mode=SurfaceViewMode.COMPOSITE,
+        items=[item],
+        sections=[
+            SurfaceSection(
+                step_id="evidence",
+                role="evidence",
+                mode=SurfaceViewMode.TRANSACTION_LIST,
+                items=[item],
+            )
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_composite_ordinal_selection_is_deterministic_and_retains_step() -> None:
+    reasoner = QuerySemanticReasoner(_FailingLLM())
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="show the first one",
+            today=date(2026, 3, 13),
+            language="en",
+            query_request=_query_ir(),
+            surface_view=_composite_surface_view(),
+        )
+    )
+
+    assert decision.continuation_type == "drill_down"
+    assert decision.drill_down_index == 0
+    assert decision.target_step_id == "evidence"
+    assert decision.semantic_llm_used is False
+
+
+@pytest.mark.asyncio
+async def test_composite_semantic_followup_uses_targeted_section_contract() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.9,
+            continuation_type="repair",
+            target_step_id="evidence",
+        )
+    )
+
+    decision = await QuerySemanticReasoner(llm).reason(
+        SemanticReasonerContext(
+            message="Use last month for the evidence section",
+            today=date(2026, 3, 13),
+            language="en",
+            query_request=_query_ir(),
+            surface_view=_composite_surface_view(),
+        )
+    )
+
+    assert decision.target_step_id == "evidence"
+    assert llm.structured.calls == 1
 
 
 def _contract(

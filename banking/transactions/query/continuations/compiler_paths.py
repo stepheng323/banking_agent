@@ -371,6 +371,8 @@ def parse_result_to_updates(
 
     return {
         "query_request": query_request,
+        "execution_contract": result.execution_contract,
+        "execute_query_plan": bool(result.execution_contract),
         "resolver_message": resolver_msg,
         "flow_state": "executing",
         "current_page": 0,

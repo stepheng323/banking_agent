@@ -444,6 +444,7 @@ class QueryWorker:
             "pending_query_input": query_session.get("pending_query_input"),
             "query_frames": query_session.get("query_frames"),
             "active_focus": query_session.get("active_focus"),
+            "execution_contract": query_session.get("execution_contract"),
             "selected_item_index": query_session.get("selected_item_index"),
         }
 

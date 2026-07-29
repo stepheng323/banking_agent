@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from banking.runtime.results import TransactionOutcome
+from banking.transactions.query.models.conversation import QueryPlanStep, QueryTurnPlan
 from banking.transactions.query.models.domain import QueryResult
 from banking.transactions.query.models.operations import (
     AmountRange,
@@ -112,3 +113,138 @@ async def test_execution_formats_time_scoped_single_transaction_no_results_as_di
 
     assert result.outcome == TransactionOutcome.OK
     assert result.response == "You had no transactions yesterday."
+
+
+@pytest.mark.asyncio
+async def test_execution_runs_typed_plan_and_returns_composite_surface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = retrieve_request(query_scope(date(2026, 7, 1), date(2026, 7, 15)))
+    second = retrieve_request(query_scope(date(2026, 6, 1), date(2026, 6, 15)))
+    plan = QueryTurnPlan(
+        steps=[
+            QueryPlanStep(step_id="current", request=first, role="primary"),
+            QueryPlanStep(step_id="baseline", request=second, role="supporting"),
+        ]
+    )
+    calls = []
+
+    async def _fake_execute(self, **kwargs):  # type: ignore[no-untyped-def]
+        del self
+        calls.append(kwargs["query"])
+        return QueryResult(summary_text=f"Result {len(calls)}", query_request=kwargs["query"])
+
+    monkeypatch.setattr("banking.transactions.query.nodes.execution.QueryExecutor.execute", _fake_execute)
+
+    result = await ExecutionStep().run(
+        state={
+            "flow_state": "executing",
+            "language": "en",
+            "query_request": first,
+            "execution_contract": plan,
+            "execute_query_plan": True,
+            "account_id": "acc_1",
+            "account_ids": ["acc_1"],
+            "accounts": [],
+            "query_session": {},
+            "page_size": 5,
+        },
+        worker_context=SimpleNamespace(banking_provider=object(), user_id="u1"),
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert len(calls) == 2
+    assert "Result 1" in (result.response or "")
+    assert "Result 2" in (result.response or "")
+    composite = result.patch["query_result"]
+    assert composite.surface_view.mode.value == "composite"
+    assert composite.conversation_focus.step_id == "current"
+    assert result.patch["execution_contract"].kind == "plan"
+
+
+@pytest.mark.asyncio
+async def test_required_plan_failure_preserves_completed_copy_and_discloses_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = retrieve_request(query_scope(date(2026, 7, 1), date(2026, 7, 15)))
+    second = retrieve_request(query_scope(date(2026, 6, 1), date(2026, 6, 15)))
+    plan = QueryTurnPlan(
+        steps=[
+            QueryPlanStep(step_id="current", request=first, role="primary"),
+            QueryPlanStep(step_id="baseline", request=second, role="supporting"),
+        ]
+    )
+    calls = 0
+
+    async def _fake_execute(self, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        del self
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("provider unavailable")
+        return QueryResult(summary_text="Current result", query_request=kwargs["query"])
+
+    monkeypatch.setattr("banking.transactions.query.nodes.execution.QueryExecutor.execute", _fake_execute)
+
+    result = await ExecutionStep().run(
+        state={
+            "flow_state": "executing",
+            "language": "en",
+            "query_request": first,
+            "execution_contract": plan,
+            "execute_query_plan": True,
+            "account_id": "acc_1",
+            "account_ids": ["acc_1"],
+            "accounts": [],
+            "query_session": {},
+            "page_size": 5,
+        },
+        worker_context=SimpleNamespace(banking_provider=object(), user_id="u1"),
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert "Current result" in (result.response or "")
+    assert "encountered an error" in (result.response or "")
+
+
+@pytest.mark.asyncio
+async def test_retained_plan_is_not_reexecuted_for_an_ordinary_followup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    primary = retrieve_request(query_scope(date(2026, 7, 1), date(2026, 7, 15)))
+    supporting = retrieve_request(query_scope(date(2026, 6, 1), date(2026, 6, 15)))
+    followup = retrieve_request(query_scope(date(2026, 7, 10), date(2026, 7, 10)))
+    plan = QueryTurnPlan(
+        steps=[
+            QueryPlanStep(step_id="current", request=primary, role="primary"),
+            QueryPlanStep(step_id="baseline", request=supporting, role="supporting"),
+        ]
+    )
+    calls = []
+
+    async def _fake_execute(self, **kwargs):  # type: ignore[no-untyped-def]
+        del self
+        calls.append(kwargs["query"])
+        return QueryResult(summary_text="Follow-up result", query_request=kwargs["query"])
+
+    monkeypatch.setattr("banking.transactions.query.nodes.execution.QueryExecutor.execute", _fake_execute)
+
+    result = await ExecutionStep().run(
+        state={
+            "flow_state": "executing",
+            "language": "en",
+            "query_request": followup,
+            # The plan remains conversational history, but only an explicit
+            # plan transition is authorized to execute it again.
+            "execution_contract": plan,
+            "account_id": "acc_1",
+            "account_ids": ["acc_1"],
+            "accounts": [],
+            "query_session": {},
+            "page_size": 5,
+        },
+        worker_context=SimpleNamespace(banking_provider=object(), user_id="u1"),
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert calls == [followup]

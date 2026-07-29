@@ -6,7 +6,8 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
-from banking.transactions.query.models.domain import Filters, QueryIntent, TimeRange
+from banking.transactions.query.grounding.frames import build_query_frame
+from banking.transactions.query.models.domain import Filters, QueryIntent, QueryResult, TimeRange
 from shared.types.planner import PlannerOutput
 from tests.query.factories import make_query_request
 
@@ -58,6 +59,11 @@ async def test_planner_injects_filter_refinement_guidance_for_active_query_sessi
         filters=Filters(transaction_type="debit"),
         time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 31)),
     )
+    query_frame = build_query_frame(
+        query_request=query_request,
+        result=QueryResult(summary_text="Recent debit transactions", query_request=query_request),
+        turn_index=1,
+    )
     state = OrchestratorState(
         user_id="u_query_ctx_1",
         phone_number="2348000000100",
@@ -83,7 +89,7 @@ async def test_planner_injects_filter_refinement_guidance_for_active_query_sessi
                 metadata={
                     "source": "query",
                     "summary_text": "Recent debit transactions",
-                    "query_request": query_request.model_dump(mode="json"),
+                    "query_frame": query_frame.model_dump(mode="json"),
                     "surface_mode": "transaction_list",
                 },
             )

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from banking.transactions.query.services.reasoning.models import ReasonerPromptProfileType
 
-_VERSION = "v6"
+_VERSION = "v7"
 
 _BASE = """You interpret one follow-up inside a multilingual banking transaction-query session. Return only JSON
 matching the supplied schema. Understand English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed wording.
@@ -109,6 +109,20 @@ _INSIGHT = """Insight rules:
   subtype unless the user explicitly replaces it.
 """
 
+_COMPOSITE = """Composite-result rules:
+- The surface contains two or three read-only sections. Ground the follow-up in the named or selected section rather
+  than silently applying it to the primary section.
+- Set target_step_id only to a step ID present in the supplied composite surface. Never fabricate a step ID.
+- A named visible item uses its containing section. An ordinal refers to the flattened visible-item order shown in
+  the surface. Use drill_down or show_evidence according to that item's typed payload.
+- A scope correction or refinement applies to the targeted step while preserving the other step contracts. Use
+  repair with a sparse repair_delta; the runtime performs the immutable contract update.
+- If no section is named, preserve semantic focus. Automatic evidence and pagination do not replace that focus.
+- A request comparing or combining sections uses aggregate only when the existing typed contracts provide the needed
+  values. Otherwise ask a specific clarification; never invent a calculation or hidden result.
+- Reconciliation may reference retained frames and must follow the same exact-frame rules as other surfaces.
+"""
+
 _FRAMES = """Historical-frame rules:
 - For comparisons or references to earlier answers, populate referenced_frame_ids in requested order,
 grounded_operation=compare_frames|select_frame|show_transactions|reuse_frame, and answer_mode.
@@ -135,6 +149,7 @@ def compile_query_reasoner_prompt(profile: ReasonerPromptProfileType) -> Compile
         "transaction_list": _LIST,
         "grouped_summary": _SUMMARY,
         "insight": _INSIGHT,
+        "composite": _COMPOSITE,
         "historical_frames": _FRAMES,
         "pending_clarification": _CLARIFICATION,
     }[profile]
