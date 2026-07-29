@@ -15,6 +15,7 @@ from banking.transactions.query.models.domain import (
     QueryResultItem,
 )
 from banking.transactions.query.models.operations import QueryRequest
+from banking.transactions.query.session_state import build_query_session_v3
 
 
 class QueryContextFrameState(Protocol):
@@ -29,7 +30,7 @@ def query_surface_is_active(frame: ContextFrame, *, now: int | None = None) -> b
         return False
     if not frame.items:
         return False
-    return frame.metadata.get("source") == "query" and bool(frame.metadata.get("query_request"))
+    return frame.metadata.get("source") == "query" and _frame_query_request(frame) is not None
 
 
 def get_active_query_surface(state: QueryContextFrameState, *, now: int | None = None) -> ContextFrame | None:
@@ -85,8 +86,8 @@ def build_query_session_snapshot_from_surface(
     *,
     context_frames: list[ContextFrame] | None = None,
 ) -> dict[str, Any] | None:
-    """Project a context frame into the legacy session shape used by continuation code."""
-    contract = _restore_query_request(frame.metadata.get("query_request"))
+    """Project a context frame into the canonical v3 query session envelope."""
+    contract = _frame_query_request(frame)
     if contract is None:
         return None
 
@@ -108,17 +109,14 @@ def build_query_session_snapshot_from_surface(
             build_query_frame(query_request=contract, result=query_result, turn_index=1).model_dump(mode="json")
         ]
 
-    return {
-        "session_active": True,
-        "query_request": contract.model_dump(mode="json"),
-        "query_result": query_result.model_dump(mode="json"),
-        "query_frames": query_frames,
-        "current_page": int(frame.metadata.get("current_page") or 0),
-        "page_size": int(frame.metadata.get("page_size") or 5),
-        "show_expanded": False,
-        "timestamp": frame.created_at_ts,
-        "_query_session_source": "context_frame",
-    }
+    return build_query_session_v3(
+        request=contract,
+        result=query_result,
+        raw_frames=query_frames,
+        current_page=int(frame.metadata.get("current_page") or 0),
+        page_size=int(frame.metadata.get("page_size") or 5),
+        timestamp=frame.created_at_ts,
+    ).model_dump(mode="json")
 
 
 def _query_frames_from_context_frames(frames: list[ContextFrame]) -> list[dict[str, Any]]:
@@ -132,7 +130,7 @@ def _query_frames_from_context_frames(frames: list[ContextFrame]) -> list[dict[s
             query_frames.append(raw_query_frame)
             continue
 
-        contract = _restore_query_request(frame.metadata.get("query_request"))
+        contract = _frame_query_request(frame)
         if contract is None:
             continue
         surface_view = _surface_view_from_frame(frame)
@@ -161,6 +159,13 @@ def _restore_query_request(raw: Any) -> QueryRequest | None:
         except Exception:
             return None
     return None
+
+
+def _frame_query_request(frame: ContextFrame) -> QueryRequest | None:
+    raw_frame = frame.metadata.get("query_frame")
+    if not isinstance(raw_frame, dict):
+        return None
+    return _restore_query_request(raw_frame.get("query_request"))
 
 
 def _surface_view_from_frame(frame: ContextFrame) -> SurfaceView:

@@ -11,11 +11,13 @@ import banking.transactions.query.continuations.pending_clarification as pending
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from banking.transactions.query.continuations.repair_resolution import resolve_pending_proposal
 from banking.transactions.query.continuations.time_rescope import is_direct_time_rescope_message
 from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.grounding.frames import (
     restore_query_frames,
 )
+from banking.transactions.query.models.conversation import PendingInterpretationProposal, QueryFocus
 from banking.transactions.query.models.domain import (
     QueryFrame,
     QueryIntent,
@@ -39,6 +41,17 @@ logger = get_logger(__name__)
 extraction_paths.logger = logger
 pending_clarification.logger = logger
 compiler_paths.logger = logger
+
+
+def _restore_active_focus(raw: object) -> QueryFocus | None:
+    if isinstance(raw, QueryFocus):
+        return raw
+    if isinstance(raw, dict):
+        try:
+            return QueryFocus.model_validate(raw)
+        except Exception:
+            return None
+    return None
 
 
 class ExtractionStep(QueryStep):
@@ -304,6 +317,16 @@ class ExtractionStep(QueryStep):
                 return None
         return None
 
+    @staticmethod
+    def _load_pending_query_input(session: dict[str, Any]) -> PendingInterpretationProposal | None:
+        raw_pending = session.get("pending_query_input")
+        if not isinstance(raw_pending, dict) or raw_pending.get("kind") != "interpretation_proposal":
+            return None
+        try:
+            return PendingInterpretationProposal.model_validate(raw_pending)
+        except Exception:
+            return None
+
     def _load_query_frames(self, session: dict[str, Any]) -> list[QueryFrame]:
         return restore_query_frames(session.get("query_frames"))
 
@@ -338,6 +361,7 @@ class ExtractionStep(QueryStep):
             surface_view=surface_view,
             query_frames=query_frames,
             pending_clarification=pending_clarification,
+            active_focus=_restore_active_focus(state.get("active_focus")),
             turn_id=state.get("turn_id"),
             inbound_message_id=state.get("inbound_message_id"),
         )
@@ -470,6 +494,21 @@ class ExtractionStep(QueryStep):
         # If we have an active session, check for continuity
         if force_new_query:
             updates = await self._parse_new_query(state)
+        elif query_session and query_session.get("session_active") and isinstance(
+            self._load_pending_query_input(query_session), PendingInterpretationProposal
+        ):
+            pending_input = self._load_pending_query_input(query_session)
+            assert isinstance(pending_input, PendingInterpretationProposal)
+            proposal_updates = resolve_pending_proposal(
+                pending_input,
+                str(state.get("message") or ""),
+                locale=locale,
+                session=query_session,
+            )
+            if proposal_updates is None:
+                updates = await self._handle_continuation(state, query_session)
+            else:
+                updates = proposal_updates
         elif query_session and query_session.get("session_active") and self._load_pending_clarification(query_session):
             updates = await pending_clarification.handle_pending_clarification(self, state, query_session)
         elif query_session and query_session.get("session_active"):

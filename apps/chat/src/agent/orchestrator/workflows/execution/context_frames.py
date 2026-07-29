@@ -427,8 +427,6 @@ def push_query_surface_frame(ctx: ExecutionTurnContext, query_result: Any) -> No
         return
     query_request = getattr(query_result, "query_request", None)
     if query_request is not None and hasattr(query_request, "model_dump"):
-        frame.metadata["query_request"] = query_request.model_dump(mode="json")
-        frame.metadata["query_schema_version"] = 2
         try:
             frame.metadata["query_frame"] = build_query_frame(
                 query_request=query_request,
@@ -488,8 +486,6 @@ def _build_direct_query_summary_frame(
         metadata={
             "source": "query",
             "surface_mode": "direct_answer",
-            "query_request": query_request.model_dump(mode="json"),
-            "query_schema_version": 2,
             "summary_text": summary_text,
             "lead_text": lead_text or None,
             "surface_context": getattr(surface_view, "context", {}) if surface_view is not None else {},

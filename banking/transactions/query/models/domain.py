@@ -11,6 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from banking.transactions.query.contracts import FocusedReferent, InsightEvidenceSelection, SurfaceView, SurfaceViewMode
+from banking.transactions.query.models.conversation import QueryExecutionContract, QueryFocus
 from banking.transactions.query.models.operations import QueryRequest
 
 
@@ -166,6 +167,9 @@ class QueryFrame(BaseModel):
     frame_id: str
     turn_index: int = Field(ge=1)
     query_request: QueryRequest
+    execution_contract: QueryExecutionContract | None = None
+    focus: QueryFocus | None = None
+    source_frame_id: str | None = None
     summary_text: str
     interpretation: dict[str, Any] | None = None
     surface_type: SurfaceViewMode | None = None
@@ -238,6 +242,25 @@ class QueryResult(BaseModel):
     cache_window_start: str | None = None
     cache_window_end: str | None = None
     cache_reused: bool = False
+
+
+class QuerySectionResult(BaseModel):
+    """One executed query-plan step retained for deterministic composition."""
+
+    step_id: str
+    role: Literal["primary", "supporting", "evidence"]
+    result: QueryResult | None = None
+    unavailable_reason: str | None = None
+
+
+class QueryTurnResult(BaseModel):
+    """Canonical response payload for one single or composite query turn."""
+
+    execution_contract: QueryExecutionContract
+    summary_text: str
+    sections: list[QuerySectionResult] = Field(default_factory=list, max_length=3)
+    surface_view: SurfaceView | None = None
+    has_more: bool = False
 
 
 CATEGORY_KEYWORDS: dict[str, list[str]] = {

@@ -32,6 +32,7 @@ class SurfaceViewMode(str, Enum):
     GROUPED_SUMMARY = "grouped_summary"
     CLARIFICATION = "clarification"
     INSIGHT = "insight"
+    COMPOSITE = "composite"
 
 
 class PresentationMode(str, Enum):
@@ -42,6 +43,7 @@ class PresentationMode(str, Enum):
     TRANSACTION_LIST = "transaction_list"
     CLARIFY = "clarify"
     INSIGHT = "insight"
+    COMPOSITE = "composite"
 
 
 FactCapability = Literal[
@@ -178,6 +180,18 @@ class SurfaceItemView(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class SurfaceSection(BaseModel):
+    """One deterministic section of a bounded multi-step query response."""
+
+    step_id: str
+    role: Literal["primary", "supporting", "evidence"]
+    mode: SurfaceViewMode
+    heading: str | None = None
+    lead_text: str | None = None
+    items: list[SurfaceItemView] = Field(default_factory=list)
+    unavailable_reason: str | None = None
+
+
 class SurfaceView(BaseModel):
     """Typed view over the current query result."""
 
@@ -185,6 +199,7 @@ class SurfaceView(BaseModel):
     items: list[SurfaceItemView] = Field(default_factory=list)
     lead_text: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
+    sections: list[SurfaceSection] = Field(default_factory=list, max_length=3)
 
 
 class PresentationPlan(BaseModel):

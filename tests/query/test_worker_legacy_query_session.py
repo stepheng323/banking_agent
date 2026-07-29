@@ -5,6 +5,7 @@ import pytest
 
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
+from banking.transactions.query.grounding.frames import build_query_frame
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
@@ -22,6 +23,7 @@ from banking.transactions.query.models.extraction import (
 )
 from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
 from banking.transactions.query.session import _session_has_surface_view
+from banking.transactions.query.session_state import build_query_session_v3, pending_input_from_legacy
 from banking.transactions.query.worker import QueryWorker as RuntimeQueryWorker
 from shared.config.settings import settings
 from tests.query.factories import make_query_request
@@ -192,7 +194,11 @@ def _active_surface_context_from_result(result: TransactionResult) -> dict[str, 
         "items": items,
         "metadata": {
             "source": "query",
-            "query_request": query_request.model_dump(mode="json"),
+            "query_frame": build_query_frame(
+                query_request=query_request,
+                result=query_result,
+                turn_index=1,
+            ).model_dump(mode="json"),
             "summary_text": query_result.summary_text,
             "surface_mode": surface_view.mode.value if surface_view is not None else "transaction_list",
             "surface_context": surface_view.context if surface_view is not None else {},
@@ -209,7 +215,7 @@ def _active_surface_context_from_session(session: dict[str, Any]) -> dict[str, A
         else QueryRequest.model_validate(raw_contract)
     )
     raw_result = session.get("query_result")
-    summary_text = raw_result.get("summary_text") if isinstance(raw_result, dict) else ""
+    summary_text = str(raw_result.get("summary_text") or "") if isinstance(raw_result, dict) else ""
     surface_view = raw_result.get("surface_view") if isinstance(raw_result, dict) else {}
     surface_mode = surface_view.get("mode") if isinstance(surface_view, dict) else "direct_answer"
     frame = {
@@ -228,7 +234,11 @@ def _active_surface_context_from_session(session: dict[str, Any]) -> dict[str, A
         ],
         "metadata": {
             "source": "query",
-            "query_request": query_request.model_dump(mode="json"),
+            "query_frame": build_query_frame(
+                query_request=query_request,
+                result=QueryResult(summary_text=summary_text, query_request=query_request),
+                turn_index=1,
+            ).model_dump(mode="json"),
             "summary_text": summary_text,
             "surface_mode": surface_mode or "direct_answer",
             "surface_context": surface_view.get("context") if isinstance(surface_view, dict) else {},
@@ -297,12 +307,14 @@ async def test_worker_prefers_pending_clarification_over_visible_query_surface()
         resolver_message="Choose one.",
         language="en",
     )
-    pending_snapshot = {
-        "session_active": True,
-        "pending_clarification": pending.model_dump(mode="json"),
-        "query_request": query_request.model_dump(mode="json"),
-        "query_result": {"summary_text": "Transactions", "items": []},
-    }
+    pending_input = pending_input_from_legacy(pending)
+    assert pending_input is not None
+    pending_snapshot = build_query_session_v3(
+        request=query_request,
+        result=QueryResult(summary_text="Transactions", query_request=query_request),
+        raw_frames=[],
+        pending_input=pending_input,
+    ).model_dump(mode="json")
 
     async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
         del worker_context

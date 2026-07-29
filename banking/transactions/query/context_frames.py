@@ -11,6 +11,7 @@ from banking.transactions.query.models.domain import (
     QueryResultItem,
 )
 from banking.transactions.query.models.operations import QueryRequest
+from banking.transactions.query.session_state import build_query_session_v3
 
 
 def build_reasoner_context_from_frames(
@@ -22,7 +23,7 @@ def build_reasoner_context_from_frames(
         return {}
 
     metadata = active_frame.get("metadata") or {}
-    contract = _restore_query_request(metadata.get("query_request"))
+    contract = _frame_query_request(metadata)
     if contract is None:
         return {}
 
@@ -45,17 +46,14 @@ def build_reasoner_context_from_frames(
             build_query_frame(query_request=contract, result=query_result, turn_index=1).model_dump(mode="json")
         ]
 
-    return {
-        "session_active": True,
-        "query_request": contract.model_dump(mode="json"),
-        "query_result": query_result.model_dump(mode="json"),
-        "query_frames": query_frames,
-        "current_page": int(metadata.get("current_page") or 0),
-        "page_size": int(metadata.get("page_size") or 5),
-        "show_expanded": False,
-        "timestamp": active_frame.get("created_at_ts"),
-        "_query_session_source": "context_frame",
-    }
+    return build_query_session_v3(
+        request=contract,
+        result=query_result,
+        raw_frames=query_frames,
+        current_page=int(metadata.get("current_page") or 0),
+        page_size=int(metadata.get("page_size") or 5),
+        timestamp=active_frame.get("created_at_ts"),
+    ).model_dump(mode="json")
 
 
 def _query_frames_from_context_frames(frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -69,7 +67,7 @@ def _query_frames_from_context_frames(frames: list[dict[str, Any]]) -> list[dict
             query_frames.append(raw_query_frame)
             continue
 
-        contract = _restore_query_request(metadata.get("query_request"))
+        contract = _frame_query_request(metadata)
         if contract is None:
             continue
 
@@ -92,7 +90,10 @@ def _query_frames_from_context_frames(frames: list[dict[str, Any]]) -> list[dict
 
 def _is_active_query_frame(frame: dict[str, Any]) -> bool:
     metadata = frame.get("metadata") or {}
-    return metadata.get("source") == "query" and bool(metadata.get("query_request"))
+    # ``query_frame`` is the only persisted query authority.  Keeping this
+    # check nested prevents a stale presentation field from becoming a route
+    # or continuation contract after the v3 cutover.
+    return metadata.get("source") == "query" and isinstance(metadata.get("query_frame"), dict)
 
 
 def _restore_query_request(raw: Any) -> QueryRequest | None:
@@ -104,6 +105,13 @@ def _restore_query_request(raw: Any) -> QueryRequest | None:
         except Exception:
             return None
     return None
+
+
+def _frame_query_request(metadata: dict[str, Any]) -> QueryRequest | None:
+    raw_frame = metadata.get("query_frame")
+    if not isinstance(raw_frame, dict):
+        return None
+    return _restore_query_request(raw_frame.get("query_request"))
 
 
 def _surface_view_from_frame(frame: dict[str, Any]) -> SurfaceView:

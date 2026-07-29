@@ -27,6 +27,7 @@ from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.nodes.generative_formatter import GenerativeFormattingStep
 from banking.transactions.query.pipeline import QueryPipeline
 from banking.transactions.query.session import _session_has_surface_view
+from banking.transactions.query.session_state import project_query_session_v3
 from banking.transactions.query.utils.timezone import lagos_today
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.utils.logging import get_logger
@@ -64,6 +65,8 @@ class QueryWorker:
             return "fresh"
         if query_session.get("pending_clarification"):
             return "pending_clarification"
+        if query_session.get("pending_query_input"):
+            return "pending_query_input"
         return "active_result"
 
     @staticmethod
@@ -363,19 +366,11 @@ class QueryWorker:
         # the next turn and answer a different visible item instead.
         if isinstance(context.get("pending_query_clarification"), dict):
             pending_query_clarification = dict(cast(dict[str, Any], context["pending_query_clarification"]))
-            query_session = {
-                "session_active": True,
-                "pending_clarification": pending_query_clarification.get(
-                    "pending_clarification",
-                    pending_query_clarification,
-                ),
-                "query_request": pending_query_clarification.get("query_request"),
-                "query_result": pending_query_clarification.get("query_result"),
-                "query_frames": pending_query_clarification.get("query_frames"),
-                "current_page": pending_query_clarification.get("current_page", 0),
-                "page_size": pending_query_clarification.get("page_size", 5),
-                "timestamp": pending_query_clarification.get("timestamp"),
-            }
+            # Interrupt checkpoints are written exclusively as QuerySessionV3.
+            # Invalid/old payloads deliberately do not regain routing authority.
+            query_session = (
+                pending_query_clarification if pending_query_clarification.get("schema_version") == 3 else {}
+            )
             session_source = "pending_clarification"
         elif active_query_surface:
             query_session = build_reasoner_context_from_frames(
@@ -395,13 +390,27 @@ class QueryWorker:
             query_session = {}
             session_source = "none"
 
+        if isinstance(query_session, dict) and query_session.get("schema_version") == 3:
+            projected_session = project_query_session_v3(query_session)
+            if projected_session is None:
+                logger.warning("query_session_v3_invalid_cleared", session_source=session_source)
+                query_session = {}
+                session_source = "none"
+            else:
+                query_session = projected_session
+
         if query_session:
             self._log_session_shape(
                 event="query_session_loaded",
                 session=query_session,
                 session_source=session_source,
             )
-        if query_session and not query_session.get("query_request") and not query_session.get("pending_clarification"):
+        if (
+            query_session
+            and not query_session.get("query_request")
+            and not query_session.get("pending_clarification")
+            and not query_session.get("pending_query_input")
+        ):
             logger.warning(
                 "query_session_missing_contract_cleared",
                 session_source=session_source,
@@ -432,7 +441,9 @@ class QueryWorker:
             "cache_window_start": query_session.get("cache_window_start"),
             "cache_window_end": query_session.get("cache_window_end"),
             "pending_clarification": query_session.get("pending_clarification"),
+            "pending_query_input": query_session.get("pending_query_input"),
             "query_frames": query_session.get("query_frames"),
+            "active_focus": query_session.get("active_focus"),
             "selected_item_index": query_session.get("selected_item_index"),
         }
 
@@ -473,6 +484,7 @@ class QueryWorker:
             and query_session.get("session_active")
             and not query_session.get("query_request")
             and not query_session.get("pending_clarification")
+            and not query_session.get("pending_query_input")
         ):
             logger.warning(
                 "query_active_session_missing_continuation_context",

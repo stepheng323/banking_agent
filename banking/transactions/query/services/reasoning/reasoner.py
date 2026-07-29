@@ -562,6 +562,7 @@ class QuerySemanticReasoner:
             surface_context=self._serialize_surface_snapshot(surface_view=context.surface_view),
             items_section=items_section,
             query_frames_section=query_frames_section,
+            active_focus=self._serialize(context.active_focus) if context.active_focus is not None else "none",
         )
         messages = [
             SystemMessage(content=compiled_prompt.system_prompt),

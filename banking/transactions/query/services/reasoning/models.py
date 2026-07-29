@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from banking.transactions.query.contracts import SurfaceView
+from banking.transactions.query.models.conversation import QueryFocus, QueryScopeDelta
 from banking.transactions.query.models.domain import (
     Filters,
     QueryFrame,
@@ -48,6 +49,7 @@ ContinuationType = Literal[
     "unclear",
     "recheck",
     "reconcile",
+    "repair",
 ]
 
 FollowupIntentType = Literal["refine_existing", "replace_scope", "continue_pagination", "previous_pagination", "none"]
@@ -125,6 +127,8 @@ class QuerySemanticDecision(BaseModel):
     extraction: QueryExtractionResult | None = Field(default=None)
     time_period: str | None = Field(default=None)
     clarification_patch: ClarificationPatch | None = Field(default=None)
+    repair_delta: QueryScopeDelta | None = Field(default=None)
+    alternate_repair_delta: QueryScopeDelta | None = Field(default=None)
 
     continuation_type: ContinuationType | None = Field(default=None)
     followup_intent: FollowupIntentType | None = Field(default=None)
@@ -167,6 +171,8 @@ class ActiveContinuationDecision(BaseModel):
     confidence: float | None = Field(default=None)
     reason: str | None = Field(default=None)
     extraction: ReasonerQueryExtraction | None = Field(default=None)
+    repair_delta: QueryScopeDelta | None = Field(default=None)
+    alternate_repair_delta: QueryScopeDelta | None = Field(default=None)
     time_period: str | None = Field(default=None)
     continuation_type: ContinuationType | None = Field(default=None)
     followup_intent: FollowupIntentType | None = Field(default=None)
@@ -202,6 +208,8 @@ class ActiveContinuationDecision(BaseModel):
             confidence=self.confidence,
             reason=self.reason,
             extraction=extraction,
+            repair_delta=self.repair_delta,
+            alternate_repair_delta=self.alternate_repair_delta,
             time_period=self.time_period,
             continuation_type=self.continuation_type,
             followup_intent=self.followup_intent,
@@ -246,6 +254,8 @@ class _NarrowActiveDecision(BaseModel):
     confidence: float | None = None
     reason: str | None = None
     extraction: ReasonerQueryExtraction | None = None
+    repair_delta: QueryScopeDelta | None = None
+    alternate_repair_delta: QueryScopeDelta | None = None
     continuation_type: ContinuationType | None = None
     followup_intent: FollowupIntentType | None = None
     time_period: str | None = None
@@ -438,6 +448,7 @@ class SemanticReasonerContext:
     items: list[QueryResultItem] | None = None
     surface_view: SurfaceView | None = None
     query_frames: list[QueryFrame] | None = None
+    active_focus: QueryFocus | None = None
     turn_id: str | None = None
     inbound_message_id: str | None = None
 

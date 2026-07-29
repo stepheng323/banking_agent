@@ -39,8 +39,9 @@ from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import FocusedReferent
 from banking.transactions.query.models.domain import QueryAnswerStrategy, QueryResult
-from banking.transactions.query.models.operations import RetrieveOperation
+from banking.transactions.query.models.operations import QueryRequest, RetrieveOperation
 from banking.transactions.query.presentation.formatter import QueryFormatter
+from banking.transactions.query.session_state import build_query_session_v3, pending_input_from_legacy
 from shared.messaging.body_blocks import MessageDocument
 from shared.types.read import AdvertisedResponseShape, ReadRequest, ReadResult, normalize_read_request
 
@@ -51,38 +52,48 @@ class QueryTaskExecutor:
 
 
 def _compact_query_session_patch(patch: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Keep only pending-query compatibility fields for orchestrator checkpoint state."""
+    """Materialize the sole persisted query-session contract.
+
+    Worker nodes may use a flat state patch while a turn is executing, but an
+    interrupt checkpoint never does.  This is the v3 persistence boundary.
+    """
     if not isinstance(patch, dict):
         return None
-    allowed = {
-        "session_active",
-        "query_request",
-        "query_result",
-        "query_frames",
-        "pending_clarification",
-        "current_page",
-        "page_size",
-        "show_expanded",
-        "timestamp",
-        "account_id",
-        "account_ids",
-        "cache_fingerprint",
-        "cache_scope_fingerprint",
-        "cache_window_start",
-        "cache_window_end",
-    }
-    compact: dict[str, Any] = {}
-    for key in allowed:
-        value = patch.get(key)
-        if value is None:
-            continue
-        if hasattr(value, "model_dump"):
-            compact[key] = value.model_dump(mode="json")
-        elif isinstance(value, list):
-            compact[key] = [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in value]
-        else:
-            compact[key] = value
-    return compact or None
+    raw_request = patch.get("query_request")
+    try:
+        request = raw_request if isinstance(raw_request, QueryRequest) else QueryRequest.model_validate(raw_request)
+    except Exception:
+        request = None
+    pending_input = patch.get("pending_query_input")
+    if pending_input is None:
+        pending_input = pending_input_from_legacy(patch.get("pending_clarification"))
+    if request is None and pending_input is None:
+        return None
+    session = build_query_session_v3(
+        request=request,
+        result=patch.get("query_result"),
+        raw_frames=patch.get("query_frames"),
+        current_page=int(patch.get("current_page") or 0),
+        page_size=int(patch.get("page_size") or 5),
+        show_expanded=bool(patch.get("show_expanded")),
+        timestamp=patch.get("timestamp"),
+        pending_input=pending_input,
+        cache={
+            key: value
+            for key, value in patch.items()
+            if key
+            in {
+                "account_id",
+                "account_ids",
+                "cache_fingerprint",
+                "cache_scope_fingerprint",
+                "cache_window_start",
+                "cache_window_end",
+            }
+            and value is not None
+        },
+    )
+    return session.model_dump(mode="json")
 
 
 async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:

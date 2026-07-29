@@ -7,6 +7,8 @@ from typing import Any, SupportsFloat, SupportsInt, cast
 
 from banking.transactions.query.continuations.transforms import rebuild_query_request
 from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
+from banking.transactions.query.conversation_focus import focus_for_request
+from banking.transactions.query.models.conversation import QueryExecutionContract, QueryFocus, SingleQueryExecution
 from banking.transactions.query.models.domain import (
     QueryFrame,
     QueryFrameFacts,
@@ -44,6 +46,9 @@ def append_query_frame(
     *,
     query_request: QueryRequest,
     result: QueryResult,
+    execution_contract: QueryExecutionContract | None = None,
+    focus: QueryFocus | None = None,
+    source_frame_id: str | None = None,
     max_frames: int = MAX_QUERY_FRAMES,
 ) -> list[QueryFrame]:
     """Append a compact frame for the latest executed query and trim history."""
@@ -52,6 +57,9 @@ def append_query_frame(
         query_request=query_request,
         result=result,
         turn_index=next_turn_index,
+        execution_contract=execution_contract,
+        focus=focus,
+        source_frame_id=source_frame_id,
     )
     return [*existing_frames, frame][-max_frames:]
 
@@ -61,15 +69,22 @@ def build_query_frame(
     query_request: QueryRequest,
     result: QueryResult,
     turn_index: int,
+    execution_contract: QueryExecutionContract | None = None,
+    focus: QueryFocus | None = None,
+    source_frame_id: str | None = None,
 ) -> QueryFrame:
     """Build a compact query frame from a query execution result."""
     surface_view = result.surface_view
     facts = _derive_query_frame_facts(query_request=query_request, result=result, surface_view=surface_view)
 
+    frame_id = f"qf_{turn_index}"
     return QueryFrame(
-        frame_id=f"qf_{turn_index}",
+        frame_id=frame_id,
         turn_index=turn_index,
         query_request=query_request,
+        execution_contract=execution_contract or SingleQueryExecution(request=query_request),
+        focus=focus or focus_for_request(query_request, frame_id=frame_id),
+        source_frame_id=source_frame_id,
         summary_text=result.summary_text,
         interpretation=result.interpretation,
         surface_type=surface_view.mode if surface_view else None,

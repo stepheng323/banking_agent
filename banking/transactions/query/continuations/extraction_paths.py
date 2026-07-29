@@ -13,6 +13,7 @@ from banking.transactions.query.continuations.active_result_facts import (
     maybe_build_fact_answer_from_decision,
 )
 from banking.transactions.query.continuations.grounded_followups import resolve_grounded_followup
+from banking.transactions.query.continuations.repair_resolution import resolve_repair
 from banking.transactions.query.continuations.result_paths import resolve_result_continuation_updates
 from banking.transactions.query.continuations.supported_recovery import (
     maybe_recover_supported_followup_query,
@@ -22,6 +23,8 @@ from banking.transactions.query.continuations.time_rescope import (
     is_direct_time_rescope_message,
     maybe_recover_time_rescope_continuation,
 )
+from banking.transactions.query.conversation_focus import resolve_focus
+from banking.transactions.query.models.conversation import QueryFocus
 from banking.transactions.query.models.domain import (
     QueryIntent,
     QueryRequest,
@@ -56,6 +59,17 @@ _REPEAT_EXISTING_QUERY_MESSAGES = {
     "run it again",
     "try again",
 }
+
+
+def _restore_focus(raw: object) -> QueryFocus | None:
+    if isinstance(raw, QueryFocus):
+        return raw
+    if isinstance(raw, dict):
+        try:
+            return QueryFocus.model_validate(raw)
+        except Exception:
+            return None
+    return None
 
 
 def _normalize_show_existing_message(message: str) -> str:
@@ -148,6 +162,14 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
     today = today_state if isinstance(today_state, date) else lagos_today()
     session_query_request = step._load_session_query_request(session)
     locale = LocaleManager.normalize(state.get("language")).value
+    query_frames = step._load_query_frames(session)
+    # A visible evidence section is not a user decision.  Ground follow-ups
+    # from the retained semantic focus when it points at a valid frame.
+    focus = resolve_focus(frames=query_frames, active_focus=_restore_focus(state.get("active_focus")))
+    if focus is not None and focus.frame_id:
+        focused_frame = next((frame for frame in query_frames if frame.frame_id == focus.frame_id), None)
+        if focused_frame is not None:
+            session_query_request = focused_frame.query_request
 
     items: list[QueryResultItem] = []
     restored_query_result: QueryResult | None = None
@@ -182,8 +204,6 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         show_expanded=bool(session.get("show_expanded", False)),
         surface_type=surface_view.mode.value if surface_view is not None else None,
     )
-    query_frames = step._load_query_frames(session)
-
     deterministic_affordability = _deterministic_active_affordability_updates(
         step,
         message=message,
@@ -236,6 +256,24 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         followup_intent=decision.followup_intent,
         delta_type=decision.delta_type,
     )
+
+    if cont_type == "repair":
+        repair_updates = resolve_repair(
+            request=session_query_request,
+            primary=getattr(decision, "repair_delta", None),
+            alternate=getattr(decision, "alternate_repair_delta", None),
+            confidence=decision.confidence,
+            locale=locale,
+            session=session,
+            source_frame_id=(
+                getattr(decision, "referenced_frame_ids", [None])[0]
+                if getattr(decision, "referenced_frame_ids", None)
+                else (focus.frame_id if focus is not None else None)
+            ),
+            turn_id=state.get("turn_id"),
+        )
+        repair_updates.update(step._semantic_trace_updates(decision))
+        return repair_updates
 
     if decision.decision == "continuation" and has_semantic_time_only_signal(decision):
         recovered_updates = await maybe_recover_time_rescope_continuation(

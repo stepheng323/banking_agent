@@ -18,7 +18,12 @@ def test_context_frame_with_null_items_restores_an_empty_query_surface() -> None
         "items": None,
         "metadata": {
             "source": "query",
-            "query_request": query_request.model_dump(mode="json"),
+            "query_frame": {
+                "frame_id": "qf_fixture",
+                "turn_index": 1,
+                "query_request": query_request.model_dump(mode="json"),
+                "summary_text": "No transactions found.",
+            },
             "surface_mode": "transaction_list",
             "summary_text": "No transactions found.",
         },
@@ -26,7 +31,8 @@ def test_context_frame_with_null_items_restores_an_empty_query_surface() -> None
 
     context = build_reasoner_context_from_frames(frame, [frame])
 
+    assert context["schema_version"] == 3
     assert context["session_active"] is True
-    assert context["query_result"]["items"] == []
-    assert context["query_result"]["surface_view"]["items"] == []
+    assert context["display_result"]["items"] == []
+    assert context["display_result"]["surface_view"]["items"] == []
     assert len(context["query_frames"]) == 1

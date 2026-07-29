@@ -86,7 +86,12 @@ def _query_frame(*, created_at: int | None = None, ttl_seconds: int = 600) -> Co
             "source": "query",
             "surface_mode": "direct_answer",
             "summary_text": "Acme Corp sent you the most this month: ₦950,000.",
-            "query_request": contract.model_dump(mode="json"),
+            "query_frame": {
+                "frame_id": "qf_fixture_detail",
+                "turn_index": 1,
+                "query_request": contract.model_dump(mode="json"),
+                "summary_text": "Acme Corp sent you the most this month: ₦950,000.",
+            },
             "surface_context": {
                 "mode": "direct_answer",
                 "focus_type": "beneficiary",
@@ -150,7 +155,12 @@ def _transaction_list_frame(*, created_at: int | None = None) -> ContextFrame:
             "source": "query",
             "surface_mode": "transaction_list",
             "summary_text": "I found 37 transactions in the last 30 days.",
-            "query_request": contract.model_dump(mode="json"),
+            "query_frame": {
+                "frame_id": "qf_fixture_list",
+                "turn_index": 1,
+                "query_request": contract.model_dump(mode="json"),
+                "summary_text": "I found 37 transactions in the last 30 days.",
+            },
         },
     )
 
@@ -179,7 +189,7 @@ def test_query_context_for_worker_builds_surface_context_from_frame() -> None:
 
     worker_context = build_query_context_for_worker(state)
 
-    operation = worker_context["active_query_surface"]["metadata"]["query_request"]["operation"]
+    operation = worker_context["active_query_surface"]["metadata"]["query_frame"]["query_request"]["operation"]
     assert operation["kind"] == "summarize"
     assert operation["summary"]["type"] == "grouped"
     assert operation["summary"]["dimension"] == "counterparty"
@@ -241,10 +251,10 @@ def test_direct_query_answer_pushes_latest_query_surface_frame() -> None:
     assert active is not None
     assert active.frame_type == ContextFrameType.GENERIC
     assert active.metadata["surface_mode"] == "direct_answer"
-    assert active.metadata["query_request"]["operation"]["kind"] == "summarize"
+    assert active.metadata["query_frame"]["query_request"]["operation"]["kind"] == "summarize"
     assert active.items[0].label == "You spent ₦1,460,052 this month, across 52 transactions."
     worker_context = build_query_context_for_worker(state)
-    assert worker_context["active_query_surface"]["metadata"]["query_request"]["operation"]["kind"] == "summarize"
+    assert worker_context["active_query_surface"]["metadata"]["query_frame"]["query_request"]["operation"]["kind"] == "summarize"
 
 
 def test_direct_analytics_answer_with_evidence_items_pushes_summary_scope_frame() -> None:
@@ -316,7 +326,8 @@ async def test_query_session_loader_prefers_context_frame_over_redis() -> None:
 
     assert source == "context_frame"
     assert isinstance(snapshot, dict)
-    operation = snapshot["query_request"]["operation"]
+    assert snapshot["schema_version"] == 3
+    operation = snapshot["execution_contract"]["request"]["operation"]
     assert operation["kind"] == "summarize"
     assert operation["summary"]["dimension"] == "counterparty"
     assert redis.get_calls == []

@@ -25,6 +25,11 @@ drill_down for a displayed item/fact; reconcile when the user challenges an earl
 that is not on the current surface (e.g., "so where did you get X", "but you said Y", "that doesn't match"); unclear
 when grounding is insufficient.
 
+Use repair when the user corrects a prior query interpretation (for example account, person, direction, status,
+amount, category, period, measure, or grouping). Emit only a sparse repair_delta. Unmentioned fields are preserved.
+If there are two materially different grounded readings, include alternate_repair_delta; never invent candidates or
+raw database records. The runtime validates and applies every repair deterministically.
+
 Use coverage_intent=result_completeness for whether matching rows/pages remain, data_coverage for linked-account sync or
 missing bank/account windows, and ambiguous when those cannot be distinguished. A fresh banking action outside query
 must not be disguised as a query continuation. Keep response_text short and connective only when useful.
@@ -59,6 +64,8 @@ _LIST = """Transaction-list rules:
 - Use coverage only for whether rows are complete, pages remain, account synchronization, or missing-data questions.
 - Use reconcile, not coverage, when the user is challenging a fact or entity from an earlier answer rather than asking
   whether all rows or accounts are present.
+- A direct correction of the current list's recipient, account, direction, category, status, amount, or period uses
+  continuation_type=repair and repair_delta. Do not turn a correction into a fresh parser request.
 """
 
 _SUMMARY = """Grouped-summary rules:
@@ -78,6 +85,7 @@ _SUMMARY = """Grouped-summary rules:
   supplies them. Prior query frames are included below; use them to ground the reconciliation. Do not use drill_down or
   coverage for cross-answer challenges.
 - Calculations remain deterministic; output only the requested operation and semantic patch.
+- Direct corrections to a summary's scope, measure, statistic, or dimension use repair with a sparse repair_delta.
 """
 
 _INSIGHT = """Insight rules:
@@ -95,6 +103,8 @@ _INSIGHT = """Insight rules:
   fabricate transaction evidence when none exists.
 - A clearly new transaction query should use new_query. Do not emit a fresh-query extraction here: the runtime will
   safely hand unclear replacements back to normal routing rather than inventing a scope.
+- Corrections to period, account, measure, analysis basis, or completeness policy use repair; preserve the insight
+  subtype unless the user explicitly replaces it.
 """
 
 _FRAMES = """Historical-frame rules:

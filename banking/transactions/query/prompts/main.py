@@ -179,6 +179,9 @@ ACTIVE RESULT SURFACE
 RECENT QUERY FRAMES
 {query_frames_section}
 
+SEMANTIC FOCUS
+{active_focus}
+
 SESSION METADATA
 - mode: {session_mode}
 - language: {language}
