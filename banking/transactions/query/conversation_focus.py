@@ -101,4 +101,53 @@ def resolve_focus(
     return None
 
 
-__all__ = ["focus_for_request", "resolve_focus"]
+_DISPLAY_ONLY_CONTINUATIONS = {
+    "coverage",
+    "explain_aggregate_scope",
+    "repeat_query",
+    "show_evidence",
+    "show_more",
+}
+
+
+def advance_focus(
+    *,
+    request: QueryRequest,
+    previous: QueryFocus | None,
+    continuation_type: str | None,
+    selected_payload: SelectionPayload | None = None,
+    source_frame_id: str | None = None,
+    turn_id: str | None = None,
+) -> QueryFocus:
+    """Apply the focus lifecycle after one deterministic query transition.
+
+    Pagination, replay and evidence change what is displayed, not what the
+    user is discussing. Explicit selection takes focus; other contract edits
+    become user refinements. A request without prior focus begins a new topic.
+    """
+    if selected_payload is not None:
+        base = focus_for_request(
+            request,
+            frame_id=source_frame_id or (previous.frame_id if previous else None),
+            source="user_selection",
+            selected_payload=selected_payload,
+            turn_id=turn_id,
+        )
+        if previous is not None and base.originating_turn_id is None:
+            base.originating_turn_id = previous.originating_turn_id
+        return base
+    if previous is not None and continuation_type in _DISPLAY_ONLY_CONTINUATIONS:
+        return previous.model_copy(update={"latest_user_turn_id": turn_id or previous.latest_user_turn_id})
+    source = "user_query" if previous is None else "user_refinement"
+    updated = focus_for_request(
+        request,
+        frame_id=source_frame_id or (previous.frame_id if previous else None),
+        source=source,
+        turn_id=turn_id,
+    )
+    if previous is not None:
+        updated.originating_turn_id = previous.originating_turn_id
+    return updated
+
+
+__all__ = ["advance_focus", "focus_for_request", "resolve_focus"]

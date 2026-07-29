@@ -65,9 +65,19 @@ def build_query_session_v3(
     cache: dict[str, object] | None = None,
 ) -> QuerySessionV3:
     frames = restore_query_frames(raw_frames)
-    focus = active_focus or (focus_for_request(request) if request is not None else None)
+    parsed_result: QueryResult | None = None
+    if isinstance(result, QueryResult):
+        parsed_result = result
+    elif isinstance(result, dict):
+        try:
+            parsed_result = QueryResult.model_validate(result)
+        except Exception:
+            parsed_result = None
+    focus = active_focus or (parsed_result.conversation_focus if parsed_result is not None else None)
     if focus is None:
         focus = resolve_focus(frames=frames, active_focus=None)
+    if focus is None and request is not None:
+        focus = focus_for_request(request)
     return QuerySessionV3(
         execution_contract=SingleQueryExecution(request=request) if request is not None else None,
         active_focus=focus,

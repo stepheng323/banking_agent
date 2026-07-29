@@ -6,6 +6,8 @@ from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
+from banking.transactions.query.conversation_focus import advance_focus
+from banking.transactions.query.models.conversation import QueryFocus
 from banking.transactions.query.models.domain import (
     QueryRequest,
     QueryResult,
@@ -61,6 +63,17 @@ def _coerce_selection_payload(raw_payload: Any) -> SelectionPayload | None:
     if isinstance(raw_payload, dict):
         try:
             return SelectionPayload.model_validate(raw_payload)
+        except Exception:
+            return None
+    return None
+
+
+def _coerce_focus(raw_focus: Any) -> QueryFocus | None:
+    if isinstance(raw_focus, QueryFocus):
+        return raw_focus
+    if isinstance(raw_focus, dict):
+        try:
+            return QueryFocus.model_validate(raw_focus)
         except Exception:
             return None
     return None
@@ -333,6 +346,15 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
             },
         ),
     )
+    if query_request is not None:
+        detail_result.conversation_focus = advance_focus(
+            request=query_request,
+            previous=_coerce_focus(state.get("active_focus")) or query_result.conversation_focus,
+            continuation_type="drill_down",
+            selected_payload=selected_payload,
+            source_frame_id=state.get("selected_frame_id"),
+            turn_id=state.get("turn_id"),
+        )
     try:
         intro = render_message("query.drill_down.details_intro", locale)
     except Exception:
@@ -366,5 +388,6 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
             "session_active": True,
             "query_result": detail_result,
             "selected_item_id": item.id,
+            "active_focus": detail_result.conversation_focus,
         },
     )

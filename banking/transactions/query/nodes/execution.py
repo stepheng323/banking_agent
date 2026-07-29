@@ -6,8 +6,10 @@ from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.actions import handle_drill_down
-from banking.transactions.query.contracts import SurfaceViewMode
+from banking.transactions.query.contracts import SelectionPayload, SurfaceViewMode
+from banking.transactions.query.conversation_focus import advance_focus
 from banking.transactions.query.executor import QueryExecutor
+from banking.transactions.query.models.conversation import QueryFocus
 from banking.transactions.query.models.operations import QueryRequest
 from banking.transactions.query.pipeline import QueryStep
 from banking.transactions.query.presentation.formatter import QueryFormatter
@@ -23,6 +25,28 @@ class ExecutionStep(QueryStep):
 
     def __init__(self) -> None:
         pass
+
+    @staticmethod
+    def _active_focus(raw: object) -> QueryFocus | None:
+        if isinstance(raw, QueryFocus):
+            return raw
+        if isinstance(raw, dict):
+            try:
+                return QueryFocus.model_validate(raw)
+            except Exception:
+                return None
+        return None
+
+    @staticmethod
+    def _selected_payload(raw: object) -> SelectionPayload | None:
+        if isinstance(raw, SelectionPayload):
+            return raw
+        if isinstance(raw, dict):
+            try:
+                return SelectionPayload.model_validate(raw)
+            except Exception:
+                return None
+        return None
 
     @staticmethod
     def _surface_type_name(result: Any) -> str | None:
@@ -144,6 +168,28 @@ class ExecutionStep(QueryStep):
         )
         result = select_answer_strategy(result, locale=locale)
         result.surface_view = build_surface_view(result)
+        previous_focus = self._active_focus(state.get("active_focus"))
+        focus = advance_focus(
+            request=query_request,
+            previous=previous_focus,
+            continuation_type=state.get("continuation_type"),
+            selected_payload=self._selected_payload(state.get("selected_payload")),
+            source_frame_id=state.get("repair_source_frame_id") or state.get("selected_frame_id"),
+            turn_id=state.get("turn_id"),
+        )
+        result.conversation_focus = focus
+        logger.info(
+            "query_focus_advanced",
+            previous_source=previous_focus.source if previous_focus is not None else None,
+            source=focus.source,
+            subject=focus.subject,
+            has_selected_entity=focus.selected_payload is not None,
+            display_only_preserved=(
+                previous_focus is not None
+                and focus.source == previous_focus.source
+                and focus.frame_id == previous_focus.frame_id
+            ),
+        )
 
         formatted_response = QueryFormatter.format(
             result,
@@ -169,6 +215,7 @@ class ExecutionStep(QueryStep):
             patch={
                 "query_result": result,
                 "query_request": query_request,
+                "active_focus": focus,
                 "resolver_message": None,
                 "session_active": True,
                 "flow_state": "complete",

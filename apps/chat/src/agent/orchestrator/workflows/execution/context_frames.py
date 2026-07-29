@@ -432,6 +432,7 @@ def push_query_surface_frame(ctx: ExecutionTurnContext, query_result: Any) -> No
                 query_request=query_request,
                 result=query_result,
                 turn_index=context_surface(ctx.state).frame_count + 1,
+                focus=getattr(query_result, "conversation_focus", None),
             ).model_dump(mode="json")
         except Exception as exc:
             logger.warning("query_context_frame_compact_frame_failed", error=str(exc))
@@ -497,6 +498,7 @@ def _build_direct_query_summary_frame(
             query_request=query_request,
             result=query_result,
             turn_index=context_surface(ctx.state).frame_count + 1,
+            focus=getattr(query_result, "conversation_focus", None),
         ).model_dump(mode="json")
     except Exception as exc:
         logger.warning("query_context_frame_compact_frame_failed", error=str(exc))

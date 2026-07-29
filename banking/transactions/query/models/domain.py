@@ -235,6 +235,7 @@ class QueryResult(BaseModel):
     answer_context: QueryAnswerContext | None = None
     cash_flow: CashFlowSummaryResult | None = None
     followup_referent: FocusedReferent | None = None
+    conversation_focus: QueryFocus | None = None
     cached_transactions: list[dict[str, Any]] | None = None
     cache_fetched_at: float | None = None
     cache_fingerprint: str | None = None

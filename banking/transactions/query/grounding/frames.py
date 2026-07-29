@@ -78,13 +78,19 @@ def build_query_frame(
     facts = _derive_query_frame_facts(query_request=query_request, result=result, surface_view=surface_view)
 
     frame_id = f"qf_{turn_index}"
+    resolved_focus = focus or result.conversation_focus or focus_for_request(query_request, frame_id=frame_id)
+    resolved_source_frame_id = source_frame_id
+    if resolved_focus.source in {"user_query", "user_refinement", "user_selection"}:
+        if resolved_source_frame_id is None and resolved_focus.frame_id not in {None, frame_id}:
+            resolved_source_frame_id = resolved_focus.frame_id
+        resolved_focus = resolved_focus.model_copy(update={"frame_id": frame_id})
     return QueryFrame(
         frame_id=frame_id,
         turn_index=turn_index,
         query_request=query_request,
         execution_contract=execution_contract or SingleQueryExecution(request=query_request),
-        focus=focus or focus_for_request(query_request, frame_id=frame_id),
-        source_frame_id=source_frame_id,
+        focus=resolved_focus,
+        source_frame_id=resolved_source_frame_id,
         summary_text=result.summary_text,
         interpretation=result.interpretation,
         surface_type=surface_view.mode if surface_view else None,

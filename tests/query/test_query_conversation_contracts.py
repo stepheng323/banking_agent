@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from banking.transactions.query.continuations.repair import QueryRepairError, apply_query_scope_delta
 from banking.transactions.query.continuations.repair_resolution import resolve_pending_proposal, resolve_repair
-from banking.transactions.query.conversation_focus import focus_for_request, resolve_focus
+from banking.transactions.query.conversation_focus import advance_focus, focus_for_request, resolve_focus
 from banking.transactions.query.grounding.frames import build_query_frame
 from banking.transactions.query.models.conversation import (
     PendingInterpretationProposal,
@@ -107,6 +107,64 @@ def test_focus_stays_with_last_user_refinement_when_evidence_is_displayed() -> N
     assert resolved is not None
     assert resolved.dimension == "account"
     assert resolved.source == "user_refinement"
+
+
+def test_display_only_continuation_preserves_semantic_focus() -> None:
+    request = _request()
+    previous = focus_for_request(request, frame_id="qf_1", source="user_refinement", turn_id="turn_1")
+
+    advanced = advance_focus(
+        request=request,
+        previous=previous,
+        continuation_type="show_evidence",
+        turn_id="turn_2",
+    )
+
+    assert advanced.frame_id == "qf_1"
+    assert advanced.source == "user_refinement"
+    assert advanced.latest_user_turn_id == "turn_2"
+
+
+def test_explicit_selection_becomes_semantic_focus() -> None:
+    from banking.transactions.query.contracts import SelectionPayload
+
+    request = _request()
+    selected = SelectionPayload(
+        selection_kind="transaction",
+        entity_type="transaction",
+        entity_id="tx_2",
+        label="Second transaction",
+    )
+
+    advanced = advance_focus(
+        request=request,
+        previous=focus_for_request(request, frame_id="qf_1"),
+        continuation_type="drill_down",
+        selected_payload=selected,
+        source_frame_id="qf_1",
+        turn_id="turn_2",
+    )
+
+    assert advanced.source == "user_selection"
+    assert advanced.selected_payload == selected
+
+
+def test_new_refinement_frame_takes_focus_and_retains_lineage() -> None:
+    request = _request()
+    focus = advance_focus(
+        request=request,
+        previous=focus_for_request(request, frame_id="qf_1"),
+        continuation_type="filter_delta",
+        turn_id="turn_2",
+    )
+    result = QueryResult(summary_text="Refined transactions", query_request=request, conversation_focus=focus)
+
+    frame = build_query_frame(query_request=request, result=result, turn_index=2)
+
+    assert frame.focus is not None
+    assert frame.focus.frame_id == "qf_2"
+    assert frame.focus.source == "user_refinement"
+    assert frame.source_frame_id == "qf_1"
 
 
 def test_proposal_is_bounded_to_two_grounded_contracts() -> None:
