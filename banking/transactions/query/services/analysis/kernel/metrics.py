@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from enum import Enum
 from typing import Any
@@ -54,21 +55,134 @@ def _money(value: Any) -> Decimal:
     return Decimal(str(value)).copy_abs()
 
 
-def _row_amount(row: dict[str, Any]) -> Decimal:
+def row_amount(row: dict[str, Any]) -> Decimal:
+    """Return a canonical non-negative transaction amount."""
     return _money(row.get("amount", 0))
 
 
-def _row_type(row: dict[str, Any]) -> str:
-    return str(row.get("type") or row.get("transaction_type") or "").lower()
+def row_direction(row: dict[str, Any]) -> str:
+    """Return canonical debit/credit direction with boundary-only fallbacks."""
+    value = row.get("type") or row.get("direction") or row.get("transaction_type") or ""
+    normalized = str(value).strip().lower()
+    aliases = {
+        "withdrawal": "debit",
+        "outflow": "debit",
+        "deposit": "credit",
+        "inflow": "credit",
+    }
+    return aliases.get(normalized, normalized)
 
 
-def _is_internal(row: dict[str, Any]) -> bool:
+def row_currency(row: dict[str, Any]) -> str:
+    """Return an uppercase ISO-like currency code."""
+    return str(row.get("currency") or "NGN").strip().upper()
+
+
+def row_status(row: dict[str, Any]) -> str:
+    """Return the normalized provider/display status."""
+    raw_status = (
+        row.get("display_status") or row.get("status") or row.get("local_status") or row.get("provider_status") or ""
+    )
+    return " ".join(str(raw_status).strip().lower().replace("_", " ").split())
+
+
+def row_is_settled(row: dict[str, Any]) -> bool:
+    """Return whether a row represents settled financial activity."""
+    return row_status(row) in {"", "posted", "success", "successful", "completed", "complete", "confirmed"}
+
+
+def row_is_internal(row: dict[str, Any]) -> bool:
+    """Return whether a row is an internal movement."""
     if row.get("is_internal_transfer"):
         return True
-    if row.get("cash_flow_class") == "internal":
+    if str(row.get("cash_flow_class") or "").strip().lower() == "internal":
         return True
     narration = str(row.get("narration", "")).lower()
     return "internal transfer" in narration or "own account" in narration
+
+
+def row_is_fee(row: dict[str, Any]) -> bool:
+    """Return whether a row is a bank/provider fee."""
+    event_type = str(row.get("event_type") or row.get("transaction_type") or "").strip().lower()
+    category = str(row.get("resolved_category") or row.get("category") or "").strip().lower()
+    return event_type in {"fee", "bank_fee", "bank_charge"} or category in {
+        "fee",
+        "fees",
+        "bank_fee",
+        "bank_fees",
+        "bank_charges",
+    }
+
+
+def row_is_uncertain(row: dict[str, Any]) -> bool:
+    """Return whether semantic classification remains unresolved."""
+    state = str(row.get("semantic_resolution_state") or "").strip().lower()
+    return state in {"partial", "needs_review", "unknown", "unresolved"}
+
+
+def row_is_operating(row: dict[str, Any]) -> bool:
+    """Return whether a row belongs to ordinary operating cash flow."""
+    cash_flow_class = str(row.get("cash_flow_class") or "").strip().lower()
+    return cash_flow_class not in {"internal", "financing", "investing", "excluded"}
+
+
+def row_counterparty_key(row: dict[str, Any]) -> str:
+    """Return a stable semantic counterparty key when available."""
+    value = (
+        row.get("counterparty_entity_id")
+        or row.get("counterparty")
+        or row.get("merchant")
+        or row.get("narration")
+        or ""
+    )
+    return " ".join(str(value).strip().lower().split())
+
+
+def row_counterparty_label(row: dict[str, Any]) -> str:
+    """Return the best display-safe counterparty label carried by the row."""
+    value = row.get("counterparty") or row.get("merchant") or row.get("narration") or ""
+    return " ".join(str(value).strip().split())
+
+
+def row_source_account_key(row: dict[str, Any]) -> str:
+    """Return a stable linked-account/source key."""
+    value = row.get("source_account_id") or row.get("account_id") or row.get("bank_name") or ""
+    return str(value).strip()
+
+
+def row_effective_datetime(row: dict[str, Any]) -> datetime | None:
+    """Parse the effective transaction timestamp without dropping time data."""
+    value = row.get("effective_at") or row.get("date")
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        from banking.transactions.query.services.fetching.fetch import parse_date
+
+        parsed = parse_date(text)
+        if isinstance(parsed, datetime):
+            return parsed
+        if isinstance(parsed, date):
+            return datetime.combine(parsed, datetime.min.time())
+        return None
+
+
+def _row_amount(row: dict[str, Any]) -> Decimal:
+    return row_amount(row)
+
+
+def _row_type(row: dict[str, Any]) -> str:
+    return row_direction(row)
+
+
+def _is_internal(row: dict[str, Any]) -> bool:
+    return row_is_internal(row)
 
 
 def _is_non_operating_event(row: dict[str, Any]) -> bool:
@@ -78,15 +192,11 @@ def _is_non_operating_event(row: dict[str, Any]) -> bool:
 
 
 def _is_uncertain(row: dict[str, Any]) -> bool:
-    return row.get("semantic_resolution_state") in {"partial", "needs_review", "unknown"}
+    return row_is_uncertain(row)
 
 
 def _is_settled(row: dict[str, Any]) -> bool:
-    raw_status = (
-        row.get("display_status") or row.get("status") or row.get("local_status") or row.get("provider_status") or ""
-    )
-    status = " ".join(str(raw_status).strip().lower().replace("_", " ").split())
-    return status in {"", "posted", "success", "successful", "completed", "complete", "confirmed"}
+    return row_is_settled(row)
 
 
 def _normalized(value: Any) -> str:

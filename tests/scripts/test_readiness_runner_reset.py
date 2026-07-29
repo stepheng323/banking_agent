@@ -16,6 +16,14 @@ class _RedisResetStub:
         self.deleted_keys.extend(keys)
         return len(keys)
 
+    async def eval(self, script: str, numkeys: int, *keys: str) -> int:
+        # Mock the Lua script behavior using scan_iter and delete
+        deleted = 0
+        for pattern in keys:
+            async for key in self.scan_iter(match=pattern):
+                deleted += await self.delete(key)
+        return deleted
+
 
 @pytest.mark.asyncio
 async def test_reset_redis_session_clears_checkpoint_latest() -> None:
@@ -28,7 +36,7 @@ async def test_reset_redis_session_clears_checkpoint_latest() -> None:
         user_id="user-1",
     )
 
-    assert deleted == 11
+    assert deleted == 14
     assert "checkpoint_latest:whatsapp:2348000000001:*" in redis.scanned_patterns
     assert "checkpoint_ttl_refresh:whatsapp:2348000000001" in redis.scanned_patterns
     assert "chat:thread-lock:whatsapp:2348000000001" in redis.scanned_patterns

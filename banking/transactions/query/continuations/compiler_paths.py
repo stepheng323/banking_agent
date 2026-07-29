@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from time import perf_counter
 from typing import Any
@@ -15,9 +16,13 @@ from banking.transactions.query.continuations.beneficiary_grounding import (
     recipient_clarification_candidates,
 )
 from banking.transactions.query.continuations.clarification_state import build_selection_clarification_updates
+from banking.transactions.query.models.domain import QueryIntent
 from banking.transactions.query.models.extraction import (
     ClarificationOperation,
+    InsightSpec,
     PendingClarificationState,
+    QueryExtractionResult,
+    QueryRequestShape,
     ResolverOutcome,
 )
 from banking.transactions.query.models.operations import QueryRequest
@@ -25,6 +30,87 @@ from banking.transactions.query.utils.timezone import lagos_today
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_QUERY_INSIGHT_TYPES = {
+    "variance_drivers",
+    "probable_duplicates",
+    "recurring_patterns",
+    "anomalies",
+    "counterparty_concentration",
+    "forecast",
+    "runway",
+    "cash_flow_quality",
+}
+
+# Recipient-intent phrasing that the parser handles with a BENEFICIARY_SUMMARY intent.
+# The router's coarse "counterparty_concentration" hint must not clobber these.
+_SEND_TO_RECIPIENT_RE = re.compile(
+    r"\b(?:send|sent|transfer|transferred|pay|paid)\b.*\b(?:to|for)\b",
+    re.IGNORECASE,
+)
+
+
+def _apply_router_insight_hint(step: Any, result: Any, state: dict[str, Any], *, today: date, language: str) -> Any:
+    """Apply the semantic router's typed insight subtype before compilation.
+
+    The router has already spent the turn's first semantic call and identified
+    the analytical family.  This adapter prevents a narrower parser mistake
+    from silently turning that request into a generic cash-flow surface.
+    """
+    hint = state.get("query_insight_type")
+    extraction = getattr(result, "extraction", None)
+    if hint not in _QUERY_INSIGHT_TYPES or not isinstance(extraction, QueryExtractionResult):
+        return result
+    logger.info(
+        "query_insight_hint_received",
+        insight_type=hint,
+        parser_intent=extraction.intent.value,
+    )
+    current = extraction.insight
+    insight = (
+        current
+        if current is not None and current.insight_type == hint
+        else InsightSpec(insight_type=hint)
+    )
+    if (
+        extraction.intent == QueryIntent.INSIGHT
+        and extraction.request_shape == QueryRequestShape.INSIGHT
+        and extraction.insight == insight
+    ):
+        return result
+    # Never let a coarse concentration hint override a confident recipient-ranking intent.
+    # "Who did I send money to the most" is a beneficiary summary, not spending concentration.
+    if hint == "counterparty_concentration" and (
+        extraction.intent == QueryIntent.BENEFICIARY_SUMMARY
+        or _SEND_TO_RECIPIENT_RE.search(extraction.raw_query or "")
+    ):
+        logger.info(
+            "query_insight_hint_rejected",
+            insight_type=hint,
+            parser_intent=extraction.intent.value,
+            reason="send_to_recipient_intent",
+        )
+        return result
+    prior_intent = extraction.intent.value
+    hinted_extraction = extraction.model_copy(
+        deep=True,
+        update={
+            "intent": QueryIntent.INSIGHT,
+            "request_shape": QueryRequestShape.INSIGHT,
+            "insight": insight,
+            "aggregation": None,
+            "comparison": None,
+            "fact_query_kind": None,
+            "answer_fact_field": None,
+            "result_reference": None,
+        },
+    )
+    logger.info(
+        "query_insight_hint_applied",
+        insight_type=hint,
+        prior_intent=prior_intent,
+    )
+    return step.parser.compile_extraction(hinted_extraction, today=today, language=language)
 
 
 async def parse_new_query(step: Any, state: dict[str, Any]) -> dict[str, Any]:
@@ -37,6 +123,13 @@ async def parse_new_query(step: Any, state: dict[str, Any]) -> dict[str, Any]:
     started_at = perf_counter()
     deterministic_result = step.parser.parse_deterministic(message, today=today, language=language)
     if deterministic_result is not None:
+        deterministic_result = _apply_router_insight_hint(
+            step,
+            deterministic_result,
+            state,
+            today=today,
+            language=language,
+        )
         step._log_query_trace(
             state=state,
             phase="parser_compile",
@@ -51,6 +144,7 @@ async def parse_new_query(step: Any, state: dict[str, Any]) -> dict[str, Any]:
         return updates
 
     result = await step.parser.parse(message, today=today, language=language)
+    result = _apply_router_insight_hint(step, result, state, today=today, language=language)
     step._log_query_trace(
         state=state,
         phase="parser_compile",

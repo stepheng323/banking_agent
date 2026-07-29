@@ -20,9 +20,8 @@ from banking.transactions.query.models.domain import (
     Filters,
     QueryIntent,
     QueryRequest,
-    TimeRange,
 )
-from banking.transactions.query.models.operations import AnalyzeOperation, CompareOperation
+from banking.transactions.query.models.operations import AnalyzeOperation, CompareOperation, ResolvedPeriod
 from banking.transactions.query.nodes.execution import ExecutionStep
 from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.nodes.generative_formatter import GenerativeFormattingStep
@@ -74,7 +73,7 @@ class QueryWorker:
             "direct_answer": "single_item",
             "transaction_list": "list",
             "grouped_summary": "summary",
-            "variance_insight": "variance_insight",
+            "insight": "insight",
             "clarification": "clarification",
         }
         return mode_map.get(mode) if isinstance(mode, str) else None
@@ -152,7 +151,7 @@ class QueryWorker:
         return value.strftime("%b %d").replace(" 0", " ")
 
     @classmethod
-    def _build_time_phrase(cls, time_range: TimeRange | None, locale: str) -> str | None:
+    def _build_time_phrase(cls, time_range: ResolvedPeriod | None, locale: str) -> str | None:
         if time_range is None:
             return None
 
@@ -179,7 +178,7 @@ class QueryWorker:
         *,
         intent: QueryIntent,
         filters: Filters | None,
-        time_range: TimeRange | None,
+        time_range: ResolvedPeriod | None,
         locale: str,
         include_time: bool,
     ) -> str | None:
@@ -259,11 +258,11 @@ class QueryWorker:
             (item.strip().title() for item in category_values if isinstance(item, str) and item.strip()), None
         )
         tx_type = filters.transaction_type if filters else None
-        time_phrase = cls._build_time_phrase(query_request.time_range, locale) if include_time else None
+        time_phrase = cls._build_time_phrase(query_request.period, locale) if include_time else None
         scope_label = cls._build_scope_label(
             intent=query_request.intent,
             filters=filters,
-            time_range=query_request.time_range,
+            time_range=query_request.period,
             locale=locale,
             include_time=include_time,
         )
@@ -441,6 +440,7 @@ class QueryWorker:
         state = {
             "message": payload.get("message", ""),
             "force_new_query": bool(payload.get("force_new_query")),
+            "query_insight_type": payload.get("query_insight_type"),
             "phone_number": phone_number,
             "account_id": payload.get("account_id"),
             "account_ids": payload.get("account_ids"),

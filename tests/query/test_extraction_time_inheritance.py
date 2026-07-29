@@ -7,6 +7,7 @@ from langchain_core.runnables import Runnable
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.actions import handle_drill_down
+from banking.transactions.query.continuations.compiler_paths import _apply_router_insight_hint
 from banking.transactions.query.continuations.result_paths import _resolve_coverage_intent
 from banking.transactions.query.contracts import (
     SelectionPayload,
@@ -85,6 +86,108 @@ def _ok_result(extraction: QueryExtractionResult, query: QueryRequest) -> QueryP
         extraction=extraction,
         query_request=contract.model_dump(mode="json"),
     )
+
+
+def test_router_insight_hint_prevents_generic_cash_flow_parser_downgrade() -> None:
+    today = date(2026, 7, 27)
+    parsed = QueryExtractionResult(
+        intent=QueryIntent.CASH_FLOW_SUMMARY,
+        request_shape=QueryRequestShape.ANALYTICS,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="Who received the largest share of my spending this month?",
+    )
+    result = QueryParseResult(outcome=ResolverOutcome.OK, extraction=parsed)
+    captured: dict[str, QueryExtractionResult] = {}
+
+    class _Parser:
+        def compile_extraction(
+            self,
+            extraction: QueryExtractionResult,
+            *,
+            today: date,
+            language: str,
+        ) -> QueryParseResult:
+            del today, language
+            captured["extraction"] = extraction
+            return QueryParseResult(outcome=ResolverOutcome.OK, extraction=extraction)
+
+    class _Step:
+        parser = _Parser()
+
+    updated = _apply_router_insight_hint(
+        _Step(),
+        result,
+        {"query_insight_type": "counterparty_concentration"},
+        today=today,
+        language="en",
+    )
+
+    assert updated.extraction is not None
+    assert updated.extraction.intent == QueryIntent.INSIGHT
+    assert updated.extraction.request_shape == QueryRequestShape.INSIGHT
+    assert updated.extraction.insight is not None
+    assert updated.extraction.insight.insight_type == "counterparty_concentration"
+    assert updated.extraction.time_range.period == "this_month"
+    assert captured["extraction"] == updated.extraction
+
+
+def test_router_insight_hint_does_not_override_send_to_recipient() -> None:
+    """A concentration router hint must not clobber a confident beneficiary-summary intent."""
+    today = date(2026, 7, 27)
+    parsed = QueryExtractionResult(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        request_shape=QueryRequestShape.ANALYTICS,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="Who did I send money to the most this month?",
+    )
+    result = QueryParseResult(outcome=ResolverOutcome.OK, extraction=parsed)
+
+    class _Parser:
+        def compile_extraction(self, extraction: QueryExtractionResult, *, today: date, language: str) -> Any:
+            pytest.fail("compile_extraction should not be called when parser intent is preserved")
+
+    class _Step:
+        parser = _Parser()
+
+    updated = _apply_router_insight_hint(
+        _Step(),
+        result,
+        {"query_insight_type": "counterparty_concentration"},
+        today=today,
+        language="en",
+    )
+
+    assert updated.extraction is not None
+    assert updated.extraction.intent == QueryIntent.BENEFICIARY_SUMMARY
+
+
+def test_router_insight_hint_survives_cash_flow_normalization() -> None:
+    """A router-selected insight remains authoritative through the real compiler."""
+    today = date(2026, 7, 27)
+    parsed = QueryExtractionResult(
+        intent=QueryIntent.CASH_FLOW_SUMMARY,
+        request_shape=QueryRequestShape.ANALYTICS,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="Who received the largest share of my spending this month?",
+    )
+    result = QueryParseResult(outcome=ResolverOutcome.OK, extraction=parsed)
+
+    class _Step:
+        parser = ExtractionStep(_DummyLLM()).parser
+
+    updated = _apply_router_insight_hint(
+        _Step(),
+        result,
+        {"query_insight_type": "counterparty_concentration"},
+        today=today,
+        language="en",
+    )
+
+    assert updated.extraction is not None
+    assert updated.extraction.intent == QueryIntent.INSIGHT
+    assert updated.query_request is not None
+    assert updated.query_request["operation"]["kind"] == "analyze"
+    assert updated.query_request["operation"]["analysis"]["insight_type"] == "counterparty_concentration"
 
 
 @pytest.mark.asyncio

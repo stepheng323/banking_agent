@@ -190,8 +190,8 @@ def _answer_strategy_from_surface(mode: SurfaceViewMode) -> QueryAnswerStrategy:
         return QueryAnswerStrategy.SUMMARY_LIST
     if mode == SurfaceViewMode.CLARIFICATION:
         return QueryAnswerStrategy.CLARIFY
-    if mode == SurfaceViewMode.VARIANCE_INSIGHT:
-        return QueryAnswerStrategy.VARIANCE_INSIGHT
+    if mode == SurfaceViewMode.INSIGHT:
+        return QueryAnswerStrategy.INSIGHT
     return QueryAnswerStrategy.TRANSACTION_LIST
 
 

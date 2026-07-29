@@ -26,6 +26,7 @@ from shared.types.planner import (
     ContextFrameFollowupFilters,
     ContextFrameReplayModifier,
     ContextFrameRequestedField,
+    QueryInsightType,
     RouterDomainIntent,
     SemanticRouteDecision,
     SemanticRouterResponseKey,
@@ -50,6 +51,7 @@ class SemanticRouteLLMDecision(BaseModel):
     requested_language: str | None = Field(default=None, alias="req_lang")
     mode: SemanticRoutingMode | None = None
     target_intent: RouterDomainIntent | None = Field(default=None, alias="intent")
+    query_insight_type: QueryInsightType | None = Field(default=None, alias="q_insight")
     response_key: SemanticRouterResponseKey | None = Field(default=None, alias="res_key")
     response: str | None = Field(default=None, alias="res")
     expected_transaction_executors: list[TransactionExecutor] = Field(default_factory=list, alias="execs")
@@ -285,6 +287,25 @@ def _adapt_semantic_route_llm_decision(value: BaseModel) -> SemanticRouteDecisio
             "reference": reference,
         }
     decision = SemanticRouteDecision.model_validate(payload)
+    query_evidence = decision.query_insight_type is not None or (
+        decision.target_intent == "query"
+        and decision.decision in {"direct_reply", "planner_ambiguous"}
+        and not decision.expected_transaction_executors
+    )
+    if query_evidence:
+        # The compact router can occasionally emit a contradictory top-level
+        # fallback while still identifying query as the sole domain (or an
+        # exact insight subtype).  Resolve that contradiction here so it
+        # cannot amplify into a planner and responder call chain.
+        decision = decision.model_copy(
+            update={
+                "decision": "domain_query",
+                "target_intent": "query",
+                "response_key": None,
+                "response": None,
+                "unsupported_capability": None,
+            }
+        )
     context_followup, replay_modifier = _context_runtime_decision(value) if isinstance(
         value, (_ContextRouteDecision, TransactionContextRouteLLMDecision)
     ) else (None, None)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from banking.transactions.query.contracts import (
     FactCapability,
@@ -30,7 +30,6 @@ from banking.transactions.query.models.operations import (
     RetrieveOperation,
     RetrieveProjection,
     RetrieveSelection,
-    VarianceDriversSpec,
 )
 
 ALL_FACT_CAPABILITIES: tuple[FactCapability, ...] = (
@@ -180,9 +179,9 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
             lead_text=result.answer_context.primary_text,
         )
 
-    if result.answer_strategy == QueryAnswerStrategy.VARIANCE_INSIGHT:
+    if result.answer_strategy == QueryAnswerStrategy.INSIGHT:
         return SurfaceView(
-            mode=SurfaceViewMode.VARIANCE_INSIGHT,
+            mode=SurfaceViewMode.INSIGHT,
             lead_text=result.summary_text,
             items=[
                 SurfaceItemView(
@@ -194,13 +193,13 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
                     if isinstance(item.metadata, dict) and item.metadata.get("selection_payload")
                     else _build_selection_payload(
                         item,
-                        mode=SurfaceViewMode.VARIANCE_INSIGHT,
-                        context={"view": "variance_insight"},
+                        mode=SurfaceViewMode.INSIGHT,
+                        context={"view": "insight"},
                     ),
                 )
                 for item in result.items or []
             ],
-            context={"view": "variance_insight"},
+            context={"view": "insight"},
         )
 
     if (
@@ -481,30 +480,29 @@ def apply_selection_payload_to_query(
     query_request: QueryRequest,
     payload: SelectionPayload,
     *,
-    fact_field: QueryFactField | None = None,
-    continuation_type: str | None = None,
-    continuation_delta_type: str | None = None,
+    fact_field: QueryFactField | None = None
 ) -> QueryRequest:
     """Compile a new transaction-list contract from a typed selection payload."""
     if payload.insight_evidence is not None:
         evidence = payload.insight_evidence
+        if not isinstance(query_request.operation, AnalyzeOperation):
+            raise ValueError("insight evidence must be replayed from its source insight contract")
+        if query_request.operation.analysis.insight_type != evidence.insight_type:
+            raise ValueError("insight evidence does not match its source insight contract")
         scope = query_request.scope
         if scope is None:
             raise ValueError("insight evidence requires a transaction-backed scope")
-        period = ResolvedPeriod(
-            start=date.fromisoformat(evidence.current_start), end=date.fromisoformat(evidence.current_end)
-        )
-        analysis = (
-            query_request.operation.analysis.model_copy(deep=True)
-            if isinstance(query_request.operation, AnalyzeOperation)
-            else VarianceDriversSpec(
-                analysis_basis=evidence.basis,
-                measure=cast(
-                    Literal["spending", "income", "net_cash_flow", "cash_flow_overview"],
-                    evidence.measure,
-                ),
+        current_start = getattr(evidence, "current_start", None)
+        current_end = getattr(evidence, "current_end", None)
+        if current_start and current_end:
+            period = ResolvedPeriod(
+                start=date.fromisoformat(current_start),
+                end=date.fromisoformat(current_end)
             )
-        )
+        else:
+            period = scope.period
+
+        analysis = query_request.operation.analysis.model_copy(deep=True)
         analysis = analysis.model_copy(update={"evidence": evidence})
         return QueryRequest(
             operation=AnalyzeOperation(scope=scope.model_copy(update={"period": period}), analysis=analysis)

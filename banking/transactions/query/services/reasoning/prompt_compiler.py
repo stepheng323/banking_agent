@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from banking.transactions.query.services.reasoning.models import ReasonerPromptProfileType
 
-_VERSION = "v4"
+_VERSION = "v6"
 
 _BASE = """You interpret one follow-up inside a multilingual banking transaction-query session. Return only JSON
 matching the supplied schema. Understand English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed wording.
@@ -21,7 +21,9 @@ Omit every unused optional field. Do not emit nulls, empty strings/lists, or fie
 Common continuation meanings: show_more for pagination or underlying rows; show_evidence for rows behind an aggregate;
 time_delta/filter_delta for scope changes; aggregate/grouped_total_followup for deterministic analysis; coverage for
 completeness or synchronization questions; recheck to rerun unchanged scope; conversational for a reaction;
-drill_down for a displayed item/fact; unclear when grounding is insufficient.
+drill_down for a displayed item/fact; reconcile when the user challenges an earlier answer or references an entity/fact
+that is not on the current surface (e.g., "so where did you get X", "but you said Y", "that doesn't match"); unclear
+when grounding is insufficient.
 
 Use coverage_intent=result_completeness for whether matching rows/pages remain, data_coverage for linked-account sync or
 missing bank/account windows, and ambiguous when those cannot be distinguished. A fresh banking action outside query
@@ -50,7 +52,13 @@ _LIST = """Transaction-list rules:
   followup_intent=refine_existing, and extraction with the requested analytics intent/aggregation. Preserve the active
   filters and period unless the user explicitly changes them. For example, spending by account uses
   analytics_summary with aggregation=breakdown/group_by=account and debit filtering.
+- Scope-broadening corrections: when the user corrects with "I mean / I meant / no, I meant" plus "whole / all /
+  everything / full / total" spending, they want to DROP the active narrow filter (category, merchant, counterparty)
+  and keep only the period and direction. Set continuation_type=aggregate, followup_intent=replace_scope,
+  delta_type=filter, analytics_summary sum, and NO bucket filter.
 - Use coverage only for whether rows are complete, pages remain, account synchronization, or missing-data questions.
+- Use reconcile, not coverage, when the user is challenging a fact or entity from an earlier answer rather than asking
+  whether all rows or accounts are present.
 """
 
 _SUMMARY = """Grouped-summary rules:
@@ -64,21 +72,29 @@ _SUMMARY = """Grouped-summary rules:
 - A contrastive follow-up that changes money direction sets transaction_direction_delta=credit|debit and uses
   filter_delta/refine_existing. A request for both directions sets transaction_direction_delta=both. Preserve the
   active period and every unrelated filter; do not ask the user to confirm a clear direction change.
+- RECONCILE: if the user challenges the current answer or names an entity/fact not visible in the current result (e.g.,
+  "so where did you get uber?", "but you said I spent 50k", "that doesn't match"), set continuation_type=reconcile,
+  populate target_text with the challenged entity/amount/fact, and include referenced_frame_ids only when the schema
+  supplies them. Prior query frames are included below; use them to ground the reconciliation. Do not use drill_down or
+  coverage for cross-answer challenges.
 - Calculations remain deterministic; output only the requested operation and semantic patch.
 """
 
-_VARIANCE = """Variance-insight rules:
-- The active result compares the current period with its baseline. It is an insight contract, not a generic list or
-  historical-frame result. Keep decision=continuation for grounded refinements.
-- "What drove income/spending/net cash flow?" changes only insight.measure and preserves the active period, basis,
-  confidence policy, completeness policy, and filters. Return continuation_type=aggregate,
-  followup_intent=refine_existing, and a complete insight extraction.
-- "Which account/category/counterparty changed the most?" keeps the active measure unless the user changes it, and
-  returns a complete insight extraction whose dimensions contains the requested dimension.
-- "Show the transactions behind [driver]" uses show_evidence/refine_existing. A typed driver payload is resolved by
-  the runtime; never replace it with an unfiltered transaction list.
-- A request for an overall financial change uses measure=cash_flow_overview. Do not turn a variance refinement into a
-  normal analytics summary.
+_INSIGHT = """Insight rules:
+- The active query is an insight contract. Keep decision=continuation for grounded evidence, reconciliation, and
+  compatible refinements; never treat an insight aggregate as a generic transaction fact.
+- "Show the transactions behind [item]" uses show_evidence/refine_existing. The runtime replays only the typed
+  evidence selector from the displayed or retained source frame.
+- A challenge across answers uses reconcile with target_text and/or target_amount. Use referenced_frame_ids only for
+  frames that appear in the supplied compact frame context; never fabricate an ID.
+- For variance drivers only: income/spending/net-cash-flow changes only the measure; account/category/counterparty
+  changes only dimensions; overall financial change uses cash_flow_overview.
+- For duplicates, recurring patterns, anomalies, and concentration: retain the active insight type and use evidence
+  selection for a named visible item. Do not invent a variance extraction.
+- Forecast, runway, and cash-flow quality are summary estimates. Explain their stated period or coverage, but do not
+  fabricate transaction evidence when none exists.
+- A clearly new transaction query should use new_query. Do not emit a fresh-query extraction here: the runtime will
+  safely hand unclear replacements back to normal routing rather than inventing a scope.
 """
 
 _FRAMES = """Historical-frame rules:
@@ -106,7 +122,7 @@ def compile_query_reasoner_prompt(profile: ReasonerPromptProfileType) -> Compile
         "focused_item": _FOCUSED,
         "transaction_list": _LIST,
         "grouped_summary": _SUMMARY,
-        "variance_insight": _VARIANCE,
+        "insight": _INSIGHT,
         "historical_frames": _FRAMES,
         "pending_clarification": _CLARIFICATION,
     }[profile]

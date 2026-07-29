@@ -157,7 +157,7 @@ def _unsupported_capability_system_rules(prompt_input: ConversationResponderProm
 
 def _build_user_prompt(prompt_input: ConversationResponderPromptInput) -> str:
     user_parts = [
-        f"Runtime Lagos timestamp: {prompt_input.now.strftime('%A, %B %d, %Y %H:%M %Z')}",
+        f"Runtime timestamp: {prompt_input.now.strftime('%A, %B %d, %Y %H:%M %Z')}",
         f"User message: {prompt_input.text.strip()}",
         f"Recent casual streak: {prompt_input.casual_streak}",
     ]

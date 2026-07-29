@@ -164,6 +164,27 @@ def test_variance_insight_readiness_scenario_enforces_query_call_budget() -> Non
     assert ("outbox_bridge_llm_call", 0) in scenario.turns[1].expectation.llm_call_budget.max_event_counts
 
 
+def test_insight_suite_readiness_covers_all_new_insights_without_formatter_calls() -> None:
+    scenario = resolve_scenarios("insight-suite")[0]
+
+    assert len(scenario.turns) == 7
+    assert all(turn.expectation.llm_call_budget is not None for turn in scenario.turns)
+    assert all(
+        ("outbox_bridge_llm_call", 0) in turn.expectation.llm_call_budget.max_event_counts
+        for turn in scenario.turns
+        if turn.expectation.llm_call_budget is not None
+    )
+
+
+def test_insight_reconciliation_readiness_exercises_retained_evidence() -> None:
+    scenario = resolve_scenarios("insight-reconciliation")[0]
+
+    assert scenario.tags == ("query", "insight", "reconciliation", "acceptance")
+    assert len(scenario.turns) == 3
+    assert "Uber" in scenario.turns[-1].text
+    assert scenario.turns[-1].expectation.llm_call_budget is not None
+
+
 def test_assert_readiness_turn_checks_planner_quality_and_llm_counts() -> None:
     turn = ReadinessTurn(
         "send 5k to Ada",
@@ -634,6 +655,14 @@ def test_readiness_cli_accepts_planner_scenario() -> None:
     args = readiness.parse_args(["--mode", "dry-run", "--scenario", "planner", "--phone", "2348162511023"])
 
     assert args.scenario == "planner"
+
+
+def test_readiness_cli_accepts_insight_reconciliation_scenario() -> None:
+    args = readiness.parse_args(
+        ["--mode", "dry-run", "--scenario", "insight-reconciliation", "--phone", "2348162511023"]
+    )
+
+    assert args.scenario == "insight-reconciliation"
 
 
 def test_robustness_catalog_expands_to_at_least_300_deterministic_cases() -> None:

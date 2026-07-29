@@ -11,7 +11,8 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_regist
 
 SEMANTIC_UNSUPPORTED_CANDIDATE_RE = re.compile(
     r"\b(?:"
-    r"loan|borrow|lend|credit|advance|invest|investment|crypto|bitcoin|btc|ethereum|eth|stock|shares?|"
+    r"loan|borrow|lend|credit|advance|invest|investment|crypto|bitcoin|btc|ethereum|eth|stocks?|"
+    r"stock\s+shares?|company\s+shares?|"
     r"forex|fx|advice|advise|recommend|abroad|international|dollar|usd|swift|iban|export|download|"
     r"pdf|csv|spreadsheet|all[-\s]?time|lifetime|entire\s+history|grow\s+(?:my\s+)?money|"
     r"wealth|returns?|profit|staking?|stake|portfolio|"

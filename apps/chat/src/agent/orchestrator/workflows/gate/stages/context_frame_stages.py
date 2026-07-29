@@ -308,7 +308,7 @@ def _typed_read_subject_pivot_updates(
     try:
         request = ReadRequest(
             subject=subject,
-            response_shape=shape,
+            response_shape=cast(Any, shape),
             entity_name=entity_name,
             bank_name=bank_name,
             status=status,

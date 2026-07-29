@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from banking.transactions.query.models.extraction import (
     QueryAggregation,
     QueryExtractionResult,
@@ -226,3 +228,46 @@ def test_income_vs_spending_breakdown_keeps_unfiltered_transaction_type() -> Non
     assert contract.aggregation.group_by == "transaction_type"
     assert contract.filters is not None
     assert contract.filters.transaction_type is None
+
+
+def test_explicit_relative_window_overrides_vague_insight_extraction() -> None:
+    parser = QueryParser(_DummyLLM())
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.INSIGHT,
+        insight={"insight_type": "probable_duplicates"},
+        time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, period="last"),
+        raw_query="Do I have probable duplicate transactions in the last 90 days?",
+    )
+
+    recovered = parser._recover_known_fragile_query_shapes(extraction)
+
+    assert recovered.time_range.reference_type == TimeReference.EXPLICIT
+    assert recovered.time_range.days_back == 89
+
+
+@pytest.mark.parametrize(
+    ("insight", "expected_days_back"),
+    [
+        ({"insight_type": "probable_duplicates"}, 89),
+        ({"insight_type": "recurring_patterns"}, 179),
+        ({"insight_type": "anomalies"}, 89),
+        ({"insight_type": "forecast"}, 179),
+        ({"insight_type": "runway"}, 89),
+    ],
+)
+def test_vague_time_uses_typed_intrinsic_insight_window(
+    insight: dict[str, str],
+    expected_days_back: int,
+) -> None:
+    parser = QueryParser(_DummyLLM())
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.INSIGHT,
+        insight=insight,
+        time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, period="recently"),
+        raw_query="Analyze this recently",
+    )
+
+    recovered = parser._recover_known_fragile_query_shapes(extraction)
+
+    assert recovered.time_range.reference_type == TimeReference.EXPLICIT
+    assert recovered.time_range.days_back == expected_days_back

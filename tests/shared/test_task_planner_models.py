@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import (
     BalanceContextRouteLLMDecision,
+    SemanticRouteLLMDecision,
     SemanticRouterLLM,
     TransactionContextRouteLLMDecision,
     _adapt_semantic_route_llm_decision,
@@ -549,6 +550,41 @@ def test_semantic_router_adapts_balance_context_in_its_single_response() -> None
     assert route.context_followup.balance_delta.scope_operation == "replace"
     assert route.context_followup.balance_delta.bank_names == ["GTBank"]
     assert route.context_replay_modifier is None
+
+
+def test_semantic_router_preserves_typed_query_insight_subtype() -> None:
+    route = _adapt_semantic_route_llm_decision(
+        SemanticRouteLLMDecision(
+            decision="domain_query",
+            conf=0.96,
+            lang="English",
+            mode="new",
+            intent="query",
+            q_insight="counterparty_concentration",
+        )
+    )
+
+    assert route.query_insight_type == "counterparty_concentration"
+
+
+@pytest.mark.parametrize("wire_decision", ["direct_reply", "planner_ambiguous"])
+def test_semantic_router_resolves_query_domain_contradiction_without_planner(
+    wire_decision: str,
+) -> None:
+    route = _adapt_semantic_route_llm_decision(
+        SemanticRouteLLMDecision(
+            decision=wire_decision,  # type: ignore[arg-type]
+            conf=0.82,
+            intent="query",
+            res_key="conversational.clarify" if wire_decision == "direct_reply" else None,
+            res="Could you clarify?" if wire_decision == "direct_reply" else None,
+        )
+    )
+
+    assert route.decision == "domain_query"
+    assert route.target_intent == "query"
+    assert route.response_key is None
+    assert route.response is None
 
 
 def test_semantic_router_keeps_explicit_replay_patch_in_the_same_response() -> None:

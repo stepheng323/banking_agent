@@ -239,6 +239,7 @@ async def _handle_semantic_domain_dispatch(
         beneficiary_contract=beneficiary_contract,
         schedule_contract=schedule_contract,
         account_lifecycle_contract=account_lifecycle_contract,
+        query_insight_type=getattr(route, "query_insight_type", None) if domain == "query" else None,
     )
     logger.info(
         "gate_semantic_router_domain_dispatch",

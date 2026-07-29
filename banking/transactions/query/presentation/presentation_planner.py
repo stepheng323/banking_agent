@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.formatters.query_transaction_copy import build_transaction_detail_lines
-from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.contracts import (
     PresentationMode,
@@ -98,7 +97,7 @@ def _build_raw_presentation_plan(
             return _build_grouped_summary_presentation_plan(result, surface_view=surface_view, locale=locale)
         if len(surface_view.items) == 1 and query_request and query_request.result_limit == 1:
             item = surface_view.items[0]
-            amount_str = f"₦{abs(float(item.amount or 0.0)):,.0f}"
+            amount_str = f"₦{abs(item.amount or 0.0):,.0f}"
             return PresentationPlan(
                 mode=PresentationMode.DIRECT_ANSWER,
                 lead_text=render_message("query.format.direct_answer_grouped_lead", locale, {"name": item.label}),
@@ -107,9 +106,9 @@ def _build_raw_presentation_plan(
             )
         return _build_grouped_summary_presentation_plan(result, surface_view=surface_view, locale=locale)
 
-    if surface_view.mode == SurfaceViewMode.VARIANCE_INSIGHT:
+    if surface_view.mode == SurfaceViewMode.INSIGHT:
         return PresentationPlan(
-            mode=PresentationMode.VARIANCE_INSIGHT,
+            mode=PresentationMode.INSIGHT,
             lead_text=surface_view.lead_text or result.summary_text,
             selection_payloads=[item.payload for item in surface_view.items],
         )
@@ -258,7 +257,7 @@ def _has_search_shaped_no_results_context(query_request: QueryRequest | None) ->
 
 
 def _format_factual_no_results(
-    time_range: TimeRange,
+    time_range: TimeRange | Any,
     *,
     locale: str,
     transaction_type: str | None,
@@ -275,12 +274,12 @@ def _format_factual_no_results(
 
     if transaction_type in ("credit", "debit"):
         return render_message(
-            cast(MessageKey, f"query.format.no_transactions_with_type_{suffix}"),
+            cast(Any, f"query.format.no_transactions_with_type_{suffix}"),
             locale,
             {"transaction_type": transaction_type},
         )
 
-    return render_message(cast(MessageKey, f"query.format.no_transactions_{suffix}"), locale)
+    return render_message(cast(Any, f"query.format.no_transactions_{suffix}"), locale)
 
 
 def _build_grouped_summary_presentation_plan(
@@ -409,7 +408,7 @@ def _build_beneficiary_summary_presentation_plan(
     if display_items:
         first = display_items[0]
         first_name = _humanize_grouped_name(first.label)
-        amount = format_naira(abs(float(first.amount or 0.0)))
+        amount = format_naira(abs(first.amount or 0.0))
         period_suffix = f" {period}" if period else ""
         if answer_only:
             if is_credit:
@@ -504,13 +503,13 @@ def _format_beneficiary_summary_item(item: SurfaceItemView) -> str:
     transfer_noun = "transfer" if count == 1 else "transfers"
     return (
         f"{_humanize_grouped_name(item.label)} · "
-        f"{format_naira(abs(float(item.amount or 0.0)))} · "
+        f"{format_naira(abs(item.amount or 0.0))} · "
         f"{count} {transfer_noun}"
     )
 
 
 def _humanize_grouped_name(value: str) -> str:
-    cleaned = " ".join(str(value or "").strip().split())
+    cleaned = " ".join((value or "").strip().split())
     if cleaned and cleaned == cleaned.upper() and any(char.isalpha() for char in cleaned):
         return cleaned.title()
     return cleaned
@@ -525,7 +524,7 @@ def _build_focused_group_presentation_plan(
     item = surface_view.items[0] if surface_view.items else None
     if item is None:
         return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=result.summary_text)
-    amount_str = format_naira(abs(float(item.amount or 0.0)))
+    amount_str = format_naira(abs(item.amount or 0.0))
     return PresentationPlan(
         mode=PresentationMode.DIRECT_ANSWER,
         lead_text=result.summary_text

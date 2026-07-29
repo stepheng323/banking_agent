@@ -7,7 +7,17 @@ from typing import Any
 from pydantic import BaseModel
 
 from banking.transactions.query.contracts import SurfaceView
-from banking.transactions.query.models.extraction import InsightSpecBase
+from banking.transactions.query.models.domain import QueryResultItem
+from banking.transactions.query.models.operations import InsightSpecBase
+
+
+@dataclass(frozen=True)
+class InsightPresentation:
+    """Atomic presentation produced from one authoritative insight result."""
+
+    summary_text: str
+    surface_view: SurfaceView
+    items: list[QueryResultItem]
 
 
 @dataclass
@@ -18,10 +28,39 @@ class InsightDefinition:
     spec_type: type[InsightSpecBase]
     result_type: type[BaseModel]
     executor: Callable[..., Awaitable[Any]]
-    formatter: Callable[[Any, str], str]
-    surface_builder: Callable[[Any, str], SurfaceView]
-    item_builder: Callable[[Any, str], list[dict[str, Any]]]
+    presenter: Callable[[Any, str], InsightPresentation]
     evidence_resolver: Callable[..., Awaitable[list[dict[str, Any]]]] | None = None
+
+
+def build_presentation(
+    result: Any,
+    language: str,
+    *,
+    formatter: Callable[[Any, str], str],
+    surface_builder: Callable[[Any, str], SurfaceView],
+    item_builder: Callable[[Any, str], list[dict[str, Any]]],
+) -> InsightPresentation:
+    """Adapt existing deterministic builders into one checked presentation."""
+    summary_text = formatter(result, language)
+    surface_view = surface_builder(result, language)
+    raw_items = item_builder(result, language)
+    if len(raw_items) != len(surface_view.items):
+        raise ValueError("insight item and surface counts must match")
+    items: list[QueryResultItem] = []
+    for index, item in enumerate(raw_items):
+        metadata = dict(item.get("metadata") or {})
+        if index < len(surface_view.items):
+            metadata["selection_payload"] = surface_view.items[index].payload.model_dump(mode="json")
+        items.append(
+            QueryResultItem(
+                id=str(item["id"]),
+                description=str(item["description"]),
+                amount=float(item["amount"]),
+                date=item["date"],
+                metadata=metadata,
+            )
+        )
+    return InsightPresentation(summary_text=summary_text, surface_view=surface_view, items=items)
 
 
 class InsightRegistry:
@@ -32,6 +71,8 @@ class InsightRegistry:
 
     def register(self, definition: InsightDefinition) -> None:
         """Register a new insight definition."""
+        if definition.insight_type in self._insights:
+            raise ValueError(f"duplicate insight registration: {definition.insight_type}")
         self._insights[definition.insight_type] = definition
 
     def get(self, insight_type: str) -> InsightDefinition | None:

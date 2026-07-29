@@ -9,7 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_
     TurnContextSummary,
 )
 
-_PROMPT_VERSION = "v7"
+_PROMPT_VERSION = "v9"
 
 _DIRECT_REPLY = """You write one direct reply for a multilingual Nigerian banking assistant. Return only JSON.
 The turn is already constrained to direct_reply: do not route a banking task or invent account, amount, recipient,
@@ -26,8 +26,8 @@ Pidgin, Yoruba, Hausa, Igbo, and mixed wording; do not depend on exact phrases.
 Return only the required JSON. Decisions:
 - direct_reply: greeting, appreciation, check-in, identity, capability/meta, safe casual chat, or unsupported topic.
 - direct_context_answer: a short read-only fact fully grounded in supplied context.
-- domain_query: transaction history, debits/credits, totals, comparisons, pagination, details, analytics, or an
-  explanation of why spending, income, or cash flow changed between periods.
+- domain_query: transaction history, totals, comparisons, details, analytics, or deterministic history insights:
+  variance, duplicates, recurrence, anomalies, concentration, forecasts, runway, and cash-flow quality.
 - domain_account: balances, linked-account status/link/default/unlink/authorization.
 - domain_support: failed/reversed transactions, receipts, disputes, or ticket status.
 - domain_beneficiary: saved-recipient management.
@@ -53,6 +53,12 @@ PDF/CSV export, and all-time history use capability.unsupported_unavailable plus
 go to their domain. If grounding is insufficient, use planner_ambiguous.
 7. Explicit replacement banking commands route to their true domain even when older context exists. Preserve mode=new.
 8. Set detected language when clear. If uncertain, use planner_ambiguous with empty execs.
+9. For a clear analytical domain_query, set q_insight to exactly one of variance_drivers, probable_duplicates,
+recurring_patterns, anomalies, counterparty_concentration, forecast, runway, or cash_flow_quality. Otherwise null.
+Insight meanings: variance=period drivers; duplicates=duplicate observations; recurring=regular series;
+anomalies=outliers; concentration=largest spending counterparty share; forecast=future spending; runway=balance duration;
+cash-flow quality=complete-month income versus spending.
+Never set q_insight=counterparty_concentration for "who did I send/transfer/pay money to" — that's a recipient ranking.
 
 Read contract rules:
 - For supported reads, emit read_subject, response_shape, and only explicit entity_name/bank_name/status/reference;
@@ -66,12 +72,8 @@ Read contract rules:
   "Do I have pending schedules" -> schedule/fact_bool/status=pending.
 - Derive worker contracts deterministically; never emit records, IDs, balances, or mutation targets.
 
-Compact examples: "show my credits this month" -> domain_query; "why did my spending increase this month" ->
-domain_query; "what drove my income change" -> domain_query; "how did my finances change" -> domain_query;
-"what is my balance" -> domain_account;
-"send 5k to Mum" -> domain_transfer; "buy 2k airtime" -> domain_airtime; "buy 1GB data" -> domain_data;
-"send 5k to Mum and show my credits" -> planner_mixed with execs=["transfer"];
-"send 5k to Mum and buy airtime" -> planner_mixed with execs=["transfer","airtime"].
+Examples: credits or financial-history insights -> domain_query; balance -> domain_account; one transfer/airtime/data
+action -> its domain; mixed actions -> planner_mixed with every requested transaction executor in execs.
 """
 
 _ACTIVE_QUERY = """Active-query atom:

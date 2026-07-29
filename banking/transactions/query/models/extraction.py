@@ -1,11 +1,11 @@
 """Query extraction models for parser and reasoner outputs."""
 
 from enum import Enum
-from typing import Annotated, Any, Literal, Union, cast
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from banking.transactions.query.contracts import InsightEvidenceSelection, SelectionPayload
+from banking.transactions.query.contracts import SelectionPayload
 from banking.transactions.query.models.domain import QueryFactField, QueryIntent
 
 # Schema version for future-proofing
@@ -127,80 +127,42 @@ class QueryComparison(BaseModel):
     period: str | None = Field(default=None, description="Explicit comparison period when mode=explicit_period")
 
 
-class InsightSpecBase(BaseModel):
-    """Base policies shared by all insight specifications."""
+class InsightSpec(BaseModel):
+    """Compact provider-facing insight extraction.
 
-    insight_type: str
+    Runtime insight operations remain discriminated models.  The LLM-facing
+    contract is intentionally flat so OpenAI strict structured output does not
+    receive nested ``oneOf`` schemas from analytical evidence selectors.
+    Evidence is attached deterministically by continuation handling, never
+    extracted from a fresh user utterance.
+    """
+
+    insight_type: Literal[
+        "variance_drivers",
+        "probable_duplicates",
+        "recurring_patterns",
+        "anomalies",
+        "counterparty_concentration",
+        "forecast",
+        "runway",
+        "cash_flow_quality",
+    ]
     analysis_basis: Literal["ledger_transactions", "economic_events"] = "economic_events"
     confidence_policy: Literal["include", "exclude_uncertain", "segment_uncertain"] = "segment_uncertain"
     completeness_policy: Literal["disclose", "require_complete"] = "disclose"
     evidence_limit: int = Field(default=5, ge=1, le=20)
-
-
-class VarianceDriversSpec(InsightSpecBase):
-    """Extraction parameters for variance analysis."""
-
-    insight_type: Literal["variance_drivers"] = "variance_drivers"
-    measure: Literal["spending", "income", "net_cash_flow", "cash_flow_overview"] = "spending"
+    measure: Literal["spending", "income", "inflow", "outflow", "net_cash_flow", "cash_flow_overview"] | None = None
     dimensions: list[Literal["category", "counterparty", "account", "event_type", "cash_flow_class"]] = Field(
-        default_factory=lambda: cast(
-            list[Literal["category", "counterparty", "account", "event_type", "cash_flow_class"]],
-            ["category", "counterparty"],
-        )
+        default_factory=list
     )
-    evidence: InsightEvidenceSelection | None = None
-
-
-class ProbableDuplicatesSpec(InsightSpecBase):
-    insight_type: Literal["probable_duplicates"] = "probable_duplicates"
-    min_confidence: float = Field(default=0.80)
-    lookback_days: int = Field(default=90)
-    evidence: InsightEvidenceSelection | None = None
-
-
-class RecurringPatternsSpec(InsightSpecBase):
-    insight_type: Literal["recurring_patterns"] = "recurring_patterns"
-    lookback_days: int = Field(default=180, ge=60, le=365)
-    evidence: InsightEvidenceSelection | None = None
-
-
-class AnomaliesSpec(InsightSpecBase):
-    insight_type: Literal["anomalies"] = "anomalies"
-    baseline_days: int = Field(default=90)
-    min_comparable_observations: int = Field(default=6)
-    min_covered_days: int = Field(default=42)
-    evidence: InsightEvidenceSelection | None = None
-
-
-class CounterpartyConcentrationSpec(InsightSpecBase):
-    insight_type: Literal["counterparty_concentration"] = "counterparty_concentration"
-    measure: Literal["spending", "income", "inflow", "outflow"] = "spending"
-    evidence: InsightEvidenceSelection | None = None
-
-
-class ForecastSpec(InsightSpecBase):
-    insight_type: Literal["forecast"] = "forecast"
-    horizon_days: int = Field(default=30, ge=7, le=90)
-    history_days: int = Field(default=180)
-    evidence: InsightEvidenceSelection | None = None
-
-
-class RunwaySpec(InsightSpecBase):
-    insight_type: Literal["runway"] = "runway"
-    baseline_days: int = Field(default=90)
-    evidence: InsightEvidenceSelection | None = None
-
-
-class CashFlowQualitySpec(InsightSpecBase):
-    insight_type: Literal["cash_flow_quality"] = "cash_flow_quality"
-    min_complete_months: int = Field(default=3)
-    evidence: InsightEvidenceSelection | None = None
-
-
-InsightSpec = Annotated[
-    VarianceDriversSpec | ProbableDuplicatesSpec | RecurringPatternsSpec | AnomaliesSpec | CounterpartyConcentrationSpec | ForecastSpec | RunwaySpec | CashFlowQualitySpec,
-    Field(discriminator="insight_type"),
-]
+    min_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    lookback_days: int | None = Field(default=None, ge=1, le=365)
+    baseline_days: int | None = Field(default=None, ge=1, le=365)
+    min_comparable_observations: int | None = Field(default=None, ge=1)
+    min_covered_days: int | None = Field(default=None, ge=1)
+    horizon_days: int | None = Field(default=None, ge=7, le=90)
+    history_days: int | None = Field(default=None, ge=1, le=730)
+    min_complete_months: int | None = Field(default=None, ge=1, le=24)
 
 
 class ClarificationPatch(BaseModel):

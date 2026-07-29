@@ -13,8 +13,8 @@ from banking.transactions.query.models.domain import (
     QueryRequest,
     QueryResult,
     QueryResultItem,
-    TimeRange,
 )
+from banking.transactions.query.models.operations import ResolvedPeriod
 from banking.transactions.query.presentation.formatting import format_query_date, parse_summary_parts
 from banking.transactions.query.presentation.surface_builder import result_query_request
 from banking.transactions.query.utils.timezone import lagos_today
@@ -142,7 +142,7 @@ def _first_filter_label(values: list[str] | None) -> str | None:
     if not values:
         return None
     for value in values:
-        cleaned = " ".join(str(value or "").strip().split())
+        cleaned = " ".join((value or "").strip().split())
         if cleaned:
             return cleaned if cleaned != cleaned.lower() else cleaned.title()
     return None
@@ -167,13 +167,11 @@ def _transaction_list_time_phrase(contract: QueryRequest | None) -> str:
     return f"for {_format_lead_date(start)}–{_format_lead_date(end)}"
 
 
-def _contract_time_range(contract: QueryRequest | None) -> TimeRange | None:
+def _contract_time_range(contract: QueryRequest | None) -> ResolvedPeriod | None:
     if contract is None:
         return None
-    if contract.time_range is not None:
-        return contract.time_range
-    if contract.time_start and contract.time_end:
-        return TimeRange(start=contract.time_start, end=contract.time_end)
+    if contract.period is not None:
+        return contract.period
     return None
 
 

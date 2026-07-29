@@ -81,8 +81,8 @@ class QuerySemanticReasoner:
             "grouped_summary": with_observable_structured_output(
                 typed_llm, reasoner_models.GroupedSummaryDecision, method="function_calling"
             ),
-            "variance_insight": with_observable_structured_output(
-                typed_llm, reasoner_models.GroupedSummaryDecision, method="function_calling"
+            "insight": with_observable_structured_output(
+                typed_llm, reasoner_models.InsightDecision, method="function_calling"
             ),
             "historical_frames": with_observable_structured_output(
                 typed_llm, reasoner_models.HistoricalFrameDecision, method="function_calling"
@@ -305,7 +305,7 @@ class QuerySemanticReasoner:
             SurfaceViewMode.DIRECT_ANSWER: "single_item",
             SurfaceViewMode.TRANSACTION_LIST: "list",
             SurfaceViewMode.GROUPED_SUMMARY: "summary",
-            SurfaceViewMode.VARIANCE_INSIGHT: "variance_insight",
+            SurfaceViewMode.INSIGHT: "insight",
             SurfaceViewMode.CLARIFICATION: "clarification",
         }
         return mode_map.get(surface_view.mode, "none")
@@ -371,10 +371,22 @@ class QuerySemanticReasoner:
             {
                 "frame_id": frame.frame_id,
                 "turn_index": frame.turn_index,
-                "summary_text": frame.summary_text,
+                # The model needs only enough context to associate an
+                # explicitly challenged label with a retained answer. Full
+                # checkpoint snapshots include evidence selectors and are
+                # intentionally kept out of the prompt; runtime replay uses
+                # the validated source frame instead.
+                "summary_text": frame.summary_text[:240],
                 "surface_type": frame.surface_type.value if frame.surface_type else None,
-                "facts": frame.facts.model_dump(exclude_none=True),
-                "visible_items": frame.visible_items[:5],
+                "visible_items": [
+                    {
+                        "id": item.get("id"),
+                        "label": str(item.get("label") or "")[:120],
+                        "amount": item.get("amount"),
+                    }
+                    for item in frame.visible_items[:5]
+                    if isinstance(item, dict)
+                ],
             }
             for frame in bounded_frames
         ]
@@ -431,7 +443,7 @@ class QuerySemanticReasoner:
         surface_view: SurfaceView | None,
     ) -> reasoner_models.QuerySemanticDecision | None:
         surface_mode = cls._continuation_classifier_surface_type(surface_view=surface_view)
-        if surface_mode == SurfaceViewMode.VARIANCE_INSIGHT:
+        if surface_mode == SurfaceViewMode.INSIGHT:
             selection_payload = find_selection_payload(surface_view, label=message)
             if selection_payload is not None and selection_payload.insight_evidence is not None:
                 return reasoner_models.QuerySemanticDecision(
@@ -517,8 +529,8 @@ class QuerySemanticReasoner:
             prompt_profile = "focused_item"
         elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.GROUPED_SUMMARY:
             prompt_profile = "grouped_summary"
-        elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.VARIANCE_INSIGHT:
-            prompt_profile = "variance_insight"
+        elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.INSIGHT:
+            prompt_profile = "insight"
         elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.TRANSACTION_LIST:
             prompt_profile = "transaction_list"
         else:
@@ -526,11 +538,15 @@ class QuerySemanticReasoner:
         compiled_prompt = compile_query_reasoner_prompt(prompt_profile)
         items_section, prompt_item_count = self._serialize_items(
             context.items
-            if prompt_profile in {"focused_item", "transaction_list", "grouped_summary", "variance_insight"}
+            if prompt_profile in {"focused_item", "transaction_list", "grouped_summary", "insight"}
             else None
         )
         query_frames_section, prompt_frame_count = self._serialize_query_frames(
-            context.query_frames if prompt_profile == "historical_frames" else None
+            # Summary and insight continuations receive compact historical
+            # frames. Other surfaces can still emit a reconcile decision from
+            # the user's target and resolve it deterministically at runtime,
+            # avoiding a standing prompt-size cost on fast list/fact paths.
+            context.query_frames if prompt_profile in {"historical_frames", "grouped_summary", "insight"} else None
         )
         pending_clarification_section = (
             self._serialize(context.pending_clarification) if prompt_profile == "pending_clarification" else "none"
@@ -562,7 +578,7 @@ class QuerySemanticReasoner:
                 "focused_item": reasoner_models.FocusedItemDecision,
                 "transaction_list": reasoner_models.TransactionListDecision,
                 "grouped_summary": reasoner_models.GroupedSummaryDecision,
-                "variance_insight": reasoner_models.GroupedSummaryDecision,
+                "insight": reasoner_models.InsightDecision,
                 "historical_frames": reasoner_models.HistoricalFrameDecision,
             }[prompt_profile]
             reasoner_schema = "active_continuation"

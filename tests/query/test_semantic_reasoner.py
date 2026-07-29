@@ -5,11 +5,11 @@ import pytest
 
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.contracts import (
-    InsightEvidenceSelection,
     SelectionPayload,
     SurfaceItemView,
     SurfaceView,
     SurfaceViewMode,
+    VarianceDriversEvidenceSelection,
 )
 from banking.transactions.query.models.domain import (
     Aggregation,
@@ -264,7 +264,7 @@ async def test_reasoner_uses_deterministic_first_item_detail_without_llm() -> No
 async def test_reasoner_resolves_a_variance_driver_to_typed_evidence_without_llm() -> None:
     reasoner = QuerySemanticReasoner(_FailingLLM())
     surface_view = SurfaceView(
-        mode=SurfaceViewMode.VARIANCE_INSIGHT,
+        mode=SurfaceViewMode.INSIGHT,
         items=[
             SurfaceItemView(
                 id="spending-category-food",
@@ -274,21 +274,21 @@ async def test_reasoner_resolves_a_variance_driver_to_typed_evidence_without_llm
                     entity_type="variance_driver",
                     entity_id="spending:category:food",
                     label="Food",
-                    insight_evidence=InsightEvidenceSelection(
+                    insight_evidence=VarianceDriversEvidenceSelection(
+                        basis="ledger_transactions",
                         measure="spending",
                         dimension="category",
                         bucket_key="food",
-                        basis="economic_events",
                         metric="spending",
-                        current_start="2026-07-01",
-                        current_end="2026-07-26",
-                        baseline_start="2026-06-01",
-                        baseline_end="2026-06-30",
+                        current_start="2023-11-01",
+                        current_end="2023-11-30",
+                        baseline_start="2023-10-01",
+                        baseline_end="2023-10-31",
                     ),
                 ),
             )
         ],
-        context={"view": "variance_insight"},
+        context={"view": "insight"},
     )
 
     decision = await reasoner.reason(

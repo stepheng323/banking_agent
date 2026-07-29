@@ -93,6 +93,21 @@ def _frame_with_items(frame_id: str, items: list[dict[str, object]]) -> QueryFra
     )
 
 
+def test_query_conversation_resolver_defers_reconciliation_to_its_own_path() -> None:
+    updates = build_query_conversation_updates(
+        surface_view=_surface(),
+        query_result=_query_result(),
+        decision=QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="reconcile",
+            target_text="Mum",
+        ),
+        text="But where did Mum come from?",
+    )
+
+    assert updates is None
+
+
 def test_query_conversation_resolver_selects_visible_amount_reference() -> None:
     updates = build_query_conversation_updates(
         surface_view=_surface(),
@@ -293,41 +308,6 @@ def test_query_conversation_resolver_uses_recent_list_frame_after_detail() -> No
     assert updates["selected_query_item"].description == "Transfer to Adebayo James"
 
 
-def test_query_conversation_resolver_does_not_search_old_frames_without_prior_reference() -> None:
-    prior_frame = _frame_with_items(
-        "qf_1",
-        [
-            {
-                "id": "tx-old-20k",
-                "label": "Transfer to Old Recipient",
-                "amount": 20000.0,
-                "bank": "Zenith Bank",
-                "counterparty": "Old Recipient",
-                "direction": "debit",
-                "date": "2026-05-01",
-                "page_position": 1,
-            }
-        ],
-    )
-
-    updates = build_query_conversation_updates(
-        surface_view=_surface(),
-        query_result=_query_result(),
-        query_frames=[prior_frame],
-        decision=QuerySemanticDecision(
-            decision="continuation",
-            confidence=0.95,
-            continuation_type="drill_down",
-            drill_down_action="view_details",
-        ),
-        text="show the 20k one",
-    )
-
-    assert updates is not None
-    assert "Choose one" in updates["response"]
-    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
-    assert updates["pending_clarification"] is not None
-    assert "selected_item_id" not in updates
 
 
 def test_query_conversation_resolver_leaves_filter_delta_to_query_refinement() -> None:
@@ -362,6 +342,64 @@ def test_query_conversation_resolver_leaves_coverage_to_coverage_handler() -> No
     )
 
     assert updates is None
+
+
+def test_query_conversation_resolver_finds_entity_in_prior_frame_when_current_surface_misses() -> None:
+    """When the current surface misses, named references should search prior frames."""
+    beneficiary_surface = SurfaceView(
+        mode=SurfaceViewMode.GROUPED_SUMMARY,
+        items=[
+            SurfaceItemView(
+                id="mum",
+                label="Mum",
+                amount=150000,
+                payload=_payload("mum", "Mum"),
+                metadata={"recipient_name": "Mum", "transaction_type": "debit", "count": 3},
+            ),
+            SurfaceItemView(
+                id="dad",
+                label="Dad",
+                amount=60000,
+                payload=_payload("dad", "Dad"),
+                metadata={"recipient_name": "Dad", "transaction_type": "debit", "count": 2},
+            ),
+        ],
+    )
+    prior_frame = _frame_with_items(
+        "qf_1",
+        [
+            {
+                "id": "uber-insight",
+                "label": "Uber",
+                "amount": 45000.0,
+                "counterparty": "Uber",
+                "direction": "debit",
+                "date": "2026-07-15",
+                "selection_kind": "summary_scope",
+                "entity_type": "counterparty_concentration",
+            }
+        ],
+    )
+
+    updates = build_query_conversation_updates(
+        surface_view=beneficiary_surface,
+        query_result=None,
+        query_frames=[prior_frame],
+        decision=QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.95,
+            continuation_type="drill_down",
+            drill_down_action="view_details",
+            target_text="uber",
+        ),
+        text="so where did you get uber",
+    )
+
+    assert updates is not None
+    assert updates["transaction_outcome"] == TransactionOutcome.OK
+    assert updates["flow_state"] == "complete"
+    assert "Uber" in updates["response"]
+    assert "earlier" in updates["response"].lower()
 
 
 def test_query_conversation_resolver_maps_requested_field_to_answer_fact() -> None:

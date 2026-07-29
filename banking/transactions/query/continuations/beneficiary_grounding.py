@@ -129,6 +129,8 @@ def ground_unique_saved_recipient(
     canonical_name = str(matches[0].get("account_name") or matches[0].get("alias") or "").strip()
     if not canonical_name:
         return request
+    if counterparty is None or scope is None:
+        return request
     grounded_reference = reference.model_copy(update={"name": canonical_name})
     grounded_counterparty = counterparty.model_copy(update={"reference": grounded_reference})
     grounded_predicate = predicate.model_copy(update={"counterparty": grounded_counterparty})

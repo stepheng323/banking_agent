@@ -442,6 +442,14 @@ def recover_known_fragile_query_shapes(
     if looks_like_support_problem_statement(raw_query):
         return extraction
 
+    if extraction.time_range.reference_type != TimeReference.EXPLICIT:
+        explicit_time = extract_relative_time_range_from_query(raw_query)
+        if explicit_time is not None:
+            extraction.time_range = explicit_time
+            extraction.ambiguities = [
+                ambiguity for ambiguity in extraction.ambiguities if ambiguity.code != AmbiguityCode.TIME_VAGUE
+            ]
+    extraction = normalize_intrinsic_insight_window(extraction)
     extraction = normalize_recent_list_time_range(extraction, raw_query=raw_query)
     extraction = normalize_day_scoped_singular_list_query(extraction, raw_query=raw_query)
 
@@ -490,6 +498,47 @@ def recover_known_fragile_query_shapes(
         recovered_time = extract_relative_time_range_from_query(raw_query)
         if recovered_time is not None:
             extraction.time_range = recovered_time
+    return extraction
+
+
+def normalize_intrinsic_insight_window(extraction: QueryExtractionResult) -> QueryExtractionResult:
+    """Resolve vague time using an insight's typed historical window.
+
+    Relationship and predictive insights already declare how much history they
+    need.  Asking the user to restate "recently" adds no precision when the
+    analytical contract can establish the exact effective period itself.
+    """
+
+    insight = extraction.insight
+    if (
+        extraction.intent != QueryIntent.INSIGHT
+        or insight is None
+        or extraction.time_range.reference_type != TimeReference.VAGUE
+    ):
+        return extraction
+
+    days: int | None = None
+    if insight.insight_type == "probable_duplicates":
+        days = insight.lookback_days or 90
+    elif insight.insight_type == "recurring_patterns":
+        days = insight.lookback_days or 180
+    elif insight.insight_type == "anomalies":
+        days = insight.baseline_days or 90
+    elif insight.insight_type == "forecast":
+        days = insight.history_days or 180
+    elif insight.insight_type == "runway":
+        days = insight.baseline_days or 90
+    if days is None:
+        return extraction
+
+    extraction.time_range = QueryTimeRange(
+        reference_type=TimeReference.EXPLICIT,
+        period=f"recent_{days}_days",
+        days_back=max(days - 1, 0),
+    )
+    extraction.ambiguities = [
+        ambiguity for ambiguity in extraction.ambiguities if ambiguity.code != AmbiguityCode.TIME_VAGUE
+    ]
     return extraction
 
 

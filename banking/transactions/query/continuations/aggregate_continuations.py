@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from datetime import date
 from typing import Any
 
+from banking.transactions.query.compiler.aggregation import build_default_aggregation
 from banking.transactions.query.continuations.transforms import rebuild_query_request
 from banking.transactions.query.models.domain import (
     Aggregation,
@@ -316,9 +317,8 @@ async def compile_aggregate_continuation_updates(
                 operation=AnalyzeOperation(scope=session_query_request.scope, analysis=analysis)
             )
             logger.info(
-                "query_variance_insight_refinement_compiled",
-                measure=analysis.measure,
-                dimensions=analysis.dimensions,
+                "query_insight_refinement_compiled",
+                insight_type=analysis.insight_type,
             )
             return {
                 "query_request": query_request,
@@ -482,7 +482,40 @@ async def compile_aggregate_continuation_updates(
             original_intent=session_query_request.intent.value,
         )
     else:
-        aggregation = Aggregation(type="sum")
+        aggregation = build_default_aggregation(
+            extraction if extraction is not None else QueryExtractionResult(raw_query=state.get("message", "")),
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+        )
+        if aggregation is None:
+            aggregation = Aggregation(type="sum")
+
+    # When the user switches the grouping dimension (e.g. food list -> "by banks"),
+    # drop the old bucket filter so we don't show "food spending by bank".
+    if aggregation.type == "breakdown" and aggregation.group_by is not None:
+        filter_field_to_dimension = {
+            "category": "category",
+            "merchant": "merchant",
+            "counterparty": "merchant",
+            "account_filter": "account",
+        }
+        conflicting_filter_field = None
+        for filter_field, dimension in filter_field_to_dimension.items():
+            if (
+                getattr(session_query_request.filters, filter_field, None)
+                and dimension != aggregation.group_by
+            ):
+                conflicting_filter_field = filter_field
+                break
+        if conflicting_filter_field is not None:
+            if updated_filters is None:
+                updated_filters = session_query_request.filters.model_copy(deep=True)
+            updated_filters = updated_filters.model_copy(update={conflicting_filter_field: None})
+            reset_inherited_filters = True
+            logger.info(
+                "query_aggregate_dimension_switch_filter_dropped",
+                dropped_filter=conflicting_filter_field,
+                new_group_by=aggregation.group_by,
+            )
 
     query_request = rebuild_query_request(
         session_query_request,

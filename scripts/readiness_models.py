@@ -36,6 +36,8 @@ ReadinessScenarioName = Literal[
     "query-deep",
     "query-longtail",
     "variance-insight",
+    "insight-suite",
+    "insight-reconciliation",
     "latency",
     "llm-latency",
     "planner",

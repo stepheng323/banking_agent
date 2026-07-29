@@ -148,7 +148,7 @@ def test_v2_request_rejects_unknown_fields() -> None:
 def test_only_registered_variance_analysis_compiles() -> None:
     extraction = QueryExtractionResult(
         intent=QueryIntent.INSIGHT,
-        insight={"type": "variance_drivers"},
+        insight={"insight_type": "variance_drivers"},
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="Why did I spend more this month?",
     )
@@ -159,9 +159,38 @@ def test_only_registered_variance_analysis_compiles() -> None:
     assert request.operation.analysis.type == "variance_drivers"
 
 
+@pytest.mark.parametrize(
+    ("insight_type", "expected_type"),
+    [
+        ("probable_duplicates", "probable_duplicates"),
+        ("recurring_patterns", "recurring_patterns"),
+        ("anomalies", "anomalies"),
+        ("counterparty_concentration", "counterparty_concentration"),
+        ("forecast", "forecast"),
+        ("runway", "runway"),
+        ("cash_flow_quality", "cash_flow_quality"),
+    ],
+)
+def test_provider_facing_insight_extraction_compiles_to_runtime_spec(
+    insight_type: str,
+    expected_type: str,
+) -> None:
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.INSIGHT,
+        insight={"insight_type": insight_type},
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="Analyze my transactions",
+    )
+
+    request = compile_query_request(_parser(), extraction, today=date(2026, 7, 24))
+
+    assert isinstance(request.operation, AnalyzeOperation)
+    assert request.operation.analysis.type == expected_type
+
+
 def test_unimplemented_analysis_is_absent_from_runtime_schema() -> None:
     with pytest.raises(ValidationError):
-        VarianceDriversSpec.model_validate({"type": "anomalies"})
+        VarianceDriversSpec.model_validate({"insight_type": "anomalies"})
 
 
 def test_unspecified_recipient_filters_out_non_payment_debits() -> None:

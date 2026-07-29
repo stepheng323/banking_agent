@@ -9,6 +9,8 @@ logic from conversational code.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import date, timedelta
 from decimal import Decimal
 
 from banking.persistence.unit_of_work import UnitOfWork
@@ -42,6 +44,43 @@ class AnalysisDataSource(ABC):
         """Return rows and coverage metadata for the requested period."""
 
 
+@dataclass(frozen=True, slots=True)
+class _CoverageResolution:
+    status: CoverageStatus
+    missing_accounts: list[str]
+    missing_gaps: dict[str, list[tuple[date, date]]]
+    covered_account_count: int
+    requested_account_count: int
+
+    def dataset_fields(self, *, start: date, end: date) -> dict[str, object]:
+        requested_days = max((end - start).days + 1, 0)
+        # A day is fully covered only when every selected account has coverage.
+        # Merge all account gaps to obtain the uncovered union for the scope.
+        ranges = [gap for gaps in self.missing_gaps.values() for gap in gaps]
+        uncovered = _merged_days(ranges)
+        fully_covered_days = max(requested_days - uncovered, 0) if self.covered_account_count else 0
+        return {
+            "requested_days": requested_days,
+            "fully_covered_days": fully_covered_days,
+            "covered_account_count": self.covered_account_count,
+            "requested_account_count": self.requested_account_count,
+            "missing_account_gaps": self.missing_gaps,
+        }
+
+
+def _merged_days(ranges: list[tuple[date, date]]) -> int:
+    if not ranges:
+        return 0
+    merged: list[tuple[date, date]] = []
+    for start, end in sorted(ranges):
+        if not merged or start > merged[-1][1] + timedelta(days=1):
+            merged.append((start, end))
+            continue
+        prior_start, prior_end = merged[-1]
+        merged[-1] = (prior_start, max(prior_end, end))
+    return sum((end - start).days + 1 for start, end in merged)
+
+
 class LedgerTransactionSource(AnalysisDataSource):
     """Bank-provider / ledger mirror source."""
 
@@ -68,7 +107,7 @@ class LedgerTransactionSource(AnalysisDataSource):
             accounts_info,
             user_id=user_id,
         )
-        coverage_status, missing_accounts = await _resolve_ledger_coverage(
+        coverage = await _resolve_ledger_coverage(
             contract=contract,
             account_ids=account_ids,
             accounts_info=accounts_info,
@@ -80,8 +119,9 @@ class LedgerTransactionSource(AnalysisDataSource):
             start_date=contract.time_start,
             end_date=contract.time_end,
             rows=rows,
-            coverage_status=coverage_status,
-            missing_accounts=missing_accounts,
+            coverage_status=coverage.status,
+            missing_accounts=coverage.missing_accounts,
+            **coverage.dataset_fields(start=contract.time_start, end=contract.time_end),  # type: ignore[arg-type]
             unresolved_count=sum(
                 1 for r in rows if r.get("semantic_resolution_state") in {"partial", "needs_review", "unknown"}
             ),
@@ -125,7 +165,7 @@ class EconomicEventSource(AnalysisDataSource):
                 missing_accounts=account_ids,
             )
 
-        coverage_status, missing_accounts = await _ensure_and_resolve_ledger_coverage(
+        coverage = await _ensure_and_resolve_ledger_coverage(
             provider=self.provider,
             contract=contract,
             account_ids=account_ids,
@@ -167,8 +207,9 @@ class EconomicEventSource(AnalysisDataSource):
             start_date=contract.time_start,
             end_date=contract.time_end,
             rows=rows,
-            coverage_status=coverage_status,
-            missing_accounts=missing_accounts,
+            coverage_status=coverage.status,
+            missing_accounts=coverage.missing_accounts,
+            **coverage.dataset_fields(start=contract.time_start, end=contract.time_end),  # type: ignore[arg-type]
             unresolved_count=sum(
                 1 for r in rows if r.get("semantic_resolution_state") in {"partial", "needs_review", "unknown"}
             ),
@@ -205,14 +246,14 @@ async def _ensure_and_resolve_ledger_coverage(
     account_ids: list[str],
     accounts_info: list[dict] | None,
     user_id: str | None,
-) -> tuple[CoverageStatus, list[str]]:
+) -> _CoverageResolution:
     contexts = build_mirrored_account_contexts(
         account_ids=account_ids,
         accounts_info=accounts_info,
         user_id=user_id,
     )
     if not contexts:
-        return CoverageStatus.UNAVAILABLE, list(account_ids)
+        return _CoverageResolution(CoverageStatus.UNAVAILABLE, list(account_ids), {}, 0, len(account_ids))
     if provider is not None:
         try:
             for context in contexts:
@@ -225,7 +266,11 @@ async def _ensure_and_resolve_ledger_coverage(
         except Exception:
             # The analysis can still use the durable rows already present, but it
             # must not claim complete coverage after a failed coverage refresh.
-            return CoverageStatus.PARTIAL, [context.external_account_id for context in contexts]
+            gaps = {
+                context.external_account_id: [(contract.time_start, contract.time_end)]
+                for context in contexts
+            }
+            return _CoverageResolution(CoverageStatus.PARTIAL, list(gaps), gaps, 0, len(contexts))
     return await _resolve_ledger_coverage(
         contract=contract,
         account_ids=account_ids,
@@ -240,34 +285,42 @@ async def _resolve_ledger_coverage(
     account_ids: list[str],
     accounts_info: list[dict] | None,
     user_id: str | None,
-) -> tuple[CoverageStatus, list[str]]:
+) -> _CoverageResolution:
     contexts = build_mirrored_account_contexts(
         account_ids=account_ids,
         accounts_info=accounts_info,
         user_id=user_id,
     )
     if not contexts:
-        return CoverageStatus.UNAVAILABLE, list(account_ids)
+        return _CoverageResolution(CoverageStatus.UNAVAILABLE, list(account_ids), {}, 0, len(account_ids))
 
     missing: list[str] = []
+    missing_gaps: dict[str, list[tuple[date, date]]] = {}
     try:
         async with UnitOfWork() as uow:
             if uow.bank_transaction_coverages is None:
-                return CoverageStatus.UNAVAILABLE, list(account_ids)
+                    return _CoverageResolution(CoverageStatus.UNAVAILABLE, list(account_ids), {}, 0, len(contexts))
             for context in contexts:
-                covered = await uow.bank_transaction_coverages.is_window_covered(
+                gaps = await uow.bank_transaction_coverages.find_missing_gaps(
                     context.linked_account_id,
                     start_date=contract.time_start,
                     end_date=contract.time_end,
                     provider="mono",
                 )
-                if not covered:
+                if gaps:
                     missing.append(context.external_account_id)
+                    missing_gaps[context.external_account_id] = gaps
     except Exception:
-        return CoverageStatus.UNAVAILABLE, list(account_ids)
+        return _CoverageResolution(CoverageStatus.UNAVAILABLE, list(account_ids), {}, 0, len(contexts))
 
     if not missing:
-        return CoverageStatus.COMPLETE, []
+        return _CoverageResolution(CoverageStatus.COMPLETE, [], {}, len(contexts), len(contexts))
     if len(missing) == len(contexts):
-        return CoverageStatus.UNAVAILABLE, missing
-    return CoverageStatus.PARTIAL, missing
+        return _CoverageResolution(CoverageStatus.UNAVAILABLE, missing, missing_gaps, 0, len(contexts))
+    return _CoverageResolution(
+        CoverageStatus.PARTIAL,
+        missing,
+        missing_gaps,
+        len(contexts) - len(missing),
+        len(contexts),
+    )

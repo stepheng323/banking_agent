@@ -114,6 +114,12 @@ def _looks_like_single_direction_inflow_total(raw_query: str) -> bool:
 
 def _normalize_cash_flow_extraction(extraction: QueryExtractionResult) -> QueryExtractionResult:
     """Validate semantic cash-flow meaning after parser/reasoner extraction."""
+    # Insight is an explicit, typed semantic family.  Lexical cash-flow repair
+    # must never overwrite it merely because a concentration question says a
+    # counterparty "received" part of the user's spending.
+    if extraction.intent == QueryIntent.INSIGHT:
+        return extraction
+
     raw_query = " ".join((extraction.raw_query or "").split())
     if _looks_like_single_direction_inflow_total(raw_query):
         extraction.intent = QueryIntent.ANALYTICS_SUMMARY

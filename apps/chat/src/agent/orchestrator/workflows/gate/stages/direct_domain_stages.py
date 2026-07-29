@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
     _is_account_balance_request,
@@ -52,7 +54,7 @@ async def _stage_balance_direct(ctx: GateContext) -> RouteResolution | None:
     )
     request = ReadRequest(
         subject="balance",
-        response_shape=response_shape,
+        response_shape=cast(Any, response_shape),
         bank_name=bank_names[0] if len(bank_names) == 1 else None,
     )
     task_id, spec = _build_direct_domain_task(

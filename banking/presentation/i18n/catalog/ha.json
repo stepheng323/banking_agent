@@ -307,7 +307,8 @@
     "drill_down": {
       "details_intro": "Ga bayanan transaction ɗin:",
       "no_items": "Ba ni da wannan transaction ɗin yanzu. Ka ce in sake yin search.",
-      "invalid_selection": "Ban gane zaɓin ba. Zaɓi ɗaya daga cikin transactions {count} da na nuna."
+      "invalid_selection": "Ban gane zaɓin ba. Zaɓi ɗaya daga cikin transactions {count} da na nuna.",
+      "cross_frame_reference": "{label} ya bayyana a cikin amsa da ya gabata, ba a cikin jerin yanzu ba. Ce 'show more' ko tambayi game da ɗaya daga cikin abubuwan da ke sama."
     },
     "pagination": {
       "already_first_page": "Kana kan page na farko tuni.",
@@ -472,6 +473,12 @@
       "reply_number_or_rephrase": "Amsa da nomba ko ka sake bayani.",
       "context_suffix": "({context})",
       "option_line": "{index}️⃣ {amount} — {description}"
+    },
+    "reconcile": {
+      "period": "{start} zuwa {end}",
+      "scope_spending_vs_transfers": "{label} ya fito daga cikin spending-concentration breakdown naka ({amount}); yana ƙidaya duk debits har da card payments zuwa 'yan kasuwa. Jerin yanzu yana ƙidaya bank transfers ga mutane ne kawai, saboda haka {label} ba ya ciki.",
+      "scope_different_periods": "{label} ya bayyana a cikin amsa don {found_period}, amma jerin yanzu na {current_period} ne.",
+      "found_in_earlier_answer": "{label} ya bayyana a cikin amsa da ya gabata, ba a cikin jerin yanzu ba."
     },
     "notice": {
       "clamped_days": "Ana nuna kwanaki {days_back} na karshe (max available)."
@@ -650,9 +657,46 @@
       "coverage_unavailable": "Ban iya tabbatar da cewa duk bayanan asusu sun cika ba, don haka wannan kiyasi ne.",
       "coverage_required": "Ba zan iya lissafa hakan daidai ba saboda bayanan asusun wannan lokacin ba su gama daidaituwa ba.",
       "duplicates": {
-        "none": "No probable duplicate transactions found in this period.",
-        "found": "Found {count} probable duplicate transactions totaling {total_value}.",
-        "group_label": "{count} identical transactions"
+        "none": "Ba a gano ma'amaloli masu kama da juna a wannan lokacin ba.",
+        "found": "An gano ma'amaloli {count} masu kama da juna da suka kai adadin {total_value}.",
+        "group_label": "Ma'amaloli {count} guda iri daya"
+      },
+      "recurring_patterns": {
+        "none": "Ba a gano wani tsari mai maimaitawa ba a wannan lokacin.",
+        "found": "Na gano tsarin ma'amala {count} da ke maimaituwa.",
+        "item": "{frequency} {transaction_type} na kusan {amount} tare da {counterparty}",
+        "frequency": {
+          "weekly": "Kowane mako",
+          "monthly": "Kowane wata"
+        }
+      },
+      "anomalies": {
+        "none": "Ba a gano wani sabon abu ko kuskure ba.",
+        "found": "Na gano ma'amaloli {count} da ba su saba ba ({spending_count} kashe kudi, {income_count} kudin shiga).",
+        "item": "{counterparty}: {amount}, kusan sau {multiplier} na adadin da aka saba"
+      },
+      "counterparty_concentration": {
+        "none": "Babu isassun bayanai don sanin wanda aka fi mu'amala da shi.",
+        "found": "Wanda ya fi girma a {measure} dinka shi ne {counterparty}, da {percentage}% na jimilla.",
+        "item": "{counterparty}: {amount} ({percentage}%)"
+      },
+      "runway": {
+        "unbounded": "Ba zan iya kayyade adadin kwanakin ba saboda ban ga kashe kudin aiki ba. Ragowar kudinka shi ne {balance}.",
+        "depleted": "Asusun da aka zaba ba su da ragowar kudi, don haka kiyasin lokacin kudin ya kare.",
+        "summary": "Da kashe kudin aiki na {burn_rate} a rana da ragowar {balance}, kiyasin kudinka zai kai kusan kwanaki {days}.",
+        "balance_unavailable": "Ban iya tabbatar da ragowar kudin kai-tsaye da ake bukata don yin kiyasin ba.",
+        "insufficient_history": "Ina bukatar akalla kwanaki 30 na cikakken tarihin ma'amala don yin kiyasin.",
+        "coverage_required": "Ba zan iya kiyasta tsawon lokacin da kudinka zai dauka da aminci ba saboda ba a gama daidaita bayanan asusun wannan lokacin ba."
+      },
+      "forecast": {
+        "no_spend": "Ban ga kashe kudin aiki da zan yi hasashe a kai ba.",
+        "summary": "Daga kwanaki {observed_days} da aka duba, kiyasin kashe kudinka na kwanaki {horizon} masu zuwa shi ne {projected}, kusan {daily} a rana.",
+        "insufficient_history": "Ina bukatar akalla kwanaki 30 na cikakken tarihin ma'amala don hasashen kashe kudi."
+      },
+      "cash_flow": {
+        "healthy": "A cikin cikakkun watanni {months}, kudin shiga ya kasance {income}, kashe kudi {spending}, ragowar zirga-zirgar kudi kuma {net}. Rabon shiga da kashewa {ratio} ne, kuma yana da kyau.",
+        "unhealthy": "A cikin cikakkun watanni {months}, kudin shiga ya kasance {income}, kashe kudi {spending}, ragowar zirga-zirgar kudi kuma {net}. Rabon shiga da kashewa {ratio} ne, kuma yana bukatar kulawa.",
+        "insufficient_history": "Ina bukatar cikakkun watannin kalanda da aka nema don tantance ingancin zirga-zirgar kudi."
       }
     },
     "beneficiary": {

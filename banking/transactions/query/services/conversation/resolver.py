@@ -38,7 +38,7 @@ def build_query_conversation_updates(
     if getattr(decision, "decision", None) != "continuation":
         return None
     continuation_type = getattr(decision, "continuation_type", None)
-    if continuation_type in {"filter_delta", "time_delta", "aggregate", "coverage"}:
+    if continuation_type in {"filter_delta", "time_delta", "aggregate", "coverage", "reconcile"}:
         return None
     if continuation_type not in {"drill_down", "recipient_drill_down"} and not decision_has_target_reference(
         decision, text
@@ -138,6 +138,17 @@ def build_query_conversation_updates(
     match = matches[0]
     payload: SelectionPayload = match.item.payload
     if _is_focused_aggregate_scope(surface_view=surface_view, query_result=query_result, payload=payload):
+        if match.frame_id is not None:
+            return {
+                "transaction_outcome": TransactionOutcome.OK,
+                "response": render_message(
+                    "query.drill_down.cross_frame_reference",
+                    locale,
+                    {"label": match.item.label},
+                ),
+                "session_active": True,
+                "flow_state": "complete",
+            }
         return None
     if payload.selection_kind == "group_bucket" or bool(payload.filters_patch) or payload.time_patch is not None:
         return None
@@ -180,7 +191,7 @@ def _is_focused_aggregate_scope(
     query_result: QueryResult | None,
     payload: SelectionPayload,
 ) -> bool:
-    if payload.selection_kind in {"beneficiary", "group_bucket", "account"}:
+    if payload.selection_kind in {"beneficiary", "group_bucket", "account", "summary_scope"}:
         return True
 
     context = surface_view.context if surface_view is not None and isinstance(surface_view.context, dict) else {}

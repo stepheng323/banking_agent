@@ -1,6 +1,9 @@
 import pytest
 
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (
+    detect_unsupported_capability,
+    should_try_semantic_unsupported_capability,
+)
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
     UnsupportedBoundaryTurnOutput,
     UnsupportedCapabilitySemanticOutput,
@@ -66,10 +69,17 @@ def test_unsupported_capability_registry_detects_common_boundaries(text: str, ex
         "what is my access balance",
         "show my recent transactions",
         "show scheduled transactions",
+        "Who received the largest share of my spending this month?",
     ],
 )
 def test_unsupported_capability_registry_ignores_supported_banking_requests(text: str) -> None:
     assert detect_unsupported_capability(text) is None
+
+
+def test_spending_share_is_not_an_unsupported_capability_candidate() -> None:
+    assert not should_try_semantic_unsupported_capability(
+        "Who received the largest share of my spending this month?"
+    )
 
 
 @pytest.mark.parametrize(

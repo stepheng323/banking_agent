@@ -307,7 +307,8 @@
     "drill_down": {
       "no_items": "No items to drill down into.",
       "invalid_selection": "I couldn't match that choice. Choose one of the {count} transactions I showed.",
-      "details_intro": "Here are the transaction details:"
+      "details_intro": "Here are the transaction details:",
+      "cross_frame_reference": "{label} appeared in an earlier answer, not the current list. Say 'show more' or ask about one of the items above."
     },
     "receipt": {
       "only_transfer": "Receipts are only available for bank transfers. This is a {transaction_type}.",
@@ -449,6 +450,12 @@
       "memory_unavailable": "I don't have enough detail from that earlier result anymore. Ask me to run the search again.",
       "cancelled": "Okay, I've cancelled that selection.",
       "recent_read_only": "I can only use that closed result for read-only questions. Ask me to start a new transfer or support request instead."
+    },
+    "reconcile": {
+      "period": "{start} to {end}",
+      "scope_spending_vs_transfers": "{label} came from your spending breakdown ({amount}), which counts all debits including card payments. The current list counts only bank transfers to people, so {label} isn't included.",
+      "scope_different_periods": "{label} appeared in an answer for {found_period}, but the current list is for {current_period}.",
+      "found_in_earlier_answer": "{label} appeared in an earlier answer, not the current list."
     },
     "notice": {
       "clamped_days": "Showing last {days_back} days (max available)."
@@ -630,6 +637,43 @@
         "none": "No probable duplicate transactions found in this period.",
         "found": "Found {count} probable duplicate transactions totaling {total_value}.",
         "group_label": "{count} identical transactions"
+      },
+      "recurring_patterns": {
+        "none": "No recurring patterns were detected in this period.",
+        "found": "I found {count} recurring transaction patterns.",
+        "item": "{frequency} {transaction_type} of about {amount} with {counterparty}",
+        "frequency": {
+          "weekly": "Weekly",
+          "monthly": "Monthly"
+        }
+      },
+      "anomalies": {
+        "none": "No unusual activity or anomalies were detected.",
+        "found": "I found {count} unusual transactions ({spending_count} spending, {income_count} income).",
+        "item": "{counterparty}: {amount}, about {multiplier}× the usual amount"
+      },
+      "counterparty_concentration": {
+        "none": "Not enough data to determine counterparty concentration.",
+        "found": "Your largest {measure} counterparty is {counterparty} at {percentage}% of the total.",
+        "item": "{counterparty}: {amount} ({percentage}%)"
+      },
+      "runway": {
+        "unbounded": "I cannot calculate a finite runway because no operating spending was found. Your available balance is {balance}.",
+        "depleted": "Your selected accounts currently have no available balance, so the estimated runway is depleted.",
+        "summary": "Based on an operating burn rate of {burn_rate} per day and an available balance of {balance}, your estimated runway is about {days} days.",
+        "balance_unavailable": "I could not confirm the live balances needed to estimate your runway.",
+        "insufficient_history": "I need at least 30 covered days of transaction history to estimate your runway.",
+        "coverage_required": "I can't estimate your cash runway reliably because the requested account period is not fully synchronized yet."
+      },
+      "forecast": {
+        "no_spend": "I found no operating spending to forecast.",
+        "summary": "Based on {observed_days} observed days, your estimated spending over the next {horizon} days is {projected}, at about {daily} per day.",
+        "insufficient_history": "I need at least 30 covered days of transaction history to estimate future spending."
+      },
+      "cash_flow": {
+        "healthy": "Across {months} complete months, income was {income}, spending was {spending}, and net cash flow was {net}. The income-to-spending ratio was {ratio}, which is positive.",
+        "unhealthy": "Across {months} complete months, income was {income}, spending was {spending}, and net cash flow was {net}. The income-to-spending ratio was {ratio}, which needs attention.",
+        "insufficient_history": "I need the requested number of fully covered calendar months to assess cash-flow quality."
       }
     },
     "beneficiary": {

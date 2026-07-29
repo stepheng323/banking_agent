@@ -34,6 +34,7 @@ CONTINUATION TYPES & FOLLOWUP INTENT
 | conversational        | none                 | "that's a lot", "wow" — reply via `response_text`, no mutations   |
 | coverage              | none                 | asks whether displayed data is complete/synced/missing             |
 | explain_aggregate_scope | none               | explain what an aggregate total includes/excludes                 |
+| reconcile             | none                 | reconcile an earlier answer or entity not on current surface      |
 | drill_down            | none                 | item detail/receipt/issue/re-transfer                             |
 | recipient_drill_down  | none                 | recipient reply on beneficiary summary                            |
 | unclear               | none                 | ambiguous follow-up — prefer this over guessing                   |
@@ -119,6 +120,8 @@ Active list/summary context:
 - "income vs spending" → aggregate, refine_existing (breakdown by transaction_type)
 - exhaustiveness, missing-record, or synchronization challenges about the active result (e.g., "is that all?", "is that everything?") → coverage, none;
   always populate coverage_intent semantically
+- challenge or entity/fact not on current surface (e.g., "so where did you get uber?", "but you said I spent 50k", "that doesn't match") → reconcile, none;
+  set target_text to the challenged entity/fact; only set referenced_frame_ids if the schema explicitly asks for them
 - "Show my credit transactions this month" after spending summary → new_query (fresh extraction)
 - "Who did I send money to this month" during session → new_query (beneficiary-summary)
 - "okay" after an answered query with no new ask → end_session, kind=courtesy
@@ -202,12 +205,15 @@ INTENTS
   - `probable_duplicates`: detect double charges or duplicate transactions
   - `recurring_patterns`: find subscriptions or repeating payments
   - `anomalies`: detect unusual, abnormal, or large transactions
-  - `counterparty_concentration`: check dependence on a single person/merchant (Infer `insight.measure`: spending, income)
+  - `counterparty_concentration`: concentration analysis across ALL counterparties (people, merchants, vendors) over the requested measure. Use for analytical dependence questions like "who do I spend the most money on", "who received the largest share of my spending", "where does my money go", or "am I too concentrated on one merchant". Do NOT use for "who did I send/transfer/pay money to" — those are beneficiary summaries, not concentration insights. (Infer `insight.measure`: spending, income)
   - `forecast`: predict future spending/income or cash flow
   - `runway`: calculate how long money will last (burn rate/runway)
   - `cash_flow_quality`: analyze the quality or consistency of cash flow
   Preserve the requested period/filters. Default to `analysis_basis=economic_events`; only use `ledger_transactions` if the user explicitly says "transactions", "ledger", or asks for raw bank movements.
   For `variance_drivers`, default `insight.dimensions` to ["category", "counterparty"]; honor explicit requests like "by account", "by event type", "by cash flow class". Remove duplicate dimensions.
+  INSIGHT PRECEDENCE: requests to detect duplicates, recurrence, anomalies or concentration, or to estimate a
+  forecast, runway, or cash-flow quality MUST use intent=insight with a non-null insight. Never downgrade them to
+  transaction_list, analytics_summary, affordability, or a conversational response.
 
 FILTERS
 - recipient: merchant/person name when user refers to a sender, payee, or merchant
@@ -244,7 +250,9 @@ RESULT LIMIT & REFERENCE
 - result_reference: "latest" for most recent, "oldest" for earliest
 
 OUTPUT CONTRACT
-Return only these fields: intent, filters, time_range, comparison, aggregation, request_shape, fact_query_kind, result_limit, result_reference, answer_fact_field.
+Return only these fields: intent, filters, time_range, comparison, aggregation, request_shape, fact_query_kind,
+result_limit, result_reference, answer_fact_field, insight.
+Set `insight` only when intent=insight; otherwise leave it null.
 If the user is vague, express that through the semantic fields:
 - vague time → reference_type=vague and estimate days_back when possible
 - missing/unclear fields → leave the field null instead of fabricating values
@@ -257,6 +265,7 @@ If the user is vague, express that through the semantic fields:
 - For explicit list/ranking asks such as "top senders", "show top recipients", or "list people I sent to",
   set `intent=beneficiary_summary`, `request_shape=grouped_summary`, and leave `result_limit` unset unless the user gives a number.
 - For grouped recipient asks about sent/paid/transferred money, set `filters.transaction_type=debit`.
+- HARD RULE: "who did I send/transfer/pay money to" and "top people/recipients I sent to" → beneficiary_summary. "who/where do I spend the most money on" and "spending concentration/dependence" → counterparty_concentration. Never route "send/transfer/pay to" phrasing to counterparty_concentration, even if "most" is used.
 - For singular transaction fact questions in any supported language, set `intent=transaction_detail`,
   `request_shape=fact`, `fact_query_kind`, and `answer_fact_field`. Do not rely on raw wording for recovery.
 - For queries asking for a total quantity ("how much", "total spent"), set `aggregation.type=sum`.
@@ -298,6 +307,8 @@ EXAMPLES
 "did I spend on bolt yesterday" → analytics_summary, existence, sum, recipient=bolt, debit, explicit yesterday
 "did acme send me money this month" → analytics_summary, existence, sum, recipient=acme, credit, explicit this_month
 "who send me 500k last week" → transaction_detail, fact, fact_query_kind=counterparty, answer_fact_field=counterparty, credit, explicit last_week
+"so where did you get uber?" after a top-recipients list that omits Uber → reconcile, none, target_text="uber"
+"but you said I spent 50k" after a different total answer → reconcile, none, target_text="50k"
 "bank wo ni mo lo fun last transfer" → transaction_detail, fact, fact_query_kind=bank, answer_fact_field=bank, result_reference=latest
 "nawa ne bank din last transaction dina" → transaction_detail, fact, fact_query_kind=bank, answer_fact_field=bank, result_reference=latest
 "ole ego ka m zigara tolu ikpeazu" → transaction_detail, fact, fact_query_kind=amount, answer_fact_field=amount, result_reference=latest, recipient=tolu, debit
@@ -313,7 +324,7 @@ EXAMPLES
 "are there any double charges" → insight, probable_duplicates
 "show my recurring payments" → insight, recurring_patterns
 "were there any unusual transactions last month" → insight, anomalies, explicit last_month
-"who do I spend the most money on" → insight, counterparty_concentration, measure=spending
+"who do I spend the most money on" / "who received the largest share of my spending" → insight, counterparty_concentration, measure=spending
 "what is my cash flow forecast for next month" → insight, forecast
 "how much runway do I have left" → insight, runway
 "what is the quality of my cash flow" → insight, cash_flow_quality

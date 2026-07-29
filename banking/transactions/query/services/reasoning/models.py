@@ -47,6 +47,7 @@ ContinuationType = Literal[
     "aggregate",
     "unclear",
     "recheck",
+    "reconcile",
 ]
 
 FollowupIntentType = Literal["refine_existing", "replace_scope", "continue_pagination", "previous_pagination", "none"]
@@ -89,7 +90,7 @@ ReasonerPromptProfileType = Literal[
     "focused_item",
     "transaction_list",
     "grouped_summary",
-    "variance_insight",
+    "insight",
     "historical_frames",
     "pending_clarification",
 ]
@@ -253,6 +254,11 @@ class _NarrowActiveDecision(BaseModel):
     # valid continuation does not degrade into a fresh-query fallback.
     raw_query: str | None = None
     response_text: str | None = None
+    # Reconciliation is grounded in compact, retained query frames.  Keep this
+    # common to every active surface so a challenge is never forced through a
+    # normal item-selection path merely because its current surface is a list
+    # or a direct answer.
+    referenced_frame_ids: list[str] | None = None
     end_session_response: str | None = None
     end_session_kind: EndSessionKindType | None = None
 
@@ -278,6 +284,7 @@ class FocusedItemDecision(_NarrowActiveDecision):
     fact_field: FactFieldType | None = None
     requested_field: QueryTargetFieldType | None = None
     target_text: str | None = None
+    target_amount: float | None = None
     answer_mode: AnswerModeType | None = None
     delta_type: DeltaType | None = None
     time_range: TimeRange | None = None
@@ -316,12 +323,51 @@ class GroupedSummaryDecision(_NarrowActiveDecision):
     result_limit: int | None = None
     rank: QueryRankType | None = None
     target_text: str | None = None
+    target_amount: float | None = None
     recipient_name: str | None = None
     coverage_intent: CoverageIntentType | None = None
     transaction_direction_delta: TransactionDirectionDeltaType | None = None
     drill_down_index: int | None = None
     drill_down_action: DrillDownActionType | None = None
     fact_field: FactFieldType | None = None
+
+
+class InsightDecision(BaseModel):
+    """Small adapter for grounded insight continuations.
+
+    Insight follow-ups do not need the fresh-query extraction union: evidence
+    selection and reconciliation are applied against the stored insight
+    contract.  Keeping that large parser model out of this role materially
+    reduces both the provider schema and prompt-input cost.
+    """
+
+    model_config = ConfigDict(extra="ignore", json_schema_extra=_strip_llm_schema_annotations)
+
+    decision: Literal["continuation", "fresh_query", "reinterpret_query", "new_query", "end_session"]
+    confidence: float | None = None
+    reason: str | None = None
+    continuation_type: ContinuationType | None = None
+    followup_intent: FollowupIntentType | None = None
+    target_text: str | None = None
+    target_amount: float | None = None
+    referenced_frame_ids: list[str] | None = None
+    answer_mode: AnswerModeType | None = None
+    coverage_intent: CoverageIntentType | None = None
+    rank: QueryRankType | None = None
+    drill_down_index: int | None = None
+    drill_down_action: DrillDownActionType | None = None
+    response_text: str | None = None
+    end_session_response: str | None = None
+    end_session_kind: EndSessionKindType | None = None
+
+    @classmethod
+    def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        schema = super().model_json_schema(*args, **kwargs)
+        _strip_llm_schema_annotations(schema)
+        return schema
+
+    def to_public_decision(self) -> QuerySemanticDecision:
+        return QuerySemanticDecision.model_validate(self.model_dump(exclude_none=True))
 
 
 class HistoricalFrameDecision(_NarrowActiveDecision):

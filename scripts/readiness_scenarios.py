@@ -493,6 +493,118 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
                 ),
             ),
         ),
+        "insight-suite": ReadinessScenario(
+            id="insight-suite",
+            description=(
+                "Deterministic insight acceptance across duplicates, recurrence, anomalies, "
+                "concentration, forecast, runway, and cash-flow quality."
+            ),
+            category="query",
+            tags=("query", "insight", "acceptance"),
+            turns=(
+                ReadinessTurn(
+                    "Do I have probable duplicate transactions in the last 90 days?",
+                    ReadinessExpectation(
+                        expect_any=("duplicate", "similar", "identical"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                        llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                    ),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Show my recurring payments.",
+                    ReadinessExpectation(
+                        expect_any=("recurring", "repeat", "weekly", "monthly"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                        llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                    ),
+                    modes=("dry-run",),
+                    reset_context_before=True,
+                ),
+                ReadinessTurn(
+                    "Were there any unusual transactions recently?",
+                    ReadinessExpectation(
+                        expect_any=("unusual", "anomal"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                        llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                    ),
+                    modes=("dry-run",),
+                    reset_context_before=True,
+                ),
+                ReadinessTurn(
+                    "Who received the largest share of my spending this month?",
+                    ReadinessExpectation(
+                        expect_any=("largest", "%", "enough data"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                        llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                    ),
+                    modes=("dry-run",),
+                    reset_context_before=True,
+                ),
+                ReadinessTurn(
+                    "Estimate my spending for the next 30 days.",
+                    ReadinessExpectation(
+                        expect_any=("estimated", "forecast", "history"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                        llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                    ),
+                    modes=("dry-run",),
+                    reset_context_before=True,
+                ),
+                ReadinessTurn(
+                    "Estimate my cash runway.",
+                    ReadinessExpectation(
+                        expect_any=("runway", "days", "history", "balance"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                        llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                    ),
+                    modes=("dry-run",),
+                    reset_context_before=True,
+                ),
+                ReadinessTurn(
+                    "Assess my cash-flow quality.",
+                    ReadinessExpectation(
+                        expect_any=("income", "spending", "cash flow", "calendar months"),
+                        expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                        llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                    ),
+                    modes=("dry-run",),
+                    reset_context_before=True,
+                ),
+            ),
+        ),
+        "insight-reconciliation": ReadinessScenario(
+            id="insight-reconciliation",
+            description="Cross-answer insight reconciliation replays grounded source evidence.",
+            category="query",
+            tags=("query", "insight", "reconciliation", "acceptance"),
+            turns=(
+                ReadinessTurn(
+                    "Who received the largest share of my spending this month?",
+                    ReadinessExpectation(
+                        expect_any=("largest", "%", "spending"),
+                        llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                    ),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Who did I send money to this month?",
+                    ReadinessExpectation(
+                        expect_any=("sent", "beneficiar", "recipient"),
+                        llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                    ),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "So where did you get Uber?",
+                    ReadinessExpectation(
+                        expect_any=("Uber", "spending breakdown", "transactions"),
+                        llm_call_budget=_VARIANCE_CONTINUATION_BUDGET,
+                    ),
+                    modes=("dry-run",),
+                ),
+            ),
+        ),
         "latency": ReadinessScenario(
             id="latency",
             description=(

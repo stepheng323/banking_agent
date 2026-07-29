@@ -29,6 +29,8 @@ def test_query_reasoner_prompt_covers_all_continuation_types() -> None:
         "recipient_drill_down",
         "aggregate",
         "unclear",
+        "recheck",
+        "reconcile",
     ):
         assert ct in QUERY_SEMANTIC_REASONER_SYSTEM, f"Missing continuation_type: {ct}"
 
@@ -79,6 +81,22 @@ def test_query_parser_prompt_covers_recipient_summary_and_ranking() -> None:
     assert "tani mo ran owo si ni osu yi" in QUERY_PARSER_PROMPT
     assert "onye ka m zigara ego n'onwa a" in QUERY_PARSER_PROMPT
     assert "wa na tura wa kudi a wannan watan" in QUERY_PARSER_PROMPT
+
+
+def test_query_parser_prompt_disambiguates_send_from_spend() -> None:
+    """Regression: 'send money to' must not be misrouted to counterparty_concentration."""
+    assert "HARD RULE" in QUERY_PARSER_PROMPT
+    assert "send/transfer/pay money to" in QUERY_PARSER_PROMPT
+    assert "spend the most money on" in QUERY_PARSER_PROMPT
+    assert "counterparty_concentration" in QUERY_PARSER_PROMPT
+    assert "Never route" in QUERY_PARSER_PROMPT
+
+
+def test_query_reasoner_prompt_covers_reconcile_continuation() -> None:
+    """Reconciliation handling must be present in both reasoner and parser prompts."""
+    assert "reconcile" in QUERY_SEMANTIC_REASONER_SYSTEM
+    assert "reconcile" in QUERY_PARSER_PROMPT
+    assert "so where did you get uber" in QUERY_PARSER_PROMPT
 
 
 def test_query_parser_prompt_covers_time_normalization() -> None:

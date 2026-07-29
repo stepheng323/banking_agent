@@ -88,7 +88,7 @@ UNSUPPORTED_CAPABILITY_REGISTRY: tuple[UnsupportedCapability, ...] = (
         label="investments or crypto",
         policy_label="Investments",
         patterns=_compile(
-            r"\b(?:invest|investment|stocks?|shares?|mutual\s+funds?|crypto|bitcoin|btc|ethereum|eth|coins?)\b",
+            r"\b(?:invest|investment|stocks?|stock\s+shares?|company\s+shares?|mutual\s+funds?|crypto|bitcoin|btc|ethereum|eth|coins?)\b",
             r"\bbuy\s+(?:bitcoin|btc|crypto|ethereum|eth|stocks?|shares?|mutual\s+funds?)\b",
             r"\btrade\s+(?:crypto|bitcoin|btc|stocks?|shares?|forex|fx)\b",
             r"\b(?:buy|trade|invest)\s+(?:coin|coins|crypto|bitcoin|btc|ethereum|eth)\b",

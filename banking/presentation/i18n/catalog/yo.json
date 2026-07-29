@@ -307,7 +307,8 @@
     "drill_down": {
       "details_intro": "Eyi ni alaye transaction naa:",
       "no_items": "Mi o ni transaction naa mọ. Sọ fun mi lati tun search naa ṣe.",
-      "invalid_selection": "Mi o le mọ eyi ti o yan. Yan ọkan ninu transaction {count} ti mo fi han."
+      "invalid_selection": "Mi o le mọ eyi ti o yan. Yan ọkan ninu transaction {count} ti mo fi han.",
+      "cross_frame_reference": "{label} farahan ninu idahun kan ti a ti ṣe tele, ko si akojọ lọwọlọwọ yii. Sọ 'show more' tàbí béèrè nípa ọkan nínú àwọn nǹkan lókè."
     },
     "pagination": {
       "already_first_page": "O ti wa ni page akọkọ.",
@@ -472,6 +473,12 @@
       "reply_number_or_rephrase": "Fesi pelu nomba tabi sọ ni ọna miran.",
       "context_suffix": "({context})",
       "option_line": "{index}️⃣ {amount} — {description}"
+    },
+    "reconcile": {
+      "period": "{start} sí {end}",
+      "scope_spending_vs_transfers": "{label} wa ninu spending-concentration breakdown rẹ ({amount}); o ka gbogbo debits pẹlu awọn gbigba kadi si awọn onisowo. Akojọ lọwọlọwọ yii ka awọn gbigba banki si awọn eniyan nikan, nitorina {label} ko si nibẹ.",
+      "scope_different_periods": "{label} farahan ninu idahun kan fun {found_period}, ṣugbọn akojọ lọwọlọwọ yii wa fun {current_period}.",
+      "found_in_earlier_answer": "{label} farahan ninu idahun kan ti a ti ṣe tele, ko si akojọ lọwọlọwọ yii."
     },
     "notice": {
       "clamped_days": "N fi ọjọ {days_back} to kẹhin han (max available)."
@@ -650,9 +657,46 @@
       "coverage_unavailable": "N ko le jẹrisi pe gbogbo data akanti pe, nitorina ka eyi si iṣiro isunmọ.",
       "coverage_required": "N ko le se iṣiro naa ni deede nitori data akanti fun akoko yii ko tii pe.",
       "duplicates": {
-        "none": "No probable duplicate transactions found in this period.",
-        "found": "Found {count} probable duplicate transactions totaling {total_value}.",
-        "group_label": "{count} identical transactions"
+        "none": "A ko ri idunadura meji to jọ ara wọn ni asiko yii.",
+        "found": "A ri idunadura {count} to jọ ara wọn ti apapọ wọn jẹ {total_value}.",
+        "group_label": "Idunadura {count} to jọ ara wọn dẹdẹ"
+      },
+      "recurring_patterns": {
+        "none": "Kosi apẹẹrẹ ti o tun nwaye ninu asiko yii.",
+        "found": "Mo ri apeere idunadura {count} ti n tun waye.",
+        "item": "{frequency} {transaction_type} to fere je {amount} pelu {counterparty}",
+        "frequency": {
+          "weekly": "Ose kookan",
+          "monthly": "Osu kookan"
+        }
+      },
+      "anomalies": {
+        "none": "Kosi idoko-owo to yatọ patapata tabi aṣiṣe.",
+        "found": "Mo ri idunadura {count} ti ko wopo ({spending_count} inawo, {income_count} owo wole).",
+        "item": "{counterparty}: {amount}, to fere je igba {multiplier} iye ti o wopo"
+      },
+      "counterparty_concentration": {
+        "none": "Ko si alaye to peye lati mọ awọn ti o nba ṣe owo julọ.",
+        "found": "Eni tabi ile-ise to tobi ju ninu {measure} re ni {counterparty}, pelu {percentage}% gbogbo re.",
+        "item": "{counterparty}: {amount} ({percentage}%)"
+      },
+      "runway": {
+        "unbounded": "Mi o le so iye ojo pato nitori mi o ri inawo ise. Owo to wa ni {balance}.",
+        "depleted": "Awon akaunti ti a yan ko ni owo to wa, nitori naa akoko isuna ti a foju diwon ti pari.",
+        "summary": "Pelu inawo ise {burn_rate} lojoojumọ ati owo to wa {balance}, owo re le to fun bi ojo {days}.",
+        "balance_unavailable": "Mi o le jerisi owo akaunti to wa bayii lati se afojusun.",
+        "insufficient_history": "Mo nilo o kere tan ojo 30 ti itan idunadura to pe lati se afojusun.",
+        "coverage_required": "Mi o le foju won akoko ti owo re yoo to ni igbẹkẹle nitori data akaunti fun akoko yii ko tii pari amuṣiṣẹpọ."
+      },
+      "forecast": {
+        "no_spend": "Mi o ri inawo ise lati se asotele.",
+        "summary": "Lati inu ojo {observed_days} ti a sayewo, inawo re fun ojo {horizon} to n bo le je {projected}, bi {daily} lojoojumọ.",
+        "insufficient_history": "Mo nilo o kere tan ojo 30 ti itan idunadura to pe lati se asotele inawo."
+      },
+      "cash_flow": {
+        "healthy": "Ninu osu {months} to pe, owo wole je {income}, inawo je {spending}, isan owo apapo je {net}. Ipin owo wole si inawo je {ratio}, o si dara.",
+        "unhealthy": "Ninu osu {months} to pe, owo wole je {income}, inawo je {spending}, isan owo apapo je {net}. Ipin owo wole si inawo je {ratio}, o si nilo akiyesi.",
+        "insufficient_history": "Mo nilo iye osu kalenda to pe ti a beere lati sayewo idurosinsin isan owo."
       }
     },
     "beneficiary": {

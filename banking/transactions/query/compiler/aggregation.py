@@ -29,9 +29,35 @@ def coerce_group_by(group_by: str | None) -> GroupByField | None:
 def infer_breakdown_group_by(extraction: QueryExtractionResult) -> GroupByField | None:
     raw_lower = f" {(extraction.raw_query or '').strip().lower()} "
     if any(
-        hint in raw_lower for hint in (" by account ", " per account ", " by bank ", " per bank ", " across accounts ")
+        hint in raw_lower
+        for hint in (
+            " by account ",
+            " per account ",
+            " by accounts ",
+            " by bank ",
+            " by banks ",
+            " per bank ",
+            " per banks ",
+            " across accounts ",
+        )
     ):
         return "account"
+    if any(
+        hint in raw_lower for hint in (" by category ", " per category ")
+    ):
+        return "category"
+    if any(
+        hint in raw_lower for hint in (" by merchant ", " per merchant ", " by vendor ", " per vendor ")
+    ):
+        return "merchant"
+    if any(
+        hint in raw_lower for hint in (" by day ", " per day ", " daily ")
+    ):
+        return "day"
+    if any(
+        hint in raw_lower for hint in (" by type ", " per type ")
+    ):
+        return "transaction_type"
     extracted_group_by = (
         coerce_group_by(extraction.aggregation.group_by) if extraction.aggregation is not None else None
     )
@@ -95,6 +121,7 @@ def build_default_aggregation(
             or "where did my money go" in raw_lower
             or "where my money went" in raw_lower
             or "what did i spend on" in raw_lower
+            or infer_breakdown_group_by(extraction) is not None
         ):
             return Aggregation(type="breakdown", group_by=infer_breakdown_group_by(extraction) or "category")
         return Aggregation(type="sum", limit=5)

@@ -135,8 +135,52 @@ class AnalysisDataset(BaseModel):
     rows: list[dict[str, Any]] = Field(default_factory=list)
     coverage_status: CoverageStatus = CoverageStatus.UNAVAILABLE
     missing_accounts: list[str] = Field(default_factory=list)
+    # Requested dates describe the query; coverage is tracked separately so
+    # predictive insights never mistake a requested window for observed data.
+    requested_days: int | None = None
+    fully_covered_days: int | None = None
+    covered_account_count: int = 0
+    requested_account_count: int = 0
+    missing_account_gaps: dict[str, list[tuple[Any, Any]]] = Field(default_factory=dict)
     unresolved_count: int = 0
     unresolved_value: Decimal = Decimal("0")
+
+    model_config = ConfigDict(frozen=True)
+
+    def model_post_init(self, __context: Any) -> None:
+        """Keep direct test/fixture construction meaningful during cutover."""
+        del __context
+        if self.requested_days is not None and self.fully_covered_days is not None:
+            return
+        try:
+            requested_days = max((self.end_date - self.start_date).days + 1, 0)
+        except Exception:
+            requested_days = 0
+        # Directly constructed fixtures predate explicit coverage windows. They
+        # retain the requested duration unless they opt into a supplied
+        # fully_covered_days value; production sources always set it exactly.
+        fully_covered_days = requested_days
+        if self.requested_days is None:
+            object.__setattr__(self, "requested_days", requested_days)
+        if self.fully_covered_days is None:
+            object.__setattr__(self, "fully_covered_days", fully_covered_days)
+
+
+class InsightResultMetadata(BaseModel):
+    """Shared truth and coverage metadata for deterministic insights."""
+
+    basis: AnalysisBasis
+    effective_start: Any
+    effective_end: Any
+    coverage: CoverageStatus
+    included_count: int = 0
+    included_value: Decimal = Decimal("0")
+    excluded_count: int = 0
+    excluded_value: Decimal = Decimal("0")
+    uncertain_count: int = 0
+    uncertain_value: Decimal = Decimal("0")
+    available: bool = True
+    unavailable_reason: str | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -240,6 +284,7 @@ class VarianceAnalysisResult(BaseModel):
     evidence_selectors: list[InsightEvidenceSelector] = Field(default_factory=list)
     available: bool = True
     unavailable_reason: Literal["coverage_incomplete"] | None = None
+    metadata: InsightResultMetadata | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -266,5 +311,100 @@ class ProbableDuplicatesResult(BaseModel):
     coverage: CoverageStatus
     available: bool = True
     unavailable_reason: Literal["coverage_incomplete"] | None = None
+    metadata: InsightResultMetadata | None = None
 
+    model_config = ConfigDict(frozen=True)
+
+
+class RecurringSeries(BaseModel):
+    series_id: str
+    counterparty: str
+    transaction_type: str
+    frequency: Literal["weekly", "monthly"]
+    average_amount: Decimal
+    median_amount: Decimal = Decimal("0")
+    confidence: float = 0.0
+    transaction_count: int
+    transactions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RecurringPatternsResult(BaseModel):
+    available: bool = True
+    dataset: AnalysisDataset | None = None
+    series: list[RecurringSeries] = Field(default_factory=list)
+    metadata: InsightResultMetadata | None = None
+    model_config = ConfigDict(frozen=True)
+
+
+class AnomalyCandidate(BaseModel):
+    anomaly_id: str
+    transaction: dict[str, Any]
+    baseline_average: Decimal
+    multiplier: float
+    robust_score: float = 0.0
+    metric: Literal["spending", "income"] = "spending"
+    dimension_name: str
+    dimension_value: str
+
+
+class AnomaliesResult(BaseModel):
+    available: bool = True
+    dataset: AnalysisDataset | None = None
+    anomalies: list[AnomalyCandidate] = Field(default_factory=list)
+    metadata: InsightResultMetadata | None = None
+    model_config = ConfigDict(frozen=True)
+
+
+class ConcentrationGroup(BaseModel):
+    key: str = ""
+    counterparty: str
+    value: Decimal
+    percentage: Decimal
+    transactions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CounterpartyConcentrationResult(BaseModel):
+    available: bool = True
+    dataset: AnalysisDataset | None = None
+    measure: Literal["spending", "income", "inflow", "outflow"] | None = None
+    groups: list[ConcentrationGroup] = Field(default_factory=list)
+    total_value: Decimal = Decimal("0")
+    unresolved_value: Decimal = Decimal("0")
+    residual_percentage: Decimal = Decimal("0")
+    metadata: InsightResultMetadata | None = None
+    model_config = ConfigDict(frozen=True)
+
+
+class ForecastResult(BaseModel):
+    available: bool = False
+    unavailable_reason: str | None = None
+    average_daily_spend: Decimal = Decimal(0)
+    projected_spend: Decimal = Decimal(0)
+    horizon_days: int = 30
+    observed_days: int = 0
+    metadata: InsightResultMetadata | None = None
+    model_config = ConfigDict(frozen=True)
+
+
+class RunwayResult(BaseModel):
+    available: bool = False
+    unavailable_reason: str | None = None
+    average_burn_rate: Decimal = Decimal(0)
+    current_balance: Decimal = Decimal(0)
+    runway_days: int | None = None
+    status: Literal["unavailable", "depleted", "bounded", "unbounded"] = "unavailable"
+    metadata: InsightResultMetadata | None = None
+    model_config = ConfigDict(frozen=True)
+
+
+class CashFlowQualityResult(BaseModel):
+    available: bool = False
+    unavailable_reason: str | None = None
+    inflow_outflow_ratio: Decimal = Decimal(0)
+    is_healthy: bool = False
+    analyzed_months: int = 0
+    total_income: Decimal = Decimal("0")
+    total_spending: Decimal = Decimal("0")
+    net_cash_flow: Decimal = Decimal("0")
+    metadata: InsightResultMetadata | None = None
     model_config = ConfigDict(frozen=True)

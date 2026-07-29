@@ -13,13 +13,13 @@ from banking.transactions.query.models.domain import QueryIntent, TimeRange
 from banking.transactions.query.models.extraction import (
     FactQueryKind,
     ParserQueryExtraction,
+    PendingClarificationState,
     QueryExtractionResult,
     QueryParseResult,
     QueryRequestShape,
     QueryTimeRange,
     ReasonerQueryExtraction,
 )
-from banking.transactions.query.models.operations import QueryRequest
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -66,7 +66,7 @@ class QueryParser:
         language: str,
         message: str | None,
         resolver_message: str | None,
-    ) -> QueryRequest:
+    ) -> PendingClarificationState:
         return finalize_compiler.build_pending_clarification(
             self,
             extraction=extraction,

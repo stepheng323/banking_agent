@@ -421,6 +421,26 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             locale=locale,
         )
 
+    # Reconciliation compares the current contract with a retained prior
+    # frame. It must run before ordinary target grounding, which would
+    # otherwise reinterpret the challenged label as a request to select it.
+    if cont_type == "reconcile":
+        return await resolve_result_continuation_updates(
+            step,
+            decision=decision,
+            cont_type=cont_type,
+            followup_intent=decision.followup_intent or "none",
+            state=state,
+            session=session,
+            session_query_request=session_query_request,
+            restored_query_result=restored_query_result,
+            surface_view=surface_view,
+            items=items,
+            message=message,
+            today=today,
+            locale=locale,
+        )
+
     conversation_updates = build_query_conversation_updates(
         surface_view=surface_view,
         query_result=restored_query_result,

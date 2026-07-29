@@ -14,6 +14,9 @@ from banking.transactions.query.continuations.aggregate_continuations import (
     compile_aggregate_continuation_updates,
 )
 from banking.transactions.query.continuations.aggregate_scope_reply import build_aggregate_scope_reply
+from banking.transactions.query.continuations.scope_rescope import (
+    maybe_recover_scope_broadening_continuation,
+)
 from banking.transactions.query.continuations.supported_recovery import maybe_recover_supported_followup_query
 from banking.transactions.query.continuations.time_rescope import (
     maybe_recover_time_rescope_continuation,
@@ -26,16 +29,85 @@ from banking.transactions.query.models.domain import (
     Filters,
     QueryFactField,
     QueryIntent,
+    QueryRequest,
     QueryResult,
     QueryResultItem,
+)
+from banking.transactions.query.models.operations import (
+    AnalyzeOperation,
+    CounterpartyConcentrationSpec,
 )
 from banking.transactions.query.presentation.selection_resolver import find_selection_payload
 from banking.transactions.query.presentation.surface_builder import apply_selection_payload_to_query
 from banking.transactions.query.services.answers.coverage import build_query_coverage_answer
 from banking.transactions.query.services.conversation.targets import resolve_requested_fact_field
+from banking.transactions.shared.correction_markers import (
+    ASSERTIVE_CORRECTION_PREFIXES,
+    has_assertive_correction_prefix,
+    strip_correction_prefix,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+_PERSON_FRAME_RESIDUES: frozenset[str] = frozenset(
+    {
+        "who",
+        "whom",
+        "person",
+        "recipient",
+        "people",
+        "persons",
+        "someone",
+        "somebody",
+        "which person",
+        "which recipient",
+    }
+)
+
+
+def _is_counterparty_concentration_request(query_request: QueryRequest | None) -> bool:
+    return bool(
+        query_request
+        and query_request.intent == QueryIntent.INSIGHT
+        and isinstance(query_request.operation, AnalyzeOperation)
+        and isinstance(query_request.operation.analysis, CounterpartyConcentrationSpec)
+    )
+
+
+def _is_person_frame_correction(message: str, target_text: str | None) -> bool:
+    """Detect assertive corrections that retarget a counterparty answer to people."""
+    if not has_assertive_correction_prefix(message):
+        return False
+    residue = strip_correction_prefix(message, prefixes=ASSERTIVE_CORRECTION_PREFIXES)
+    cleaned_target = (target_text or "").lower().strip("?.!, ")
+    if residue in _PERSON_FRAME_RESIDUES:
+        return True
+    if cleaned_target in _PERSON_FRAME_RESIDUES:
+        return True
+    return False
+
+
+def _maybe_rebuild_intent_correction_request(
+    message: str,
+    target_text: str | None,
+    session_query_request: QueryRequest | None,
+) -> QueryRequest | None:
+    """Rebuild a concentration answer into a beneficiary ranking when the user corrects intent."""
+    if session_query_request is None:
+        return None
+    if not _is_person_frame_correction(message, target_text):
+        return None
+    if not _is_counterparty_concentration_request(session_query_request):
+        return None
+    return rebuild_query_request(
+        session_query_request,
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="count", group_by="merchant", limit=1),
+        result_limit=1,
+    )
 
 
 def _transaction_direction_delta(decision: Any) -> Literal["credit", "debit", "both"] | None:
@@ -147,6 +219,15 @@ async def resolve_result_continuation_updates(
         updates["show_expanded"] = False
         return updates
 
+    scope_recovery = await maybe_recover_scope_broadening_continuation(
+        message=message,
+        session_query_request=session_query_request,
+    )
+    if scope_recovery is not None:
+        logger.info("query_scope_broadening_recovered")
+        scope_recovery.update(step._semantic_trace_updates(decision))
+        return scope_recovery
+
     if cont_type == "show_more":
         if session_query_request is None:
             return step._ambiguous_followup_updates(locale=locale, session=session)
@@ -184,8 +265,6 @@ async def resolve_result_continuation_updates(
                 query_request = apply_selection_payload_to_query(
                     session_query_request,
                     selection_payload,
-                    continuation_type=cont_type,
-                    continuation_delta_type=continuation_delta_type,
                 )
                 updates["query_request"] = query_request
                 updates["conversational_prefix"] = decision.response_text
@@ -228,8 +307,6 @@ async def resolve_result_continuation_updates(
             query_request = apply_selection_payload_to_query(
                 session_query_request,
                 selection_payload,
-                continuation_type=cont_type,
-                continuation_delta_type=continuation_delta_type,
             )
             updates["query_request"] = query_request
             updates["conversational_prefix"] = None
@@ -403,17 +480,20 @@ async def resolve_result_continuation_updates(
         )
 
     elif cont_type == "filter_delta":
-        if followup_intent != "refine_existing" or session_query_request is None:
+        if session_query_request is None:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+        if followup_intent not in {"refine_existing", "replace_scope"}:
             return step._ambiguous_followup_updates(locale=locale, session=session)
 
         delta_type = decision.delta_type
         allow_limit = delta_type in (None, "limit", "reference")
         allow_reference = delta_type in (None, "reference", "limit")
+        replace_scope = followup_intent == "replace_scope"
 
         updates["query_request"] = rebuild_query_request(
             session_query_request,
             filters=decision.filters if decision.filters is not None else session_query_request.filters,
-            merge_filters=decision.filters is not None,
+            merge_filters=decision.filters is not None and not replace_scope,
             result_limit=decision.result_limit
             if decision.result_limit is not None and allow_limit
             else session_query_request.result_limit,
@@ -564,8 +644,6 @@ async def resolve_result_continuation_updates(
                 session_query_request,
                 selection_payload,
                 fact_field=query_fact_field,
-                continuation_type=cont_type,
-                continuation_delta_type=decision.delta_type,
             )
             updates["current_page"] = 0
             updates["show_expanded"] = False
@@ -605,8 +683,6 @@ async def resolve_result_continuation_updates(
                     session_query_request,
                     selection_payload,
                     fact_field=recipient_answer_fact_field,
-                    continuation_type=cont_type,
-                    continuation_delta_type=decision.delta_type,
                 )
             else:
                 new_filters = Filters(counterparty=[recipient_name])
@@ -665,6 +741,29 @@ async def resolve_result_continuation_updates(
         if recovered_updates is not None:
             recovered_updates.update(step._semantic_trace_updates(decision))
             return recovered_updates
+        intent_corrected_request = _maybe_rebuild_intent_correction_request(
+            message,
+            getattr(decision, "target_text", None),
+            session_query_request,
+        )
+        if intent_corrected_request is not None:
+            logger.info(
+                "query_intent_correction_recovered",
+                source="unclear",
+                from_intent="counterparty_concentration",
+                to_intent="beneficiary_summary",
+            )
+            return {
+                "flow_state": "executing",
+                "continuation_type": "unclear",
+                "continuation_delta_type": "intent_correction",
+                "resolver_message": None,
+                "query_request": intent_corrected_request,
+                "current_page": 0,
+                "show_expanded": False,
+                "session_active": True,
+                **step._semantic_trace_updates(decision),
+            }
         return step._ambiguous_followup_updates(locale=locale, session=session)
 
     elif cont_type == "recheck":
@@ -678,6 +777,88 @@ async def resolve_result_continuation_updates(
         )
         updates["current_page"] = 0
         updates["show_expanded"] = False
+
+    elif cont_type == "reconcile":
+        from banking.transactions.query.continuations.reconciliation import reconcile_query_answer
+
+        corrected_request = _maybe_rebuild_intent_correction_request(
+            message,
+            getattr(decision, "target_text", None),
+            session_query_request,
+        )
+        if corrected_request is not None:
+            logger.info(
+                "query_intent_correction_recovered",
+                source="reconcile",
+                from_intent="counterparty_concentration",
+                to_intent="beneficiary_summary",
+            )
+            return {
+                "flow_state": "executing",
+                "continuation_type": "reconcile",
+                "continuation_delta_type": "intent_correction",
+                "resolver_message": None,
+                "query_request": corrected_request,
+                "current_page": 0,
+                "show_expanded": False,
+                "session_active": True,
+                **step._semantic_trace_updates(decision),
+            }
+
+        reconciliation = await reconcile_query_answer(
+            session_query_request=session_query_request,
+            # Frames are persisted as JSON in the checkpoint.  Rehydrate them
+            # through the same trusted boundary used by the reasoner before
+            # reconciliation reads visible_items or replays an evidence
+            # selector.
+            query_frames=step._load_query_frames(session),
+            target_text=getattr(decision, "target_text", None),
+            target_amount=getattr(decision, "target_amount", None),
+            referenced_frame_ids=getattr(decision, "referenced_frame_ids", None),
+            locale=locale,
+        )
+        logger.info(
+            "query_reconciliation",
+            outcome=reconciliation.outcome,
+            source_frame_id=reconciliation.source_frame_id,
+            difference_categories=list(reconciliation.difference_categories),
+            has_evidence=reconciliation.evidence_payload is not None,
+        )
+        if reconciliation.outcome == "evidence_replay":
+            source_request = reconciliation.source_query_request
+            payload = reconciliation.evidence_payload
+            if source_request is None or payload is None:
+                logger.info("query_reconciliation_replay_rejected", reason="missing_source_contract")
+            else:
+                try:
+                    updates.update(
+                        {
+                            "query_request": apply_selection_payload_to_query(source_request, payload),
+                            "conversational_prefix": reconciliation.response,
+                            "current_page": 0,
+                            "show_expanded": False,
+                            "selected_frame_id": reconciliation.source_frame_id,
+                            "continuation_type": "show_evidence",
+                        }
+                    )
+                    logger.info(
+                        "query_reconciliation_evidence_replayed",
+                        source_frame_id=reconciliation.source_frame_id,
+                    )
+                    return step._append_query_session_transition(updates, "replace_session_new_query")
+                except (TypeError, ValueError):
+                    logger.info("query_reconciliation_replay_rejected", reason="invalid_evidence_contract")
+        return {
+            "transaction_outcome": TransactionOutcome.OK,
+            "response": reconciliation.response,
+            "session_active": True,
+            "flow_state": "complete",
+            "suppress_body_blocks": True,
+            "resolver_message": None,
+            "show_expanded": bool(session.get("show_expanded", False)),
+            "current_page": int(session.get("current_page", 0) or 0),
+            **step._semantic_trace_updates(decision),
+        }
 
     elif cont_type == "aggregate":
         aggregate_updates = await compile_aggregate_continuation_updates(

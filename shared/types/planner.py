@@ -20,6 +20,17 @@ from shared.types.conversation_sets import (
 )
 from shared.types.read import ReadRequest, ReadSubject, ResponseShape
 
+QueryInsightType: TypeAlias = Literal[
+    "variance_drivers",
+    "probable_duplicates",
+    "recurring_patterns",
+    "anomalies",
+    "counterparty_concentration",
+    "forecast",
+    "runway",
+    "cash_flow_quality",
+]
+
 
 class ContextReference(BaseModel):
     """Pointer to a context entity."""
@@ -1605,6 +1616,11 @@ class SemanticRouteDecision(BaseModel):
         default=None,
         alias="intent",
         description="Optional normalized domain owner for observability/debugging.",
+    )
+    query_insight_type: QueryInsightType | None = Field(
+        default=None,
+        alias="q_insight",
+        description="Typed analytical query subtype when the router can identify it confidently.",
     )
     response_key: SemanticRouterResponseKey | None = Field(
         default=None,

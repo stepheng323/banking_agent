@@ -7,7 +7,13 @@ from typing import Any, cast
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.handlers.registry import handler_for_request
 from banking.transactions.query.models.domain import QueryResult
-from banking.transactions.query.models.operations import NamedAccount, QueryRequest, RetrieveOperation
+from banking.transactions.query.models.operations import (
+    AccountById,
+    NamedAccount,
+    QueryRequest,
+    RetrieveOperation,
+    SelectedAccounts,
+)
 from banking.transactions.shared.account_selection.service import find_account_by_bank_name
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.utils.logging import get_logger
@@ -74,6 +80,12 @@ class QueryExecutor:
                 )
         elif isinstance(accounts, NamedAccount):
             all_account_ids = [account_id]
+        elif isinstance(accounts, AccountById):
+            account_id = accounts.account_id
+            all_account_ids = [accounts.account_id]
+        elif isinstance(accounts, SelectedAccounts):
+            all_account_ids = list(dict.fromkeys(accounts.account_ids))
+            account_id = all_account_ids[0]
 
         handler = handler_for_request(query)
         if not handler:

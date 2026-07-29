@@ -307,7 +307,8 @@
     "drill_down": {
       "details_intro": "Lee nkọwa transaction ahụ:",
       "no_items": "Enweghị m transaction ahụ ọzọ. Gwa m ka m mee search ọzọ.",
-      "invalid_selection": "Enweghị m ike ịmata nhọrọ ahụ. Họrọ otu n'ime transactions {count} m gosiri."
+      "invalid_selection": "Enweghị m ike ịmata nhọrọ ahụ. Họrọ otu n'ime transactions {count} m gosiri.",
+      "cross_frame_reference": "{label} pụtara n'azịza oge gara aga, ọ bụghịkwa na ndepụta ugbu a. Kwuo 'show more' ma jụọ gbasara otu n'ime ihe ndị dị n'elu."
     },
     "pagination": {
       "already_first_page": "Ị nọlarị na page mbụ.",
@@ -472,6 +473,12 @@
       "reply_number_or_rephrase": "Zaa na nomba ma ọ bụ kwuo ya ọzọ.",
       "context_suffix": "({context})",
       "option_line": "{index}️⃣ {amount} — {description}"
+    },
+    "reconcile": {
+      "period": "{start} ruo {end}",
+      "scope_spending_vs_transfers": "{label} si na spending-concentration breakdown gị ({amount}); ọ na-abawo debits niile gụnyere card payments na ndị na-ere ahịa. Ndepụta ugbu a na-abawo bank transfers na ndị mmadụ naanị, ya mere {label} adịghị n'ime ya.",
+      "scope_different_periods": "{label} pụtara n'azịza maka {found_period}, ma ndepụta ugbu a bụ maka {current_period}.",
+      "found_in_earlier_answer": "{label} pụtara n'azịza oge gara aga, ọ bụghịkwa na ndepụta ugbu a."
     },
     "notice": {
       "clamped_days": "Na-egosi ụbọchị {days_back} ikpeazụ (max available)."
@@ -650,9 +657,46 @@
       "coverage_unavailable": "Enweghị m ike ikwenye na data akaụntụ niile zuru ezu, ya mere were nke a dịka atụmatụ.",
       "coverage_required": "Enweghị m ike ịgbakọ ya nke ọma n'ihi na data akaụntụ nke oge ahụ ezubeghị oke.",
       "duplicates": {
-        "none": "No probable duplicate transactions found in this period.",
-        "found": "Found {count} probable duplicate transactions totaling {total_value}.",
-        "group_label": "{count} identical transactions"
+        "none": "Enweghị azụmahịa abụọ nwere ike ịdị na oge a.",
+        "found": "Achọpụtara azụmahịa abụọ {count} nwere ike ịdị na ngụkọta {total_value}.",
+        "group_label": "Azụmahịa {count} yiri onwe ha"
+      },
+      "recurring_patterns": {
+        "none": "Enweghị usoro a na-emegharị emegharị achọpụtara n'oge a.",
+        "found": "Achoputara m usoro azumahia {count} na-emeghari emeghari.",
+        "item": "{frequency} {transaction_type} ihe dika {amount} na {counterparty}",
+        "frequency": {
+          "weekly": "Kwa izu",
+          "monthly": "Kwa onwa"
+        }
+      },
+      "anomalies": {
+        "none": "Enweghị mmegharị pụrụ iche achọpụtara.",
+        "found": "Achoputara m azumahia {count} puru iche ({spending_count} mmefu, {income_count} ego mbata).",
+        "item": "{counterparty}: {amount}, ihe dika ugboro {multiplier} nke ego a na-ahukarị"
+      },
+      "counterparty_concentration": {
+        "none": "Enweghị data zuru ezu iji mara ndị ị kacha eji azụmaahịa.",
+        "found": "Onye kacha buru ibu na {measure} gi bu {counterparty}, nke bu {percentage}% nke ngukota.",
+        "item": "{counterparty}: {amount} ({percentage}%)"
+      },
+      "runway": {
+        "unbounded": "Enweghi m ike ikwu ubochi ole ego ga-ezu n'ihi na ahughi m mmefu oru. Ego di bu {balance}.",
+        "depleted": "Akauntu ndi ahoputara enweghi ego di, ya mere atumatu oge ego agwula.",
+        "summary": "Site na mmefu oru {burn_rate} kwa ubochi na ego di {balance}, ego gi nwere ike izu ihe dika ubochi {days}.",
+        "balance_unavailable": "Enweghi m ike ikwenye ego akauntu di ugbu a iji mee atumatu oge ego.",
+        "insufficient_history": "Achoro m opekata mpe ubochi 30 nke akuko azumahia zuru ezu iji mee atumatu oge ego.",
+        "coverage_required": "Enweghi m ike ikwu oge ego gi ga-ezu nke oma n'ihi na emechabeghi imekota data akauntu maka oge a."
+      },
+      "forecast": {
+        "no_spend": "Ahughi m mmefu oru m ga-eji mee amuma.",
+        "summary": "Site na ubochi {observed_days} a nyochara, atumatu mmefu gi n'ime ubochi {horizon} na-abia bu {projected}, ihe dika {daily} kwa ubochi.",
+        "insufficient_history": "Achoro m opekata mpe ubochi 30 nke akuko azumahia zuru ezu iji mee amuma mmefu."
+      },
+      "cash_flow": {
+        "healthy": "N'ime onwa {months} zuru ezu, ego mbata bu {income}, mmefu bu {spending}, ije ego foduru bu {net}. Ogo ego mbata na mmefu bu {ratio}, o dikwa mma.",
+        "unhealthy": "N'ime onwa {months} zuru ezu, ego mbata bu {income}, mmefu bu {spending}, ije ego foduru bu {net}. Ogo ego mbata na mmefu bu {ratio}, o chokwara nlebara anya.",
+        "insufficient_history": "Achoro m onwa kalenda zuru ezu a rioro iji nyochaa idi mma nke ije ego."
       }
     },
     "beneficiary": {

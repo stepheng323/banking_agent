@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, Any, ClassVar, Literal, TypeAlias, Union, cast
+from typing import Annotated, Any, ClassVar, Literal, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -373,16 +373,14 @@ class CashFlowQualitySpec(InsightSpecBase):
 
 
 InsightSpec: TypeAlias = Annotated[
-    Union[
-        VarianceDriversSpec,
-        ProbableDuplicatesSpec,
-        RecurringPatternsSpec,
-        AnomaliesSpec,
-        CounterpartyConcentrationSpec,
-        ForecastSpec,
-        RunwaySpec,
-        CashFlowQualitySpec,
-    ],
+    VarianceDriversSpec
+    | ProbableDuplicatesSpec
+    | RecurringPatternsSpec
+    | AnomaliesSpec
+    | CounterpartyConcentrationSpec
+    | ForecastSpec
+    | RunwaySpec
+    | CashFlowQualitySpec,
     Field(discriminator="insight_type"),
 ]
 

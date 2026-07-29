@@ -8,7 +8,7 @@ from rendered text.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -79,21 +79,33 @@ class VarianceDriversEvidenceSelection(InsightEvidenceSelectionBase):
 class ProbableDuplicatesEvidenceSelection(InsightEvidenceSelectionBase):
     insight_type: Literal["probable_duplicates"] = "probable_duplicates"
     duplicate_group_id: str
+    effective_start: str | None = None
+    effective_end: str | None = None
+    transaction_ids: list[str] = Field(default_factory=list, max_length=20)
 
 
 class RecurringPatternsEvidenceSelection(InsightEvidenceSelectionBase):
     insight_type: Literal["recurring_patterns"] = "recurring_patterns"
     series_id: str
+    effective_start: str
+    effective_end: str
+    transaction_ids: list[str] = Field(default_factory=list, max_length=20)
 
 
 class AnomaliesEvidenceSelection(InsightEvidenceSelectionBase):
     insight_type: Literal["anomalies"] = "anomalies"
     anomaly_id: str
+    effective_start: str
+    effective_end: str
+    transaction_id: str
 
 
 class CounterpartyConcentrationEvidenceSelection(InsightEvidenceSelectionBase):
     insight_type: Literal["counterparty_concentration"] = "counterparty_concentration"
-    counterparty_name: str
+    counterparty_key: str
+    measure: Literal["spending", "income", "inflow", "outflow"]
+    effective_start: str
+    effective_end: str
 
 
 class ForecastEvidenceSelection(InsightEvidenceSelectionBase):

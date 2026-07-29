@@ -101,6 +101,7 @@ def _continue_flow_updates(
                     continue
                 if task_id in payload_overrides:
                     task.payload.update(payload_overrides[task_id])
+                    task.payload["skip_extraction"] = True
                 if task_id in message_overrides:
                     task.payload["pending_user_message"] = message_overrides[task_id]
                     task.payload["confirmation_message_scoped"] = True
@@ -125,6 +126,7 @@ def _continue_flow_updates(
                 if task is None or task_id not in payload_overrides:
                     continue
                 task.payload.update(payload_overrides[task_id])
+                task.payload["skip_extraction"] = True
                 task.payload.pop("pending_user_message", None)
                 task.payload.pop("confirmation_message_scoped", None)
         if interrupt.kind == "input" and input_messages_by_task is not None:

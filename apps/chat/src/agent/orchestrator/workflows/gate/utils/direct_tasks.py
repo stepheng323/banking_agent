@@ -17,6 +17,7 @@ from shared.types.conversation_sets import (
     BeneficiaryQueryContract,
     ScheduleQueryContract,
 )
+from shared.types.planner import QueryInsightType
 from shared.types.read import ReadRequest
 
 
@@ -67,6 +68,7 @@ def _build_direct_domain_task(
     beneficiary_contract: BeneficiaryQueryContract | None = None,
     schedule_contract: ScheduleQueryContract | None = None,
     account_lifecycle_contract: AccountLifecycleContract | None = None,
+    query_insight_type: QueryInsightType | None = None,
 ) -> tuple[str, TaskSpec]:
     if domain == "query":
         task_id = _next_direct_query_task_id(state_view.tasks)
@@ -113,6 +115,8 @@ def _build_direct_domain_task(
     if domain == "query":
         if mode == "new":
             payload["force_new_query"] = True
+        if query_insight_type is not None:
+            payload["query_insight_type"] = query_insight_type
     elif domain == "account" and read_request is not None:
         if read_request.subject == "balance":
             payload["action"] = "check_balance"

@@ -18,7 +18,13 @@ from banking.transactions.query.models.extraction import (
     ResolverOutcome,
     TimeReference,
 )
+from banking.transactions.query.models.operations import ResolvedPeriod
 from banking.transactions.query.services.parsing.parser import QueryParser
+from banking.transactions.shared.correction_markers import (
+    ASSERTIVE_CORRECTION_PREFIXES,
+    CORRECTION_PREFIXES,
+    strip_correction_prefix,
+)
 
 _DIRECT_TIME_PREFIXES = (
     "what about ",
@@ -28,25 +34,8 @@ _DIRECT_TIME_PREFIXES = (
     "just ",
     "and ",
 )
-_CORRECTION_TIME_PREFIXES = (
-    "i said ",
-    "i mean ",
-    "i meant ",
-    "i asked for ",
-    "no ",
-    "not ",
-    "instead ",
-    "rather ",
-    "make it ",
-    "change it to ",
-    "use ",
-)
-_ASSERTIVE_CORRECTION_TIME_PREFIXES = (
-    "i said ",
-    "i mean ",
-    "i meant ",
-    "i asked for ",
-)
+_CORRECTION_TIME_PREFIXES = CORRECTION_PREFIXES
+_ASSERTIVE_CORRECTION_TIME_PREFIXES = ASSERTIVE_CORRECTION_PREFIXES
 
 
 def _normalize_time_rescope_message(message: str) -> str:
@@ -59,13 +48,10 @@ def _has_parseable_time_candidate(
     today: date,
     prefixes: tuple[str, ...],
 ) -> bool:
-    for prefix in prefixes:
-        if not normalized_message.startswith(prefix):
-            continue
-        candidate = normalized_message[len(prefix) :].strip()
-        if QueryParser.parse_clarification_time_range(candidate, today=today) is not None:
-            return True
-    return False
+    candidate = strip_correction_prefix(normalized_message, prefixes=prefixes)
+    if candidate is None:
+        return False
+    return QueryParser.parse_clarification_time_range(candidate, today=today) is not None
 
 
 def _compile_clarification_time_range(parsed: QueryTimeRange, *, today: date) -> TimeRange | None:
@@ -101,7 +87,7 @@ def direct_time_rescope_range(message: str, *, today: date) -> TimeRange | None:
 def is_single_day_direct_time_rescope_message(message: str, *, today: date) -> bool:
     """Return true for direct time-only follow-ups that resolve to one calendar day."""
     parsed = direct_time_rescope_range(message, today=today)
-    return bool(parsed is not None and parsed.start == parsed.end)
+    return (parsed is not None and parsed.start == parsed.end)
 
 
 def is_direct_time_rescope_message(message: str, *, today: date) -> bool:
@@ -280,7 +266,7 @@ async def resolve_time_delta_range(
     today: date,
     language: str,
     state: dict[str, Any] | None = None,
-) -> tuple[TimeRange | None, str | None]:
+) -> tuple[ResolvedPeriod | None, str | None]:
     started_at = perf_counter()
     semantic_decision = getattr(decision, "decision", None)
     continuation_type = getattr(decision, "continuation_type", None)
@@ -299,7 +285,7 @@ async def resolve_time_delta_range(
                 semantic_decision=semantic_decision,
                 continuation_type=continuation_type,
             )
-        return direct_rescope, None
+        return ResolvedPeriod(start=direct_rescope.start, end=direct_rescope.end), None
 
     if decision.time_range is not None:
         resolved_time_range = decision.time_range
@@ -330,7 +316,7 @@ async def resolve_time_delta_range(
             except Exception:
                 query_request = None
 
-        if query_request and query_request.time_range is not None:
+        if query_request and query_request.period is not None:
             if state is not None:
                 step._log_query_trace(
                     state=state,
@@ -341,7 +327,7 @@ async def resolve_time_delta_range(
                     semantic_decision=semantic_decision,
                     continuation_type=continuation_type,
                 )
-            return query_request.time_range, None
+            return query_request.period, None
 
         if result.extraction is not None:
             query_ir = step.parser.build_query_request_from_extraction(
@@ -391,7 +377,7 @@ async def resolve_time_delta_range(
                 semantic_decision=semantic_decision,
                 continuation_type=continuation_type,
             )
-        return query_ir.time_range, None
+        return query_ir.period, None
 
     direct_rescope = direct_time_rescope_range(message, today=today)
     if direct_rescope is not None:
@@ -405,7 +391,7 @@ async def resolve_time_delta_range(
                 semantic_decision=semantic_decision,
                 continuation_type=continuation_type,
             )
-        return direct_rescope, None
+        return ResolvedPeriod(start=direct_rescope.start, end=direct_rescope.end), None
 
     normalized_message = " ".join(message.strip().split())
     if normalized_message:

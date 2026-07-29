@@ -9,7 +9,8 @@ from typing import Literal, cast
 from banking.transactions.query.compiler import query_compiler, time_ranges
 from banking.transactions.query.compiler.operations import normalize_query_extraction
 from banking.transactions.query.models.domain import Aggregation, Filters, QueryIntent, TimeRange
-from banking.transactions.query.models.extraction import QueryExtractionResult, InsightSpec as ExtractionInsightSpec
+from banking.transactions.query.models.extraction import InsightSpec as ExtractionInsightSpec
+from banking.transactions.query.models.extraction import QueryExtractionResult
 from banking.transactions.query.models.operations import (
     AccountSelector,
     AffordabilitySpec,
@@ -17,26 +18,33 @@ from banking.transactions.query.models.operations import (
     AmountConstraint,
     AmountRange,
     AnalyzeOperation,
+    AnomaliesSpec,
     ApproximateAmount,
     AssessOperation,
+    CashFlowQualitySpec,
     CashFlowSummarySpec,
     CompareOperation,
+    CounterpartyConcentrationSpec,
     CounterpartySelector,
     ExactAmount,
+    ForecastSpec,
     GroupedSummarySpec,
     Money,
     NamedAccount,
     NamedCounterparty,
     PeriodComparisonSpec,
     PreviousEquivalentBaseline,
+    ProbableDuplicatesSpec,
     QueryFactField,
     QueryOperation,
     QueryRequest,
     QueryScope,
+    RecurringPatternsSpec,
     ResolvedPeriod,
     RetrieveOperation,
     RetrieveProjection,
     RetrieveSelection,
+    RunwaySpec,
     ScalarSummarySpec,
     SummarizeOperation,
     SummarySpec,
@@ -44,6 +52,8 @@ from banking.transactions.query.models.operations import (
     TransactionPredicate,
     UnspecifiedCounterparty,
     VarianceDriversSpec,
+)
+from banking.transactions.query.models.operations import (
     InsightSpec as OperationInsightSpec,
 )
 
@@ -319,19 +329,95 @@ def _insight_spec(
         baseline = time_ranges.build_comparison_baseline(
             extraction,
             intent=QueryIntent.TIME_COMPARISON,
-            current_range=TimeRange(start=scope.period.start, end=scope.period.end, granularity=scope.period.granularity),
+            current_range=TimeRange(
+                start=scope.period.start,
+                end=scope.period.end,
+                granularity=scope.period.granularity,
+            ),
             today=today,
+        )
+        measure = (
+            cast(
+                Literal["spending", "income", "net_cash_flow", "cash_flow_overview"],
+                insight.measure,
+            )
+            if insight.measure in {"spending", "income", "net_cash_flow", "cash_flow_overview"}
+            else "spending"
         )
         return VarianceDriversSpec(
             baseline=baseline or PreviousEquivalentBaseline(),
             analysis_basis=insight.analysis_basis,
-            measure=insight.measure,
-            dimensions=list(insight.dimensions),
+            measure=measure,
+            dimensions=list(insight.dimensions) or ["category", "counterparty"],
             confidence_policy=insight.confidence_policy,
             evidence_limit=insight.evidence_limit,
             completeness_policy=insight.completeness_policy,
-            evidence=insight.evidence,
         )
-    
-    import pydantic
-    return pydantic.TypeAdapter(OperationInsightSpec).validate_python(insight.model_dump())
+    if insight.insight_type == "probable_duplicates":
+        return ProbableDuplicatesSpec(
+            analysis_basis=insight.analysis_basis,
+            confidence_policy=insight.confidence_policy,
+            completeness_policy=insight.completeness_policy,
+            evidence_limit=insight.evidence_limit,
+            min_confidence=insight.min_confidence if insight.min_confidence is not None else 0.80,
+            lookback_days=insight.lookback_days if insight.lookback_days is not None else 90,
+        )
+    if insight.insight_type == "recurring_patterns":
+        return RecurringPatternsSpec(
+            analysis_basis=insight.analysis_basis,
+            confidence_policy=insight.confidence_policy,
+            completeness_policy=insight.completeness_policy,
+            evidence_limit=insight.evidence_limit,
+            lookback_days=insight.lookback_days if insight.lookback_days is not None else 180,
+        )
+    if insight.insight_type == "anomalies":
+        return AnomaliesSpec(
+            analysis_basis=insight.analysis_basis,
+            confidence_policy=insight.confidence_policy,
+            completeness_policy=insight.completeness_policy,
+            evidence_limit=insight.evidence_limit,
+            baseline_days=insight.baseline_days if insight.baseline_days is not None else 90,
+            min_comparable_observations=(
+                insight.min_comparable_observations if insight.min_comparable_observations is not None else 6
+            ),
+            min_covered_days=insight.min_covered_days if insight.min_covered_days is not None else 42,
+        )
+    if insight.insight_type == "counterparty_concentration":
+        concentration_measure = (
+            cast(Literal["spending", "income", "inflow", "outflow"], insight.measure)
+            if insight.measure in {"spending", "income", "inflow", "outflow"}
+            else "spending"
+        )
+        return CounterpartyConcentrationSpec(
+            analysis_basis=insight.analysis_basis,
+            confidence_policy=insight.confidence_policy,
+            completeness_policy=insight.completeness_policy,
+            evidence_limit=insight.evidence_limit,
+            measure=concentration_measure,
+        )
+    if insight.insight_type == "forecast":
+        return ForecastSpec(
+            analysis_basis=insight.analysis_basis,
+            confidence_policy=insight.confidence_policy,
+            completeness_policy=insight.completeness_policy,
+            evidence_limit=insight.evidence_limit,
+            horizon_days=insight.horizon_days if insight.horizon_days is not None else 30,
+            history_days=insight.history_days if insight.history_days is not None else 180,
+        )
+    if insight.insight_type == "runway":
+        return RunwaySpec(
+            analysis_basis=insight.analysis_basis,
+            confidence_policy=insight.confidence_policy,
+            completeness_policy=insight.completeness_policy,
+            evidence_limit=insight.evidence_limit,
+            baseline_days=insight.baseline_days if insight.baseline_days is not None else 90,
+        )
+    if insight.insight_type == "cash_flow_quality":
+        return CashFlowQualitySpec(
+            analysis_basis=insight.analysis_basis,
+            confidence_policy=insight.confidence_policy,
+            completeness_policy=insight.completeness_policy,
+            evidence_limit=insight.evidence_limit,
+            min_complete_months=insight.min_complete_months if insight.min_complete_months is not None else 3,
+        )
+    raise ValueError(f"unsupported insight type: {insight.insight_type}")

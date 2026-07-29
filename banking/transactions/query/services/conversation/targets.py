@@ -175,13 +175,19 @@ def _surface_item_from_snapshot(snapshot: dict[str, Any]) -> SurfaceItemView | N
     if not isinstance(entity_id, str) or not entity_id.strip() or not label:
         return None
     amount = snapshot.get("amount")
+    selection_kind_raw = snapshot.get("selection_kind") or "transaction"
+    selection_kind = cast(
+        Literal["transaction", "group_bucket", "beneficiary", "account", "referent", "summary_scope"],
+        selection_kind_raw,
+    )
+    entity_type = snapshot.get("entity_type") or selection_kind
     return SurfaceItemView(
         id=entity_id,
         label=label,
         amount=float(amount) if isinstance(amount, (int, float)) else None,
         payload=SelectionPayload(
-            selection_kind="transaction",
-            entity_type="transaction",
+            selection_kind=selection_kind,
+            entity_type=entity_type,
             entity_id=entity_id,
             label=label,
         ),
@@ -500,7 +506,11 @@ def resolve_query_target(
         or bool(_amount_reference_values(text))
     )
     current_is_detail = surface_view is not None and len(surface_view.items) == 1
-    should_try_frames = has_target and (current_is_detail or _references_prior_context(text, decision))
+    should_try_frames = (
+        has_target
+        or current_is_detail
+        or _references_prior_context(text, decision)
+    )
     if not should_try_frames:
         return [], current_miss
 

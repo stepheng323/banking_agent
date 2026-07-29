@@ -82,11 +82,11 @@ def test_variance_categories_do_not_double_count_counterparty_evidence() -> None
     assert drivers[0].absolute_delta == 15_000
 
 
-def test_compiler_accepts_the_registered_variance_insight_without_another_llm_call() -> None:
+def test_compiler_accepts_the_registered_insight_without_another_llm_call() -> None:
     parser = QueryParser(llm=object())
     extraction = QueryExtractionResult(
         intent=QueryIntent.INSIGHT,
-        insight={"type": "variance_drivers"},
+        insight={"insight_type": "variance_drivers"},
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
     )
 
@@ -150,7 +150,6 @@ async def test_variance_driver_selection_executes_grounded_evidence_query() -> N
     evidence_contract = apply_selection_payload_to_query(
         contract,
         result.surface_view.items[0].payload,
-        continuation_type="show_evidence",
     )
     evidence_result = await handle_insight(
         _VarianceProvider(),

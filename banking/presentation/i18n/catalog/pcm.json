@@ -307,7 +307,8 @@
     "drill_down": {
       "details_intro": "See the transaction details:",
       "no_items": "I no get that transaction again. Tell me make I run the search again.",
-      "invalid_selection": "I no fit match that choice. Choose one of the {count} transactions wey I show."
+      "invalid_selection": "I no fit match that choice. Choose one of the {count} transactions wey I show.",
+      "cross_frame_reference": "{label} show for one earlier answer, no be this current list. Say 'show more' or ask about one of the items wey dey above."
     },
     "pagination": {
       "already_first_page": "You already dey the first page.",
@@ -472,6 +473,12 @@
       "reply_number_or_rephrase": "Reply with the number or talk am another way.",
       "context_suffix": "({context})",
       "option_line": "{index}️⃣ {amount} — {description}"
+    },
+    "reconcile": {
+      "period": "{start} reach {end}",
+      "scope_spending_vs_transfers": "{label} show for your spending-concentration breakdown ({amount}); e dey count all debits including card payments to merchants. The current list only dey count bank transfers to people, so {label} no dey there.",
+      "scope_different_periods": "{label} show for one answer for {found_period}, but the current list na for {current_period}.",
+      "found_in_earlier_answer": "{label} show for one earlier answer, no be this current list."
     },
     "notice": {
       "clamped_days": "I dey show last {days_back} days, na max available."
@@ -650,9 +657,46 @@
       "coverage_unavailable": "I no fit confirm whether all the account data dey complete, so take this one as estimate.",
       "coverage_required": "I no fit calculate that one well because all the account data for that period never sync finish.",
       "duplicates": {
-        "none": "No probable duplicate transactions found in this period.",
-        "found": "Found {count} probable duplicate transactions totaling {total_value}.",
-        "group_label": "{count} identical transactions"
+        "none": "We no see any duplicate transaction for this period.",
+        "found": "We see {count} duplicate transactions wey dia total na {total_value}.",
+        "group_label": "{count} exact same transactions"
+      },
+      "recurring_patterns": {
+        "none": "I no see any recurring patterns for this period.",
+        "found": "I see {count} transaction patterns wey dey repeat.",
+        "item": "{frequency} {transaction_type} of around {amount} with {counterparty}",
+        "frequency": {
+          "weekly": "Every week",
+          "monthly": "Every month"
+        }
+      },
+      "anomalies": {
+        "none": "I no see any unusual spendings or anomalies.",
+        "found": "I see {count} unusual transactions ({spending_count} spending, {income_count} income).",
+        "item": "{counterparty}: {amount}, around {multiplier}× wetin dey normal"
+      },
+      "counterparty_concentration": {
+        "none": "Data no dey enough to know your counterparty concentration.",
+        "found": "The person or business wey carry the biggest part of your {measure} na {counterparty}, at {percentage}% of everything.",
+        "item": "{counterparty}: {amount} ({percentage}%)"
+      },
+      "runway": {
+        "unbounded": "I no fit give finite runway because I no see operating spending. Your available balance na {balance}.",
+        "depleted": "No available balance dey for the accounts wey you select, so the estimated runway don finish.",
+        "summary": "With spending rate of {burn_rate} per day and available balance of {balance}, your estimated runway na around {days} days.",
+        "balance_unavailable": "I no fit confirm the live balances wey I need to estimate your runway.",
+        "insufficient_history": "I need at least 30 days of complete transaction history to estimate your runway.",
+        "coverage_required": "I no fit estimate your cash runway well because the account data for this period never finish sync."
+      },
+      "forecast": {
+        "no_spend": "I no see operating spending to forecast.",
+        "summary": "From {observed_days} days wey I check, you fit spend around {projected} for the next {horizon} days, about {daily} per day.",
+        "insufficient_history": "I need at least 30 days of complete transaction history to estimate future spending."
+      },
+      "cash_flow": {
+        "healthy": "For {months} complete months, income na {income}, spending na {spending}, and net cash flow na {net}. The income-to-spending ratio na {ratio}, and e positive.",
+        "unhealthy": "For {months} complete months, income na {income}, spending na {spending}, and net cash flow na {net}. The income-to-spending ratio na {ratio}, and e need attention.",
+        "insufficient_history": "I need the full number of complete calendar months to check your cash-flow quality."
       }
     },
     "beneficiary": {

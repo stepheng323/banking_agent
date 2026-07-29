@@ -107,7 +107,13 @@ def _visible_item_snapshots(surface_view: SurfaceView | None) -> list[dict[str, 
                 "status": metadata.get("status"),
                 "direction": metadata.get("direction") or metadata.get("transaction_type") or metadata.get("type"),
                 "page_position": idx,
-                "absolute_position": (int(page_start) + idx - 1) if isinstance(page_start, int) else None,
+                "absolute_position": (page_start + idx - 1) if isinstance(page_start, int) else None,
+                "selection_kind": item.payload.selection_kind if item.payload else None,
+                "entity_type": item.payload.entity_type if item.payload else None,
+                # Retain the bounded, typed selector—not hidden result rows—so
+                # a later reconciliation can replay the exact evidence that
+                # produced a visible insight item.
+                "selection_payload": item.payload.model_dump(mode="json") if item.payload else None,
             }
         )
     return snapshots
@@ -289,7 +295,7 @@ def _frame_shape_signature(frame: QueryFrame) -> dict[str, Any]:
     }
 
 
-def format_period_label(period: TimeRange | None) -> str | None:
+def format_period_label(period: TimeRange | Any | None) -> str | None:
     if period is None:
         return None
 

@@ -9,11 +9,11 @@ from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.contracts import (
-    InsightEvidenceSelection,
     SelectionPayload,
     SurfaceItemView,
     SurfaceView,
     SurfaceViewMode,
+    VarianceDriversEvidenceSelection,
 )
 from banking.transactions.query.services.analysis.kernel.contracts import (
     Dimension,
@@ -57,7 +57,7 @@ def _render_driver(driver: VarianceDriver, language: str) -> str:
 
 
 def _render_metric_headline(comparison: PeriodComparison, language: str) -> str:
-    measure_key = cast(MessageKey, f"query.insight.measure.{comparison.metric.value}")
+    measure_key = f"query.insight.measure.{comparison.metric.value}"
     measure_label = render_message(measure_key, language)
     change_text = _format_relative_change(comparison.absolute_delta, comparison.relative_delta, language)
 
@@ -108,11 +108,11 @@ def format_variance_result(result: VarianceAnalysisResult, language: str = "en")
     for view in result.dimension_views:
         if not view.drivers:
             continue
-        heading_key = cast(MessageKey, f"query.insight.dimension.{view.dimension.value}")
+        heading_key = f"query.insight.dimension.{view.dimension.value}"
         dimension_label = render_message(heading_key, language)
         lines.append("")
         if result.measure == "cash_flow_overview":
-            measure_label = render_message(cast(MessageKey, f"query.insight.measure.{view.metric.value}"), language)
+            measure_label = render_message(f"query.insight.measure.{view.metric.value}", language)
             lines.append(
                 render_message(
                     "query.insight.dimension_measure_heading",
@@ -158,27 +158,19 @@ def format_variance_result(result: VarianceAnalysisResult, language: str = "en")
 
 
 def _selector_to_payload(selector: InsightEvidenceSelector) -> SelectionPayload:
-    group_by: Literal["category", "merchant", "account"] = "category"
-    if selector.dimension == Dimension.COUNTERPARTY:
-        group_by = "merchant"
-    elif selector.dimension == Dimension.ACCOUNT:
-        group_by = "account"
+    if selector.dimension == Dimension.COUNTERPARTY or selector.dimension == Dimension.ACCOUNT:
+        pass
 
     return SelectionPayload(
         selection_kind="group_bucket",
         entity_type="variance_driver",
         entity_id=f"{selector.metric.value}:{selector.dimension.value}:{selector.bucket_key}",
         label=selector.bucket_key,
-        group_by=group_by,
-        group_key=selector.bucket_key,
-        insight_evidence=InsightEvidenceSelection(
-            measure=selector.measure,
-            dimension=cast(
-                Any,
-                selector.dimension.value,
-            ),
-            bucket_key=selector.bucket_key,
+        insight_evidence=VarianceDriversEvidenceSelection(
             basis=selector.basis,
+            measure=selector.measure,
+            dimension=cast(Any, selector.dimension.value),
+            bucket_key=selector.bucket_key,
             metric=selector.metric.value,
             current_start=selector.current_start.isoformat(),
             current_end=selector.current_end.isoformat(),
@@ -224,7 +216,7 @@ def build_variance_surface_view(
         )
 
     return SurfaceView(
-        mode=SurfaceViewMode.VARIANCE_INSIGHT,
+        mode=SurfaceViewMode.INSIGHT,
         items=items,
         lead_text=format_variance_result(result, language=language),
         context={"view": "variance_insight", "measure": result.measure, "basis": result.basis},
