@@ -10,8 +10,10 @@ from typing import Any, Literal, Protocol
 from banking.presentation.formatters.currency import format_naira_compact
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.continuations.repair import QueryRepairError, apply_query_scope_delta
 from banking.transactions.query.contracts import SelectionPayload, SurfaceItemView
 from banking.transactions.query.grounding.frames import resolve_query_frames
+from banking.transactions.query.models.conversation import QueryScopeDelta
 from banking.transactions.query.models.domain import QueryFrame, QueryIntent, QueryRequest
 from banking.transactions.query.models.operations import (
     AnalyzeOperation,
@@ -37,6 +39,7 @@ class ReconciliationResult:
     source_query_request: QueryRequest | None = None
     matched_item_id: str | None = None
     evidence_payload: SelectionPayload | None = None
+    corrected_query_request: QueryRequest | None = None
     difference_categories: tuple[str, ...] = ()
 
 
@@ -201,6 +204,7 @@ async def reconcile_query_answer(
     target_text: str | None,
     target_amount: float | None,
     referenced_frame_ids: list[str] | None,
+    correction_delta: QueryScopeDelta | None = None,
     locale: str = "en",
 ) -> ReconciliationResult:
     """Reconcile a challenge against one exact earlier visible result."""
@@ -235,6 +239,18 @@ async def reconcile_query_answer(
     frame, item = matches[0]
     key, data, categories = _contract_difference(session_query_request, frame.query_request, item, locale)
     payload = _validated_evidence_payload(frame, item)
+    corrected_request = None
+    if correction_delta is not None:
+        try:
+            corrected_request = apply_query_scope_delta(frame.query_request, correction_delta)
+        except QueryRepairError:
+            return ReconciliationResult(
+                response=render_message("query.clarify.missing_scope", locale),
+                outcome="clarification",
+                source_frame_id=frame.frame_id,
+                source_query_request=frame.query_request.model_copy(deep=True),
+                matched_item_id=item.id,
+            )
     return ReconciliationResult(
         response=render_message(key, locale, data),
         outcome="evidence_replay" if payload is not None else "scope_explanation",
@@ -242,6 +258,7 @@ async def reconcile_query_answer(
         source_query_request=frame.query_request.model_copy(deep=True),
         matched_item_id=item.id,
         evidence_payload=payload,
+        corrected_query_request=corrected_request,
         difference_categories=categories,
     )
 

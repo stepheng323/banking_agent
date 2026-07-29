@@ -815,6 +815,7 @@ async def resolve_result_continuation_updates(
             target_text=getattr(decision, "target_text", None),
             target_amount=getattr(decision, "target_amount", None),
             referenced_frame_ids=getattr(decision, "referenced_frame_ids", None),
+            correction_delta=getattr(decision, "repair_delta", None),
             locale=locale,
         )
         logger.info(
@@ -823,7 +824,26 @@ async def resolve_result_continuation_updates(
             source_frame_id=reconciliation.source_frame_id,
             difference_categories=list(reconciliation.difference_categories),
             has_evidence=reconciliation.evidence_payload is not None,
+            corrected_rerun=reconciliation.corrected_query_request is not None,
         )
+        if reconciliation.corrected_query_request is not None:
+            logger.info(
+                "query_reconciliation_corrected_rerun",
+                source_frame_id=reconciliation.source_frame_id,
+                difference_categories=list(reconciliation.difference_categories),
+            )
+            return {
+                "query_request": reconciliation.corrected_query_request,
+                "resolver_message": reconciliation.response,
+                "flow_state": "executing",
+                "current_page": 0,
+                "show_expanded": False,
+                "session_active": True,
+                "selected_frame_id": reconciliation.source_frame_id,
+                "continuation_type": "reconcile",
+                "continuation_delta_type": "repair",
+                **step._semantic_trace_updates(decision),
+            }
         if reconciliation.outcome == "evidence_replay":
             source_request = reconciliation.source_query_request
             payload = reconciliation.evidence_payload

@@ -14,6 +14,7 @@ from banking.transactions.query.continuations.result_paths import (
     _maybe_rebuild_intent_correction_request,
 )
 from banking.transactions.query.contracts import CounterpartyConcentrationEvidenceSelection
+from banking.transactions.query.models.conversation import QueryScopeDelta
 from banking.transactions.query.models.domain import (
     QueryFrame,
     QueryFrameFacts,
@@ -261,6 +262,33 @@ async def test_reconcile_requires_text_and_amount_when_both_are_supplied() -> No
     )
 
     assert result.outcome == "clarification"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_applies_correction_to_exact_source_frame_contract() -> None:
+    current = _concentration_request(date(2026, 7, 1), date(2026, 7, 31))
+    source = _concentration_request(date(2026, 6, 1), date(2026, 6, 30))
+    frame = _frame(
+        "qf_1",
+        source,
+        [{"id": "uber", "label": "Uber", "amount": 45000.0}],
+    )
+
+    result = await reconcile_query_answer(
+        session_query_request=current,
+        query_frames=[frame],
+        target_text="uber",
+        target_amount=None,
+        referenced_frame_ids=["qf_1"],
+        correction_delta=QueryScopeDelta(direction_mutation="replace", direction="credit"),
+        locale="en",
+    )
+
+    assert result.corrected_query_request is not None
+    assert result.corrected_query_request.time_start == date(2026, 6, 1)
+    assert result.corrected_query_request.time_end == date(2026, 6, 30)
+    assert result.corrected_query_request.filters is not None
+    assert result.corrected_query_request.filters.transaction_type == "credit"
 
 
 def test_intent_correction_rebuilds_concentration_to_beneficiary_summary() -> None:

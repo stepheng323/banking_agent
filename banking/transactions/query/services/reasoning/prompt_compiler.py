@@ -95,6 +95,8 @@ _INSIGHT = """Insight rules:
   evidence selector from the displayed or retained source frame.
 - A challenge across answers uses reconcile with target_text and/or target_amount. Use referenced_frame_ids only for
   frames that appear in the supplied compact frame context; never fabricate an ID.
+- If the challenge also states a correction, keep reconcile and include the sparse repair_delta. The runtime applies
+  it to the exact matched source-frame contract after explaining the difference.
 - For variance drivers only: income/spending/net-cash-flow changes only the measure; account/category/counterparty
   changes only dimensions; overall financial change uses cash_flow_overview.
 - For duplicates, recurring patterns, anomalies, and concentration: retain the active insight type and use evidence
