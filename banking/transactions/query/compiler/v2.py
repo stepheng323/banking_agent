@@ -247,7 +247,12 @@ def _operation(
         return RetrieveOperation(
             scope=scope,
             projection=RetrieveProjection(shape=shape, fact_field=cast(QueryFactField | None, answer_fact_field)),
-            selection=RetrieveSelection(cardinality="one", order="latest", limit=result_limit or 1),
+            selection=RetrieveSelection(
+                cardinality="one",
+                order=cast(Literal["latest", "oldest"], result_reference or "latest"),
+                order_explicit=result_reference is not None,
+                limit=result_limit or 1,
+            ),
         )
     if intent in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH, QueryIntent.TRANSACTION_DETAIL}:
         projection_shape: Literal["fact", "detail", "list"] = (

@@ -91,17 +91,9 @@ async def handle_insight(
         or getattr(insight_result, "groups", None)
         or []
     )
-    confidences = [
-        float(value)
-        for item in candidates
-        if (value := getattr(item, "confidence", None)) is not None
-    ]
+    confidences = [float(value) for item in candidates if (value := getattr(item, "confidence", None)) is not None]
     confidence_band = (
-        "high"
-        if confidences and max(confidences) >= 0.9
-        else "medium"
-        if confidences
-        else "not_applicable"
+        "high" if confidences and max(confidences) >= 0.9 else "medium" if confidences else "not_applicable"
     )
     logger.info(
         "query_insight_completed",
@@ -118,9 +110,8 @@ async def handle_insight(
     )
     summary_text = presentation.summary_text
     is_available = bool(getattr(result_metadata, "available", getattr(insight_result, "available", True)))
-    if (
-        getattr(getattr(result_metadata, "coverage", None), "value", None) == "partial"
-        and getattr(result_metadata, "available", False)
+    if getattr(getattr(result_metadata, "coverage", None), "value", None) == "partial" and getattr(
+        result_metadata, "available", False
     ):
         summary_text = f"{summary_text}\n\n{render_message('query.insight.coverage_partial', language)}"
     surface_view = presentation.surface_view.model_copy(

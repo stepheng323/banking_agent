@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from banking.transactions.query.continuations.beneficiary_grounding import (
     ground_unique_saved_recipient,
     recipient_clarification_candidates,
@@ -7,7 +9,25 @@ from banking.transactions.query.continuations.beneficiary_grounding import (
 from banking.transactions.query.continuations.clarification_state import resolve_selection_clarification
 from banking.transactions.query.models.domain import Filters, QueryIntent, QueryRequest
 from banking.transactions.query.models.extraction import ClarificationOperation, PendingClarificationState
+from banking.transactions.query.nodes.extraction import ExtractionStep
+from banking.transactions.query.session_state import (
+    build_query_session_v3,
+    pending_input_from_legacy,
+    project_query_session_v3,
+)
 from tests.query.factories import make_query_request
+
+
+class _DummyStructured:
+    async def ainvoke(self, prompt: str) -> object:
+        del prompt
+        raise AssertionError("numeric clarification selection must not invoke the reasoner")
+
+
+class _DummyLLM:
+    def with_structured_output(self, schema: object) -> _DummyStructured:
+        del schema
+        return _DummyStructured()
 
 
 def _contract(recipient: str) -> QueryRequest:
@@ -83,3 +103,68 @@ def test_selected_saved_recipient_resumes_query_with_exact_filter() -> None:
     assert updates is not None
     assert updates["continuation_type"] == "recipient_filter"
     assert updates["query_request"].filters.counterparty == ["Tolu Adebayo"]
+    assert updates["execute_query_plan"] is True
+    assert updates["execution_contract"].request.filters.counterparty == ["Tolu Adebayo"]
+    assert updates["query_result"] is None
+
+
+def test_selection_type_survives_v3_checkpoint_projection() -> None:
+    request = _contract("Tolu")
+    candidate = recipient_clarification_candidates(request, _BENEFICIARIES)[0]
+    pending = PendingClarificationState(
+        original_query="When last did I send money to Tolu?",
+        current_intent=QueryIntent.TRANSACTION_LIST,
+        clarification_type="selection",
+        candidate_payloads=[candidate],
+        original_operation=ClarificationOperation(grounded_operation="recipient_filter"),
+        query_request=request.model_dump(mode="json"),
+    )
+
+    session = build_query_session_v3(
+        request=None,
+        result=None,
+        raw_frames=[],
+        pending_input=pending_input_from_legacy(pending),
+    )
+    projected = project_query_session_v3(session.model_dump(mode="json"))
+
+    assert projected is not None
+    restored = PendingClarificationState.model_validate(projected["pending_clarification"])
+    assert restored.clarification_type == "selection"
+    updates = resolve_selection_clarification(restored, "1", locale="en", session={})
+    assert updates is not None
+    assert updates["query_request"].filters.counterparty == ["Tolu Adeyemi"]
+
+
+@pytest.mark.asyncio
+async def test_v3_numeric_selection_is_resolved_before_reasoner() -> None:
+    request = _contract("Tolu")
+    candidate = recipient_clarification_candidates(request, _BENEFICIARIES)[0]
+    pending = PendingClarificationState(
+        original_query="When last did I send money to Tolu?",
+        current_intent=QueryIntent.TRANSACTION_LIST,
+        clarification_type="selection",
+        candidate_payloads=[candidate],
+        original_operation=ClarificationOperation(grounded_operation="recipient_filter"),
+        query_request=request.model_dump(mode="json"),
+    )
+    session = build_query_session_v3(
+        request=None,
+        result=None,
+        raw_frames=[],
+        pending_input=pending_input_from_legacy(pending),
+    )
+
+    step = ExtractionStep(_DummyLLM())
+    result = await step.run(
+        {
+            "message": "1",
+            "language": "en",
+            "today": date(2026, 7, 19),
+            "query_session": project_query_session_v3(session.model_dump(mode="json")),
+        }
+    )
+
+    assert result.outcome.value == "ok"
+    assert result.patch["flow_state"] == "executing"
+    assert result.patch["query_request"].filters.counterparty == ["Tolu Adeyemi"]

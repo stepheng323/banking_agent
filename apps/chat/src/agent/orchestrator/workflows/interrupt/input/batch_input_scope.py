@@ -66,9 +66,7 @@ def resolve_batch_input_message_scope(
         if slot.kind == "selection" and slot.field == "beneficiary_id":
             raw_candidates = task.payload.get("beneficiary_candidates")
             candidates = (
-                [item for item in raw_candidates if isinstance(item, dict)]
-                if isinstance(raw_candidates, list)
-                else []
+                [item for item in raw_candidates if isinstance(item, dict)] if isinstance(raw_candidates, list) else []
             )
             if candidates and (selection := _selection_reply(text, candidates)):
                 scoped[slot.task_id] = selection

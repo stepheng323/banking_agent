@@ -27,7 +27,7 @@ def _shortcut_outcome(updates: PlannerUpdates) -> TurnOutcomeKind:
 def unavailable_response(current_locale: str) -> PlannerResolution:
     return _planner_route_updates(
         updates={
-        "final_response": render_safe_capability_fallback(current_locale),
+            "final_response": render_safe_capability_fallback(current_locale),
         },
         decision="planner_unavailable",
         outcome_kind=TurnOutcomeKind.DIRECT_RESPONSE,
@@ -45,8 +45,8 @@ def quoted_replay_dispatch(quoted_replay_updates: PlannerUpdates) -> PlannerReso
 def context_read_shortcut(shortcut_updates: PlannerUpdates) -> PlannerResolution:
     return _planner_route_updates(
         updates={
-        **shortcut_updates,
-        "path_shape": shortcut_updates.get("path_shape") or "planner",
+            **shortcut_updates,
+            "path_shape": shortcut_updates.get("path_shape") or "planner",
         },
         decision="planner_context_read",
         outcome_kind=_shortcut_outcome(shortcut_updates),
@@ -68,8 +68,8 @@ def non_task_response(
 ) -> PlannerResolution:
     return _planner_route_updates(
         updates={
-        **handled_response,
-        "path_shape": handled_response.get("path_shape") or "planner",
+            **handled_response,
+            "path_shape": handled_response.get("path_shape") or "planner",
         },
         decision=planner_output.primary_intent or "planner_non_task_response",
         outcome_kind=TurnOutcomeKind.DIRECT_RESPONSE,
@@ -86,11 +86,11 @@ def policy_block(
 ) -> PlannerResolution:
     return _planner_route_updates(
         updates={
-        "final_response": response,
-        "normalized_instruction": normalized_instruction,
-        "planner_output": planner_output,
-        "path_shape": "planner_capability_blocked",
-        **locale_updates,
+            "final_response": response,
+            "normalized_instruction": normalized_instruction,
+            "planner_output": planner_output,
+            "path_shape": "planner_capability_blocked",
+            **locale_updates,
         },
         decision="capability_blocked",
         outcome_kind=TurnOutcomeKind.POLICY_BLOCK,
@@ -107,11 +107,11 @@ def batch_limit_response(
 ) -> PlannerResolution:
     return _planner_route_updates(
         updates={
-        "final_response": response,
-        "normalized_instruction": normalized_instruction,
-        "planner_output": planner_output,
-        "path_shape": "planner",
-        **locale_updates,
+            "final_response": response,
+            "normalized_instruction": normalized_instruction,
+            "planner_output": planner_output,
+            "path_shape": "planner",
+            **locale_updates,
         },
         decision="transaction_batch_limit",
         outcome_kind=TurnOutcomeKind.POLICY_BLOCK,
@@ -131,19 +131,19 @@ def task_dispatch(
     pending_query_clarification_update = task_updates.get("pending_query_clarification_update")
     return _planner_route_updates(
         updates={
-        "tasks": task_updates.get("new_tasks", {}),
-        "waves": task_updates.get("waves", []),
-        "current_wave_index": 0,
-        "normalized_instruction": normalized_instruction,
-        "planner_output": planner_output,
-        "policy_notice": policy_notice,
-        "path_shape": "planner",
-        "pending_query_clarification": (
-            pending_query_clarification_update
-            if pending_query_clarification_update
-            else state_view.pending_query_clarification
-        ),
-        **locale_updates,
+            "tasks": task_updates.get("new_tasks", {}),
+            "waves": task_updates.get("waves", []),
+            "current_wave_index": 0,
+            "normalized_instruction": normalized_instruction,
+            "planner_output": planner_output,
+            "policy_notice": policy_notice,
+            "path_shape": "planner",
+            "pending_query_clarification": (
+                pending_query_clarification_update
+                if pending_query_clarification_update
+                else state_view.pending_query_clarification
+            ),
+            **locale_updates,
         },
         decision=planner_output.primary_intent or "planner_task_plan",
         outcome_kind=TurnOutcomeKind.TASK_DISPATCH,

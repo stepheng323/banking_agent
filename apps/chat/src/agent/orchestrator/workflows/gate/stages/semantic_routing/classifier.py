@@ -92,10 +92,9 @@ async def _classify_semantic_route(ctx: GateContext) -> Any | None:
         if isinstance(router, SemanticRouterLLM):
             frame = ContextFrameManager().latest_active_frame(ctx.state)
             signals = SemanticRouterPromptSignals.from_summary(ctx.turn_summary)
-            unsupported_candidate = (
-                detect_unsupported_capability(ctx.message_text) is None
-                and should_try_semantic_unsupported_capability(ctx.message_text)
-            )
+            unsupported_candidate = detect_unsupported_capability(
+                ctx.message_text
+            ) is None and should_try_semantic_unsupported_capability(ctx.message_text)
             if unsupported_candidate:
                 signals = replace(signals, unsupported_capability_candidate=True, direct_reply_candidate=True)
             elif looks_like_obvious_casual_or_meta_turn(ctx.message_text):

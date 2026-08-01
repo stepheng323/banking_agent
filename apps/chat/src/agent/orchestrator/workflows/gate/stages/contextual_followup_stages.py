@@ -240,9 +240,8 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> RouteResolution
     ):
         return None
 
-    if (
-        ContextFrameManager().latest_active_frame(ctx.state) is not None
-        and _is_substantive_contextual_reaction(ctx.message_text, candidate_locales)
+    if ContextFrameManager().latest_active_frame(ctx.state) is not None and _is_substantive_contextual_reaction(
+        ctx.message_text, candidate_locales
     ):
         logger.info("gate_contextual_worker_followup_deferred_to_semantic_context")
         return None

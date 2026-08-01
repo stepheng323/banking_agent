@@ -210,9 +210,7 @@ def _active_surface_context_from_result(result: TransactionResult) -> dict[str, 
 def _active_surface_context_from_session(session: dict[str, Any]) -> dict[str, Any]:
     raw_contract = session["query_request"]
     query_request = (
-        raw_contract
-        if isinstance(raw_contract, QueryRequest)
-        else QueryRequest.model_validate(raw_contract)
+        raw_contract if isinstance(raw_contract, QueryRequest) else QueryRequest.model_validate(raw_contract)
     )
     raw_result = session.get("query_result")
     summary_text = str(raw_result.get("summary_text") or "") if isinstance(raw_result, dict) else ""
@@ -333,7 +331,10 @@ async def test_worker_prefers_pending_clarification_over_visible_query_surface()
             "today": date(2026, 3, 4),
             "pending_query_clarification": pending_snapshot,
             **_active_surface_context_from_session(
-                {"query_request": query_request.model_dump(mode="json"), "query_result": {"summary_text": "Transactions"}}
+                {
+                    "query_request": query_request.model_dump(mode="json"),
+                    "query_result": {"summary_text": "Transactions"},
+                }
             ),
         },
     )

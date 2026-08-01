@@ -293,11 +293,12 @@ def format_batch_funding_approval_request(
 
             lines = [
                 f"This batch needs {format_naira(total_demanded)}, but your {anchor_bank} only has {anchor_available}.",
-                ""
+                "",
             ]
 
             eligible_candidates = [
-                option for option in source_options or []
+                option
+                for option in source_options or []
                 if _source_option_id(option) not in anchor_ids and _source_option_available(option) > 0
             ]
 
@@ -372,10 +373,7 @@ def format_batch_source_cap_shortfall(
             f"keeping this selection leaves you short {format_naira(deficit)}."
         )
         lines.append("")
-        lines.append(
-            "You can reduce an amount, or choose two entirely different source accounts "
-            "with higher balances."
-        )
+        lines.append("You can reduce an amount, or choose two entirely different source accounts with higher balances.")
     else:
         lines.append(
             f"Because transfers are limited to a maximum of {max_source_accounts} pooled accounts, "

@@ -93,9 +93,7 @@ def analyze_request(scope: QueryScope, analysis: VarianceDriversSpec | None = No
 
 def assess_request(amount: float, *, item_name: str | None = None) -> QueryRequest:
     return QueryRequest(
-        operation=AssessOperation(
-            assessment=AffordabilitySpec(amount=Money(amount=amount), item_name=item_name)
-        )
+        operation=AssessOperation(assessment=AffordabilitySpec(amount=Money(amount=amount), item_name=item_name))
     )
 
 
@@ -141,9 +139,7 @@ def make_query_request(
             direction=filters.transaction_type,
             statuses=[filters.status] if filters.status else [],
             categories=list(filters.category or []),
-            counterparty=CounterpartySelector(
-                role="any", reference=NamedCounterparty(name=filters.counterparty[0])
-            )
+            counterparty=CounterpartySelector(role="any", reference=NamedCounterparty(name=filters.counterparty[0]))
             if filters.counterparty
             else None,
             narration=TextMatch(query=filters.merchant[0]) if filters.merchant else None,
@@ -174,10 +170,20 @@ def make_query_request(
         group_by = "account" if aggregation and aggregation.group_by == "account" else None
         return summarize_request(scope, CashFlowSummarySpec(group_by=group_by))
     if intent in {QueryIntent.ANALYTICS_SUMMARY, QueryIntent.BENEFICIARY_SUMMARY}:
-        measure = "income" if predicate.direction == "credit" else "spending" if predicate.direction == "debit" else "transactions"
+        measure = (
+            "income"
+            if predicate.direction == "credit"
+            else "spending"
+            if predicate.direction == "debit"
+            else "transactions"
+        )
         if intent == QueryIntent.BENEFICIARY_SUMMARY or (aggregation and aggregation.group_by):
             group_by = aggregation.group_by if aggregation else None
-            dimension = "counterparty" if intent == QueryIntent.BENEFICIARY_SUMMARY or group_by == "merchant" else group_by or "category"
+            dimension = (
+                "counterparty"
+                if intent == QueryIntent.BENEFICIARY_SUMMARY or group_by == "merchant"
+                else group_by or "category"
+            )
             return summarize_request(
                 scope,
                 GroupedSummarySpec(
@@ -194,13 +200,7 @@ def make_query_request(
             scope,
             ScalarSummarySpec(measure=measure, statistic=statistic),  # type: ignore[arg-type]
         )
-    shape = (
-        "fact"
-        if answer_fact_field
-        else "detail"
-        if intent == QueryIntent.TRANSACTION_DETAIL
-        else "list"
-    )
+    shape = "fact" if answer_fact_field else "detail" if intent == QueryIntent.TRANSACTION_DETAIL else "list"
     return retrieve_request(
         scope,
         projection=RetrieveProjection(shape=shape, fact_field=answer_fact_field),  # type: ignore[arg-type]

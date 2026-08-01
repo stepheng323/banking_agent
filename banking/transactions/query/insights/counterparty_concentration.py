@@ -212,9 +212,7 @@ def build_counterparty_concentration_items(
     items: list[dict[str, Any]] = []
     for index, group in enumerate(result.groups):
         dates = [
-            effective.date()
-            for row in group.transactions
-            if (effective := row_effective_datetime(row)) is not None
+            effective.date() for row in group.transactions if (effective := row_effective_datetime(row)) is not None
         ]
         items.append(
             {

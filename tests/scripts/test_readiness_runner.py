@@ -134,7 +134,7 @@ def test_llm_call_budget_enforces_role_token_ceilings() -> None:
             {
                 "event_name": "semantic_router_llm_call",
                 "prompt_token_estimate": 1601,
-                "response_schema_token_estimate": 751,
+                "response_schema_token_estimate": 1001,
                 "provider_input_tokens": 2501,
             },
         )
@@ -193,7 +193,8 @@ def test_query_self_healing_readiness_covers_repairs_composites_and_preferences(
     assert all(turn.expectation.llm_call_budget is not None for turn in scenario.turns)
     assert ("query_parser_llm_call", 0) in scenario.turns[1].expectation.llm_call_budget.max_event_counts
     assert ("outbox_bridge_llm_call", 0) in scenario.turns[2].expectation.llm_call_budget.max_event_counts
-    assert ("planner_llm_call", 1) in scenario.turns[-1].expectation.llm_call_budget.required_event_counts
+    assert ("semantic_router_llm_call", 1) in scenario.turns[-1].expectation.llm_call_budget.required_event_counts
+    assert ("planner_llm_call", 0) in scenario.turns[-1].expectation.llm_call_budget.max_event_counts
 
 
 def test_assert_readiness_turn_checks_planner_quality_and_llm_counts() -> None:

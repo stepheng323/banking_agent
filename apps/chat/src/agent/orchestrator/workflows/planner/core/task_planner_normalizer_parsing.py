@@ -17,6 +17,8 @@ DATA_PLAN_PATTERN = re.compile(r"(?<!\d)(\d{1,3}(?:\.\d+)?)\s*(gb|mb)(?!\w)", re
 BALANCE_SHARE_PERCENT_PATTERN = re.compile(r"\b(?P<pct>\d{1,3})\s*%\b", re.IGNORECASE)
 
 _CANONICAL_NETWORKS = {"MTN", "AIRTEL", "GLO", "9MOBILE"}
+
+
 def digits_only(value: str) -> str:
     return re.sub(r"\D+", "", value or "")
 

@@ -31,9 +31,7 @@ class AccountFormatter:
         """Format list of accounts for display."""
         return render_body_blocks_text(
             AccountFormatter.format_account_list_blocks(accounts, locale=locale, has_next=has_next)
-        ) or (
-            render_message("account.list.empty", locale)
-        )
+        ) or (render_message("account.list.empty", locale))
 
     @staticmethod
     def format_default_account(account: Any | None, locale: str = "en") -> str:

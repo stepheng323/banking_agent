@@ -90,6 +90,7 @@ def _filter_selected_accounts(accounts: list[Any], selected_ids: set[str]) -> li
         if str(_account_value(account, "account_id", "") or _account_value(account, "id", "")) in selected_ids
     ]
 
+
 ACTION_CAPABILITY_MAP: dict[str, AccountCapability] = {
     "list_accounts": AccountCapability.LIST_ACCOUNTS,
     "count": AccountCapability.LIST_ACCOUNTS,
@@ -177,10 +178,7 @@ class AccountWorker:
         read_request = normalize_read_request(payload)
         if read_request is not None and (
             (read_request.subject == "balance" and balance_contract is None)
-            or (
-                read_request.subject in {"linked_account", "default_account"}
-                and lifecycle_contract is None
-            )
+            or (read_request.subject in {"linked_account", "default_account"} and lifecycle_contract is None)
         ):
             return AccountResult(
                 outcome=AccountOutcome.FAILED,
@@ -198,9 +196,7 @@ class AccountWorker:
             )
         response_shape = read_request.response_shape if read_request is not None else ""
         selected_entity_ids = {
-            str(value)
-            for value in payload.get("selected_entity_ids", [])
-            if isinstance(value, str) and value
+            str(value) for value in payload.get("selected_entity_ids", []) if isinstance(value, str) and value
         }
         balance_default_scope = False
         if read_request is not None:
@@ -264,9 +260,7 @@ class AccountWorker:
                         outcome=AccountOutcome.NEEDS_INPUT,
                         required_fields=["identifier"],
                         prompt=render_message(
-                            "account.prompt.reinitiate_clarify",
-                            locale,
-                            {"bank_name": pending_accounts[0].bank_name}
+                            "account.prompt.reinitiate_clarify", locale, {"bank_name": pending_accounts[0].bank_name}
                         ),
                         patch=patch,
                     )
@@ -306,10 +300,7 @@ class AccountWorker:
                 (
                     account
                     for account in current_accounts
-                    if str(
-                        _account_value(account, "account_id", "")
-                        or _account_value(account, "id", "")
-                    )
+                    if str(_account_value(account, "account_id", "") or _account_value(account, "id", ""))
                     == selected_ref.entity_id
                 ),
                 None,
@@ -468,10 +459,7 @@ class AccountWorker:
                         (
                             account
                             for account in accounts
-                            if str(
-                                _account_value(account, "account_id", "")
-                                or _account_value(account, "id", "")
-                            )
+                            if str(_account_value(account, "account_id", "") or _account_value(account, "id", ""))
                             == str(identifier)
                         ),
                         None,
@@ -494,7 +482,7 @@ class AccountWorker:
                         result = await mandate_service.reinitiate_mandate(
                             phone_number=profile.get("phone_number") or "",
                             account_id=str(selected_account.account_id),
-                            channel="whatsapp"
+                            channel="whatsapp",
                         )
                         if result.get("success"):
                             # The outbox message with instructions is enqueued by MandateService
@@ -555,9 +543,7 @@ class AccountWorker:
                         locale=locale,
                     )
                 elif (
-                    balance_contract is not None
-                    and balance_contract.operation == "total"
-                    and total_balance is not None
+                    balance_contract is not None and balance_contract.operation == "total" and total_balance is not None
                 ):
                     response = render_message(
                         "account.balance.total",
@@ -587,9 +573,7 @@ class AccountWorker:
                 page = account_list[offset : offset + limit]
                 has_next = offset + limit < total_count
                 if response_shape == "fact_status":
-                    ready_count = sum(
-                        1 for account in account_list if effective_mandate_status(account) == "ready"
-                    )
+                    ready_count = sum(1 for account in account_list if effective_mandate_status(account) == "ready")
                     response = render_message(
                         "account.readiness.fact",
                         locale,
@@ -669,15 +653,13 @@ class AccountWorker:
             identifier_id_matches = [
                 account
                 for account in accounts
-                if str(_account_value(account, "account_id", "") or _account_value(account, "id", ""))
-                == identifier
+                if str(_account_value(account, "account_id", "") or _account_value(account, "id", "")) == identifier
             ]
             bank_matches = [
                 account
                 for account in accounts
                 if identifier_normalized
-                and normalize_bank_name(str(_account_value(account, "bank_name", "") or ""))
-                == identifier_normalized
+                and normalize_bank_name(str(_account_value(account, "bank_name", "") or "")) == identifier_normalized
             ]
             matches = identifier_id_matches or bank_matches
             if len(matches) == 1:
@@ -702,9 +684,7 @@ class AccountWorker:
                 patch=patch,
             )
 
-        account_id = str(
-            _account_value(selected, "account_id", "") or _account_value(selected, "id", "")
-        )
+        account_id = str(_account_value(selected, "account_id", "") or _account_value(selected, "id", ""))
         version_token = _account_version_token(selected)
         if not account_id or not version_token:
             return AccountResult(
@@ -756,10 +736,7 @@ class AccountWorker:
 
         async with UnitOfWork() as preflight_uow:
             accounts = await preflight_uow.accounts.get_by_user_for_update(user_id)
-        by_id = {
-            str(getattr(account, "account_id", "") or getattr(account, "id", "")): account
-            for account in accounts
-        }
+        by_id = {str(getattr(account, "account_id", "") or getattr(account, "id", "")): account for account in accounts}
         raw_previous_outcomes = payload.get("bulk_item_outcomes")
         previous_outcomes = (
             {
@@ -774,10 +751,7 @@ class AccountWorker:
         stale = [
             ref
             for ref, account in zip(request.targets, selected, strict=True)
-            if (
-                account is None
-                and previous_outcomes.get(ref.entity_id) != "succeeded"
-            )
+            if (account is None and previous_outcomes.get(ref.entity_id) != "succeeded")
             or (
                 account is not None
                 and previous_outcomes.get(ref.entity_id) != "succeeded"
@@ -804,9 +778,7 @@ class AccountWorker:
             )
 
         default_selected = any(bool(getattr(account, "is_default", False)) for account in selected_accounts)
-        replacement_id = str(
-            payload.get("replacement_default_account_id") or payload.get("identifier") or ""
-        ).strip()
+        replacement_id = str(payload.get("replacement_default_account_id") or payload.get("identifier") or "").strip()
         selected_ids = {ref.entity_id for ref in request.targets}
         if default_selected and (not replacement_id or replacement_id in selected_ids or replacement_id not in by_id):
             return AccountResult(
@@ -841,9 +813,7 @@ class AccountWorker:
         item_outcomes = dict(previous_outcomes)
         for ref in request.targets:
             if previous_outcomes.get(ref.entity_id) == "succeeded":
-                outcomes.append(
-                    render_message("account.unlink.item_success", locale, {"item": ref.display_label})
-                )
+                outcomes.append(render_message("account.unlink.item_success", locale, {"item": ref.display_label}))
         for ref, account in selected_pairs:
             mandate_id = getattr(account, "mandate_id", None)
             if mandate_id:
@@ -853,9 +823,7 @@ class AccountWorker:
                         raise RuntimeError("mandate_revocation_failed")
                 except Exception:
                     failed_count += 1
-                    outcomes.append(
-                        render_message("account.unlink.item_failed", locale, {"item": ref.display_label})
-                    )
+                    outcomes.append(render_message("account.unlink.item_failed", locale, {"item": ref.display_label}))
                     item_outcomes[ref.entity_id] = "failed"
                     continue
             try:
@@ -871,9 +839,7 @@ class AccountWorker:
                     if not deleted:
                         raise RuntimeError("local_unlink_failed")
                     await uow.commit()
-                outcomes.append(
-                    render_message("account.unlink.item_success", locale, {"item": ref.display_label})
-                )
+                outcomes.append(render_message("account.unlink.item_success", locale, {"item": ref.display_label}))
                 item_outcomes[ref.entity_id] = "succeeded"
             except Exception:
                 failed_count += 1
@@ -914,11 +880,7 @@ class AccountWorker:
             ),
             patch={
                 **patch,
-                "bulk_mutation": (
-                    request.model_dump(mode="json", exclude_none=True)
-                    if failed_count
-                    else None
-                ),
+                "bulk_mutation": (request.model_dump(mode="json", exclude_none=True) if failed_count else None),
                 "bulk_item_outcomes": item_outcomes,
                 "invalidate_conversation_set_domain": "linked_account",
                 "account_lifecycle_contract": refreshed_contract.model_dump(

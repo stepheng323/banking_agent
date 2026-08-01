@@ -51,9 +51,15 @@ async def execute_cash_flow_quality(
         deep=True,
         update={
             "operation": operation.model_copy(
-                update={"scope": operation.scope.model_copy(update={"period": operation.scope.period.model_copy(
-                    update={"start": history_start, "end": history_end}
-                )})}
+                update={
+                    "scope": operation.scope.model_copy(
+                        update={
+                            "period": operation.scope.period.model_copy(
+                                update={"start": history_start, "end": history_end}
+                            )
+                        }
+                    )
+                }
             )
         },
     )
@@ -87,11 +93,7 @@ async def execute_cash_flow_quality(
     available = available and income.available and spending.available
     if not available and unavailable_reason is None:
         unavailable_reason = income.unavailable_reason or spending.unavailable_reason
-    ratio = (
-        income.value / spending.value
-        if available and spending.value > 0
-        else Decimal("0")
-    )
+    ratio = income.value / spending.value if available and spending.value > 0 else Decimal("0")
     included, excluded, uncertain = filter_insight_rows(
         dataset,
         confidence_policy=analysis.confidence_policy,

@@ -49,6 +49,4 @@ def test_exact_alias_from_compact_context_requests_safe_hydration() -> None:
 
     assert patch is not None
     assert patch["beneficiary_id"] == "bene-access"
-    assert patch["beneficiary_candidates"] == [
-        {"beneficiary_id": "bene-access", "recipient_name": "Tolu Access"}
-    ]
+    assert patch["beneficiary_candidates"] == [{"beneficiary_id": "bene-access", "recipient_name": "Tolu Access"}]

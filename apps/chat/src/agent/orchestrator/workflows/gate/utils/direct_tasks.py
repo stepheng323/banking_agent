@@ -18,6 +18,7 @@ from shared.types.conversation_sets import (
     ScheduleQueryContract,
 )
 from shared.types.planner import QueryInsightType
+from shared.types.query_preferences import QueryPreferenceUpdate
 from shared.types.read import ReadRequest
 
 
@@ -69,6 +70,7 @@ def _build_direct_domain_task(
     schedule_contract: ScheduleQueryContract | None = None,
     account_lifecycle_contract: AccountLifecycleContract | None = None,
     query_insight_type: QueryInsightType | None = None,
+    query_preferences: QueryPreferenceUpdate | None = None,
 ) -> tuple[str, TaskSpec]:
     if domain == "query":
         task_id = _next_direct_query_task_id(state_view.tasks)
@@ -97,9 +99,13 @@ def _build_direct_domain_task(
         ("account_lifecycle_contract", account_lifecycle_contract, "linked_account"),
     )
     for key, contract, subject in specialized_contracts:
-        if contract is not None and read_request is not None and (
-            read_request.subject == subject
-            or (key == "account_lifecycle_contract" and read_request.subject == "default_account")
+        if (
+            contract is not None
+            and read_request is not None
+            and (
+                read_request.subject == subject
+                or (key == "account_lifecycle_contract" and read_request.subject == "default_account")
+            )
         ):
             payload[key] = contract.model_dump(mode="json", exclude_none=True)
     if read_request is None or read_request.subject != "balance":
@@ -113,9 +119,16 @@ def _build_direct_domain_task(
             last_operation=balance_contract.operation,
         ).model_dump(mode="json", exclude_none=True)
     if domain == "query":
-        if mode == "new":
+        if query_preferences is not None:
+            payload["action"] = "update_query_preferences"
+            payload["preferences_update"] = query_preferences.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_defaults=True,
+            )
+        elif mode == "new":
             payload["force_new_query"] = True
-        if query_insight_type is not None:
+        if query_insight_type is not None and query_preferences is None:
             payload["query_insight_type"] = query_insight_type
     elif domain == "account" and read_request is not None:
         if read_request.subject == "balance":
@@ -132,9 +145,7 @@ def _build_direct_domain_task(
             payload["skip_parse"] = True
         elif read_request.subject == "linked_account":
             payload["action"] = (
-                "count"
-                if read_request.response_shape in {"fact_count", "fact_bool"}
-                else "list_accounts"
+                "count" if read_request.response_shape in {"fact_count", "fact_bool"} else "list_accounts"
             )
             if read_request.bank_name:
                 payload["identifier"] = read_request.bank_name

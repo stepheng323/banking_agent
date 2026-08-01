@@ -172,9 +172,7 @@ class AccountTaskParameters(BaseTaskParameters):
 
     @model_validator(mode="after")
     def validate_balance_contract(self) -> "AccountTaskParameters":
-        if self.balance_contract is not None and (
-            self.read_request is None or self.read_request.subject != "balance"
-        ):
+        if self.balance_contract is not None and (self.read_request is None or self.read_request.subject != "balance"):
             raise ValueError("balance_contract requires a balance read_request")
         if self.account_lifecycle_contract is not None and (
             self.read_request is None or self.read_request.subject not in {"linked_account", "default_account"}
@@ -1701,6 +1699,11 @@ class SemanticRouteDecision(BaseModel):
         alias="unsupported_cap",
         description="Optional key of the detected unsupported capability, else null",
     )
+    query_preferences: QueryPreferenceUpdate | None = Field(
+        default=None,
+        alias="q_prefs",
+        description="Explicit persistent query-presentation or query-scope preference mutation.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -1733,9 +1736,7 @@ class SemanticRouteDecision(BaseModel):
                 bank_name=request.bank_name,
                 response_shape=request.response_shape,
             )
-        elif request.subject == "beneficiary" and completed.get(
-            "beneficiary_contract", completed.get("ben")
-        ) is None:
+        elif request.subject == "beneficiary" and completed.get("beneficiary_contract", completed.get("ben")) is None:
             operation: Literal["count", "existence", "list", "detail"] = "list"
             if request.response_shape == "fact_count":
                 operation = "count"
@@ -1763,12 +1764,13 @@ class SemanticRouteDecision(BaseModel):
                 recipient_name=request.entity_name,
                 statuses=[request.status] if request.status else [],
             )
-        elif request.subject in {"linked_account", "default_account"} and completed.get(
-            "account_lifecycle_contract", completed.get("acct")
-        ) is None:
-            account_operation: Literal[
-                "count", "existence", "list", "detail", "readiness", "default_identity"
-            ] = "default_identity" if request.subject == "default_account" else "list"
+        elif (
+            request.subject in {"linked_account", "default_account"}
+            and completed.get("account_lifecycle_contract", completed.get("acct")) is None
+        ):
+            account_operation: Literal["count", "existence", "list", "detail", "readiness", "default_identity"] = (
+                "default_identity" if request.subject == "default_account" else "list"
+            )
             if request.subject == "linked_account":
                 if request.response_shape == "fact_count":
                     account_operation = "count"

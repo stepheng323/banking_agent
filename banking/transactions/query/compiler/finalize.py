@@ -32,10 +32,18 @@ from banking.transactions.query.models.extraction import (
     ResolverOutcome,
     TimeReference,
 )
-from banking.transactions.query.plan_compiler import QueryPlanCompileError, compile_query_plan_result
+from banking.transactions.query.plan_compiler import (
+    QueryPlanCompileError,
+    compile_primary_with_evidence_result,
+    compile_query_plan_result,
+)
 from banking.transactions.query.prompts.main import QUERY_PARSER_PROMPT
-from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
-from shared.observability.llm_call_metrics import record_llm_call, structured_output_metrics
+from shared.observability.llm import LLMCallDeadlineExceeded, ainvoke_with_config, build_llm_runnable_config
+from shared.observability.llm_call_metrics import (
+    record_llm_call,
+    response_schema_metrics,
+    structured_output_metrics,
+)
 from shared.observability.llm_http import start_llm_http_recording, stop_llm_http_recording, summarize_llm_http_records
 from shared.observability.llm_provider_metadata import extract_provider_llm_metadata
 from shared.utils.logging import get_logger
@@ -651,15 +659,64 @@ async def parse(
                     outcome=ResolverOutcome.NEEDS_INPUT,
                     resolver_message=render_message("query.clarify.unsure_rephrase", language),
                 )
+        if parser_extraction.evidence_mode == "transactions":
+            try:
+                return compile_primary_with_evidence_result(
+                    parser,
+                    parser_extraction,
+                    today=today,
+                    language=language,
+                    raw_query=question,
+                )
+            except QueryPlanCompileError:
+                return QueryParseResult(
+                    outcome=ResolverOutcome.NEEDS_INPUT,
+                    resolver_message=render_message("query.clarify.unsure_rephrase", language),
+                )
         extraction = parser._inflate_parser_extraction(parser_extraction, question=question, language=language)
         return parser._finalize_extraction(extraction, today=today, language=language)
-    except Exception as e:
-        logger.error("parse_error", error=str(e))
-
-    return QueryParseResult(
-        outcome=ResolverOutcome.OK,
-        extraction=QueryExtractionResult(raw_query=question),
-    )
+    except Exception as exc:
+        duration_ms = (perf_counter() - started_at) * 1000.0
+        error_type = type(exc).__name__
+        deadline_seconds = exc.deadline_seconds if isinstance(exc, LLMCallDeadlineExceeded) else None
+        logger.info(
+            "query_parser_llm_call",
+            duration_ms=round(duration_ms, 2),
+            prompt_chars=len(prompt),
+            language=language,
+            error_type=error_type,
+            deadline_seconds=deadline_seconds,
+            deadline_outcome="exceeded" if isinstance(exc, LLMCallDeadlineExceeded) else "error",
+            **http_metrics,
+        )
+        model = getattr(parser.llm, "model_name", None) or getattr(parser.llm, "model", None)
+        record_llm_call(
+            event_name="query_parser_llm_call",
+            duration_ms=duration_ms,
+            model=model,
+            response_type=ParserQueryExtraction.__name__,
+            system_chars=len(prompt),
+            user_chars=0,
+            error_type=error_type,
+            extra_fields={
+                "language": language,
+                "deadline_seconds": deadline_seconds,
+                "deadline_outcome": "exceeded" if isinstance(exc, LLMCallDeadlineExceeded) else "error",
+                **response_schema_metrics(ParserQueryExtraction),
+                **http_metrics,
+            },
+        )
+        logger.error("parse_error", error_type=error_type)
+        fallback_key: MessageKey = (
+            "orchestrator.fallback.planner_timeout"
+            if isinstance(exc, LLMCallDeadlineExceeded)
+            else "orchestrator.fallback.processing_error"
+        )
+        return QueryParseResult(
+            outcome=ResolverOutcome.NEEDS_INPUT,
+            extraction=QueryExtractionResult(raw_query=question),
+            resolver_message=render_message(fallback_key, language),
+        )
 
 
 def resolve_existing_extraction(

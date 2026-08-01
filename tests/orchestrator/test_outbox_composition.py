@@ -8,18 +8,24 @@ from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_finalize i
 
 
 def test_structured_or_actionable_say_entries_are_never_bridged() -> None:
-    assert _composition_plan(
-        [
-            {"type": "say", "text": "Balance", "body_blocks": [{"type": "heading", "text": "Balances"}]},
-            {"type": "say", "text": "A reminder"},
-        ]
-    ) is ResponseCompositionPlan.PRESERVE_SEPARATE
-    assert _composition_plan(
-        [
-            {"type": "say", "text": "Review", "actionable_payload": {"kind": "confirmation"}},
-            {"type": "say", "text": "A reminder"},
-        ]
-    ) is ResponseCompositionPlan.PRESERVE_SEPARATE
+    assert (
+        _composition_plan(
+            [
+                {"type": "say", "text": "Balance", "body_blocks": [{"type": "heading", "text": "Balances"}]},
+                {"type": "say", "text": "A reminder"},
+            ]
+        )
+        is ResponseCompositionPlan.PRESERVE_SEPARATE
+    )
+    assert (
+        _composition_plan(
+            [
+                {"type": "say", "text": "Review", "actionable_payload": {"kind": "confirmation"}},
+                {"type": "say", "text": "A reminder"},
+            ]
+        )
+        is ResponseCompositionPlan.PRESERVE_SEPARATE
+    )
 
 
 def test_annotated_stackable_fragments_do_not_call_the_bridge() -> None:

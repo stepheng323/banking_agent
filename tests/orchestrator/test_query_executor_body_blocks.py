@@ -53,12 +53,10 @@ class _PreferenceHandoffWorker:
 
 def _query_request() -> QueryRequest:
     today = lagos_today()
-    return (
-        make_query_request(
-            intent=QueryIntent.TRANSACTION_LIST,
-            filters=Filters(transaction_type="debit"),
-            time_range=TimeRange(start=today, end=today),
-        )
+    return make_query_request(
+        intent=QueryIntent.TRANSACTION_LIST,
+        filters=Filters(transaction_type="debit"),
+        time_range=TimeRange(start=today, end=today),
     )
 
 

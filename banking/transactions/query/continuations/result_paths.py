@@ -328,6 +328,24 @@ async def resolve_result_continuation_updates(
     elif cont_type == "grouped_total_followup":
         if session_query_request is None:
             return step._ambiguous_followup_updates(locale=locale, session=session)
+        # The reasoner may use grouped_total_followup for an explicit regroup
+        # request and provide the complete typed extraction (for example,
+        # category -> account while retaining income and period).  Compile
+        # that contract before the conservative legacy replay below; ignoring
+        # it would turn a valid refinement into a generic clarification.
+        if getattr(decision, "extraction", None) is not None:
+            aggregate_updates = await compile_aggregate_continuation_updates(
+                step,
+                decision=decision,
+                state=state,
+                today=today,
+                language=locale,
+                session_query_request=session_query_request,
+                parse_result_to_updates=compiler_paths.parse_result_to_updates,
+                parse_reasoner_extraction_to_updates=compiler_paths.parse_reasoner_extraction_to_updates,
+            )
+            if aggregate_updates is not None:
+                return aggregate_updates
         if step._is_spend_vs_earn_compare_followup(message=message, query_request=session_query_request):
             # In-vs-out comparison on a grouped surface compiles to cash flow
             # over the same scope instead of dead-ending on a recipient total.
@@ -677,6 +695,14 @@ async def resolve_result_continuation_updates(
                 "category",
             }:
                 recipient_answer_fact_field = cast(QueryFactField, decision.fact_field)
+            # The focused-item schema may omit a fact field when the user only
+            # changes the recipient.  In that case retain the source request's
+            # fact projection and ordering so "what about Mum?" reruns the
+            # same question rather than degrading to a generic list.
+            if recipient_answer_fact_field is None:
+                recipient_answer_fact_field = session_query_request.answer_fact_field
+            source_result_reference = session_query_request.result_reference
+            source_result_limit = session_query_request.result_limit
             selection_payload = find_selection_payload(surface_view, label=recipient_name)
             if selection_payload is not None:
                 updates["query_request"] = apply_selection_payload_to_query(
@@ -692,8 +718,8 @@ async def resolve_result_continuation_updates(
                     merge_filters=True,
                     intent=QueryIntent.TRANSACTION_LIST,
                     aggregation=None,
-                    result_limit=None,
-                    result_reference=None,
+                    result_limit=source_result_limit,
+                    result_reference=source_result_reference,
                     answer_fact_field=recipient_answer_fact_field,
                     continuation_type=cont_type,
                     continuation_delta_type=decision.delta_type,

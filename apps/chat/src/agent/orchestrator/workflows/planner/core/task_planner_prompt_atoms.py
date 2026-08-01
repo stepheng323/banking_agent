@@ -67,7 +67,7 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
         "harmless_non_banking->conversational.casual_chat; "
         "unsupported_non_banking->conversational.out_of_scope; "
         "unsupported_capability(lending/investments/financial_advice/international_transfers/pdf_exports/"
-        "csv_exports/all_time_history)->set unsupported_capability field"
+        "csv_exports/all_time_history)->set unsupported_capability field "
     ),
     "R08_ACTION_EXECUTOR": "canonical action determines fixed runtime executor; never invent executor-like actions",
     "R09_CONTEXT_OVERRIDE": (

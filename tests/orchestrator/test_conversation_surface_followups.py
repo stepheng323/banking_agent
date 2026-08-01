@@ -1163,9 +1163,9 @@ async def test_account_surface_fetch_again_refetches_account_list_without_semant
         created_at_ts=int(time.time()),
         ttl_seconds=600,
         metadata={
-            "read_request": ReadRequest(
-                subject="linked_account", response_shape="surface_list"
-            ).model_dump(mode="json"),
+            "read_request": ReadRequest(subject="linked_account", response_shape="surface_list").model_dump(
+                mode="json"
+            ),
             "account_lifecycle_contract": AccountLifecycleContract().model_dump(mode="json"),
             "conversation_set_state": ConversationSetState(
                 domain="linked_account",
@@ -1220,9 +1220,7 @@ async def test_account_count_show_them_reruns_typed_list_without_interpreter() -
         created_at_ts=int(time.time()),
         ttl_seconds=600,
         metadata={
-            "read_request": ReadRequest(
-                subject="linked_account", response_shape="fact_count"
-            ).model_dump(mode="json"),
+            "read_request": ReadRequest(subject="linked_account", response_shape="fact_count").model_dump(mode="json"),
             "account_lifecycle_contract": AccountLifecycleContract(
                 operation="count", response_shape="fact_count"
             ).model_dump(mode="json"),
@@ -1340,12 +1338,10 @@ async def test_beneficiary_count_named_membership_followup_becomes_filtered_exis
         created_at_ts=int(time.time()),
         ttl_seconds=600,
         metadata={
-            "read_request": ReadRequest(
-                subject="beneficiary", response_shape="fact_count"
-            ).model_dump(mode="json"),
-            "beneficiary_contract": BeneficiaryQueryContract(
-                operation="count", response_shape="fact_count"
-            ).model_dump(mode="json"),
+            "read_request": ReadRequest(subject="beneficiary", response_shape="fact_count").model_dump(mode="json"),
+            "beneficiary_contract": BeneficiaryQueryContract(operation="count", response_shape="fact_count").model_dump(
+                mode="json"
+            ),
             "total_count": 3,
             "has_next": False,
             "has_previous": False,
@@ -1998,9 +1994,7 @@ async def test_beneficiary_surface_refresh_refetches_beneficiary_list() -> None:
         created_at_ts=int(time.time()),
         ttl_seconds=600,
         metadata={
-            "read_request": ReadRequest(
-                subject="beneficiary", response_shape="surface_list"
-            ).model_dump(mode="json"),
+            "read_request": ReadRequest(subject="beneficiary", response_shape="surface_list").model_dump(mode="json"),
             "beneficiary_contract": BeneficiaryQueryContract().model_dump(mode="json"),
             "conversation_set_state": ConversationSetState(
                 domain="beneficiary",
@@ -2054,9 +2048,7 @@ async def test_schedule_surface_check_again_refetches_schedule_list() -> None:
         created_at_ts=int(time.time()),
         ttl_seconds=600,
         metadata={
-            "read_request": ReadRequest(subject="schedule", response_shape="surface_list").model_dump(
-                mode="json"
-            ),
+            "read_request": ReadRequest(subject="schedule", response_shape="surface_list").model_dump(mode="json"),
             "schedule_contract": ScheduleQueryContract().model_dump(mode="json"),
             "conversation_set_state": ConversationSetState(
                 domain="schedule",

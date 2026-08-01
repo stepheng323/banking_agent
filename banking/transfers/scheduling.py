@@ -559,9 +559,7 @@ class TransferSchedulingHandler:
                         timezone=schedule.timezone,
                         now_utc=now.replace(tzinfo=UTC),
                     )
-                    if next_run is None or (
-                        end_date is not None and next_run.date() > end_date
-                    ):
+                    if next_run is None or (end_date is not None and next_run.date() > end_date):
                         return TransactionResult(
                             outcome=TransactionOutcome.FAILED,
                             error=render_message("schedule.resume.expired", locale),

@@ -70,8 +70,7 @@ class ScheduledInstructionRepository(BaseRepository[ScheduledInstruction]):
         lookup_id = self._uuid_or_str(user_id)
         query = select(ScheduledInstruction).filter(ScheduledInstruction.user_id == lookup_id)
         normalized_statuses = [
-            "active" if status.casefold() == "pending" else status.casefold()
-            for status in statuses or []
+            "active" if status.casefold() == "pending" else status.casefold() for status in statuses or []
         ]
         if normalized_statuses:
             query = query.filter(ScheduledInstruction.status.in_(normalized_statuses))
@@ -95,9 +94,7 @@ class ScheduledInstructionRepository(BaseRepository[ScheduledInstruction]):
                 )
             )
         if selected_ids:
-            query = query.filter(
-                ScheduledInstruction.id.in_([self._uuid_or_str(value) for value in selected_ids])
-            )
+            query = query.filter(ScheduledInstruction.id.in_([self._uuid_or_str(value) for value in selected_ids]))
         return query
 
     async def get_filtered_by_user(
@@ -145,16 +142,20 @@ class ScheduledInstructionRepository(BaseRepository[ScheduledInstruction]):
         selected_ids: list[str] | None = None,
     ) -> int:
         """Count the same typed repository query used for list pages."""
-        query = self._filtered_user_query(
-            user_id,
-            statuses=statuses,
-            domains=domains,
-            recurrence=recurrence,
-            recipient_name=recipient_name,
-            starts_at=starts_at,
-            ends_at=ends_at,
-            selected_ids=selected_ids,
-        ).with_only_columns(func.count(ScheduledInstruction.id)).order_by(None)
+        query = (
+            self._filtered_user_query(
+                user_id,
+                statuses=statuses,
+                domains=domains,
+                recurrence=recurrence,
+                recipient_name=recipient_name,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                selected_ids=selected_ids,
+            )
+            .with_only_columns(func.count(ScheduledInstruction.id))
+            .order_by(None)
+        )
         result = await self.db.execute(query)
         return int(result.scalar_one())
 

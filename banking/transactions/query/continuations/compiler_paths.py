@@ -68,11 +68,7 @@ def _apply_router_insight_hint(step: Any, result: Any, state: dict[str, Any], *,
         parser_intent=extraction.intent.value,
     )
     current = extraction.insight
-    insight = (
-        current
-        if current is not None and current.insight_type == hint
-        else InsightSpec(insight_type=hint)
-    )
+    insight = current if current is not None and current.insight_type == hint else InsightSpec(insight_type=hint)
     if (
         extraction.intent == QueryIntent.INSIGHT
         and extraction.request_shape == QueryRequestShape.INSIGHT
@@ -82,8 +78,7 @@ def _apply_router_insight_hint(step: Any, result: Any, state: dict[str, Any], *,
     # Never let a coarse concentration hint override a confident recipient-ranking intent.
     # "Who did I send money to the most" is a beneficiary summary, not spending concentration.
     if hint == "counterparty_concentration" and (
-        extraction.intent == QueryIntent.BENEFICIARY_SUMMARY
-        or _SEND_TO_RECIPIENT_RE.search(extraction.raw_query or "")
+        extraction.intent == QueryIntent.BENEFICIARY_SUMMARY or _SEND_TO_RECIPIENT_RE.search(extraction.raw_query or "")
     ):
         logger.info(
             "query_insight_hint_rejected",
@@ -370,9 +365,7 @@ def parse_result_to_updates(
     """Translate parser outcomes into extraction-step state updates."""
     del message_override
     raw_preferences = state.get("query_preferences")
-    prefer_detailed = (
-        isinstance(raw_preferences, dict) and raw_preferences.get("presentation_detail") == "detailed"
-    )
+    prefer_detailed = isinstance(raw_preferences, dict) and raw_preferences.get("presentation_detail") == "detailed"
 
     if result.outcome == ResolverOutcome.NEEDS_INPUT:
         clarify_fallback = render_message("query.clarify.default", language)

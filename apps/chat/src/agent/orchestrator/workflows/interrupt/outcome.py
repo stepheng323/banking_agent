@@ -89,14 +89,10 @@ def resolve_interrupt_updates(
     graph, so graph routing never inspects the patch itself.
     """
     committed = dict(updates)
-    forbidden = {"direct_path_triggered", "semantic_path_shape", "turn_directive"}.intersection(
-        committed
-    )
+    forbidden = {"direct_path_triggered", "semantic_path_shape", "turn_directive"}.intersection(committed)
     if forbidden:
         names = ", ".join(sorted(forbidden))
-        raise RoutingContractError(
-            f"interrupt payload overrides controlled routing fields: {names}"
-        )
+        raise RoutingContractError(f"interrupt payload overrides controlled routing fields: {names}")
     _ensure_runnable_wave(state, committed)
     _ensure_visible_wait_response(state, committed)
 

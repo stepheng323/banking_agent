@@ -48,6 +48,7 @@ def create_synthesize_node(llm: Runnable):
 
         # Call LLM
         import time
+
         start = time.perf_counter()
         system_chars = len(SYNTHESIS_SYSTEM_PROMPT)
         user_chars = len(user_prompt)

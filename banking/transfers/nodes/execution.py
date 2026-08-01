@@ -61,7 +61,8 @@ class ExecutionStep(TransferStep):
                 payout_provider = settings.payout_provider_name.strip().lower()
                 if (
                     data.recipient_resolution_mode != POOLED_MODE
-                    or data.recipient_bank_code_provider or "".strip().lower() != payout_provider
+                    or data.recipient_bank_code_provider
+                    or "".strip().lower() != payout_provider
                 ):
                     logger.error(
                         "transfer_execution_rejected_recipient_resolution_mode_mismatch",
@@ -334,9 +335,7 @@ def _completion_service_metadata(
         "source_affinity_mode": data.source_affinity_mode,
         "narration": narration,
     }
-    filtered_context = {
-        key: value for key, value in completion_context.items() if value not in (None, "", [], {})
-    }
+    filtered_context = {key: value for key, value in completion_context.items() if value not in (None, "", [], {})}
     return {"completion_context": filtered_context}
 
 

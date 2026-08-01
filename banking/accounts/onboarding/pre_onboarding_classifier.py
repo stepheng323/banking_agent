@@ -86,6 +86,7 @@ class PreOnboardingClassifier:
         user_prompt = _PRE_ONBOARDING_USER_PROMPT_TEMPLATE.format(user_message=text.strip())
 
         import time
+
         start = time.perf_counter()
 
         try:
@@ -100,7 +101,8 @@ class PreOnboardingClassifier:
                     phone_number=phone_number or "unknown",
                     path_label="pre_onboarding",
                     task_domain="onboarding",
-                ) or None,
+                )
+                or None,
             )
             duration_ms = (time.perf_counter() - start) * 1000
             validated = (

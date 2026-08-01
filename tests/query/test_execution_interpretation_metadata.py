@@ -27,9 +27,7 @@ async def test_execution_populates_interpretation_metadata(monkeypatch: pytest.M
             date(2026, 3, 1),
             date(2026, 3, 7),
             granularity="day",
-            predicate=TransactionPredicate(
-                direction="debit", amount=AmountRange(minimum=Money(amount=1000))
-            ),
+            predicate=TransactionPredicate(direction="debit", amount=AmountRange(minimum=Money(amount=1000))),
         ),
         baseline=ExplicitBaseline(
             period=ResolvedPeriod(start=date(2026, 2, 1), end=date(2026, 2, 7), granularity="day")

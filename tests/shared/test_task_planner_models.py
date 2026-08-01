@@ -157,6 +157,7 @@ async def test_task_planner_route_semantic_turn_uses_shared_structured_invocatio
                 "conf": 0.91,
                 "lang": "en",
                 "intent": "query",
+                "q_pref": False,
             }
         }
     )
@@ -186,6 +187,7 @@ async def test_semantic_router_adapts_flat_account_read_into_runtime_contract() 
                 "read_subject": "linked_account",
                 "response_shape": "fact_bool",
                 "bank_name": "Opay",
+                "q_pref": False,
             }
         }
     )
@@ -381,9 +383,7 @@ def test_planner_task_parameters_are_coerced_by_executor_and_action() -> None:
                 executor="query",
                 action="transaction_search",
                 instruction="Show transactions",
-                parameters={
-                    "read_request": {"subject": "transaction", "response_shape": "surface_paginated"}
-                },
+                parameters={"read_request": {"subject": "transaction", "response_shape": "surface_paginated"}},
                 risk="READ_ONLY",
             ),
         ],
@@ -552,19 +552,38 @@ def test_semantic_router_adapts_balance_context_in_its_single_response() -> None
     assert route.context_replay_modifier is None
 
 
-def test_semantic_router_preserves_typed_query_insight_subtype() -> None:
+def test_semantic_router_adapts_query_preference_fields_into_typed_update() -> None:
     route = _adapt_semantic_route_llm_decision(
         SemanticRouteLLMDecision(
             decision="domain_query",
-            conf=0.96,
+            conf=0.97,
             lang="English",
             mode="new",
             intent="query",
-            q_insight="counterparty_concentration",
+            q_pref=True,
+            q_detail="detailed",
         )
     )
 
-    assert route.query_insight_type == "counterparty_concentration"
+    assert route.decision == "domain_query"
+    assert route.target_intent == "query"
+    assert route.query_preferences is not None
+    assert route.query_preferences.presentation_detail == "detailed"
+
+
+def test_semantic_router_ignores_preference_defaults_without_explicit_discriminator() -> None:
+    route = _adapt_semantic_route_llm_decision(
+        SemanticRouteLLMDecision(
+            decision="domain_query",
+            conf=0.94,
+            mode="new",
+            intent="query",
+            q_detail="detailed",
+            q_pref=False,
+        )
+    )
+
+    assert route.query_preferences is None
 
 
 @pytest.mark.parametrize("wire_decision", ["direct_reply", "planner_ambiguous"])
@@ -578,6 +597,7 @@ def test_semantic_router_resolves_query_domain_contradiction_without_planner(
             intent="query",
             res_key="conversational.clarify" if wire_decision == "direct_reply" else None,
             res="Could you clarify?" if wire_decision == "direct_reply" else None,
+            q_pref=False,
         )
     )
 

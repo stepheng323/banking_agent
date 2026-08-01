@@ -68,9 +68,7 @@ async def test_account_worker_answers_count_question() -> None:
     result = await worker.run(
         payload={
             "action": "count",
-            "read_request": ReadRequest(
-                subject="linked_account", response_shape="fact_count"
-            ).model_dump(mode="json"),
+            "read_request": ReadRequest(subject="linked_account", response_shape="fact_count").model_dump(mode="json"),
             "account_lifecycle_contract": AccountLifecycleContract(
                 operation="count", response_shape="fact_count"
             ).model_dump(mode="json"),
@@ -104,9 +102,7 @@ async def test_account_worker_zero_count_uses_natural_copy() -> None:
     result = await worker.run(
         payload={
             "action": "count",
-            "read_request": ReadRequest(
-                subject="linked_account", response_shape="fact_count"
-            ).model_dump(mode="json"),
+            "read_request": ReadRequest(subject="linked_account", response_shape="fact_count").model_dump(mode="json"),
             "account_lifecycle_contract": AccountLifecycleContract(
                 operation="count", response_shape="fact_count"
             ).model_dump(mode="json"),
@@ -168,9 +164,7 @@ async def test_account_worker_answers_typed_default_account_read_without_reparsi
     result = await worker.run(
         payload={
             "action": "get_default",
-            "read_request": ReadRequest(
-                subject="default_account", response_shape="fact_value"
-            ).model_dump(mode="json"),
+            "read_request": ReadRequest(subject="default_account", response_shape="fact_value").model_dump(mode="json"),
             "account_lifecycle_contract": AccountLifecycleContract(
                 operation="default_identity", response_shape="fact_value"
             ).model_dump(mode="json"),
@@ -214,9 +208,7 @@ async def test_account_worker_balance_returns_mobile_body_blocks() -> None:
     result = await worker.run(
         payload={
             "action": "check_balance",
-            "read_request": ReadRequest(
-                subject="balance", response_shape="surface_list"
-            ).model_dump(mode="json"),
+            "read_request": ReadRequest(subject="balance", response_shape="surface_list").model_dump(mode="json"),
             "balance_contract": BalanceQueryContract(
                 account_scope="all", operation="breakdown", response_shape="surface_list"
             ).model_dump(mode="json"),
@@ -271,9 +263,7 @@ async def test_account_worker_returns_only_combined_total_for_three_selected_acc
 
     assert result.outcome == AccountOutcome.OK
     assert result.response == "That gives you a total of **₦60,000.00**."
-    assert result.outbox[0]["body_blocks"] == [
-        {"type": "text", "text": "That gives you a total of **₦60,000.00**."}
-    ]
+    assert result.outbox[0]["body_blocks"] == [{"type": "text", "text": "That gives you a total of **₦60,000.00**."}]
 
 
 async def test_account_worker_compares_three_accounts_in_descending_balance_order() -> None:

@@ -73,4 +73,3 @@ def test_planner_and_execution_use_directive_not_payload_flags() -> None:
 
     assert _route_plan(planner_state) == END
     assert _route_advance(execution_state) == "finalize"
-

@@ -172,6 +172,7 @@ class AccountLinkingService:
 
             try:
                 from shared.cache.user_data import UserDataCache
+
                 await UserDataCache().invalidate_all_user_data(phone_number)
             except Exception:
                 pass

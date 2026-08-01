@@ -68,22 +68,12 @@ def test_state_exposes_only_the_typed_route_contract() -> None:
 
 def test_graph_control_reads_only_the_directive_next_step() -> None:
     workspace_root = Path(__file__).parent.parent.parent
-    builder_path = (
-        workspace_root
-        / "apps"
-        / "chat"
-        / "src"
-        / "agent"
-        / "orchestrator"
-        / "graph"
-        / "builder.py"
-    )
+    builder_path = workspace_root / "apps" / "chat" / "src" / "agent" / "orchestrator" / "graph" / "builder.py"
     tree = ast.parse(builder_path.read_text(encoding="utf-8"))
     route_functions = {
         node.name: node
         for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name.startswith("_route_")
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("_route_")
     }
 
     forbidden = {

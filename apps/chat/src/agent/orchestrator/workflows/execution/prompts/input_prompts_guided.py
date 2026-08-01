@@ -119,6 +119,7 @@ def _resolved_focus_copy(*, state: OrchestratorState, previous: BatchInputContra
         {"amount": format_amount_compact(amount), "recipient": display},
     )
 
+
 def build_guided_batch_input_updates(
     *,
     state: OrchestratorState,

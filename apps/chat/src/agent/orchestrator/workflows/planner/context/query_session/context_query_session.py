@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.rendering.contex
     _build_query_session_context,
 )
 from banking.transactions.query.session import _session_has_surface_view, is_query_session_stale
+from banking.transactions.query.session_state import project_query_session_v3
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -55,19 +56,24 @@ async def _load_query_session_snapshot(
     query_session_snapshot: dict[str, Any] | None = None
     query_session_source: str | None = None
 
-    active_query_surface = get_active_query_surface(state_view)
-    if active_query_surface is not None:
-        query_session_snapshot = build_query_session_snapshot_from_surface(active_query_surface)
-        if query_session_snapshot is not None:
-            query_session_snapshot["active_query_surface"] = active_query_surface
-            query_session_snapshot["_query_session_source"] = "context_frame"
-            query_session_source = "context_frame"
-
-    if query_session_snapshot is None and isinstance(state_view.pending_query_clarification, dict):
+    # A pending clarification is a live, resumable contract.  It must take
+    # precedence over the still-visible surface it came from; otherwise a
+    # numeric/ordinal answer can be interpreted as a generic result reference
+    # and the original operation is lost.
+    if isinstance(state_view.pending_query_clarification, dict):
         query_session_snapshot = _pending_clarification_snapshot(state_view.pending_query_clarification)
         query_session_source = "pending_clarification"
         if is_query_session_stale(query_session_snapshot):
             query_session_snapshot["session_active"] = False
+
+    if query_session_snapshot is None:
+        active_query_surface = get_active_query_surface(state_view)
+        if active_query_surface is not None:
+            query_session_snapshot = build_query_session_snapshot_from_surface(active_query_surface)
+            if query_session_snapshot is not None:
+                query_session_snapshot["active_query_surface"] = active_query_surface
+                query_session_snapshot["_query_session_source"] = "context_frame"
+                query_session_source = "context_frame"
 
     if query_session_snapshot is None:
         recent = getattr(state_view, "recent_query_context", None)
@@ -100,6 +106,14 @@ async def _load_query_session_snapshot(
 
 def _pending_clarification_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Build an active query snapshot from first-class pending clarification state."""
+    # Execution persists the v3 envelope with ``pending_input``.  The planner
+    # and gate classifiers consume the compatibility projection, so normalize
+    # it here instead of silently dropping the pending contract and falling
+    # back to the visible query frame.
+    if isinstance(snapshot.get("pending_input"), dict):
+        projected = project_query_session_v3(snapshot)
+        if projected is not None:
+            snapshot = projected
     compact = {key: value for key, value in snapshot.items() if key in _QUERY_SNAPSHOT_KEYS}
     compact["session_active"] = True
     return compact

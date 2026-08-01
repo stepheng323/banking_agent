@@ -506,11 +506,7 @@ def resolve_query_target(
         or bool(_amount_reference_values(text))
     )
     current_is_detail = surface_view is not None and len(surface_view.items) == 1
-    should_try_frames = (
-        has_target
-        or current_is_detail
-        or _references_prior_context(text, decision)
-    )
+    should_try_frames = has_target or current_is_detail or _references_prior_context(text, decision)
     if not should_try_frames:
         return [], current_miss
 

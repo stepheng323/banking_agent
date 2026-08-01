@@ -21,6 +21,11 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_llm_mo
     PlannerKnownTransferDataPlan,
     PlannerKnownTransferPlan,
 )
+from banking.transactions.query.services.reasoning.models import (
+    GroupedSummaryDecision,
+    RepairDecision,
+    TransactionListDecision,
+)
 from banking.transactions.query.services.reasoning.prompt_compiler import compile_query_reasoner_prompt
 from banking.transfers.models.amendment import TransferAmendmentPatch
 from shared.observability.llm_call_metrics import estimated_tokens_from_chars, response_schema_metrics
@@ -44,7 +49,7 @@ def test_semantic_router_compiler_selects_only_state_atoms_within_prompt_budget(
     assert "Unsupported-capability atom" in active.system_prompt
     assert active.cache_key != base.cache_key
     assert estimated_tokens_from_chars(len(active.system_prompt)) <= 1600
-    assert response_schema_metrics(SemanticRouteLLMDecision)["response_schema_token_estimate"] <= 750
+    assert response_schema_metrics(SemanticRouteLLMDecision)["response_schema_token_estimate"] <= 1000
     context_schemas = (
         BalanceContextRouteLLMDecision,
         BeneficiaryContextRouteLLMDecision,
@@ -72,6 +77,7 @@ def test_known_planner_schemas_fit_role_budget() -> None:
 def test_query_prompt_profiles_and_transfer_amendment_schema_fit_budgets() -> None:
     query_profiles = (
         "focused_item",
+        "repair",
         "transaction_list",
         "grouped_summary",
         "historical_frames",
@@ -82,4 +88,10 @@ def test_query_prompt_profiles_and_transfer_amendment_schema_fit_budgets() -> No
         estimated_tokens_from_chars(len(compile_query_reasoner_prompt(profile).system_prompt)) <= 1800
         for profile in query_profiles
     )
+    # Explicit query-preference updates remain available even while a list or
+    # summary owns the active session.  The added sparse preference contract
+    # stays well below the provider-input ceiling.
+    assert response_schema_metrics(TransactionListDecision)["response_schema_token_estimate"] <= 1550
+    assert response_schema_metrics(GroupedSummaryDecision)["response_schema_token_estimate"] <= 1550
+    assert response_schema_metrics(RepairDecision)["response_schema_token_estimate"] <= 1800
     assert response_schema_metrics(TransferAmendmentPatch)["response_schema_token_estimate"] <= 700

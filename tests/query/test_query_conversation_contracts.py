@@ -77,6 +77,45 @@ def test_scope_delta_rejects_unsupported_summary_repair() -> None:
         apply_query_scope_delta(_request(), QueryScopeDelta(dimension="account"))
 
 
+def test_summary_measure_repair_normalizes_income_direction_and_preserves_scope() -> None:
+    request = summarize_request(
+        query_scope(
+            date(2026, 7, 1),
+            date(2026, 7, 29),
+            predicate=TransactionPredicate(categories=["food"], direction="debit"),
+        ),
+        GroupedSummarySpec(measure="spending", statistic="sum", dimension="category"),
+    )
+
+    updated = apply_query_scope_delta(request, QueryScopeDelta(measure="income"))
+
+    assert updated.scope is not None
+    assert updated.scope.predicate.direction == "credit"
+    assert updated.scope.predicate.categories == ["food"]
+    assert updated.period == request.period
+    assert updated.operation.summary.measure == "income"
+
+
+def test_summary_direction_only_repair_updates_directional_measure() -> None:
+    request = summarize_request(
+        query_scope(
+            date(2026, 7, 1),
+            date(2026, 7, 29),
+            predicate=TransactionPredicate(direction="debit"),
+        ),
+        GroupedSummarySpec(measure="spending", statistic="sum", dimension="account"),
+    )
+
+    updated = apply_query_scope_delta(
+        request,
+        QueryScopeDelta(direction_mutation="replace", direction="credit"),
+    )
+
+    assert updated.scope is not None
+    assert updated.scope.predicate.direction == "credit"
+    assert updated.operation.summary.measure == "income"
+
+
 def test_query_plan_requires_backward_dependency_and_one_primary_step() -> None:
     request = _request()
     with pytest.raises(ValidationError):
@@ -234,7 +273,10 @@ def test_proposal_selection_executes_only_the_chosen_contract() -> None:
     )
     changed = apply_query_scope_delta(request, QueryScopeDelta(direction_mutation="replace", direction="credit"))
     pending = PendingInterpretationProposal(
-        proposals=[first, first.model_copy(update={"proposal_id": "two", "contract": SingleQueryExecution(request=changed)})]
+        proposals=[
+            first,
+            first.model_copy(update={"proposal_id": "two", "contract": SingleQueryExecution(request=changed)}),
+        ]
     )
 
     updates = resolve_pending_proposal(pending, "second", locale="en", session={})
@@ -370,7 +412,11 @@ async def test_turn_plan_executes_in_order_and_binds_top_group() -> None:
                             label="Food",
                             amount=1000,
                             payload=SelectionPayload(
-                                selection_kind="group_bucket", entity_type="category", entity_id="food", label="Food", group_key="food"
+                                selection_kind="group_bucket",
+                                entity_type="category",
+                                entity_id="food",
+                                label="Food",
+                                group_key="food",
                             ),
                         )
                     ],
@@ -402,6 +448,7 @@ async def test_turn_plan_executes_in_order_and_binds_top_group() -> None:
 async def test_fresh_parser_compiles_bounded_plan_in_its_existing_call() -> None:
     period = QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month")
     draft = ParserQueryExtraction(
+        evidence_mode="none",
         plan=QueryPlanDraft(
             steps=[
                 QueryPlanStepDraft(
@@ -425,7 +472,7 @@ async def test_fresh_parser_compiles_bounded_plan_in_its_existing_call() -> None
                     ),
                 ),
             ]
-        )
+        ),
     )
 
     class Structured:

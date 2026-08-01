@@ -196,9 +196,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         locale_updates=locale_updates,
         state_view=state_view,
     )
-    response_resolution = response_resolution.with_updates(
-        task_updates["planner_quality_report"].to_state_updates()
-    )
+    response_resolution = response_resolution.with_updates(task_updates["planner_quality_report"].to_state_updates())
     return response_resolution.materialize()
 
 

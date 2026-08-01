@@ -9,7 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_
     TurnContextSummary,
 )
 
-_PROMPT_VERSION = "v9"
+_PROMPT_VERSION = "v10"
 
 _DIRECT_REPLY = """You write one direct reply for a multilingual Nigerian banking assistant. Return only JSON.
 The turn is already constrained to direct_reply: do not route a banking task or invent account, amount, recipient,
@@ -26,8 +26,8 @@ Pidgin, Yoruba, Hausa, Igbo, and mixed wording; do not depend on exact phrases.
 Return only the required JSON. Decisions:
 - direct_reply: greeting, appreciation, check-in, identity, capability/meta, safe casual chat, or unsupported topic.
 - direct_context_answer: a short read-only fact fully grounded in supplied context.
-- domain_query: transaction history, totals, comparisons, details, analytics, or deterministic history insights:
-  variance, duplicates, recurrence, anomalies, concentration, forecasts, runway, and cash-flow quality.
+- domain_query: transaction history ("When last..."), totals, comparisons, details, analytics, or deterministic
+  history insights: variance, duplicates, recurrence, anomalies, concentration, forecasts, runway, cash-flow quality.
 - domain_account: balances, linked-account status/link/default/unlink/authorization.
 - domain_support: failed/reversed transactions, receipts, disputes, or ticket status.
 - domain_beneficiary: saved-recipient management.
@@ -40,6 +40,8 @@ Return only the required JSON. Decisions:
 Core rules:
 1. Route clear single-domain requests directly. Balance is account, not query. Scheduled instructions are schedule,
 not transaction history. Use planner_mixed for multiple actions or transaction batches/splits.
+Two or three related read-only transaction analyses/evidence sections remain one domain_query; its query parser builds
+the bounded read plan. They are not planner_mixed.
 2. execs contains only explicitly requested transfer/airtime/data actions and every such action in a mixed request;
 never infer data from "credit" or "transaction data".
 3. For direct_reply, choose the precise res_key and write the complete safe final res in at most two short sentences.
@@ -53,13 +55,13 @@ PDF/CSV export, and all-time history use capability.unsupported_unavailable plus
 go to their domain. If grounding is insufficient, use planner_ambiguous.
 7. Explicit replacement banking commands route to their true domain even when older context exists. Preserve mode=new.
 8. Set detected language when clear. If uncertain, use planner_ambiguous with empty execs.
-9. For a clear analytical domain_query, set q_insight to exactly one of variance_drivers, probable_duplicates,
-recurring_patterns, anomalies, counterparty_concentration, forecast, runway, or cash_flow_quality. Otherwise null.
-Insight meanings: variance=period drivers; duplicates=duplicate observations; recurring=regular series;
-anomalies=outliers; concentration=largest spending counterparty share; forecast=future spending;
-runway=balance duration;
-cash-flow quality=complete-month income versus spending.
-Never set q_insight=counterparty_concentration for "who did I send/transfer/pay money to" — that's a recipient ranking.
+9. Insight subtype selection belongs to the query parser. The router only selects domain_query; it never chooses the
+specific analysis.
+10. Only an explicit persistent query-answer preference or reset sets q_pref=true and domain_query/mode=new. Then
+populate only its q_detail, q_shape, q_accounts, q_period, q_measure, q_status, q_clear, or q_reset fields. For every
+ordinary query q_pref=false and all q_* preference values are empty.
+Examples: “always give detailed transaction answers” sets q_pref=true/q_detail=detailed; “from now on show a summary”
+sets q_pref=true/q_shape=summary; “give me transaction details” without persistent wording is an ordinary query.
 
 Read contract rules:
 - For supported reads, emit read_subject, response_shape, and only explicit entity_name/bank_name/status/reference;
@@ -68,9 +70,6 @@ Read contract rules:
   collection=surface_list; entity=surface_detail; receipt=surface_actionable.
 - Never infer filters. Named-beneficiary membership is beneficiary/fact_bool plus entity_name; linked-account
   membership is linked_account/fact_bool plus bank_name. Never carry beneficiary filters into an account read.
-- Examples: "How many Tolu beneficiaries" -> beneficiary/fact_count/entity_name=Tolu;
-  "How much is in Access" -> balance/fact_value/bank_name=Access;
-  "Do I have pending schedules" -> schedule/fact_bool/status=pending.
 - Derive worker contracts deterministically; never emit records, IDs, balances, or mutation targets.
 
 Examples: credits or financial-history insights -> domain_query; balance -> domain_account; one transfer/airtime/data

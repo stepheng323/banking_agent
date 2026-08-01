@@ -75,7 +75,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
             footer = render_message(
                 "transaction_summary.multi.processing_footer.all_processing",
                 locale,
-                {"count": str(len(completed_tasks))}
+                {"count": str(len(completed_tasks))},
             )
     elif any_failed:
         footer_key: MessageKey = (
@@ -87,9 +87,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
     else:
         # Default success footer
         footer = render_message(
-            "transaction_summary.multi.success_footer",
-            locale,
-            {"count": str(len(completed_tasks))}
+            "transaction_summary.multi.success_footer", locale, {"count": str(len(completed_tasks))}
         )
 
     lines.append(footer)
@@ -168,7 +166,7 @@ def format_multi_action_summary_blocks(completed_tasks: list, locale: str = "en"
             footer = render_message(
                 "transaction_summary.multi.processing_footer.all_processing",
                 locale,
-                {"count": str(len(completed_tasks))}
+                {"count": str(len(completed_tasks))},
             )
     elif any_failed:
         footer_key: MessageKey = (
@@ -180,9 +178,7 @@ def format_multi_action_summary_blocks(completed_tasks: list, locale: str = "en"
     else:
         # Default success footer
         footer = render_message(
-            "transaction_summary.multi.success_footer",
-            locale,
-            {"count": str(len(completed_tasks))}
+            "transaction_summary.multi.success_footer", locale, {"count": str(len(completed_tasks))}
         )
 
     if footer:

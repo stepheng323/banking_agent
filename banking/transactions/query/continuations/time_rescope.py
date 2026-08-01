@@ -87,7 +87,7 @@ def direct_time_rescope_range(message: str, *, today: date) -> TimeRange | None:
 def is_single_day_direct_time_rescope_message(message: str, *, today: date) -> bool:
     """Return true for direct time-only follow-ups that resolve to one calendar day."""
     parsed = direct_time_rescope_range(message, today=today)
-    return (parsed is not None and parsed.start == parsed.end)
+    return parsed is not None and parsed.start == parsed.end
 
 
 def is_direct_time_rescope_message(message: str, *, today: date) -> bool:

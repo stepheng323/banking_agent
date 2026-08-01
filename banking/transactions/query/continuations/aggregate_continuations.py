@@ -508,10 +508,7 @@ async def compile_aggregate_continuation_updates(
         }
         conflicting_filter_field = None
         for filter_field, dimension in filter_field_to_dimension.items():
-            if (
-                getattr(session_query_request.filters, filter_field, None)
-                and dimension != aggregation.group_by
-            ):
+            if getattr(session_query_request.filters, filter_field, None) and dimension != aggregation.group_by:
                 conflicting_filter_field = filter_field
                 break
         if conflicting_filter_field is not None:

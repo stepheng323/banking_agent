@@ -167,6 +167,11 @@ MULTI-STEP READS:
 - Plan steps are read-only, ordered, have exactly one primary role, and may depend only on earlier step IDs.
 - Use typed bindings only for top_group, selected_group, scalar, or period into category, counterparty, account,
   amount, or period. Never plan transfers or other mutations.
+- evidence_mode is required on every fresh query. Set it to transactions whenever the user asks to show/list the
+  source transactions, rows, payments, or evidence behind the requested answer/change; otherwise set it to none.
+  A comparison/insight plus source transactions uses evidence_mode=transactions, not a summary-only extraction.
+  The runtime builds the grounded evidence step from the typed primary extraction. A fully explicit two/three-section
+  plan may still use plan; when plan already contains evidence, use evidence_mode=none.
 
 Return STRICT JSON only."""
 

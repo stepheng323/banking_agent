@@ -39,8 +39,7 @@ def _committed_next_step(
         raise RoutingContractError(f"{node} completed without a turn directive")
     if directive.next_step not in allowed:
         raise RoutingContractError(
-            f"{node} cannot transition to {directive.next_step.value} "
-            f"for {directive.outcome_kind.value}"
+            f"{node} cannot transition to {directive.next_step.value} for {directive.outcome_kind.value}"
         )
     return END if directive.next_step == TurnNextStep.END else directive.next_step.value
 
@@ -48,9 +47,7 @@ def _committed_next_step(
 def _route_interrupt(state: OrchestratorState) -> Literal["advance", "plan", "finalize"] | str:
     return _committed_next_step(
         state,
-        allowed=frozenset(
-            {TurnNextStep.ADVANCE, TurnNextStep.PLAN, TurnNextStep.FINALIZE, TurnNextStep.END}
-        ),
+        allowed=frozenset({TurnNextStep.ADVANCE, TurnNextStep.PLAN, TurnNextStep.FINALIZE, TurnNextStep.END}),
         node="interrupt",
     )
 
@@ -112,9 +109,7 @@ def build_orchestrator_graph(checkpointer: Checkpointer = None) -> CompiledOrche
             END: END,
         },
     )
-    builder.add_conditional_edges(
-        "plan", _route_plan, {"advance": "advance", "finalize": "finalize", END: END}
-    )
+    builder.add_conditional_edges("plan", _route_plan, {"advance": "advance", "finalize": "finalize", END: END})
     builder.add_conditional_edges("advance", _route_advance, {"advance": "advance", "finalize": "finalize", END: END})
 
     builder.add_edge("finalize", END)

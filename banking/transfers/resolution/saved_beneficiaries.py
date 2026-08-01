@@ -1,6 +1,5 @@
 """Saved-beneficiary and recipient-memory helpers for transfer resolution."""
 
-
 from typing import Any
 
 from banking.presentation.i18n.renderer import render_message
@@ -254,11 +253,7 @@ def build_beneficiary_clarify_result(
         if len(button_title) > 24:
             button_title = button_title[:21] + "..."
 
-        options.append({
-            "id": option_id,
-            "title": button_title,
-            "description": bank_details
-        })
+        options.append({"id": option_id, "title": button_title, "description": bank_details})
 
     numbered_lines = [f"{candidate['index']}. {candidate['body_label']}" for candidate in candidate_list]
     candidates_list = "\n".join(numbered_lines)

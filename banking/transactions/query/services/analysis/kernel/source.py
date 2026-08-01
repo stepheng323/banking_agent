@@ -266,10 +266,7 @@ async def _ensure_and_resolve_ledger_coverage(
         except Exception:
             # The analysis can still use the durable rows already present, but it
             # must not claim complete coverage after a failed coverage refresh.
-            gaps = {
-                context.external_account_id: [(contract.time_start, contract.time_end)]
-                for context in contexts
-            }
+            gaps = {context.external_account_id: [(contract.time_start, contract.time_end)] for context in contexts}
             return _CoverageResolution(CoverageStatus.PARTIAL, list(gaps), gaps, 0, len(contexts))
     return await _resolve_ledger_coverage(
         contract=contract,
@@ -299,7 +296,7 @@ async def _resolve_ledger_coverage(
     try:
         async with UnitOfWork() as uow:
             if uow.bank_transaction_coverages is None:
-                    return _CoverageResolution(CoverageStatus.UNAVAILABLE, list(account_ids), {}, 0, len(contexts))
+                return _CoverageResolution(CoverageStatus.UNAVAILABLE, list(account_ids), {}, 0, len(contexts))
             for context in contexts:
                 gaps = await uow.bank_transaction_coverages.find_missing_gaps(
                     context.linked_account_id,

@@ -133,6 +133,30 @@ def apply_query_scope_delta(request: QueryRequest, delta: QueryScopeDelta) -> Qu
         else:
             raise QueryRepairError("amount repair only supports replace or clear")
 
+    # A financial measure and its transaction direction are one coherent
+    # semantic choice.  Normalize that relationship here so a model cannot
+    # create an "income" summary over debits (or a "spending" summary over
+    # credits).  A direction-only correction over a directional summary is
+    # adapted to the corresponding canonical measure.
+    normalized_measure = delta.measure
+    if isinstance(operation, SummarizeOperation):
+        current_measure = getattr(operation.summary, "measure", None)
+        if normalized_measure == "income":
+            if delta.direction is not None and delta.direction != "credit":
+                raise QueryRepairError("income cannot use a debit direction")
+            predicate = predicate.model_copy(update={"direction": "credit"})
+        elif normalized_measure == "spending":
+            if delta.direction is not None and delta.direction != "debit":
+                raise QueryRepairError("spending cannot use a credit direction")
+            predicate = predicate.model_copy(update={"direction": "debit"})
+        elif normalized_measure == "net_cash_flow":
+            predicate = predicate.model_copy(update={"direction": None})
+        elif normalized_measure is None and delta.direction_mutation == "replace":
+            if delta.direction == "credit" and current_measure == "spending":
+                normalized_measure = "income"
+            elif delta.direction == "debit" and current_measure == "income":
+                normalized_measure = "spending"
+
     scope = scope.model_copy(update={"predicate": predicate})
 
     updated_operation: QueryOperation
@@ -143,7 +167,7 @@ def apply_query_scope_delta(request: QueryRequest, delta: QueryScopeDelta) -> Qu
     elif isinstance(operation, SummarizeOperation):
         summary_updates: dict[str, object] = {}
         for field in ("measure", "statistic", "dimension", "rank"):
-            value = getattr(delta, field)
+            value = normalized_measure if field == "measure" else getattr(delta, field)
             if value is None:
                 continue
             target = "rank_by" if field == "rank" else field
@@ -151,7 +175,12 @@ def apply_query_scope_delta(request: QueryRequest, delta: QueryScopeDelta) -> Qu
         if delta.cardinality is not None:
             summary_updates["answer_cardinality"] = delta.cardinality
         try:
-            summary = operation.summary.model_copy(update=summary_updates)
+            summary = type(operation.summary).model_validate(
+                {
+                    **operation.summary.model_dump(mode="python"),
+                    **summary_updates,
+                }
+            )
         except Exception as exc:
             raise QueryRepairError("that summary change is not supported") from exc
         updated_operation = operation.model_copy(update={"scope": scope, "summary": summary})

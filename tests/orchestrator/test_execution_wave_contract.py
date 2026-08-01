@@ -85,9 +85,7 @@ async def test_advance_wave_preserves_route_identity_and_finalizes_completed_wor
         source="semantic_router",
         path_shape="semantic_router_domain",
     )
-    state = _state_with_task(task_stage=TaskStage.COMPLETED).model_copy(
-        update={"turn_directive": directive}
-    )
+    state = _state_with_task(task_stage=TaskStage.COMPLETED).model_copy(update={"turn_directive": directive})
 
     updates = await advance_wave(state, _config())
 

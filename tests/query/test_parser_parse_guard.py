@@ -19,6 +19,7 @@ from banking.transactions.query.models.extraction import (
 )
 from banking.transactions.query.models.operations import QueryRequest, RetrieveOperation, SummarizeOperation
 from banking.transactions.query.services.parsing.parser import QueryParser
+from shared.observability.llm import LLMCallDeadlineExceeded
 
 
 class _DummyStructured:
@@ -56,6 +57,45 @@ class _TrackingLLM:
     def with_structured_output(self, schema: object) -> _TrackingStructured:
         self.schema = schema
         return _TrackingStructured(self._extraction)
+
+
+class _DeadlineStructured:
+    async def ainvoke(self, prompt: str) -> object:
+        del prompt
+        raise LLMCallDeadlineExceeded(role="query_parser", deadline_seconds=15.0)
+
+
+class _DeadlineLLM:
+    model_name = "test-query-model"
+
+    def with_structured_output(self, schema: object) -> _DeadlineStructured:
+        del schema
+        return _DeadlineStructured()
+
+
+@pytest.mark.asyncio
+async def test_parser_timeout_fails_closed_instead_of_running_an_unfiltered_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict]] = []
+
+    def _capture(*, event_name: str, **kwargs: object) -> None:
+        events.append((event_name, dict(kwargs)))
+
+    monkeypatch.setattr("banking.transactions.query.compiler.finalize.record_llm_call", _capture)
+    parser = QueryParser(_DeadlineLLM())
+
+    result = await parser.parse(
+        "Compare food spending this month with last month and show the transactions behind the change",
+        today=date(2026, 3, 7),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.NEEDS_INPUT
+    assert result.query_request is None
+    assert result.resolver_message == render_message("orchestrator.fallback.planner_timeout", "en")
+    assert events[-1][0] == "query_parser_llm_call"
+    assert events[-1][1]["error_type"] == "LLMCallDeadlineExceeded"
 
 
 @pytest.mark.asyncio
@@ -101,6 +141,34 @@ async def test_parser_logs_llm_call_metadata(monkeypatch: pytest.MonkeyPatch) ->
     assert llm_call_events[0]["language"] == "en"
     assert isinstance(llm_call_events[0]["prompt_chars"], int)
     assert llm_call_events[0]["prompt_chars"] > 0
+
+
+@pytest.mark.asyncio
+async def test_parser_compiles_requested_evidence_into_a_grounded_two_step_plan() -> None:
+    extraction = ParserQueryExtraction(
+        intent=QueryIntent.TIME_COMPARISON,
+        filters=QueryFilters(transaction_type="debit", category="food"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        comparison={"mode": "explicit_period", "period": "last_month"},
+        request_shape="comparison",
+        evidence_mode="transactions",
+    )
+    parser = QueryParser(_TrackingLLM(extraction))
+
+    result = await parser.parse(
+        "Compare food spending this month with last month and show the transactions behind the change",
+        today=date(2026, 7, 29),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.execution_contract is not None
+    assert result.execution_contract["kind"] == "plan"
+    assert [step["role"] for step in result.execution_contract["steps"]] == ["primary", "evidence"]
+    evidence = result.execution_contract["steps"][1]["request"]
+    assert evidence["operation"]["kind"] == "retrieve"
+    assert evidence["operation"]["scope"]["predicate"]["categories"] == ["food"]
+    assert evidence["operation"]["scope"]["predicate"]["direction"] == "debit"
 
 
 @pytest.mark.asyncio
@@ -335,6 +403,7 @@ async def test_parser_binds_minimal_schema_and_inflates_downstream_fields() -> N
             intent=QueryIntent.ANALYTICS_SUMMARY,
             time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
             aggregation=QueryAggregation(type="sum"),
+            evidence_mode="none",
         )
     )
     parser = QueryParser(llm)
@@ -362,6 +431,7 @@ async def test_vague_time_from_minimal_parser_output_derives_ambiguity_locally()
         ParserQueryExtraction(
             intent=QueryIntent.ANALYTICS_SUMMARY,
             time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, days_back=30),
+            evidence_mode="none",
         )
     )
     parser = QueryParser(llm)

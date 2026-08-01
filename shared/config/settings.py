@@ -140,9 +140,7 @@ class Settings:
         self.conversation_model: str = os.getenv("CONVERSATION_MODEL", "gpt-5.4-nano").strip()
         self.extractor_model: str = os.getenv("EXTRACTOR_MODEL", "gpt-5.4-mini").strip()
         self.conversation_llm_timeout_seconds: float = float(os.getenv("CONVERSATION_LLM_TIMEOUT_SECONDS", "10"))
-        self.semantic_router_llm_timeout_seconds: float = float(
-            os.getenv("SEMANTIC_ROUTER_LLM_TIMEOUT_SECONDS", "12")
-        )
+        self.semantic_router_llm_timeout_seconds: float = float(os.getenv("SEMANTIC_ROUTER_LLM_TIMEOUT_SECONDS", "12"))
         self.interrupt_router_llm_timeout_seconds: float = float(
             os.getenv("INTERRUPT_ROUTER_LLM_TIMEOUT_SECONDS", "12")
         )

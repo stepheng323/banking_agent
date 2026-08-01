@@ -477,10 +477,7 @@ def _focused_context(*, base: dict[str, Any], focus_type: str) -> dict[str, Any]
 
 
 def apply_selection_payload_to_query(
-    query_request: QueryRequest,
-    payload: SelectionPayload,
-    *,
-    fact_field: QueryFactField | None = None
+    query_request: QueryRequest, payload: SelectionPayload, *, fact_field: QueryFactField | None = None
 ) -> QueryRequest:
     """Compile a new transaction-list contract from a typed selection payload."""
     if payload.insight_evidence is not None:
@@ -495,10 +492,7 @@ def apply_selection_payload_to_query(
         current_start = getattr(evidence, "current_start", None)
         current_end = getattr(evidence, "current_end", None)
         if current_start and current_end:
-            period = ResolvedPeriod(
-                start=date.fromisoformat(current_start),
-                end=date.fromisoformat(current_end)
-            )
+            period = ResolvedPeriod(start=date.fromisoformat(current_start), end=date.fromisoformat(current_end))
         else:
             period = scope.period
 

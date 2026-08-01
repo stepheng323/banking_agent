@@ -146,7 +146,20 @@ async def _stage_deterministic_meta(ctx: GateContext) -> RouteResolution | None:
     social_context_updates: dict[str, Any] = {}
     if response_key in SOCIAL_META_RESPONSE_KEYS:
         social_context_updates["capability_boundary"] = None
-        logger.info("conversation_social_context_reset", response_key=response_key)
+        # A fresh social opener ends an unresolved read/clarification turn.
+        # Query input is not executable financial state, and retaining it
+        # would make the next explicit banking request look like an answer to
+        # the old candidate list (for example, ``Hi`` followed by a new
+        # transaction question being treated as an invalid ordinal).
+        query_clarification_cleared = ctx.state_view.pending_query_clarification is not None
+        if query_clarification_cleared:
+            social_context_updates.update(_build_query_session_exit_updates(ctx.state))
+            social_context_updates["pending_query_clarification"] = None
+        logger.info(
+            "conversation_social_context_reset",
+            response_key=response_key,
+            query_clarification_cleared=query_clarification_cleared,
+        )
 
     return direct_response(
         ctx,

@@ -308,10 +308,10 @@ def build_cache_fingerprint(
         "operation": query_request.operation.kind,
         "accounts_scope": "all" if isinstance(query_request.accounts, AllAccounts) else "selected",
         "account_id": account_id,
-        "account_ids": sorted(str(acc) for acc in account_ids),
+        "account_ids": sorted(acc for acc in account_ids),
         "start": start,
         "end": end,
-        "user_id": str(user_id or ""),
+        "user_id": (user_id or ""),
         "transaction_view": "unified" if settings.enable_unified_transaction_view else "bank",
     }
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -329,8 +329,8 @@ def build_cache_scope_fingerprint(
         "operation": query_request.operation.kind,
         "accounts_scope": "all" if isinstance(query_request.accounts, AllAccounts) else "selected",
         "account_id": account_id,
-        "account_ids": sorted(str(acc) for acc in account_ids),
-        "user_id": str(user_id or ""),
+        "account_ids": sorted(acc for acc in account_ids),
+        "user_id": (user_id or ""),
         "transaction_view": "unified" if settings.enable_unified_transaction_view else "bank",
     }
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -425,7 +425,7 @@ async def fetch_transactions_base(
                 d["id"] = d.pop("transaction_id")
             if "transaction_type" in d:
                 d["type"] = d.pop("transaction_type")
-            return cast(dict[str, Any], _apply_transaction_analysis(d))
+            return _apply_transaction_analysis(d)
         elif isinstance(t, dict):
             d = cast(dict[str, Any], t)
             return _apply_transaction_analysis(d)
@@ -543,6 +543,7 @@ async def fetch_transactions_base(
                 start_date=start_bound,
                 end_date=end_bound,
                 bank_transactions=transactions,
+                account_ids=account_ids if not isinstance(query_request.accounts, AllAccounts) else None,
             )
             transactions = [record.to_query_dict() for record in unified_records]
         except Exception as exc:

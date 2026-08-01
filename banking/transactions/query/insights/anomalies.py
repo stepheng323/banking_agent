@@ -121,9 +121,11 @@ async def execute_anomalies(
         deep=True,
         update={
             "operation": operation.model_copy(
-                update={"scope": operation.scope.model_copy(update={"period": operation.scope.period.model_copy(
-                    update={"start": start, "end": end}
-                )})}
+                update={
+                    "scope": operation.scope.model_copy(
+                        update={"period": operation.scope.period.model_copy(update={"start": start, "end": end})}
+                    )
+                }
             )
         },
     )

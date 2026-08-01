@@ -68,18 +68,27 @@ def test_path_label_prefers_directive_over_legacy_payload_flags() -> None:
         message_id="turn-1",
     )
 
-    assert resolve_path_label(
-        context,
-        {"turn_directive": _directive(owner="planner"), "direct_path_triggered": True},
-    ) == "planner_path"
-    assert resolve_path_label(
-        context,
-        {"turn_directive": _directive(owner="interrupt"), "direct_path_triggered": True},
-    ) == "interrupt_path"
-    assert resolve_path_label(
-        context,
-        {"turn_directive": _directive(), "direct_path_triggered": False},
-    ) == "direct_path"
+    assert (
+        resolve_path_label(
+            context,
+            {"turn_directive": _directive(owner="planner"), "direct_path_triggered": True},
+        )
+        == "planner_path"
+    )
+    assert (
+        resolve_path_label(
+            context,
+            {"turn_directive": _directive(owner="interrupt"), "direct_path_triggered": True},
+        )
+        == "interrupt_path"
+    )
+    assert (
+        resolve_path_label(
+            context,
+            {"turn_directive": _directive(), "direct_path_triggered": False},
+        )
+        == "direct_path"
+    )
 
 
 def test_semantic_path_fallback_uses_directive_derived_path() -> None:

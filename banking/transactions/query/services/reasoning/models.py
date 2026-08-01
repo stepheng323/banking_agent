@@ -12,16 +12,24 @@ from banking.transactions.query.contracts import SurfaceView
 from banking.transactions.query.models.conversation import QueryFocus, QueryScopeDelta
 from banking.transactions.query.models.domain import (
     Filters,
+    QueryFactField,
     QueryFrame,
+    QueryIntent,
     QueryRequest,
     QueryResultItem,
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
     ClarificationPatch,
+    FactQueryKind,
     PendingClarificationState,
+    QueryAggregation,
+    QueryComparison,
     QueryExtractionResult,
+    QueryFilters,
     QueryPlanDraft,
+    QueryRequestShape,
+    QueryTimeRange,
     ReasonerQueryExtraction,
 )
 from shared.types.query_preferences import QueryPreferenceUpdate
@@ -92,6 +100,7 @@ SemanticContextModeType = Literal["none", "pending_clarification", "active_resul
 
 ReasonerSchemaType = Literal["active_continuation", "pending_clarification"]
 ReasonerPromptProfileType = Literal[
+    "repair",
     "focused_item",
     "transaction_list",
     "grouped_summary",
@@ -247,6 +256,39 @@ class ActiveContinuationDecision(BaseModel):
         )
 
 
+class ActiveReasonerExtraction(BaseModel):
+    """Compact non-insight extraction used only by active list/summary turns.
+
+    Fresh parsing owns the larger insight and multi-step extraction vocabulary.
+    Active list and summary continuations only need the ordinary transaction
+    fields below; excluding insight specifications from their provider schema
+    avoids paying for unrelated analytical contracts on every follow-up.
+    """
+
+    model_config = ConfigDict(extra="ignore", json_schema_extra=_strip_llm_schema_annotations)
+
+    intent: QueryIntent = QueryIntent.TRANSACTION_LIST
+    filters: QueryFilters = Field(default_factory=QueryFilters)
+    time_range: QueryTimeRange = Field(default_factory=QueryTimeRange)
+    comparison: QueryComparison | None = None
+    aggregation: QueryAggregation | None = None
+    request_shape: QueryRequestShape | None = None
+    fact_query_kind: FactQueryKind | None = None
+    result_limit: int | None = Field(default=None, ge=1, le=100)
+    result_reference: Literal["latest", "oldest"] | None = None
+    answer_fact_field: QueryFactField | None = None
+    use_default_account_scope: bool = False
+
+    @classmethod
+    def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        schema = super().model_json_schema(*args, **kwargs)
+        _strip_llm_schema_annotations(schema)
+        return schema
+
+    def to_query_extraction_result(self) -> QueryExtractionResult:
+        return ReasonerQueryExtraction.model_validate(self.model_dump()).to_query_extraction_result()
+
+
 class _NarrowActiveDecision(BaseModel):
     """Common fields retained by every surface-specific LLM contract."""
 
@@ -259,26 +301,12 @@ class _NarrowActiveDecision(BaseModel):
 
     decision: Literal["continuation", "fresh_query", "reinterpret_query", "new_query", "end_session"]
     confidence: float | None = None
-    reason: str | None = None
-    extraction: ReasonerQueryExtraction | None = None
-    repair_delta: QueryScopeDelta | None = None
-    alternate_repair_delta: QueryScopeDelta | None = None
-    preferences_update: QueryPreferenceUpdate | None = None
     continuation_type: ContinuationType | None = None
     followup_intent: FollowupIntentType | None = None
-    time_period: str | None = None
-    # Some providers echo the caller's raw text at the decision level. It is
-    # not a runtime decision field; accept and discard it so an otherwise
-    # valid continuation does not degrade into a fresh-query fallback.
-    raw_query: str | None = None
     response_text: str | None = None
-    # Reconciliation is grounded in compact, retained query frames.  Keep this
-    # common to every active surface so a challenge is never forced through a
-    # normal item-selection path merely because its current surface is a list
-    # or a direct answer.
-    referenced_frame_ids: list[str] | None = None
     end_session_response: str | None = None
     end_session_kind: EndSessionKindType | None = None
+    preferences_update: QueryPreferenceUpdate | None = None
 
     @classmethod
     def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
@@ -288,10 +316,43 @@ class _NarrowActiveDecision(BaseModel):
 
     def to_public_decision(self) -> QuerySemanticDecision:
         payload = self.model_dump(exclude_none=True)
-        payload.pop("raw_query", None)
-        extraction = self.extraction.to_query_extraction_result() if self.extraction is not None else None
-        payload["extraction"] = extraction
+        extraction = getattr(self, "extraction", None)
+        if extraction is not None:
+            payload["extraction"] = extraction.to_query_extraction_result()
         return QuerySemanticDecision.model_validate(payload)
+
+
+class RepairDecision(BaseModel):
+    """Sparse correction contract selected only by an advisory repair signal.
+
+    Keeping the canonical scope delta out of ordinary list and summary
+    schemas preserves their latency budget.  The signal chooses this schema;
+    it never decides that a turn is a repair.  The model must still return
+    ``continuation_type=repair`` (or another valid interpretation), and the
+    runtime validates the delta against the focused source contract.
+    """
+
+    model_config = ConfigDict(extra="ignore", json_schema_extra=_strip_llm_schema_annotations)
+
+    decision: Literal["continuation"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    continuation_type: Literal["repair", "reconcile"]
+    followup_intent: Literal["refine_existing", "replace_scope"]
+    repair_delta: QueryScopeDelta
+    alternate_repair_delta: QueryScopeDelta | None = None
+    referenced_frame_ids: list[str] | None = None
+    target_text: str | None = None
+    target_amount: float | None = None
+    target_step_id: str | None = None
+
+    @classmethod
+    def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        schema = super().model_json_schema(*args, **kwargs)
+        _strip_llm_schema_annotations(schema)
+        return schema
+
+    def to_public_decision(self) -> QuerySemanticDecision:
+        return QuerySemanticDecision.model_validate(self.model_dump(exclude_none=True))
 
 
 class FocusedItemDecision(_NarrowActiveDecision):
@@ -307,11 +368,17 @@ class FocusedItemDecision(_NarrowActiveDecision):
     delta_type: DeltaType | None = None
     time_range: TimeRange | None = None
     filters: Filters | None = None
+    # A recipient change is a scoped fact follow-up (for example,
+    # "what about Mum?").  Keep it in the focused-item schema so the narrow
+    # provider contract does not silently discard the semantic delta before
+    # the deterministic continuation compiler sees it.
+    recipient_name: str | None = None
 
 
 class TransactionListDecision(_NarrowActiveDecision):
     """Selection, pagination, aggregation, coverage, and refinement over a visible list."""
 
+    extraction: ActiveReasonerExtraction | None = None
     target_index: int | None = None
     target_amount: float | None = None
     target_text: str | None = None
@@ -322,14 +389,7 @@ class TransactionListDecision(_NarrowActiveDecision):
     drill_down_index: int | None = None
     drill_down_action: DrillDownActionType | None = None
     fact_field: FactFieldType | None = None
-    answer_mode: AnswerModeType | None = None
-    delta_type: DeltaType | None = None
-    time_range: TimeRange | None = None
-    filters: Filters | None = None
     recipient_name: str | None = None
-    result_limit: int | None = None
-    result_reference: ResultReferenceType | None = None
-    plan: QueryPlanDraft | None = None
 
 
 class CompositeDecision(TransactionListDecision):
@@ -337,26 +397,25 @@ class CompositeDecision(TransactionListDecision):
 
     target_step_id: str | None = None
     grounded_operation: GroundedOperationType | None = None
+    repair_delta: QueryScopeDelta | None = None
+    alternate_repair_delta: QueryScopeDelta | None = None
+    plan: QueryPlanDraft | None = None
 
 
 class GroupedSummaryDecision(_NarrowActiveDecision):
     """Aggregate and evidence refinements over a summary."""
 
-    answer_mode: AnswerModeType | None = None
-    delta_type: DeltaType | None = None
-    time_range: TimeRange | None = None
-    filters: Filters | None = None
-    result_limit: int | None = None
+    extraction: ActiveReasonerExtraction | None = None
     rank: QueryRankType | None = None
     target_text: str | None = None
     target_amount: float | None = None
     recipient_name: str | None = None
+    referenced_frame_ids: list[str] | None = None
     coverage_intent: CoverageIntentType | None = None
     transaction_direction_delta: TransactionDirectionDeltaType | None = None
     drill_down_index: int | None = None
     drill_down_action: DrillDownActionType | None = None
     fact_field: FactFieldType | None = None
-    plan: QueryPlanDraft | None = None
 
 
 class InsightDecision(BaseModel):
@@ -386,6 +445,7 @@ class InsightDecision(BaseModel):
     response_text: str | None = None
     end_session_response: str | None = None
     end_session_kind: EndSessionKindType | None = None
+    preferences_update: QueryPreferenceUpdate | None = None
 
     @classmethod
     def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:

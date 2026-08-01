@@ -225,6 +225,7 @@ class ParserQueryExtraction(QueryStepExtraction):
     """Minimal parser-only extraction returned by the fresh-query LLM path."""
 
     plan: QueryPlanDraft | None = None
+    evidence_mode: Literal["none", "transactions"]
 
 
 class QueryExtractionResult(BaseModel):

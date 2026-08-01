@@ -51,9 +51,7 @@ async def test_completion_during_settling_suppresses_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _make_progress_immediately_eligible(monkeypatch)
-    monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.05
-    )
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.05)
     sent: list[dict[str, object]] = []
 
     async def _enqueue(*args: object, **kwargs: object) -> DeliveryAttemptResult:
@@ -79,9 +77,7 @@ async def test_long_running_visible_stage_sends_one_settled_progress_update(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _make_progress_immediately_eligible(monkeypatch)
-    monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.02
-    )
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.02)
     monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.MAX_PROGRESS_MESSAGES", 1)
     sent: list[dict[str, object]] = []
 
@@ -112,9 +108,7 @@ async def test_stage_change_during_settling_replaces_stale_progress_copy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _make_progress_immediately_eligible(monkeypatch)
-    monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.04
-    )
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.04)
     monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.MAX_PROGRESS_MESSAGES", 1)
     sent: list[dict[str, object]] = []
 

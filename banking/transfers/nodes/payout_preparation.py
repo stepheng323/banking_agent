@@ -142,11 +142,7 @@ async def prepare_payout_recipient(
             resolved_name = existing_name
             resolution_provider = existing_provider
 
-        if (
-            identity_is_authoritative
-            and existing_name
-            and not recipient_names_equivalent(existing_name, verified_name)
-        ):
+        if identity_is_authoritative and existing_name and not recipient_names_equivalent(existing_name, verified_name):
             logger.warning(
                 "payout_recipient_identity_mismatch",
                 provider=provider_name,

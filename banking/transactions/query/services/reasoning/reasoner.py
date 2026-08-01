@@ -26,6 +26,7 @@ from banking.transactions.query.prompts.main import (
 from banking.transactions.query.services.reasoning import models as reasoner_models
 from banking.transactions.query.services.reasoning.prompt_compiler import compile_query_reasoner_prompt
 from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut
+from banking.transactions.shared.correction_markers import has_correction_prefix
 from shared.observability.llm import LLMCallDeadlineExceeded, ainvoke_with_config, build_llm_runnable_config
 from shared.observability.llm_call_metrics import record_llm_call, response_schema_metrics, structured_output_metrics
 from shared.observability.llm_http import start_llm_http_recording, stop_llm_http_recording, summarize_llm_http_records
@@ -72,6 +73,9 @@ class QuerySemanticReasoner:
         self._base_llm = llm
         typed_llm = cast(Any, llm)
         self._active_structured_llms = {
+            "repair": with_observable_structured_output(
+                typed_llm, reasoner_models.RepairDecision, method="function_calling"
+            ),
             "focused_item": with_observable_structured_output(
                 typed_llm, reasoner_models.FocusedItemDecision, method="function_calling"
             ),
@@ -562,6 +566,11 @@ class QuerySemanticReasoner:
         prompt_surface_type = self._surface_type_name(surface_view=context.surface_view)
         if context.session_mode == "pending_clarification":
             prompt_profile: reasoner_models.ReasonerPromptProfileType = "pending_clarification"
+        elif has_correction_prefix(context.message):
+            # Correction markers are advisory schema-selection signals only.
+            # The LLM remains authoritative for repair versus reconciliation,
+            # refinement, replacement, or conversational closure.
+            prompt_profile = "repair"
         elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.DIRECT_ANSWER:
             prompt_profile = "focused_item"
         elif context.surface_view is not None and context.surface_view.mode == SurfaceViewMode.GROUPED_SUMMARY:
@@ -586,7 +595,7 @@ class QuerySemanticReasoner:
             # the user's target and resolve it deterministically at runtime,
             # avoiding a standing prompt-size cost on fast list/fact paths.
             context.query_frames
-            if prompt_profile in {"historical_frames", "grouped_summary", "insight", "composite"}
+            if prompt_profile in {"repair", "historical_frames", "grouped_summary", "insight", "composite"}
             else None
         )
         pending_clarification_section = (
@@ -618,6 +627,7 @@ class QuerySemanticReasoner:
         else:
             structured_llm = self._active_structured_llms[prompt_profile]
             response_type = {
+                "repair": reasoner_models.RepairDecision,
                 "focused_item": reasoner_models.FocusedItemDecision,
                 "transaction_list": reasoner_models.TransactionListDecision,
                 "grouped_summary": reasoner_models.GroupedSummaryDecision,

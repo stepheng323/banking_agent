@@ -48,9 +48,7 @@ async def reset_query_semantic_data(*, phone: str) -> None:
         query_ids = list(
             (await db.execute(select(QueryTransaction.id).where(QueryTransaction.user_id == user.id))).scalars()
         )
-        event_ids = list(
-            (await db.execute(select(EconomicEvent.id).where(EconomicEvent.user_id == user.id))).scalars()
-        )
+        event_ids = list((await db.execute(select(EconomicEvent.id).where(EconomicEvent.user_id == user.id))).scalars())
         account_ids = list((await db.execute(select(Account.id).where(Account.user_id == user.id))).scalars())
         if event_ids:
             await db.execute(

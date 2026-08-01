@@ -98,7 +98,7 @@ class _CreditProviderStub:
 
 
 def _contract(query: QueryRequest) -> QueryRequest:
-    return (query)
+    return query
 
 
 @pytest.mark.asyncio

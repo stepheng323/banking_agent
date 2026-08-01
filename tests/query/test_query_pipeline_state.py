@@ -11,11 +11,9 @@ from tests.query.factories import make_query_request
 class _NewContractStep(QueryStep):
     async def run(self, state: dict, worker_context: object = None) -> TransactionResult:
         del state, worker_context
-        contract = (
-            make_query_request(
-                intent=QueryIntent.ANALYTICS_SUMMARY,
-                time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 27)),
-            )
+        contract = make_query_request(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 27)),
         )
         return TransactionResult(outcome=TransactionOutcome.OK, patch={"query_request": contract})
 

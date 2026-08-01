@@ -27,9 +27,7 @@ def serialize_accounts(accounts: list[Any]) -> list[dict[str, Any]]:
                 "is_default": account.get("is_default"),
                 "extra_data": account.get("extra_data"),
                 "version_token": (
-                    str(isoformat() if callable(isoformat) else updated_at)
-                    if updated_at is not None
-                    else None
+                    str(isoformat() if callable(isoformat) else updated_at) if updated_at is not None else None
                 ),
             }
             serialized.append({key: value for key, value in data.items() if value not in (None, "")})
@@ -51,9 +49,7 @@ def serialize_accounts(accounts: list[Any]) -> list[dict[str, Any]]:
             "is_default": getattr(account, "is_default", None),
             "extra_data": getattr(account, "extra_data", None),
             "version_token": (
-                str(isoformat() if callable(isoformat) else updated_at)
-                if updated_at is not None
-                else None
+                str(isoformat() if callable(isoformat) else updated_at) if updated_at is not None else None
             ),
         }
         serialized.append({key: value for key, value in data.items() if value not in (None, "")})

@@ -36,11 +36,7 @@ def _planner_route_updates(
         decision=decision,
         outcome_kind=outcome_kind,
         target_domain=resolved_target,  # type: ignore[arg-type]
-        next_step=(
-            TurnNextStep.ADVANCE
-            if outcome_kind == TurnOutcomeKind.TASK_DISPATCH
-            else TurnNextStep.END
-        ),
+        next_step=(TurnNextStep.ADVANCE if outcome_kind == TurnOutcomeKind.TASK_DISPATCH else TurnNextStep.END),
         path_shape=path_shape,
     )
 

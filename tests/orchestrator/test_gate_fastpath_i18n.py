@@ -63,6 +63,7 @@ from shared.types.conversation_sets import (
     ScheduleQueryContract,
 )
 from shared.types.planner import ContextFrameFollowupDecision, ScheduleSetEditDelta, SemanticRouteDecision
+from shared.types.query_preferences import QueryPreferenceUpdate
 from shared.types.read import ReadRequest
 from tests.query.factories import make_query_request
 
@@ -230,12 +231,8 @@ async def test_account_balance_query_preempts_stale_account_list_context_frame()
             target_intent="account",
             confidence=0.94,
             detected_language="English",
-            read_request=ReadRequest(
-                subject="balance", response_shape="fact_value", bank_name="First Bank"
-            ),
-            balance_contract=BalanceQueryContract(
-                account_scope="named", bank_names=["First Bank"], operation="value"
-            ),
+            read_request=ReadRequest(subject="balance", response_shape="fact_value", bank_name="First Bank"),
+            balance_contract=BalanceQueryContract(account_scope="named", bank_names=["First Bank"], operation="value"),
             reason="fresh account balance query wins over stale account list frame",
         ),
         frame_followup_decision=ContextFrameFollowupDecision(
@@ -4171,9 +4168,7 @@ async def test_semantic_domain_dispatch_applies_detected_locale_to_task_and_prog
             confidence=0.97,
             detected_language="Yoruba",
             read_request=ReadRequest(subject="balance", response_shape="fact_value", bank_name="Access Bank"),
-            balance_contract=BalanceQueryContract(
-                account_scope="named", bank_names=["Access Bank"], operation="value"
-            ),
+            balance_contract=BalanceQueryContract(account_scope="named", bank_names=["Access Bank"], operation="value"),
             reason="localized account read",
         )
     )
@@ -4213,9 +4208,7 @@ async def test_gate_account_count_preserves_canonical_response_shape() -> None:
             response=None,
             expected_transaction_executors=[],
             read_request=ReadRequest(subject="linked_account", response_shape="fact_count"),
-            account_lifecycle_contract=AccountLifecycleContract(
-                operation="count", response_shape="fact_count"
-            ),
+            account_lifecycle_contract=AccountLifecycleContract(operation="count", response_shape="fact_count"),
             reason="single-domain account count",
         )
     )
@@ -4298,9 +4291,7 @@ async def test_gate_beneficiary_count_preserves_canonical_response_shape() -> No
             response=None,
             expected_transaction_executors=[],
             read_request=ReadRequest(subject="beneficiary", response_shape="fact_count"),
-            beneficiary_contract=BeneficiaryQueryContract(
-                operation="count", response_shape="fact_count"
-            ),
+            beneficiary_contract=BeneficiaryQueryContract(operation="count", response_shape="fact_count"),
             reason="single-domain beneficiary count",
         )
     )
@@ -4339,9 +4330,7 @@ async def test_gate_canonical_beneficiary_count_allowed_in_pidgin_locale() -> No
             response=None,
             expected_transaction_executors=[],
             read_request=ReadRequest(subject="beneficiary", response_shape="fact_count"),
-            beneficiary_contract=BeneficiaryQueryContract(
-                operation="count", response_shape="fact_count"
-            ),
+            beneficiary_contract=BeneficiaryQueryContract(operation="count", response_shape="fact_count"),
             reason="semantic router should not be needed for beneficiary count",
         )
     )
@@ -7805,6 +7794,30 @@ async def test_fresh_greeting_clears_stale_unsupported_capability_boundary() -> 
 
 
 @pytest.mark.asyncio
+async def test_fresh_greeting_clears_stale_query_clarification() -> None:
+    responder = _FakeConversationResponder("Hi Olamide—what would you like to do?")
+    state = OrchestratorState(
+        user_id="u_social_meta_stale_query_clarification",
+        phone_number="23480099991235",
+        channel="whatsapp",
+        last_message_text="Hi",
+        pending_query_clarification={
+            "schema_version": 3,
+            "session_active": True,
+            "pending_input": {"kind": "field_clarification", "clarification_type": "selection"},
+        },
+        loaded_context={"language": "en", "profile": {"first_name": "Olamide"}},
+    )
+    config: RunnableConfig = {"configurable": {"conversation_responder": responder}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["final_response"] == responder.reply
+    assert updates["pending_query_clarification"] is None
+    assert updates["turn_directive"].path_shape == "meta_direct"
+
+
+@pytest.mark.asyncio
 async def test_gate_deterministic_social_meta_falls_back_when_responder_returns_empty() -> None:
     responder = _FakeConversationResponder("")
     state = OrchestratorState(
@@ -9017,12 +9030,8 @@ async def test_gate_active_query_bank_specific_balance_request_uses_typed_fastpa
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            read_request=ReadRequest(
-                subject="balance", response_shape="fact_value", bank_name="Access Bank"
-            ),
-            balance_contract=BalanceQueryContract(
-                account_scope="named", bank_names=["Access Bank"], operation="value"
-            ),
+            read_request=ReadRequest(subject="balance", response_shape="fact_value", bank_name="Access Bank"),
+            balance_contract=BalanceQueryContract(account_scope="named", bank_names=["Access Bank"], operation="value"),
             reason="bank-specific balance during active query",
         )
     )
@@ -9060,9 +9069,7 @@ async def test_explicit_balance_read_bypasses_slow_semantic_router() -> None:
             target_intent="account",
             confidence=0.96,
             detected_language="English",
-            read_request=ReadRequest(
-                subject="balance", response_shape="fact_value", bank_name="Access Bank"
-            ),
+            read_request=ReadRequest(subject="balance", response_shape="fact_value", bank_name="Access Bank"),
             reason="bank-specific balance read",
         )
     )
@@ -9695,6 +9702,44 @@ async def test_gate_pending_query_clarification_time_reply_uses_semantic_router(
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "last 3 days"
+    assert "force_new_query" not in task.payload
+
+
+async def test_gate_semantic_query_preference_dispatches_typed_mutation_without_planner() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            confidence=0.97,
+            detected_language="English",
+            target_intent="query",
+            query_preferences=QueryPreferenceUpdate(presentation_detail="detailed"),
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_preferences_1",
+        phone_number="2348000000028",
+        channel="whatsapp",
+        last_message_text="Always give me detailed transaction answers",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["action"] == "update_query_preferences"
+    assert task.payload["preferences_update"] == {"presentation_detail": "detailed"}
     assert "force_new_query" not in task.payload
 
 

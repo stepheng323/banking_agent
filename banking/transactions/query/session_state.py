@@ -129,6 +129,7 @@ def pending_input_from_legacy(raw: object) -> PendingFieldClarification | None:
             None,
         ),
         original_query=pending.original_query,
+        clarification_type=pending.clarification_type,
         target_field=pending.target_field,
         candidate_payloads=[
             QueryInputCandidate(label=candidate.label, payload=candidate.payload, frame_id=candidate.frame_id)
@@ -167,10 +168,15 @@ def legacy_pending_from_input(raw: object) -> PendingClarificationState | None:
             else None
         )
         operation = (
-            ClarificationOperation.model_validate(pending.original_operation)
-            if pending.original_operation
-            else None
+            ClarificationOperation.model_validate(pending.original_operation) if pending.original_operation else None
         )
+        clarification_type = pending.clarification_type or cast_clarification_type(pending.target_field)
+        # Early v3 checkpoints did not persist the discriminator.  Candidate
+        # payloads are only produced for selectable clarifications, so infer
+        # selection for those checkpoints rather than sending a numeric answer
+        # back through the semantic reasoner.
+        if clarification_type is None and pending.candidate_payloads:
+            clarification_type = "selection"
         return PendingClarificationState(
             original_query=pending.original_query,
             current_intent=extraction.intent if extraction is not None else QueryIntent.TRANSACTION_LIST,
@@ -178,7 +184,7 @@ def legacy_pending_from_input(raw: object) -> PendingClarificationState | None:
             ambiguities=_restore_ambiguities(pending.ambiguities),
             resolver_message=pending.resolver_message,
             language=pending.language,
-            clarification_type=cast_clarification_type(pending.target_field),
+            clarification_type=clarification_type,
             target_field=pending.target_field,
             candidate_payloads=[
                 ClarificationCandidate(label=candidate.label, payload=candidate.payload, frame_id=candidate.frame_id)

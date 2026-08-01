@@ -371,7 +371,9 @@ async def test_finalize_mixed_transaction_batch_emits_processing_only() -> None:
 
     say_entries = [entry for entry in updates["outbox"] if entry.get("type") == "say"]
     assert len(say_entries) == 1
-    assert say_entries[0]["text"] == "Your 2 transactions have been submitted. I'm confirming the debit and delivery now."
+    assert (
+        say_entries[0]["text"] == "Your 2 transactions have been submitted. I'm confirming the debit and delivery now."
+    )
     assert updates["context_frames"][-1].frame_type == ContextFrameType.TRANSACTION_LIST
     assert [item.data["transaction_type"] for item in updates["context_frames"][-1].items] == ["transfer", "airtime"]
     assert updates["context_frames"][-1].items[1].data["phone"] == "08162511023"
@@ -415,7 +417,9 @@ async def test_finalize_queued_transfer_batch_does_not_emit_completed_summary() 
 
     say_entries = [entry for entry in updates["outbox"] if entry.get("type") == "say"]
     assert len(say_entries) == 1
-    assert say_entries[0]["text"] == "Your 2 transactions have been submitted. I'm confirming the debit and delivery now."
+    assert (
+        say_entries[0]["text"] == "Your 2 transactions have been submitted. I'm confirming the debit and delivery now."
+    )
     assert "Transaction Summary" not in say_entries[0]["text"]
     assert "All transactions completed successfully" not in say_entries[0]["text"]
 

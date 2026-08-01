@@ -173,7 +173,7 @@ def _single_transfer_funding_approval_prompt(payload: TransferPayload, plan: Any
                 "primary_balance": format_naira(primary_balance),
             },
         ),
-        ""
+        "",
     ]
 
     shortfall = _single_transfer_pool_shortfall(payload, plan)

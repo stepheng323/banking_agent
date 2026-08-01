@@ -10,11 +10,7 @@ def infer_recent_domain_focus(state_view: PlannerStateView) -> str | None:
     prior_output = state_view.planner_output
     if prior_output:
         prior_tasks = getattr(prior_output, "tasks", None) or []
-        prior_executors = {
-            getattr(task, "executor", None)
-            for task in prior_tasks
-            if getattr(task, "executor", None)
-        }
+        prior_executors = {getattr(task, "executor", None) for task in prior_tasks if getattr(task, "executor", None)}
         if len(prior_executors) == 1:
             return cast(str, next(iter(prior_executors)))
 

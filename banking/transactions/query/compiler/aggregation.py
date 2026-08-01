@@ -42,21 +42,13 @@ def infer_breakdown_group_by(extraction: QueryExtractionResult) -> GroupByField 
         )
     ):
         return "account"
-    if any(
-        hint in raw_lower for hint in (" by category ", " per category ")
-    ):
+    if any(hint in raw_lower for hint in (" by category ", " per category ")):
         return "category"
-    if any(
-        hint in raw_lower for hint in (" by merchant ", " per merchant ", " by vendor ", " per vendor ")
-    ):
+    if any(hint in raw_lower for hint in (" by merchant ", " per merchant ", " by vendor ", " per vendor ")):
         return "merchant"
-    if any(
-        hint in raw_lower for hint in (" by day ", " per day ", " daily ")
-    ):
+    if any(hint in raw_lower for hint in (" by day ", " per day ", " daily ")):
         return "day"
-    if any(
-        hint in raw_lower for hint in (" by type ", " per type ")
-    ):
+    if any(hint in raw_lower for hint in (" by type ", " per type ")):
         return "transaction_type"
     extracted_group_by = (
         coerce_group_by(extraction.aggregation.group_by) if extraction.aggregation is not None else None

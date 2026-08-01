@@ -34,6 +34,7 @@ from shared.types.conversation_sets import (
     ScheduleQueryContract,
 )
 from shared.types.planner import RouterDomainIntent, SemanticRoutingMode
+from shared.types.query_preferences import QueryPreferenceUpdate
 from shared.types.read import ReadRequest
 from shared.utils.logging import get_logger
 
@@ -230,6 +231,9 @@ async def _handle_semantic_domain_dispatch(
     account_lifecycle_contract = getattr(route, "account_lifecycle_contract", None)
     if not isinstance(account_lifecycle_contract, AccountLifecycleContract):
         account_lifecycle_contract = None
+    query_preferences = getattr(route, "query_preferences", None)
+    if not isinstance(query_preferences, QueryPreferenceUpdate):
+        query_preferences = None
     task_id, spec = _build_direct_domain_task(
         state_view=ctx.state_view,
         domain=domain,
@@ -240,6 +244,7 @@ async def _handle_semantic_domain_dispatch(
         schedule_contract=schedule_contract,
         account_lifecycle_contract=account_lifecycle_contract,
         query_insight_type=getattr(route, "query_insight_type", None) if domain == "query" else None,
+        query_preferences=query_preferences if domain == "query" else None,
     )
     logger.info(
         "gate_semantic_router_domain_dispatch",

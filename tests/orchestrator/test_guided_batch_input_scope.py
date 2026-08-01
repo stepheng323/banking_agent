@@ -42,7 +42,9 @@ def _state() -> tuple[OrchestratorState, PendingInterrupt]:
         fields_by_task={"transfer_1": ["beneficiary_id"], "airtime_1": ["amount"]},
         batch_input=contract,
     )
-    return OrchestratorState(user_id="u_guided_batch", phone_number="2348000000000", tasks={transfer.id: transfer, airtime.id: airtime}), interrupt
+    return OrchestratorState(
+        user_id="u_guided_batch", phone_number="2348000000000", tasks={transfer.id: transfer, airtime.id: airtime}
+    ), interrupt
 
 
 def test_selection_scope_never_targets_airtime_amount() -> None:

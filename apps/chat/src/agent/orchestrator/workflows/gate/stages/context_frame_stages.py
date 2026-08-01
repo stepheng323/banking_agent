@@ -199,8 +199,7 @@ def _build_read_only_refresh_spec(ctx: GateContext, frame: ContextFrame | None) 
                     try:
                         balance_contract = (
                             BalanceQueryContract.model_validate(frame.metadata.get("balance_contract"))
-                            if request.subject == "balance"
-                            and isinstance(frame.metadata.get("balance_contract"), dict)
+                            if request.subject == "balance" and isinstance(frame.metadata.get("balance_contract"), dict)
                             else None
                         )
                         beneficiary_contract = (
@@ -216,9 +215,7 @@ def _build_read_only_refresh_spec(ctx: GateContext, frame: ContextFrame | None) 
                             else None
                         )
                         lifecycle_contract = (
-                            AccountLifecycleContract.model_validate(
-                                frame.metadata.get("account_lifecycle_contract")
-                            )
+                            AccountLifecycleContract.model_validate(frame.metadata.get("account_lifecycle_contract"))
                             if request.subject in {"linked_account", "default_account"}
                             and isinstance(frame.metadata.get("account_lifecycle_contract"), dict)
                             else None
@@ -349,9 +346,7 @@ def _typed_read_subject_pivot_updates(
             entity_name=entity_name,
             bank_name=bank_name,
             beneficiary_type=(
-                decision.beneficiary_delta.beneficiary_type
-                if decision.beneficiary_delta is not None
-                else None
+                decision.beneficiary_delta.beneficiary_type if decision.beneficiary_delta is not None else None
             ),
         )
     elif subject == "schedule":
@@ -369,9 +364,7 @@ def _typed_read_subject_pivot_updates(
             statuses=[status] if status else [],
         )
     elif subject in {"linked_account", "default_account"}:
-        lifecycle_operation: AccountLifecycleOperation = (
-            "default_identity" if subject == "default_account" else "list"
-        )
+        lifecycle_operation: AccountLifecycleOperation = "default_identity" if subject == "default_account" else "list"
         if subject == "linked_account":
             if shape == "fact_bool":
                 lifecycle_operation = "existence"
@@ -498,9 +491,7 @@ def _read_contract_followup_updates(
         and retained.response_shape.startswith("fact_")
     ):
         updates["response_shape"] = (
-            "surface_list"
-            if retained.subject in {"linked_account", "beneficiary", "schedule"}
-            else "surface_detail"
+            "surface_list" if retained.subject in {"linked_account", "beneficiary", "schedule"} else "surface_detail"
         )
         updates["offset"] = 0
 
@@ -526,9 +517,7 @@ def _read_contract_followup_updates(
         beneficiary_type_update = beneficiary_delta.beneficiary_type
 
     lifecycle_delta = (
-        decision.account_lifecycle_delta
-        if retained.subject in {"linked_account", "default_account"}
-        else None
+        decision.account_lifecycle_delta if retained.subject in {"linked_account", "default_account"} else None
     )
     if lifecycle_delta is not None:
         lifecycle_shape_by_operation = {
@@ -551,12 +540,7 @@ def _read_contract_followup_updates(
             updates["offset"] = 0
             filter_delta_applied = True
 
-    if (
-        not updates
-        and decision.set_scope_delta is None
-        and beneficiary_type_update is None
-        and lifecycle_delta is None
-    ):
+    if not updates and decision.set_scope_delta is None and beneficiary_type_update is None and lifecycle_delta is None:
         return None
 
     request = retained.model_copy(update=updates)
@@ -975,6 +959,12 @@ def resolve_semantic_context_followup(
 async def _stage_context_frame_followup(ctx: GateContext) -> RouteResolution | None:
     """Resolve semantic follow-ups against the latest displayed response frame before domain routing."""
     if not _context_frame_followup_eligible(ctx):
+        return None
+    raw_pending = ctx.state_view.pending_query_clarification
+    if isinstance(raw_pending, dict) and (raw_pending.get("pending_clarification") or raw_pending.get("pending_input")):
+        # Pending query input owns numeric/ordinal/label replies.  Never let
+        # the visible frame reinterpret them as a generic historical target.
+        logger.info("gate_context_frame_followup_skipped_for_pending_query_input")
         return None
     if looks_like_obvious_casual_or_meta_turn(ctx.message_text):
         logger.info("gate_context_frame_followup_skipped_for_casual_turn")

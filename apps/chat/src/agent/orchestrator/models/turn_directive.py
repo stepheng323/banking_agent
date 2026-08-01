@@ -82,9 +82,7 @@ class TurnDirective(BaseModel):
             TurnOutcomeKind.INTERRUPT_HANDOFF: {TurnNextStep.HANDLE_INTERRUPT},
         }
         if self.next_step not in allowed[self.outcome_kind]:
-            raise ValueError(
-                f"{self.outcome_kind.value} cannot transition to {self.next_step.value}"
-            )
+            raise ValueError(f"{self.outcome_kind.value} cannot transition to {self.next_step.value}")
         return self
 
 
@@ -191,10 +189,14 @@ class RouteResolution(Mapping[str, Any]):
                     "outbox": getattr(base_state, "outbox", None),
                 }
             )
-        if self.directive.outcome_kind in {
-            TurnOutcomeKind.DIRECT_RESPONSE,
-            TurnOutcomeKind.POLICY_BLOCK,
-        } and not visible_response:
+        if (
+            self.directive.outcome_kind
+            in {
+                TurnOutcomeKind.DIRECT_RESPONSE,
+                TurnOutcomeKind.POLICY_BLOCK,
+            }
+            and not visible_response
+        ):
             raise RoutingContractError("response outcomes require final_response or outbox")
 
         if (
@@ -210,11 +212,7 @@ class RouteResolution(Mapping[str, Any]):
                 raise RoutingContractError("task dispatch requires a valid current wave")
 
         if self.directive.outcome_kind == TurnOutcomeKind.PLANNER_HANDOFF:
-            forbidden = {
-                key
-                for key in ("final_response", "tasks", "waves")
-                if updates.get(key)
-            }
+            forbidden = {key for key in ("final_response", "tasks", "waves") if updates.get(key)}
             if forbidden:
                 names = ", ".join(sorted(forbidden))
                 raise RoutingContractError(f"planner handoff contains terminal payload: {names}")
@@ -298,8 +296,7 @@ def _has_visible_output(values: Mapping[str, Any]) -> bool:
     if not isinstance(outbox, Sequence) or isinstance(outbox, (str, bytes)):
         return False
     return any(
-        isinstance(item, Mapping)
-        and any(isinstance(value, str) and value.strip() for value in item.values())
+        isinstance(item, Mapping) and any(isinstance(value, str) and value.strip() for value in item.values())
         for item in outbox
     )
 

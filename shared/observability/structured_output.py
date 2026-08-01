@@ -42,9 +42,7 @@ def with_observable_structured_output(
 def unpack_observable_structured_output(result: Any) -> tuple[Any | None, Any, Exception | None]:
     """Return ``(raw_message, parsed_value, parsing_error)`` from either shape."""
 
-    if isinstance(result, Mapping) and (
-        "raw" in result or "parsed" in result or "parsing_error" in result
-    ):
+    if isinstance(result, Mapping) and ("raw" in result or "parsed" in result or "parsing_error" in result):
         parsing_error = result.get("parsing_error")
         return (
             result.get("raw"),
@@ -61,6 +59,4 @@ def _is_unsupported_include_raw_error(message: str) -> bool:
 
 
 def _is_unsupported_method_error(message: str) -> bool:
-    return "method" in message and (
-        "unexpected keyword" in message or "got an unexpected keyword argument" in message
-    )
+    return "method" in message and ("unexpected keyword" in message or "got an unexpected keyword argument" in message)

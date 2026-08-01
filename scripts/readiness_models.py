@@ -111,7 +111,7 @@ DEFAULT_LLM_TOKEN_BUDGETS: tuple[LLMTokenBudget, ...] = (
     LLMTokenBudget(
         "semantic_router_llm_call",
         max_prompt_tokens=1600,
-        max_schema_tokens=750,
+        max_schema_tokens=1000,
         max_provider_input_tokens=2500,
     ),
     LLMTokenBudget(

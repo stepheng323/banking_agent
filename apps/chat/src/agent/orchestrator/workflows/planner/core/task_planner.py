@@ -261,12 +261,12 @@ def _known_planner_model(executors: frozenset[str]) -> type[BaseModel]:
     return cast(
         type[BaseModel],
         {
-        frozenset({"transfer"}): PlannerKnownTransferPlan,
-        frozenset({"airtime"}): PlannerKnownAirtimePlan,
-        frozenset({"data"}): PlannerKnownDataPlan,
-        frozenset({"transfer", "airtime"}): PlannerKnownTransferAirtimePlan,
-        frozenset({"transfer", "data"}): PlannerKnownTransferDataPlan,
-        frozenset({"airtime", "data"}): PlannerKnownAirtimeDataPlan,
+            frozenset({"transfer"}): PlannerKnownTransferPlan,
+            frozenset({"airtime"}): PlannerKnownAirtimePlan,
+            frozenset({"data"}): PlannerKnownDataPlan,
+            frozenset({"transfer", "airtime"}): PlannerKnownTransferAirtimePlan,
+            frozenset({"transfer", "data"}): PlannerKnownTransferDataPlan,
+            frozenset({"airtime", "data"}): PlannerKnownAirtimeDataPlan,
         }.get(executors, PlannerKnownTransactionsPlan),
     )
 

@@ -56,17 +56,10 @@ class _FakeLLM:
                 "primary_intent": raw["primary_intent"],
                 "language": raw.get("detected_language"),
                 "normalized_instruction": raw.get("normalized_instruction", ""),
-                "clauses": [
-                    {"task_ids": clause.get("task_ids", [])}
-                    for clause in raw.get("clauses", [])
-                ],
+                "clauses": [{"task_ids": clause.get("task_ids", [])} for clause in raw.get("clauses", [])],
                 "tasks": [
                     {
-                        **{
-                            key: value
-                            for key, value in task.items()
-                            if key in task_fields
-                        },
+                        **{key: value for key, value in task.items() if key in task_fields},
                         **(
                             {
                                 "executor": (

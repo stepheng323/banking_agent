@@ -224,9 +224,7 @@ def _adapt_generic_read_task(task: dict[str, Any]) -> bool:
         ).model_dump(mode="json", exclude_none=True)
         task["action"] = "list_scheduled_transactions"
     elif subject in {"linked_account", "default_account"}:
-        lifecycle_operation: AccountLifecycleOperation = (
-            "default_identity" if subject == "default_account" else "list"
-        )
+        lifecycle_operation: AccountLifecycleOperation = "default_identity" if subject == "default_account" else "list"
         if subject == "linked_account":
             if shape == "fact_bool":
                 lifecycle_operation = "existence"

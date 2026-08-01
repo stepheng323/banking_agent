@@ -26,13 +26,21 @@ from shared.types.planner import (
     ContextFrameFollowupFilters,
     ContextFrameReplayModifier,
     ContextFrameRequestedField,
-    QueryInsightType,
     RouterDomainIntent,
     SemanticRouteDecision,
     SemanticRouterResponseKey,
     SemanticRoutingDecision,
     SemanticRoutingMode,
     TransactionExecutor,
+)
+from shared.types.query_preferences import (
+    QueryDefaultActivityMeasure,
+    QueryDefaultShape,
+    QueryDefaultStatusInclusion,
+    QueryPreferenceField,
+    QueryPreferenceUpdate,
+    QueryPresentationDetail,
+    QueryRelativePeriodMode,
 )
 from shared.types.read import AdvertisedResponseShape, ReadSubject
 from shared.utils.logging import get_logger
@@ -45,13 +53,12 @@ class SemanticRouteLLMDecision(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    decision: SemanticRoutingDecision = "planner_ambiguous"
+    decision: SemanticRoutingDecision
     confidence: float = Field(default=0.0, alias="conf")
     detected_language: str | None = Field(default=None, alias="lang")
     requested_language: str | None = Field(default=None, alias="req_lang")
     mode: SemanticRoutingMode | None = None
     target_intent: RouterDomainIntent | None = Field(default=None, alias="intent")
-    query_insight_type: QueryInsightType | None = Field(default=None, alias="q_insight")
     response_key: SemanticRouterResponseKey | None = Field(default=None, alias="res_key")
     response: str | None = Field(default=None, alias="res")
     expected_transaction_executors: list[TransactionExecutor] = Field(default_factory=list, alias="execs")
@@ -62,6 +69,15 @@ class SemanticRouteLLMDecision(BaseModel):
     status: str | None = None
     reference: str | None = None
     unsupported_capability: str | None = Field(default=None, alias="unsupported_cap")
+    query_preference_requested: bool = Field(alias="q_pref")
+    query_presentation_detail: QueryPresentationDetail | None = Field(default=None, alias="q_detail")
+    query_default_shape: QueryDefaultShape | None = Field(default=None, alias="q_shape")
+    query_default_account_names: list[str] | None = Field(default=None, alias="q_accounts", max_length=5)
+    query_relative_period_mode: QueryRelativePeriodMode | None = Field(default=None, alias="q_period")
+    query_default_activity_measure: QueryDefaultActivityMeasure | None = Field(default=None, alias="q_measure")
+    query_default_status_inclusion: QueryDefaultStatusInclusion | None = Field(default=None, alias="q_status")
+    query_clear_fields: list[QueryPreferenceField] = Field(default_factory=list, alias="q_clear")
+    query_reset_all: bool = Field(default=False, alias="q_reset")
 
 
 class SemanticDirectReplyLLMDecision(BaseModel):
@@ -166,9 +182,7 @@ def _context_runtime_decision(
     )
     scope = None
     scope_operation = getattr(value, "context_scope_operation", None)
-    if scope_operation in {
-        "preserve", "replace", "add", "remove", "recent_two", "mentioned", "last_result", "all"
-    }:
+    if scope_operation in {"preserve", "replace", "add", "remove", "recent_two", "mentioned", "last_result", "all"}:
         scope = SetScopeDelta(
             operation=scope_operation,
             selection_indices=getattr(value, "context_scope_indices", []),
@@ -179,12 +193,28 @@ def _context_runtime_decision(
     account_delta = None
     if isinstance(value, BalanceContextRouteLLMDecision):
         if value.balance_scope in {
-            "preserve", "replace", "add", "remove", "recent_two", "mentioned", "last_result", "all", "default"
+            "preserve",
+            "replace",
+            "add",
+            "remove",
+            "recent_two",
+            "mentioned",
+            "last_result",
+            "all",
+            "default",
         }:
             balance_delta = BalanceFollowupDelta(
                 scope_operation=cast(
                     Literal[
-                        "preserve", "replace", "add", "remove", "recent_two", "mentioned", "last_result", "all", "default"
+                        "preserve",
+                        "replace",
+                        "add",
+                        "remove",
+                        "recent_two",
+                        "mentioned",
+                        "last_result",
+                        "all",
+                        "default",
                     ],
                     value.balance_scope,
                 ),
@@ -271,6 +301,25 @@ def _context_runtime_decision(
 
 def _adapt_semantic_route_llm_decision(value: BaseModel) -> SemanticRouteDecision:
     payload = value.model_dump(mode="json", by_alias=True, exclude_none=True)
+    query_preference_requested = bool(payload.pop("q_pref", False))
+    preference_payload = {
+        "presentation_detail": payload.pop("q_detail", None),
+        "default_shape": payload.pop("q_shape", None),
+        "default_account_names": payload.pop("q_accounts", None),
+        "relative_period_mode": payload.pop("q_period", None),
+        "default_activity_measure": payload.pop("q_measure", None),
+        "default_status_inclusion": payload.pop("q_status", None),
+        "clear_fields": payload.pop("q_clear", []),
+        "reset_all": payload.pop("q_reset", False),
+    }
+    if query_preference_requested and any(value not in (None, [], False) for value in preference_payload.values()):
+        try:
+            payload["q_prefs"] = QueryPreferenceUpdate.model_validate(preference_payload).model_dump(
+                mode="json",
+                exclude_none=True,
+            )
+        except ValueError:
+            logger.info("semantic_router_query_preferences_rejected")
     subject = payload.pop("read_subject", payload.pop("subject", None))
     shape = payload.pop("response_shape", payload.pop("shape", None))
     entity_name = payload.pop("entity_name", payload.pop("entity", None))
@@ -287,7 +336,7 @@ def _adapt_semantic_route_llm_decision(value: BaseModel) -> SemanticRouteDecisio
             "reference": reference,
         }
     decision = SemanticRouteDecision.model_validate(payload)
-    query_evidence = decision.query_insight_type is not None or (
+    query_evidence = decision.query_preferences is not None or (
         decision.target_intent == "query"
         and decision.decision in {"direct_reply", "planner_ambiguous"}
         and not decision.expected_transaction_executors
@@ -306,14 +355,17 @@ def _adapt_semantic_route_llm_decision(value: BaseModel) -> SemanticRouteDecisio
                 "unsupported_capability": None,
             }
         )
-    context_followup, replay_modifier = _context_runtime_decision(value) if isinstance(
-        value, (_ContextRouteDecision, TransactionContextRouteLLMDecision)
-    ) else (None, None)
+    context_followup, replay_modifier = (
+        _context_runtime_decision(value)
+        if isinstance(value, (_ContextRouteDecision, TransactionContextRouteLLMDecision))
+        else (None, None)
+    )
     if context_followup is not None:
         decision = decision.model_copy(
             update={"context_followup": context_followup, "context_replay_modifier": replay_modifier}
         )
     return decision
+
 
 SCHEDULE_READ_ROUTER_SYSTEM_PROMPT = """Classify whether a user is asking to read scheduled banking instructions.
 Return ONLY JSON for this schema:
@@ -441,6 +493,7 @@ Rules:
    If the context shows a pending query clarification, short answers that complete the missing query detail
    should also route to domain_query rather than planner_ambiguous.
    Examples:
+   - "When last did I send money to Tolu" -> domain_query
    - "What's my income this month" -> domain_query
    - "Wetin be my income this month" -> domain_query
    - "Fihan mi awon credit transactions mi fun osu yi" -> domain_query
@@ -599,7 +652,9 @@ class SemanticRouterLLM:
         self.structured_transaction_context_router = with_structured_output(llm, TransactionContextRouteLLMDecision)
         self.structured_schedule_read_router = with_structured_output(llm, SemanticRouteLLMDecision)
 
-    def _structured_router_for_context(self, signals: SemanticRouterPromptSignals | None) -> tuple[object, type[BaseModel]]:
+    def _structured_router_for_context(
+        self, signals: SemanticRouterPromptSignals | None
+    ) -> tuple[object, type[BaseModel]]:
         frame_type = signals.context_frame_type if signals is not None else None
         if frame_type == "balance":
             return self.structured_balance_context_router, BalanceContextRouteLLMDecision

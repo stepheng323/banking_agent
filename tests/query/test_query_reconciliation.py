@@ -313,20 +313,26 @@ def test_intent_correction_rebuilds_concentration_to_beneficiary_summary() -> No
 
 def test_intent_correction_skips_non_assertive_messages() -> None:
     concentration = _concentration_request(date(2026, 7, 1), date(2026, 7, 31))
-    assert _maybe_rebuild_intent_correction_request(
-        "who did I send money to",
-        target_text=None,
-        session_query_request=concentration,
-    ) is None
+    assert (
+        _maybe_rebuild_intent_correction_request(
+            "who did I send money to",
+            target_text=None,
+            session_query_request=concentration,
+        )
+        is None
+    )
 
 
 def test_intent_correction_skips_non_concentration_requests() -> None:
     beneficiary = _beneficiary_request(date(2026, 7, 1), date(2026, 7, 31))
-    assert _maybe_rebuild_intent_correction_request(
-        "I meant who?",
-        target_text=None,
-        session_query_request=beneficiary,
-    ) is None
+    assert (
+        _maybe_rebuild_intent_correction_request(
+            "I meant who?",
+            target_text=None,
+            session_query_request=beneficiary,
+        )
+        is None
+    )
 
 
 def test_intent_correction_matches_person_target_text_fallback() -> None:

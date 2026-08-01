@@ -22,17 +22,21 @@ from banking.transactions.query.models.domain import (
 )
 from banking.transactions.query.models.extraction import (
     PendingClarificationState,
+    QueryAggregation,
     QueryExtractionResult,
     QueryFilters,
     QueryIntent,
     QueryParseResult,
+    QueryRequestShape,
     QueryTimeRange,
     ResolverOutcome,
     TimeReference,
 )
 from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.services.reasoning.models import (
+    FocusedItemDecision,
     QuerySemanticDecision,
+    RepairDecision,
     SemanticReasonerContext,
     TransactionListDecision,
 )
@@ -112,6 +116,59 @@ def test_narrow_reasoner_adapter_ignores_unrecognized_provider_fields() -> None:
     assert public.target_amount == 25000
 
 
+def test_focused_reasoner_adapter_preserves_recipient_followup() -> None:
+    """Recipient refinements must survive the focused-item LLM schema."""
+    decision = FocusedItemDecision.model_validate(
+        {
+            "decision": "continuation",
+            "continuation_type": "recipient_drill_down",
+            "followup_intent": "none",
+            "recipient_name": "mum",
+        }
+    )
+
+    public = decision.to_public_decision()
+
+    assert public.continuation_type == "recipient_drill_down"
+    assert public.recipient_name == "mum"
+
+
+def test_narrow_reasoner_adapter_preserves_explicit_preference_update() -> None:
+    decision = TransactionListDecision.model_validate(
+        {
+            "decision": "continuation",
+            "continuation_type": "update_preferences",
+            "preferences_update": {"presentation_detail": "detailed"},
+        }
+    )
+
+    public = decision.to_public_decision()
+
+    assert public.preferences_update == QueryPreferenceUpdate(presentation_detail="detailed")
+
+
+def test_repair_reasoner_adapter_preserves_canonical_scope_delta() -> None:
+    decision = RepairDecision.model_validate(
+        {
+            "decision": "continuation",
+            "confidence": 0.91,
+            "continuation_type": "repair",
+            "followup_intent": "refine_existing",
+            "repair_delta": {
+                "direction_mutation": "replace",
+                "direction": "credit",
+                "dimension": "account",
+            },
+        }
+    )
+
+    public = decision.to_public_decision()
+
+    assert public.repair_delta is not None
+    assert public.repair_delta.direction == "credit"
+    assert public.repair_delta.dimension == "account"
+
+
 def _transaction_surface_item(index: int = 1) -> SurfaceItemView:
     return SurfaceItemView(
         id=f"txn-{index}",
@@ -126,6 +183,31 @@ def _transaction_surface_item(index: int = 1) -> SurfaceItemView:
 
 def _grouped_summary_surface_view(**context: object) -> SurfaceView:
     return SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY, context=context)
+
+
+@pytest.mark.asyncio
+async def test_explicit_correction_selects_compact_repair_prompt_profile() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.9,
+            continuation_type="repair",
+        )
+    )
+
+    await QuerySemanticReasoner(llm).reason(
+        SemanticReasonerContext(
+            message="No, use income instead",
+            today=date(2026, 3, 13),
+            language="en",
+            query_request=_query_ir(),
+            surface_view=_grouped_summary_surface_view(type="spending_total"),
+        )
+    )
+
+    rendered_prompt = str(llm.structured.prompts[-1])
+    assert "Repair rules:" in rendered_prompt
+    assert "Grouped-summary rules:" not in rendered_prompt
 
 
 def _composite_surface_view() -> SurfaceView:
@@ -2296,6 +2378,60 @@ async def test_grouped_followup_without_typed_target_replays_safe_grouped_scope(
     assert query_request.aggregation is not None
     assert query_request.aggregation.group_by == "account"
     assert query_request.aggregation.limit == 5
+
+
+@pytest.mark.asyncio
+async def test_grouped_total_followup_compiles_typed_regroup_extraction() -> None:
+    step = ExtractionStep(_FailingLLM())
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 7, 1), end=date(2026, 7, 24)),
+            filters=Filters(transaction_type="credit"),
+            aggregation=Aggregation(type="breakdown", group_by="category", limit=5),
+        )
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.98,
+            continuation_type="grouped_total_followup",
+            followup_intent="refine_existing",
+            extraction=QueryExtractionResult(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                filters=QueryFilters(transaction_type="credit"),
+                aggregation=QueryAggregation(type="breakdown", group_by="account"),
+                request_shape=QueryRequestShape.ANALYTICS,
+            ),
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    result = await step.run(
+        {
+            "message": "Break that down by account and include the overall total",
+            "language": "en",
+            "today": date(2026, 7, 24),
+            "query_session": {
+                "session_active": True,
+                "query_request": session_contract,
+                "query_result": {
+                    "summary_text": "Income by category.",
+                    "items": [],
+                    "surface_view": _grouped_summary_surface_view(group_by="category").model_dump(mode="json"),
+                },
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["flow_state"] == "executing"
+    request = result.patch["query_request"]
+    assert request.aggregation is not None
+    assert request.aggregation.group_by == "account"
+    assert request.filters is not None
+    assert request.filters.transaction_type == "credit"
 
 
 @pytest.mark.asyncio

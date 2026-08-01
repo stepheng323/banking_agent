@@ -6,11 +6,9 @@ from tests.query.factories import make_query_request
 
 
 def test_context_frame_with_null_items_restores_an_empty_query_surface() -> None:
-    query_request = (
-        make_query_request(
-            intent=QueryIntent.TRANSACTION_LIST,
-            time_range=TimeRange(start=date(2026, 7, 1), end=date(2026, 7, 13), granularity="month"),
-        )
+    query_request = make_query_request(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 7, 1), end=date(2026, 7, 13), granularity="month"),
     )
     frame = {
         "frame_id": "query-frame-1",

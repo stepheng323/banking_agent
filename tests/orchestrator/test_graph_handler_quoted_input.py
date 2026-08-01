@@ -767,9 +767,7 @@ async def test_progress_update_does_not_block_when_progress_task_is_cancelled(mo
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
-    monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0
-    )
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0)
 
     delivery_events: list[str] = []
 
@@ -852,9 +850,7 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
-    monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0
-    )
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0)
 
     delivery_events: list[str] = []
 
@@ -980,9 +976,7 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
-    monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0
-    )
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0)
 
     dedupe_keys: list[str] = []
 
@@ -1086,9 +1080,7 @@ async def test_deduped_progress_attempt_consumes_progress(
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
-    monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0
-    )
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.PROGRESS_SETTLE_WINDOW_SECONDS", 0.0)
     monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.MAX_PROGRESS_MESSAGES", 1)
 
     class _SingleSnapshotTracker:

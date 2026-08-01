@@ -40,9 +40,7 @@ class AccountRepository(BaseRepository[Account]):
                 user_uuid = UUID(user_id)
             except ValueError:
                 pass
-        result = await self.db.execute(
-            select(Account).filter(Account.user_id == user_uuid).with_for_update()
-        )
+        result = await self.db.execute(select(Account).filter(Account.user_id == user_uuid).with_for_update())
         return list(result.scalars().all())
 
     async def get_by_account_id(self, account_id: str) -> Account | None:

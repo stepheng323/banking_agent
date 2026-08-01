@@ -38,9 +38,7 @@ def _build_balance_task_from_clause(
         action="check_balance",
         executor="account",
         instruction=clause.text or "Show my balance",
-        parameters=AccountTaskParameters(
-            bank_name=clause.extracted_fields.get("bank_name")
-        ),
+        parameters=AccountTaskParameters(bank_name=clause.extracted_fields.get("bank_name")),
         depends_on=depends_on,
         risk="READ_ONLY",
         source_clause_index=clause.clause_index,

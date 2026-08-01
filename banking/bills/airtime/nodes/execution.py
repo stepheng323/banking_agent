@@ -165,10 +165,9 @@ class ExecutionStep(AirtimeStep):
                         ),
                     ),
                 },
-                patch={
-                    "transaction_id": transaction_id,
-                    "final_status": "processing"
-                }   if transaction_id else {"final_status": "processing"},
+                patch={"transaction_id": transaction_id, "final_status": "processing"}
+                if transaction_id
+                else {"final_status": "processing"},
             )
 
         except Exception as e:

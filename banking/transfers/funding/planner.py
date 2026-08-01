@@ -196,12 +196,14 @@ class FundingPlanner:
             for candidate in others:
                 available = await self._fetch_balance(candidate)
                 balance_checks += 1
-                candidate_sources.append({
-                    "id": str(candidate.id),
-                    "bank_name": candidate.bank_name,
-                    "account_number": getattr(candidate, "account_number", ""),
-                    "available": available,
-                })
+                candidate_sources.append(
+                    {
+                        "id": str(candidate.id),
+                        "bank_name": candidate.bank_name,
+                        "account_number": getattr(candidate, "account_number", ""),
+                        "available": available,
+                    }
+                )
                 # We still build the auto-pooled steps if needed by backend limits
                 if remaining > 0 and len(steps) < MAX_POOLED_SOURCE_ACCOUNTS:
                     contribution = min(available, remaining)
@@ -268,12 +270,14 @@ class FundingPlanner:
                 balance = await self._fetch_balance(account)
                 balance_checks += 1
                 balances_by_account[str(account.id)] = balance
-                candidate_sources.append({
-                    "id": str(account.id),
-                    "bank_name": account.bank_name,
-                    "account_number": getattr(account, "account_number", ""),
-                    "available": balance,
-                })
+                candidate_sources.append(
+                    {
+                        "id": str(account.id),
+                        "bank_name": account.bank_name,
+                        "account_number": getattr(account, "account_number", ""),
+                        "available": balance,
+                    }
+                )
                 if remaining > 0 and len(steps) < MAX_POOLED_SOURCE_ACCOUNTS:
                     contribution = min(balance, remaining)
                     if contribution >= funding_models.MIN_FUNDING_AMOUNT or contribution >= remaining:

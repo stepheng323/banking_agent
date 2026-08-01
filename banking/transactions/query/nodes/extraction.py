@@ -511,8 +511,10 @@ class ExtractionStep(QueryStep):
         # If we have an active session, check for continuity
         if force_new_query:
             updates = await self._parse_new_query(state)
-        elif query_session and query_session.get("session_active") and isinstance(
-            self._load_pending_query_input(query_session), PendingInterpretationProposal
+        elif (
+            query_session
+            and query_session.get("session_active")
+            and isinstance(self._load_pending_query_input(query_session), PendingInterpretationProposal)
         ):
             pending_input = self._load_pending_query_input(query_session)
             assert isinstance(pending_input, PendingInterpretationProposal)

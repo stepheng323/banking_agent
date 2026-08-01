@@ -139,8 +139,7 @@ def _batch_money_moving_tasks_for_wave(
     money_tasks = [
         (candidate_id, task)
         for candidate_id, task in existing_tasks(state, current_wave)
-        if _is_non_terminal_money_moving_task(task)
-        and (task_types is None or task.type in task_types)
+        if _is_non_terminal_money_moving_task(task) and (task_types is None or task.type in task_types)
     ]
     if not money_tasks or (len(money_tasks) < 2 and not include_single):
         return []

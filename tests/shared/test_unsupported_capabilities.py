@@ -77,9 +77,7 @@ def test_unsupported_capability_registry_ignores_supported_banking_requests(text
 
 
 def test_spending_share_is_not_an_unsupported_capability_candidate() -> None:
-    assert not should_try_semantic_unsupported_capability(
-        "Who received the largest share of my spending this month?"
-    )
+    assert not should_try_semantic_unsupported_capability("Who received the largest share of my spending this month?")
 
 
 @pytest.mark.parametrize(

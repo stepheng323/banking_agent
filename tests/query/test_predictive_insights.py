@@ -37,7 +37,9 @@ class MockAnalysisService:
         return self.dataset
 
 
-def create_mock_tx(amount, direction="debit", date_str="2023-10-15T12:00:00Z", status="successful", event_type="transfer"):
+def create_mock_tx(
+    amount, direction="debit", date_str="2023-10-15T12:00:00Z", status="successful", event_type="transfer"
+):
     return {
         "amount": amount,
         "type": direction,
@@ -76,14 +78,17 @@ def test_forecast_calculation():
     req = QueryRequest(
         operation=AnalyzeOperation(
             scope=QueryScope(period=ResolvedPeriod(start=start_date, end=end_date)),
-            analysis=ForecastSpec(history_days=30, horizon_days=10)
+            analysis=ForecastSpec(history_days=30, horizon_days=10),
         )
     )
 
     import asyncio
-    result = asyncio.run(execute_forecast(
-        service, req, "acc_1", ["acc_1"], [{"account_id": "acc_1", "available_balance": 5000}], user_id="u1"
-    ))
+
+    result = asyncio.run(
+        execute_forecast(
+            service, req, "acc_1", ["acc_1"], [{"account_id": "acc_1", "available_balance": 5000}], user_id="u1"
+        )
+    )
 
     assert result.available
     # Total valid debit = 300 + 150 + 450 = 900
@@ -116,14 +121,13 @@ def test_runway_calculation():
     req = QueryRequest(
         operation=AnalyzeOperation(
             scope=QueryScope(period=ResolvedPeriod(start=start_date, end=end_date)),
-            analysis=RunwaySpec(baseline_days=30)
+            analysis=RunwaySpec(baseline_days=30),
         )
     )
 
     import asyncio
-    result = asyncio.run(execute_runway(
-        service, req, "acc_1", ["acc_1", "acc_2"], None, user_id="u1"
-    ))
+
+    result = asyncio.run(execute_runway(service, req, "acc_1", ["acc_1", "acc_2"], None, user_id="u1"))
 
     assert result.available
     # Total spend = 1000, days = 30; balance = 5000 across both accounts.
@@ -167,14 +171,17 @@ def test_cash_flow_quality():
                     end=datetime(2024, 1, 15, tzinfo=UTC),
                 )
             ),
-            analysis=CashFlowQualitySpec(min_complete_months=3)
+            analysis=CashFlowQualitySpec(min_complete_months=3),
         )
     )
 
     import asyncio
-    result = asyncio.run(execute_cash_flow_quality(
-        service, req, "acc_1", ["acc_1"], [{"account_id": "acc_1", "available_balance": "5000"}], user_id="u1"
-    ))
+
+    result = asyncio.run(
+        execute_cash_flow_quality(
+            service, req, "acc_1", ["acc_1"], [{"account_id": "acc_1", "available_balance": "5000"}], user_id="u1"
+        )
+    )
     assert result.available
     assert result.analyzed_months == 3
 
@@ -247,7 +254,9 @@ def test_cash_flow_quality_never_labels_partial_calendar_months_healthy() -> Non
 
     import asyncio
 
-    result = asyncio.run(execute_cash_flow_quality(MockAnalysisService(dataset), request, "acc", ["acc"], None, user_id="u"))
+    result = asyncio.run(
+        execute_cash_flow_quality(MockAnalysisService(dataset), request, "acc", ["acc"], None, user_id="u")
+    )
 
     assert result.available is False
     assert result.is_healthy is False

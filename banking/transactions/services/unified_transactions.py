@@ -474,17 +474,22 @@ class UnifiedTransactionService:
         end_date: date,
         bank_transactions: list[Any] | None = None,
         local_limit: int = 200,
+        account_ids: list[str] | None = None,
     ) -> list[UnifiedTransactionRecord]:
-        local_rows = await self._load_local_rows(user_id, start_date=start_date, end_date=end_date, limit=local_limit)
+        local_rows = await self._load_local_rows(
+            user_id, start_date=start_date, end_date=end_date, limit=local_limit, account_ids=account_ids
+        )
         bank_rows = (
             list(bank_transactions)
             if bank_transactions is not None
-            else await self._load_bank_rows(user_id, start_date=start_date, end_date=end_date)
+            else await self._load_bank_rows(user_id, start_date=start_date, end_date=end_date, account_ids=account_ids)
         )
         records = self.reconcile(local_rows, bank_rows)
         return [record for record in records if _in_window(record, start_date, end_date)]
 
-    async def _load_local_rows(self, user_id: str, *, start_date: date, end_date: date, limit: int) -> list[Any]:
+    async def _load_local_rows(
+        self, user_id: str, *, start_date: date, end_date: date, limit: int, account_ids: list[str] | None = None
+    ) -> list[Any]:
         transaction_repo = self.transaction_repo
         if transaction_repo is None:
             from banking.persistence.unit_of_work import UnitOfWork
@@ -509,9 +514,21 @@ class UnifiedTransactionService:
             )
 
         rows = await transaction_repo.get_by_user(user_id, limit=limit)
-        return [row for row in rows if start_date <= _local_effective_at(row).date() <= end_date]
+        local_rows = [row for row in rows if start_date <= _local_effective_at(row).date() <= end_date]
 
-    async def _load_bank_rows(self, user_id: str, *, start_date: date, end_date: date) -> list[Any]:
+        if account_ids is not None:
+            filtered = []
+            for row in local_rows:
+                source_id = _clean(_tx_attr(row, "source_account_id")) or _clean(_tx_attr(row, "account_id"))
+                if source_id and source_id in account_ids:
+                    filtered.append(row)
+            local_rows = filtered
+
+        return local_rows
+
+    async def _load_bank_rows(
+        self, user_id: str, *, start_date: date, end_date: date, account_ids: list[str] | None = None
+    ) -> list[Any]:
         bank_transaction_repo = self.bank_transaction_repo
         if bank_transaction_repo is None or not hasattr(bank_transaction_repo, "list_by_user_window"):
             if not self.load_bank_rows_from_uow:
@@ -528,11 +545,19 @@ class UnifiedTransactionService:
                 )
 
         assert bank_transaction_repo is not None
-        return await bank_transaction_repo.list_by_user_window(
+        rows = await bank_transaction_repo.list_by_user_window(
             user_id,
             start_date=start_date,
             end_date=end_date,
         )
+        if account_ids is not None:
+            filtered = []
+            for row in rows:
+                source_id = _clean(_tx_attr(row, "account_id")) or _clean(_tx_attr(row, "mono_account_id"))
+                if source_id and source_id in account_ids:
+                    filtered.append(row)
+            rows = filtered
+        return rows
 
     @classmethod
     def reconcile(cls, local_transactions: list[Any], bank_transactions: list[Any]) -> list[UnifiedTransactionRecord]:

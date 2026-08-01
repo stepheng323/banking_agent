@@ -375,9 +375,7 @@ def test_inferred_airtime_network_from_planner_phone_keeps_planner_quality_clean
         ]
     )
 
-    normalized, quality = normalize_planner_transaction_output_with_quality(
-        planner_output, "Buy 1k airtime for me"
-    )
+    normalized, quality = normalize_planner_transaction_output_with_quality(planner_output, "Buy 1k airtime for me")
 
     assert normalized.tasks[0].parameters.network == "MTN"
     assert quality.clean

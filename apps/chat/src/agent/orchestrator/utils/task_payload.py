@@ -460,8 +460,7 @@ def build_task_spec_from_plan_item(
     declared_risk = str(getattr(plan_item, "risk", "") or "")
     if declared_risk and declared_risk != operation.risk:
         raise ValueError(
-            f"Planner risk {declared_risk!r} does not match operation "
-            f"{operation.action!r} risk {operation.risk!r}"
+            f"Planner risk {declared_risk!r} does not match operation {operation.action!r} risk {operation.risk!r}"
         )
     operation.parameter_model.model_validate(_dump_plan_parameters(plan_item.parameters))
     logger.info(

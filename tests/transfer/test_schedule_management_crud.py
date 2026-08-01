@@ -98,9 +98,7 @@ class _FakeScheduleRepo:
     ) -> list[SimpleNamespace]:
         del user_id
         return [
-            schedule
-            for schedule in self.schedules
-            if str(schedule.id) in schedule_ids and schedule.status == "active"
+            schedule for schedule in self.schedules if str(schedule.id) in schedule_ids and schedule.status == "active"
         ]
 
     async def get_by_statuses_for_user(
@@ -122,9 +120,7 @@ class _FakeScheduleRepo:
     ) -> list[SimpleNamespace]:
         del user_id
         return [
-            schedule
-            for schedule in self.schedules
-            if str(schedule.id) in schedule_ids and schedule.status in statuses
+            schedule for schedule in self.schedules if str(schedule.id) in schedule_ids and schedule.status in statuses
         ]
 
 

@@ -48,6 +48,7 @@ from banking.transactions.query.models.extraction import (
     PendingClarificationState,
     QueryExtractionResult,
 )
+from banking.transactions.query.session_state import build_query_session_v3, pending_input_from_legacy
 from tests.query.factories import make_query_request
 
 
@@ -68,12 +69,10 @@ def _pending_query_clarification_snapshot(*, timestamp: float | None = None) -> 
 
 
 def _query_surface_frame(*, summary_text: str = "Netflix was ₦5,000.") -> ContextFrame:
-    contract = (
-        make_query_request(
-            intent=QueryIntent.TRANSACTION_SEARCH,
-            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 28)),
-            result_limit=1,
-        )
+    contract = make_query_request(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 28)),
+        result_limit=1,
     )
     query_frame = build_query_frame(
         query_request=contract,
@@ -138,7 +137,7 @@ async def test_load_query_session_snapshot_ignores_redis_when_no_orchestrator_co
     assert snapshot is None
 
 
-async def test_load_query_session_snapshot_prefers_context_frame_over_pending_clarification() -> None:
+async def test_load_query_session_snapshot_prefers_pending_clarification_over_context_frame() -> None:
     class _Redis:
         async def get(self, key: str) -> str:
             raise AssertionError(f"Redis should not be queried for planner session state: {key}")
@@ -153,10 +152,44 @@ async def test_load_query_session_snapshot_prefers_context_frame_over_pending_cl
 
     snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
 
-    assert source == "context_frame"
+    assert source == "pending_clarification"
     assert snapshot is not None
-    assert snapshot["schema_version"] == 3
-    assert snapshot["display_result"]["summary_text"] == "Netflix was ₦5,000."
+    assert snapshot["session_active"] is True
+    assert "query_result" not in snapshot
+
+
+async def test_load_query_session_snapshot_projects_v3_pending_input_before_context_frame() -> None:
+    pending_state = PendingClarificationState(
+        original_query="How much did I spend last?",
+        current_intent=QueryIntent.ANALYTICS_SUMMARY,
+        original_extraction=QueryExtractionResult(intent=QueryIntent.ANALYTICS_SUMMARY),
+        resolver_message="Which period did you mean?",
+    )
+    pending = pending_input_from_legacy(pending_state)
+    assert pending is not None
+    request = make_query_request(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 31)),
+    )
+    v3 = build_query_session_v3(
+        request=request,
+        result=None,
+        raw_frames=[],
+        pending_input=pending,
+    ).model_dump(mode="json")
+    state = OrchestratorState(
+        user_id="u_ctx_v3_pending",
+        phone_number="2348000000301",
+        channel="whatsapp",
+        context_frames=[_query_surface_frame()],
+        pending_query_clarification=v3,
+    )
+
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
+
+    assert source == "pending_clarification"
+    assert snapshot is not None
+    assert snapshot["pending_clarification"]["resolver_message"] == "Which period did you mean?"
 
 
 async def test_load_query_session_snapshot_no_longer_prefers_redis() -> None:

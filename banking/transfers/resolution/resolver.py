@@ -93,9 +93,7 @@ async def resolve_beneficiary(
                 updated_at = selected.get("updated_at")
                 isoformat = getattr(updated_at, "isoformat", None)
                 version_token = (
-                    str(isoformat() if callable(isoformat) else updated_at)
-                    if updated_at is not None
-                    else None
+                    str(isoformat() if callable(isoformat) else updated_at) if updated_at is not None else None
                 )
                 if version_token != selection_ref.version_token:
                     return TransactionResult(

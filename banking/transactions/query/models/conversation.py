@@ -117,10 +117,32 @@ class QueryScopeDelta(ConversationModel):
     amount_mutation: ScopeMutation | None = None
     min_amount: float | None = Field(default=None, ge=0)
     max_amount: float | None = Field(default=None, ge=0)
-    measure: str | None = None
-    statistic: str | None = None
-    dimension: str | None = None
-    rank: str | None = None
+    measure: (
+        Literal[
+            "spending",
+            "income",
+            "net_cash_flow",
+            "transactions",
+            "cash_flow_overview",
+            "inflow",
+            "outflow",
+        ]
+        | None
+    ) = None
+    statistic: Literal["sum", "count", "average", "largest", "smallest"] | None = None
+    dimension: (
+        Literal[
+            "category",
+            "counterparty",
+            "day",
+            "account",
+            "transaction_type",
+            "event_type",
+            "cash_flow_class",
+        ]
+        | None
+    ) = None
+    rank: Literal["amount", "count"] | None = None
     cardinality: Literal["one", "many"] | None = None
     analysis_basis: Literal["ledger_transactions", "economic_events"] | None = None
     confidence_policy: Literal["include", "exclude_uncertain", "segment_uncertain"] | None = None
@@ -153,6 +175,17 @@ class PendingFieldClarification(ConversationModel):
     kind: Literal["field_clarification"] = "field_clarification"
     source_frame_id: str | None = None
     original_query: str = ""
+    clarification_type: Literal[
+        "time",
+        "selection",
+        "recipient",
+        "account",
+        "direction",
+        "category",
+        "status",
+        "amount",
+        "scope",
+    ] | None = None
     target_field: str | None = None
     candidate_payloads: list[QueryInputCandidate] = Field(default_factory=list, max_length=5)
     original_operation: dict[str, str | None] = Field(default_factory=dict)

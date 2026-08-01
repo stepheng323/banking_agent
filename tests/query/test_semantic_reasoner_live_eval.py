@@ -204,13 +204,10 @@ async def test_query_reasoner_live_eval_pending_clarification() -> None:
     assert isinstance(result, QuerySemanticDecision)
     assert result.decision == "clarification_answer"
     # gpt-4o-mini may return the resolved period in either time_period or clarification_patch.
-    assert (
-        (result.time_period is not None and "3" in result.time_period)
-        or (
-            result.clarification_patch is not None
-            and result.clarification_patch.time_range is not None
-            and result.clarification_patch.time_range.days_back == 3
-        )
+    assert (result.time_period is not None and "3" in result.time_period) or (
+        result.clarification_patch is not None
+        and result.clarification_patch.time_range is not None
+        and result.clarification_patch.time_range.days_back == 3
     )
 
 

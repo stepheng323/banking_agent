@@ -77,6 +77,30 @@ _VARIANCE_CONTINUATION_BUDGET = LLMCallBudget(
     ),
 )
 
+_QUERY_FRESH_SINGLE_CALL_BUDGET = LLMCallBudget(
+    max_calls=1,
+    max_event_counts=(
+        ("semantic_router_llm_call", 0),
+        ("query_parser_llm_call", 1),
+        ("query_reasoner_llm_call", 0),
+        ("planner_llm_call", 0),
+        ("outbox_bridge_llm_call", 0),
+    ),
+    required_event_counts=(("query_parser_llm_call", 1),),
+)
+
+_SEMANTIC_QUERY_PREFERENCE_BUDGET = LLMCallBudget(
+    max_calls=1,
+    max_event_counts=(
+        ("semantic_router_llm_call", 1),
+        ("planner_llm_call", 0),
+        ("query_parser_llm_call", 0),
+        ("query_reasoner_llm_call", 0),
+        ("outbox_bridge_llm_call", 0),
+    ),
+    required_event_counts=(("semantic_router_llm_call", 1),),
+)
+
 # Dead-end replies that must never answer a legitimate query phrasing.
 _QUERY_LONGTAIL_FORBIDDEN: tuple[str, ...] = (
     "I'm not sure what you're referring to",
@@ -350,9 +374,9 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
                     ReadinessExpectation(expect_any=("choose", "which one", "transaction")),
                     modes=("dry-run",),
                 ),
-                    ReadinessTurn(
-                        "What bank is that?",
-                        ReadinessExpectation(expect_any=("reply", "number", "rephrase")),
+                ReadinessTurn(
+                    "What bank is that?",
+                    ReadinessExpectation(expect_any=("reply", "number", "rephrase")),
                     modes=("dry-run",),
                 ),
                 ReadinessTurn(
@@ -913,15 +937,15 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         ReadinessExpectation(
                             expect_any=("category", "spending", "₦"),
                             expect_none=_QUERY_LONGTAIL_FORBIDDEN,
-                            llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                            llm_call_budget=_QUERY_FRESH_SINGLE_CALL_BUDGET,
                         ),
                         modes=("dry-run",),
                     ),
                     ReadinessTurn(
                         "No, I meant income; keep the same month",
                         ReadinessExpectation(
-                            expect_any=("income", "came in", "received", "₦"),
-                            expect_none=_QUERY_LONGTAIL_FORBIDDEN,
+                            expect_all=("income", "₦"),
+                            expect_none=(*_QUERY_LONGTAIL_FORBIDDEN, "Spending by category"),
                             llm_call_budget=_VARIANCE_CONTINUATION_BUDGET,
                         ),
                         modes=("dry-run",),
@@ -947,9 +971,9 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                     ReadinessTurn(
                         "Compare food spending this month with last month and show the transactions behind the change",
                         ReadinessExpectation(
-                            expect_any=("food", "month", "transaction", "change"),
+                            expect_all=("food", "transaction"),
                             expect_none=_QUERY_LONGTAIL_FORBIDDEN,
-                            llm_call_budget=_VARIANCE_FRESH_QUERY_BUDGET,
+                            llm_call_budget=_QUERY_FRESH_SINGLE_CALL_BUDGET,
                         ),
                         modes=("dry-run",),
                         reset_context_before=True,
@@ -959,7 +983,7 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         ReadinessExpectation(
                             expect_any=("preference", "from now", "detailed"),
                             expect_none=_QUERY_LONGTAIL_FORBIDDEN,
-                            llm_call_budget=_PLANNER_SINGLE_CALL_BUDGET,
+                            llm_call_budget=_SEMANTIC_QUERY_PREFERENCE_BUDGET,
                         ),
                         modes=("dry-run",),
                         reset_context_before=True,

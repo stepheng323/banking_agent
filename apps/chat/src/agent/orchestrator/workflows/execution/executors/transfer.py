@@ -711,9 +711,7 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
 
     _apply_result_patch(task, result)
     invalidated_domain = (
-        result.patch.get("invalidate_conversation_set_domain")
-        if isinstance(result.patch, dict)
-        else None
+        result.patch.get("invalidate_conversation_set_domain") if isinstance(result.patch, dict) else None
     )
     if result.outcome == TransactionOutcome.OK and isinstance(invalidated_domain, str):
         invalidate_conversation_set_frames(ctx, invalidated_domain)
@@ -856,9 +854,7 @@ async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
 
     _apply_result_patch(task, result)
     invalidated_domain = (
-        result.patch.get("invalidate_conversation_set_domain")
-        if isinstance(result.patch, dict)
-        else None
+        result.patch.get("invalidate_conversation_set_domain") if isinstance(result.patch, dict) else None
     )
     if result.outcome == TransactionOutcome.OK and isinstance(invalidated_domain, str):
         invalidate_conversation_set_frames(ctx, invalidated_domain)
@@ -921,9 +917,7 @@ def _schedule_response_body_blocks(
     if not isinstance(result.patch, dict):
         return None
     read_request = (
-        result.read_result.request
-        if result.read_result is not None
-        else normalize_read_request(task.payload)
+        result.read_result.request if result.read_result is not None else normalize_read_request(task.payload)
     )
     if read_request is not None and read_request.response_shape.startswith("fact_"):
         return None

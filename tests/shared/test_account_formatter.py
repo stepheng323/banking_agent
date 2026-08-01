@@ -63,9 +63,7 @@ def test_format_balance_response_blocks_render_with_mobile_spacing() -> None:
     )
 
     assert blocks is not None
-    assert render_body_blocks_text(blocks) == (
-        "Your Zenith Bank account (···9384) has a balance of **₦30,000.00**."
-    )
+    assert render_body_blocks_text(blocks) == ("Your Zenith Bank account (···9384) has a balance of **₦30,000.00**.")
 
 
 def test_account_list_does_not_mask_internal_account_id_as_account_number() -> None:
@@ -142,9 +140,7 @@ def test_format_default_account_returns_only_masked_default_identity() -> None:
 
 
 def test_format_default_account_handles_missing_default() -> None:
-    assert AccountFormatter.format_default_account(None, locale="en") == (
-        "I couldn't find a default linked account."
-    )
+    assert AccountFormatter.format_default_account(None, locale="en") == ("I couldn't find a default linked account.")
 
 
 def test_get_last4_never_falls_back_to_internal_id_suffix() -> None:

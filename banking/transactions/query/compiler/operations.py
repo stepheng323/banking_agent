@@ -278,7 +278,12 @@ def infer_result_reference(
 ) -> Literal["latest", "oldest"] | None:
     if extraction.result_reference in {"latest", "oldest"}:
         return cast(Literal["latest", "oldest"], extraction.result_reference)
-    if intent != QueryIntent.TRANSACTION_DETAIL:
+    # Fact requests can be emitted with a list/search intent by the parser
+    # (especially counterparty/date questions).  They still need the same
+    # deterministic latest/oldest semantics as transaction-detail requests;
+    # otherwise multiple matching rows incorrectly become a clarification.
+    is_fact_request = extraction.answer_fact_field is not None or extraction.fact_query_kind is not None
+    if intent != QueryIntent.TRANSACTION_DETAIL and not is_fact_request:
         return None
     raw_query = f" {(extraction.raw_query or '').strip().lower()} "
     if any(cue in raw_query for cue in (" last ", " latest ", " most recent ")):

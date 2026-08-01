@@ -830,9 +830,7 @@ def test_payload_builder_uses_planner_query_read_contract_without_text_inference
         action="transaction_search",
         executor="query",
         instruction="Count last week's transactions",
-        parameters=QueryTaskParameters(
-            read_request=ReadRequest(subject="transaction", response_shape="fact_count")
-        ),
+        parameters=QueryTaskParameters(read_request=ReadRequest(subject="transaction", response_shape="fact_count")),
         risk="READ_ONLY",
     )
 

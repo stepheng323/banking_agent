@@ -386,6 +386,7 @@ def parse_simple_transfer_command(
             return patch
 
     from shared.utils.bank_aliases import BANK_ALIASES, BANK_DISPLAY_NAMES
+
     target_lower = f" {target.lower()} "
     for bank_key in list(BANK_ALIASES.keys()) + list(BANK_DISPLAY_NAMES.keys()):
         if f" {bank_key} " in target_lower:

@@ -78,9 +78,7 @@ class ScheduledRunRepository(BaseRepository[ScheduledRun]):
             ends_at=ends_at,
         )
         result = await self.db.execute(
-            query.order_by(ScheduledRun.due_at_utc.desc(), ScheduledRun.created_at.desc())
-            .offset(offset)
-            .limit(limit)
+            query.order_by(ScheduledRun.due_at_utc.desc(), ScheduledRun.created_at.desc()).offset(offset).limit(limit)
         )
         return list(result.scalars().all())
 
@@ -94,14 +92,18 @@ class ScheduledRunRepository(BaseRepository[ScheduledRun]):
         starts_at: datetime | None = None,
         ends_at: datetime | None = None,
     ) -> int:
-        query = self._user_query(
-            user_id,
-            schedule_ids=schedule_ids,
-            domains=domains,
-            statuses=statuses,
-            starts_at=starts_at,
-            ends_at=ends_at,
-        ).with_only_columns(func.count(ScheduledRun.id)).order_by(None)
+        query = (
+            self._user_query(
+                user_id,
+                schedule_ids=schedule_ids,
+                domains=domains,
+                statuses=statuses,
+                starts_at=starts_at,
+                ends_at=ends_at,
+            )
+            .with_only_columns(func.count(ScheduledRun.id))
+            .order_by(None)
+        )
         result = await self.db.execute(query)
         return int(result.scalar_one())
 

@@ -33,12 +33,7 @@ from banking.transactions.query.services.analysis.kernel.metrics import (
 
 
 def _reference(row: dict[str, Any]) -> str:
-    return str(
-        row.get("transaction_reference")
-        or row.get("reference")
-        or row.get("provider_reference")
-        or ""
-    ).strip()
+    return str(row.get("transaction_reference") or row.get("reference") or row.get("provider_reference") or "").strip()
 
 
 def _transaction_id(row: dict[str, Any]) -> str:

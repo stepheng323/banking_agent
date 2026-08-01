@@ -73,6 +73,14 @@ _STRUCTURAL_QUERY_DIRECT_PATTERNS = (
     r"^how\s+much\s+(?:came|come)\s+in\b",
     r"^who\s+sent\s+me\s+(?:the\s+most\s+)?(?:money\s+)?",
     r"^where\s+did\s+my\s+money\s+go\b",
+    # Analytical commands with an explicit transaction-history subject are
+    # structurally query-owned.  This is a domain grammar guard, not a
+    # response-shape parser: the query parser still owns every filter,
+    # period, grouping, comparison, and evidence step.
+    r"^(?:break\s+down|breakdown|analyse|analyze|summari[sz]e|rank)\b.*\b"
+    r"(?:spending|expenses?|income|inflows?|outflows?|transactions?|cash[\s-]?flow)\b",
+    r"^compare\b.*\b"
+    r"(?:spending|expenses?|income|inflows?|outflows?|transactions?|cash[\s-]?flow)\b",
 )
 _QUERY_POLITE_PREFIX_RE = re.compile(
     r"^(?:(?:please|pls|abeg|kindly|oya|jowo|jọwọ|biko)\s+)+",

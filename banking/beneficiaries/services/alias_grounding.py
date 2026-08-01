@@ -46,10 +46,7 @@ def restore_exact_saved_alias(
         normalized_alias = _normalize_alias_text(alias)
         if not normalized_alias or f" {normalized_alias} " not in padded_message:
             continue
-        if not (
-            normalized_recipient == normalized_alias
-            or normalized_alias.startswith(f"{normalized_recipient} ")
-        ):
+        if not (normalized_recipient == normalized_alias or normalized_alias.startswith(f"{normalized_recipient} ")):
             continue
         if isinstance(alias, str) and alias.strip():
             matches.setdefault(normalized_alias, alias.strip())

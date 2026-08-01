@@ -19,10 +19,7 @@ from banking.transfers.resolution.resolver import resolve_beneficiary
 
 
 def _has_destination(payload: TransferPayload) -> bool:
-    return bool(
-        payload.recipient_account
-        and (payload.recipient_bank_name or payload.recipient_bank_code)
-    )
+    return bool(payload.recipient_account and (payload.recipient_bank_name or payload.recipient_bank_code))
 
 
 def _has_resolution(payload: TransferPayload) -> bool:
@@ -69,8 +66,7 @@ class ResolutionStep(TransferStep):
 
         resolution_input = data
         mode_switch_requires_resolution = bool(
-            data.recipient_resolution_mode
-            and data.recipient_resolution_mode != desired_mode
+            data.recipient_resolution_mode and data.recipient_resolution_mode != desired_mode
         ) or bool(
             desired_mode == POOLED_MODE
             and payout_provider_is_authoritative
@@ -89,15 +85,14 @@ class ResolutionStep(TransferStep):
             return result
 
         patch = dict(result.patch or {})
-        has_resolved_patch = bool(
-            patch.get("recipient_resolved_name")
-            or resolution_input.recipient_resolved_name
-        )
+        has_resolved_patch = bool(patch.get("recipient_resolved_name") or resolution_input.recipient_resolved_name)
         if desired_mode == SINGLE_SOURCE_MODE and has_resolved_patch:
             patch.setdefault("recipient_resolution_mode", SINGLE_SOURCE_MODE)
-        elif desired_mode == POOLED_MODE and resolver_provider is getattr(
-            worker_context, "payout_resolver_provider", None
-        ) and has_resolved_patch:
+        elif (
+            desired_mode == POOLED_MODE
+            and resolver_provider is getattr(worker_context, "payout_resolver_provider", None)
+            and has_resolved_patch
+        ):
             patch.setdefault("recipient_resolution_mode", POOLED_MODE)
         if patch:
             result.patch = patch

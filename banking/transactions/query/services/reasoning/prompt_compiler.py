@@ -6,46 +6,28 @@ from dataclasses import dataclass
 
 from banking.transactions.query.services.reasoning.models import ReasonerPromptProfileType
 
-_VERSION = "v7"
+_VERSION = "v10"
 
-_BASE = """You interpret one follow-up inside a multilingual banking transaction-query session. Return only JSON
-matching the supplied schema. Understand English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed wording.
+_BASE = """Interpret one multilingual follow-up in an active banking transaction query. Return only schema-valid JSON.
+Understand English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed wording.
 
-Decisions: continuation for a grounded follow-up; new_query for a different transaction-query shape; reinterpret_query
-for an explicit restatement; end_session only for thanks/cancel/stop. Fresh replacement queries include extraction.
-For continuation, always set continuation_type and followup_intent unless the schema does not expose the latter.
-Never guess a displayed item, fact, time, filter, or prior frame. The runtime validates selections and performs all
-totals, ranking, comparison, pagination, and account calculations deterministically.
-Omit every unused optional field. Do not emit nulls, empty strings/lists, or fields that the user did not supply.
-Explicit query preferences may fill only an aspect the current message and active contract leave unspecified.
-Current-turn wording and the active grounded contract always win. Never infer, change, or acknowledge a preference.
-When default_account_scope_available is true and account scope is genuinely unspecified, set
-extraction.use_default_account_scope=true. Keep it false for an explicit named-account or all-accounts request.
+Use continuation for grounded follow-ups, new_query for a different query shape, reinterpret_query for an explicit
+restatement, and end_session only for thanks/cancel/stop. A replacement must include a complete extraction. For a
+continuation set continuation_type and followup_intent. Omit unused fields; never guess rows, facts, scopes, or frames.
+Runtime code validates selections and computes money, totals, rankings, comparisons, pagination, and account scope.
 
-Common continuation meanings: show_more for pagination or underlying rows; show_evidence for rows behind an aggregate;
-time_delta/filter_delta for scope changes; aggregate/grouped_total_followup for deterministic analysis; coverage for
-completeness or synchronization questions; recheck to rerun unchanged scope; conversational for a reaction;
-drill_down for a displayed item/fact; reconcile when the user challenges an earlier answer or references an entity/fact
-that is not on the current surface (e.g., "so where did you get X", "but you said Y", "that doesn't match"); unclear
-when grounding is insufficient.
+Meanings: show_more=pagination; show_evidence=rows behind a result; time_delta/filter_delta=scope change;
+aggregate/grouped_total_followup=analysis; coverage=completeness/synchronization; recheck=same scope;
+drill_down=visible item/fact; reconcile=challenge to this or an earlier answer; unclear=insufficient grounding.
+Use repair only for an explicit correction and emit a sparse repair delta when that field exists in the schema.
+Use update_preferences only for an explicit persistent instruction or reset and emit only its typed update.
+Current wording and grounded scope override preferences. Use a default account preference only when scope is omitted.
 
-Use repair when the user corrects a prior query interpretation (for example account, person, direction, status,
-amount, category, period, measure, or grouping). Emit only a sparse repair_delta. Unmentioned fields are preserved.
-If there are two materially different grounded readings, include alternate_repair_delta; never invent candidates or
-raw database records. The runtime validates and applies every repair deterministically.
-
-Use update_preferences only for an explicit persistent instruction such as always/from now on, or an explicit reset.
-Emit preferences_update and no query extraction. Ordinary one-turn wording and corrections never change preferences.
-
-Use coverage_intent=result_completeness for whether matching rows/pages remain, data_coverage for linked-account sync or
-missing bank/account windows, and ambiguous when those cannot be distinguished. A fresh banking action outside query
-must not be disguised as a query continuation. Keep response_text short and connective only when useful.
-
-For extraction: list/history -> transaction_list; one item/fact -> transaction_detail; totals/breakdowns ->
-analytics_summary; recipient ranking -> beneficiary_summary; period comparison -> time_comparison; inflow-vs-outflow ->
-cash_flow_summary. Preserve explicit direction, recipient, amount bounds, time scope, result limit/reference,
-aggregation,
-request shape, and answer fact field. Leave absent fields null.
+Coverage intent: result_completeness for remaining rows/pages, data_coverage for linked-account windows, otherwise
+ambiguous. A non-query banking action is never a query continuation.
+Extraction intents: history=transaction_list, one fact=transaction_detail, total/breakdown=analytics_summary,
+recipient ranking=beneficiary_summary, period comparison=time_comparison, inflow versus outflow=cash_flow_summary.
+Preserve explicit filters, time, direction, aggregation, result limit/reference, shape, and fact field.
 """
 
 _FOCUSED = """Focused-item rules:
@@ -53,50 +35,48 @@ _FOCUSED = """Focused-item rules:
 status|amount|recipient|counterparty|bank|date|description|reference|account|direction|category.
 - Details/receipt/issue/re-transfer use the matching drill_down_action. Respect fact_capabilities in context.
 - A summary-scope focus may compile through extraction/filters; never invent a concrete transaction.
+- A follow-up that changes only the recipient/counterparty while keeping the current fact, period, direction, and
+  other scope (for example, "what about Mum?") is a recipient_drill_down continuation. Return the normalized
+  recipient_name and preserve the existing fact_field/result reference; do not treat it as an unclear turn or a
+  replacement query.
+"""
+
+_REPAIR = """Repair rules:
+- The message contains an advisory correction signal, but only classify it as repair when it changes the focused
+  query. Return continuation_type=repair, followup_intent=refine_existing, and one sparse repair_delta.
+- Omitted delta fields preserve the source contract. Every changed scope uses replace, add, remove, clear, or all.
+- If two materially different grounded corrections remain valid, return the best delta and alternate_repair_delta.
+- "Keep the same" means preserve: do not emit period, account, category, or dimension mutations for preserved fields.
+- Income instead changes measure to income; spending instead changes measure to spending. Do not change account scope,
+  period, grouping, or unrelated filters unless the user explicitly changes them.
+- A challenge with a correction is reconcile and still includes the sparse repair_delta for the matched source frame.
+- Never copy prose into a delta, invent an account/entity, or partially describe a replacement query.
 """
 
 _LIST = """Transaction-list rules:
-- Populate typed target_index (1-based), target_amount, target_text, requested_field, or rank for visible references.
-- Pagination uses show_more and next/previous semantics. Completeness and missing-data concerns use coverage.
-- Time/filter changes preserve the existing contract unless the user clearly replaces the query.
-- A request to summarize, rank, group, compare, or total the displayed transaction scope is an aggregate refinement,
-  not coverage or a clarification. Set decision=continuation, continuation_type=aggregate,
-  followup_intent=refine_existing, and extraction with the requested analytics intent/aggregation. Preserve the active
-  filters and period unless the user explicitly changes them. For example, spending by account uses
-  analytics_summary with aggregation=breakdown/group_by=account and debit filtering.
-- Scope-broadening corrections: when the user corrects with "I mean / I meant / no, I meant" plus "whole / all /
-  everything / full / total" spending, they want to DROP the active narrow filter (category, merchant, counterparty)
-  and keep only the period and direction. Set continuation_type=aggregate, followup_intent=replace_scope,
-  delta_type=filter, analytics_summary sum, and NO bucket filter.
-- Use coverage only for whether rows are complete, pages remain, account synchronization, or missing-data questions.
-- Use reconcile, not coverage, when the user is challenging a fact or entity from an earlier answer rather than asking
-  whether all rows or accounts are present.
-- A direct correction of the current list's recipient, account, direction, category, status, amount, or period uses
-  continuation_type=repair and repair_delta. Do not turn a correction into a fresh parser request.
-- If the user asks for two or three materially distinct read sections that cannot be one canonical query, emit plan.
-  Every plan step must be completely scoped from the active contract and current message. Use only backward bindings.
+- Visible references use target_index (1-based), target_amount/text, requested_field, or rank.
+- Pagination uses show_more plus next/previous; coverage is only for remaining rows or missing account data.
+- Preserve the active period and filters unless explicitly changed.
+- Summarize, rank, group, compare, or total the shown scope with continuation_type=aggregate,
+  followup_intent=refine_existing, and a complete analytics extraction. Example: spending by account is
+  analytics_summary, debit, aggregation.type=breakdown, aggregation.group_by=account.
+- A correction from a narrow bucket to whole/all spending drops that bucket, retaining period and direction.
+- A challenge to an earlier fact/entity is reconcile, not coverage or item selection.
+- A recipient change such as "what about Mum?" is recipient_drill_down with recipient_name set; preserve the
+  current fact and scope while changing only the counterparty.
 """
 
 _SUMMARY = """Grouped-summary rules:
-- Evidence/list asks expose underlying transactions; total, ranking, grouping, and comparisons use aggregate.
-- Preserve the summary scope when refining. A named bucket may populate recipient_name/target_text or extraction
-  filters.
-- For an extremum over the current grouped result (for example, which account/category/counterparty was highest or
-  lowest), keep the same grouping and scope. Set rank=largest|smallest and return aggregate/refine_existing with a
-  complete analytics extraction whose aggregation has the active group_by and limit=1. Never reinterpret a grouped
-  bucket as a single transaction, existence query, or transaction fact.
-- A contrastive follow-up that changes money direction sets transaction_direction_delta=credit|debit and uses
-  filter_delta/refine_existing. A request for both directions sets transaction_direction_delta=both. Preserve the
-  active period and every unrelated filter; do not ask the user to confirm a clear direction change.
-- RECONCILE: if the user challenges the current answer or names an entity/fact not visible in the current result (e.g.,
-  "so where did you get uber?", "but you said I spent 50k", "that doesn't match"), set continuation_type=reconcile,
-  populate target_text with the challenged entity/amount/fact, and include referenced_frame_ids only when the schema
-  supplies them. Prior query frames are included below; use them to ground the reconciliation. Do not use drill_down or
-  coverage for cross-answer challenges.
-- Calculations remain deterministic; output only the requested operation and semantic patch.
-- Direct corrections to a summary's scope, measure, statistic, or dimension use repair with a sparse repair_delta.
-- A request for the current summary plus distinct supporting/evidence analysis may emit a two- or three-step plan.
-  Preserve the active period and filters in every applicable step. Do not use a plan for one ordinary query.
+- Evidence asks expose underlying transactions; total, ranking, regrouping, and comparison use aggregate.
+- Preserve summary scope. A named bucket uses target_text or an extraction filter.
+- Highest/lowest keeps the grouping and scope: rank=largest|smallest, aggregate/refine_existing, complete analytics
+  extraction, active group_by, aggregation.limit=1. Never treat a bucket as a transaction fact.
+- A direction contrast uses transaction_direction_delta=credit|debit|both with filter_delta/refine_existing while
+  preserving period and unrelated filters.
+- A challenge uses reconcile plus target_text/amount and only supplied frame IDs. Never fabricate a frame.
+- A recipient change such as "what about Mum?" is recipient_drill_down with recipient_name set; preserve the
+  current fact and summary scope while changing only the counterparty.
+- Calculations are deterministic; return only the operation and semantic patch.
 """
 
 _INSIGHT = """Insight rules:
@@ -158,6 +138,7 @@ class CompiledQueryReasonerPrompt:
 
 def compile_query_reasoner_prompt(profile: ReasonerPromptProfileType) -> CompiledQueryReasonerPrompt:
     atom = {
+        "repair": _REPAIR,
         "focused_item": _FOCUSED,
         "transaction_list": _LIST,
         "grouped_summary": _SUMMARY,

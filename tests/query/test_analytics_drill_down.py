@@ -62,12 +62,10 @@ async def test_analytics_drill_down_executes():
             )
         ],
     )
-    contract = (
-        make_query_request(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            time_range=TimeRange(start=date.today(), end=date.today()),
-            aggregation=Aggregation(type="sum", group_by="merchant", sort_by="amount"),
-        )
+    contract = make_query_request(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date.today(), end=date.today()),
+        aggregation=Aggregation(type="sum", group_by="merchant", sort_by="amount"),
     )
 
     state = {

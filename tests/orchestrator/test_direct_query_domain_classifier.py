@@ -27,6 +27,19 @@ def test_transcript_query_shapes_are_direct_query_requests() -> None:
 @pytest.mark.parametrize(
     "message_text",
     (
+        "Break down my spending by category this month",
+        "Analyze my income by account",
+        "Summarise my cash flow this month",
+        "Compare food spending this month with last month and show the transactions behind the change",
+    ),
+)
+def test_explicit_analytical_query_grammar_routes_directly(message_text: str) -> None:
+    assert _is_structural_query_domain_request(message_text)
+
+
+@pytest.mark.parametrize(
+    "message_text",
+    (
         "please jọwọ show my transactions",
         "please jọwọ show me my transactions",
         "abeg jọwọ show my transactions",

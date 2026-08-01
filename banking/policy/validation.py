@@ -94,8 +94,7 @@ def validate_policy_coverage(policy: CapabilityPolicy) -> None:
     from banking.runtime.operations import WORKER_OPERATIONS
 
     registered_policy_targets = {
-        (spec.domain, spec.policy_action) for spec in WORKER_OPERATIONS.values()
-        if spec.domain not in {"orchestrator"}
+        (spec.domain, spec.policy_action) for spec in WORKER_OPERATIONS.values() if spec.domain not in {"orchestrator"}
     }
 
     for domain, required_actions in REQUIRED_DOMAIN_ACTIONS.items():
@@ -126,9 +125,7 @@ def validate_policy_coverage(policy: CapabilityPolicy) -> None:
     for domain, action_name in sorted(registered_policy_targets):
         domain_policy = policy.capability_matrix.get(domain)
         if domain_policy is None or action_name not in domain_policy.actions:
-            errors.append(
-                f"worker operation policy target capability_matrix.{domain}.actions.{action_name} is missing"
-            )
+            errors.append(f"worker operation policy target capability_matrix.{domain}.actions.{action_name} is missing")
 
     if errors:
         raise ValueError("Invalid capability policy: " + " | ".join(errors))

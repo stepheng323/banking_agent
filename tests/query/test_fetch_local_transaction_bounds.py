@@ -261,8 +261,9 @@ async def test_unified_view_includes_newer_local_transaction_before_bank_feed_ac
         start_date: date,
         end_date: date,
         limit: int,
+        account_ids: list[str] | None = None,
     ) -> list[Any]:
-        del self, user_id, start_date, end_date, limit
+        del self, user_id, start_date, end_date, limit, account_ids
         return [local_transfer]
 
     monkeypatch.setattr(settings, "enable_unified_transaction_view", True)

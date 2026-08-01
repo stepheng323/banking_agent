@@ -140,8 +140,7 @@ class BeneficiaryMatcher:
             b_name = _normalize_text(str(b.account_name or ""))
             alias = _normalize_text(str(b.alias or ""))
             if len(normalized_query) > 2 and (
-                (b_name and b_name.startswith(normalized_query)) or
-                (alias and alias.startswith(normalized_query))
+                (b_name and b_name.startswith(normalized_query)) or (alias and alias.startswith(normalized_query))
             ):
                 startswith_matches.append(b)
 

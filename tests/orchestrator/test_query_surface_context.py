@@ -44,12 +44,10 @@ class _RedisStub:
 
 
 def _contract() -> QueryRequest:
-    return (
-        make_query_request(
-            intent=QueryIntent.BENEFICIARY_SUMMARY,
-            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 28)),
-            result_limit=1,
-        )
+    return make_query_request(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 28)),
+        result_limit=1,
     )
 
 
@@ -102,11 +100,9 @@ def _query_frame(*, created_at: int | None = None, ttl_seconds: int = 600) -> Co
 
 
 def _transaction_list_frame(*, created_at: int | None = None) -> ContextFrame:
-    contract = (
-        make_query_request(
-            intent=QueryIntent.TRANSACTION_LIST,
-            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 29)),
-        )
+    contract = make_query_request(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 29)),
     )
     return ContextFrame(
         frame_id="query_surface_list",
@@ -231,13 +227,11 @@ def test_direct_query_answer_pushes_latest_query_surface_frame() -> None:
         current_wave_len=1,
         accumulator=ExecutionAccumulator({}),
     )
-    contract = (
-        make_query_request(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            filters=Filters(transaction_type="debit"),
-            aggregation=Aggregation(type="sum"),
-            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 29)),
-        )
+    contract = make_query_request(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="sum"),
+        time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 29)),
     )
     result = QueryResult(
         summary_text="You spent ₦1,460,052 this month, across 52 transactions.",
@@ -254,7 +248,10 @@ def test_direct_query_answer_pushes_latest_query_surface_frame() -> None:
     assert active.metadata["query_frame"]["query_request"]["operation"]["kind"] == "summarize"
     assert active.items[0].label == "You spent ₦1,460,052 this month, across 52 transactions."
     worker_context = build_query_context_for_worker(state)
-    assert worker_context["active_query_surface"]["metadata"]["query_frame"]["query_request"]["operation"]["kind"] == "summarize"
+    assert (
+        worker_context["active_query_surface"]["metadata"]["query_frame"]["query_request"]["operation"]["kind"]
+        == "summarize"
+    )
 
 
 def test_direct_analytics_answer_with_evidence_items_pushes_summary_scope_frame() -> None:
@@ -270,13 +267,11 @@ def test_direct_analytics_answer_with_evidence_items_pushes_summary_scope_frame(
         current_wave_len=1,
         accumulator=ExecutionAccumulator({}),
     )
-    contract = (
-        make_query_request(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            filters=Filters(transaction_type="debit"),
-            aggregation=Aggregation(type="sum"),
-            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 29)),
-        )
+    contract = make_query_request(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="sum"),
+        time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 29)),
     )
     result = QueryResult(
         summary_text="You spent ₦75,000 this month, across 2 transactions.",

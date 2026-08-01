@@ -87,7 +87,7 @@ def _query(filters: Filters) -> QueryRequest:
 
 
 def _contract(query: QueryRequest) -> QueryRequest:
-    return (query)
+    return query
 
 
 @pytest.mark.asyncio

@@ -567,10 +567,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
     # request and therefore retains its existing higher-priority resolver.
     grounded_updates = (
         None
-        if (
-            cont_type in {"aggregate", "grouped_total_followup"}
-            and not getattr(decision, "grounded_operation", None)
-        )
+        if (cont_type in {"aggregate", "grouped_total_followup"} and not getattr(decision, "grounded_operation", None))
         else resolve_grounded_followup(
             step,
             decision=decision,

@@ -308,8 +308,6 @@ def test_query_conversation_resolver_uses_recent_list_frame_after_detail() -> No
     assert updates["selected_query_item"].description == "Transfer to Adebayo James"
 
 
-
-
 def test_query_conversation_resolver_leaves_filter_delta_to_query_refinement() -> None:
     updates = build_query_conversation_updates(
         surface_view=_surface(),

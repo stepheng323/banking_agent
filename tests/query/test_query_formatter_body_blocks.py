@@ -23,12 +23,10 @@ def _contract(
     time_start: date = date(2026, 6, 11),
     time_end: date = date(2026, 6, 11),
 ) -> QueryRequest:
-    return (
-        make_query_request(
-            intent=intent,
-            filters=filters,
-            time_range=TimeRange(start=time_start, end=time_end),
-        )
+    return make_query_request(
+        intent=intent,
+        filters=filters,
+        time_range=TimeRange(start=time_start, end=time_end),
     )
 
 

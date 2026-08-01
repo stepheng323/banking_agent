@@ -294,9 +294,7 @@ def _split_aggregate_funding_plan(
             shortfall=ZERO_MONEY,
             trigger_mode=trigger_mode,  # type: ignore[arg-type]
             requested_sources=[
-                accounts_by_id[source_id].bank_name
-                for source_id in source_ids
-                if source_id in accounts_by_id
+                accounts_by_id[source_id].bank_name for source_id in source_ids if source_id in accounts_by_id
             ],
             explicit_split_applied=False,
             primary_account_id=steps[0].account_id if steps else None,

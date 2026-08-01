@@ -24,10 +24,15 @@ def period_label(time_range: object, locale: str = "en") -> str | None:
         return None
 
     today = lagos_today()
+    granularity = getattr(time_range, "granularity", None)
+    this_month_start = today.replace(day=1)
+
+    if granularity == "month" and start == this_month_start and end == today:
+        return render_message("query.format.heading_period_this_month", locale)
+
     if start == end == today:
         return render_message("query.format.heading_period_today", locale)
 
-    this_month_start = today.replace(day=1)
     if start == this_month_start and end == today:
         return render_message("query.format.heading_period_this_month", locale)
 

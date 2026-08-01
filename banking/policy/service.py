@@ -38,6 +38,7 @@ def capability_block_message(
         alternative_labels=alternative_labels,
     )
 
+
 def resolve_available_conversational_suggestions(
     *,
     locale: str = "en",

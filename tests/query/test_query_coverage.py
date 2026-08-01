@@ -46,11 +46,9 @@ class _FakeUnitOfWork:
 
 
 def _contract() -> QueryRequest:
-    return (
-        make_query_request(
-            intent=QueryIntent.TRANSACTION_LIST,
-            time_range=TimeRange(start=date(2026, 4, 10), end=date(2026, 5, 10)),
-        )
+    return make_query_request(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 4, 10), end=date(2026, 5, 10)),
     )
 
 

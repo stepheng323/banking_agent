@@ -9,6 +9,7 @@ from typing import Any
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.contracts import SelectionPayload
+from banking.transactions.query.models.conversation import SingleQueryExecution
 from banking.transactions.query.models.domain import QueryIntent
 from banking.transactions.query.models.extraction import (
     ClarificationCandidate,
@@ -126,6 +127,13 @@ def resolve_selection_clarification(
                 }
             return {
                 "query_request": request,
+                # Recipient selection completes the original read operation.
+                # Carry an explicit execution contract so the worker executes
+                # this exact filtered request instead of treating the reply as
+                # a generic active-result continuation on the next turn.
+                "execution_contract": SingleQueryExecution(request=request),
+                "execute_query_plan": True,
+                "query_result": None,
                 "flow_state": "executing",
                 "session_active": True,
                 "pending_clarification": None,

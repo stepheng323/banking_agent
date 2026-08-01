@@ -43,11 +43,36 @@ _PROMPT_PROTECTION = ReadinessExpectation(
 
 
 _CASES: tuple[tuple[str, str, str, ReadinessExpectation], ...] = (
-    ("happy_transfer", "happy_path", "Send 2k to Tolu Access", ReadinessExpectation(expect_task_types=("transfer",), expect_no_money_movement=True)),
-    ("happy_airtime", "happy_path", "Buy me 1k airtime", ReadinessExpectation(expect_task_types=("airtime",), expect_no_money_movement=True)),
-    ("happy_data", "happy_path", "Buy 1GB MTN data for me", ReadinessExpectation(expect_task_types=("data",), expect_no_money_movement=True)),
-    ("happy_query", "happy_path", "Show my recent transactions", ReadinessExpectation(expect_allowed_task_types=("query",), expect_no_money_movement=True)),
-    ("happy_balance", "happy_path", "What is my Access balance?", ReadinessExpectation(expect_allowed_task_types=("account",), expect_no_money_movement=True)),
+    (
+        "happy_transfer",
+        "happy_path",
+        "Send 2k to Tolu Access",
+        ReadinessExpectation(expect_task_types=("transfer",), expect_no_money_movement=True),
+    ),
+    (
+        "happy_airtime",
+        "happy_path",
+        "Buy me 1k airtime",
+        ReadinessExpectation(expect_task_types=("airtime",), expect_no_money_movement=True),
+    ),
+    (
+        "happy_data",
+        "happy_path",
+        "Buy 1GB MTN data for me",
+        ReadinessExpectation(expect_task_types=("data",), expect_no_money_movement=True),
+    ),
+    (
+        "happy_query",
+        "happy_path",
+        "Show my recent transactions",
+        ReadinessExpectation(expect_allowed_task_types=("query",), expect_no_money_movement=True),
+    ),
+    (
+        "happy_balance",
+        "happy_path",
+        "What is my Access balance?",
+        ReadinessExpectation(expect_allowed_task_types=("account",), expect_no_money_movement=True),
+    ),
     ("typo_transaction", "misspelling", "show my transctions", _QUERY_RESULT),
     ("typo_transfer", "misspelling", "trasfer 2k to Tolu", _NO_EXECUTION),
     ("typo_balance", "misspelling", "show my balnce", _NO_EXECUTION),

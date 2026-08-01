@@ -466,9 +466,15 @@ class ExtractionStep(TransferStep):
                     res.patch["beneficiary_id"] = beneficiary_id
                     # Apply full candidate details to the patch so Resolver's matches_selected_beneficiary safety check succeeds
                     fields = [
-                        "recipient_name", "recipient_resolved_name", "recipient_account",
-                        "recipient_bank_name", "recipient_bank_code", "recipient_bank_code_provider",
-                        "recipient_resolution_provider", "recipient_resolution_mode", "resolved_from_saved_beneficiary"
+                        "recipient_name",
+                        "recipient_resolved_name",
+                        "recipient_account",
+                        "recipient_bank_name",
+                        "recipient_bank_code",
+                        "recipient_bank_code_provider",
+                        "recipient_resolution_provider",
+                        "recipient_resolution_mode",
+                        "resolved_from_saved_beneficiary",
                     ]
                     for field in fields:
                         if candidate.get(field) not in (None, ""):

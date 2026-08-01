@@ -47,9 +47,7 @@ def test_invalid_outcome_transition_is_rejected() -> None:
         ({"final_response": "No", "tasks": {}}, TurnOutcomeKind.PLANNER_HANDOFF),
     ],
 )
-def test_route_resolution_rejects_invalid_payloads(
-    updates: dict[str, object], outcome: TurnOutcomeKind
-) -> None:
+def test_route_resolution_rejects_invalid_payloads(updates: dict[str, object], outcome: TurnOutcomeKind) -> None:
     next_step = {
         TurnOutcomeKind.DIRECT_RESPONSE: TurnNextStep.END,
         TurnOutcomeKind.TASK_DISPATCH: TurnNextStep.ADVANCE,
@@ -82,4 +80,3 @@ def test_route_resolution_rejects_controlled_field_override() -> None:
 
     with pytest.raises(RoutingContractError, match="controlled fields"):
         resolution.materialize()
-

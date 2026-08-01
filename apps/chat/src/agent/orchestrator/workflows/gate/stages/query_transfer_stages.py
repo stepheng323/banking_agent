@@ -116,13 +116,24 @@ def _maybe_direct_context_recap(ctx: GateContext) -> RouteResolution | None:
 
 async def _maybe_query_followup_bypass(ctx: GateContext) -> RouteResolution | None:
     if not ctx.live_pending_interrupt and not ctx.state_view.has_quote:
+        raw_pending = ctx.state_view.pending_query_clarification
+        has_pending_query_input = isinstance(raw_pending, dict) and bool(
+            raw_pending.get("pending_clarification") or raw_pending.get("pending_input")
+        )
+        active_query = await ctx.has_active_query_session()
         bypass_reason, bypass_detail = _query_followup_bypass_reason(
             message_text=ctx.message_text,
             locale=ctx.current_locale,
-            has_active_query_session=await ctx.has_active_query_session(),
+            # A persisted pending-input contract is itself an active query,
+            # even if the session stack/context frame has not been rebuilt yet.
+            has_active_query_session=active_query or has_pending_query_input,
             has_recent_query_context=ctx.state_view.recent_query_context is not None,
             is_pending_clarification=bool(
-                isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("pending_clarification")
+                has_pending_query_input
+                or (
+                    isinstance(ctx.query_session_snapshot, dict)
+                    and ctx.query_session_snapshot.get("pending_clarification")
+                )
             ),
         )
         if bypass_reason is not None:
@@ -148,9 +159,7 @@ async def _maybe_query_followup_bypass(ctx: GateContext) -> RouteResolution | No
     return None
 
 
-def _maybe_structural_query_domain(
-    ctx: GateContext, *, can_consider_query_domain: bool
-) -> RouteResolution | None:
+def _maybe_structural_query_domain(ctx: GateContext, *, can_consider_query_domain: bool) -> RouteResolution | None:
     if not can_consider_query_domain or not _is_structural_query_domain_request(ctx.message_text):
         return None
     semantic_router_available = ctx.task_planner is not None

@@ -501,11 +501,7 @@ def _sentence_period_label(label: str) -> str:
 def _format_beneficiary_summary_item(item: SurfaceItemView) -> str:
     count = item.count or int(item.metadata.get("count", 0))
     transfer_noun = "transfer" if count == 1 else "transfers"
-    return (
-        f"{_humanize_grouped_name(item.label)} · "
-        f"{format_naira(abs(item.amount or 0.0))} · "
-        f"{count} {transfer_noun}"
-    )
+    return f"{_humanize_grouped_name(item.label)} · {format_naira(abs(item.amount or 0.0))} · {count} {transfer_noun}"
 
 
 def _humanize_grouped_name(value: str) -> str:

@@ -347,11 +347,7 @@ def resolve_delta_references(
 
     for label in delta.target_labels:
         needle = _normalized_label(label)
-        matches = [
-            ref
-            for ref in visible_refs
-            if needle and needle in _normalized_label(ref.display_label)
-        ]
+        matches = [ref for ref in visible_refs if needle and needle in _normalized_label(ref.display_label)]
         if len(matches) == 1:
             resolved.append(matches[0])
         else:

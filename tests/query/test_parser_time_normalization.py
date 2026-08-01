@@ -69,9 +69,7 @@ def test_received_query_keeps_credit_filter() -> None:
         raw_query="how much have i received today",
     )
 
-    contract = (
-        parser.build_query_request_from_extraction(extraction, today=today, language="en")
-    )
+    contract = parser.build_query_request_from_extraction(extraction, today=today, language="en")
     assert contract.filters is not None
     assert contract.filters.transaction_type == "credit"
 
@@ -85,9 +83,7 @@ def test_non_aggregate_spend_phrase_stays_transaction_list() -> None:
         raw_query="show my spent transactions today",
     )
 
-    contract = (
-        parser.build_query_request_from_extraction(extraction, today=today, language="en")
-    )
+    contract = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert contract.intent == QueryIntent.TRANSACTION_LIST
 
@@ -101,9 +97,7 @@ def test_spending_total_defaults_transaction_type_to_debit() -> None:
         raw_query="how much did I spend today",
     )
 
-    contract = (
-        parser.build_query_request_from_extraction(extraction, today=today, language="en")
-    )
+    contract = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert contract.filters is not None
     assert contract.filters.transaction_type == "debit"
@@ -118,9 +112,7 @@ def test_credit_keywords_take_precedence_over_spending_keywords() -> None:
         raw_query="how much salary did I receive and spend today",
     )
 
-    contract = (
-        parser.build_query_request_from_extraction(extraction, today=today, language="en")
-    )
+    contract = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert contract.filters is not None
     assert contract.filters.transaction_type == "credit"
@@ -135,9 +127,7 @@ def test_singular_largest_expense_defaults_limit_to_one() -> None:
         raw_query="what is my largest expense this month",
     )
 
-    contract = (
-        parser.build_query_request_from_extraction(extraction, today=today, language="en")
-    )
+    contract = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert contract.aggregation is not None
     assert contract.aggregation.type == "largest"
@@ -154,9 +144,7 @@ def test_singular_smallest_transaction_overrides_provided_limit() -> None:
         raw_query="show my smallest transaction this month",
     )
 
-    contract = (
-        parser.build_query_request_from_extraction(extraction, today=today, language="en")
-    )
+    contract = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert contract.aggregation is not None
     assert contract.aggregation.type == "smallest"
@@ -218,9 +206,7 @@ def test_income_vs_spending_breakdown_keeps_unfiltered_transaction_type() -> Non
         raw_query="compare income vs spending this month",
     )
 
-    contract = (
-        parser.build_query_request_from_extraction(extraction, today=today, language="en")
-    )
+    contract = parser.build_query_request_from_extraction(extraction, today=today, language="en")
 
     assert contract.intent == QueryIntent.ANALYTICS_SUMMARY
     assert contract.aggregation is not None

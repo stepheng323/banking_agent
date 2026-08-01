@@ -34,6 +34,7 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+
 class AccountTaskExecutor:
     async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
         await _execute_account_task(task, task_id, ctx)
@@ -82,14 +83,17 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
     )
 
     action = str(task.payload.get("action") or "").strip()
-    if result.outcome == AccountOutcome.OK and result.read_result is None and action in {
-        "check_balance",
-    }:
+    if (
+        result.outcome == AccountOutcome.OK
+        and result.read_result is None
+        and action
+        in {
+            "check_balance",
+        }
+    ):
         viewed = result.details.get("viewed_accounts") if isinstance(result.details, dict) else None
         derived_viewed_accounts = (
-            [item for item in viewed if isinstance(item, dict)]
-            if isinstance(viewed, list)
-            else []
+            [item for item in viewed if isinstance(item, dict)] if isinstance(viewed, list) else []
         )
         bank_name = str(task.payload.get("identifier") or "").strip() or None
         if bank_name is None and len(derived_viewed_accounts) == 1:
@@ -109,9 +113,7 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
 
     _apply_result_patch(task, result)
     invalidated_domain = (
-        result.patch.get("invalidate_conversation_set_domain")
-        if isinstance(result.patch, dict)
-        else None
+        result.patch.get("invalidate_conversation_set_domain") if isinstance(result.patch, dict) else None
     )
     if result.outcome == AccountOutcome.OK and isinstance(invalidated_domain, str):
         invalidate_conversation_set_frames(ctx, invalidated_domain)
@@ -169,9 +171,7 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
                             "last_operation": balance_contract.operation,
                         }
                     )
-                    metadata["balance_conversation_state"] = balance_state.model_dump(
-                        mode="json", exclude_none=True
-                    )
+                    metadata["balance_conversation_state"] = balance_state.model_dump(mode="json", exclude_none=True)
             raw_lifecycle_contract = task.payload.get("account_lifecycle_contract")
             if isinstance(raw_lifecycle_contract, dict):
                 metadata["account_lifecycle_contract"] = raw_lifecycle_contract
@@ -317,11 +317,7 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
                     push_read_result_frame(
                         ctx,
                         result.read_result,
-                        metadata=(
-                            {"beneficiary_contract": raw_contract}
-                            if isinstance(raw_contract, dict)
-                            else None
-                        ),
+                        metadata=({"beneficiary_contract": raw_contract} if isinstance(raw_contract, dict) else None),
                     )
 
             if result.response:
