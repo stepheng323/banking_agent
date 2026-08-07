@@ -3,6 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
+from banking.runtime.operations import operation_spec
 from shared.types.planner import InterruptRouteDecision, PlannerOutput
 
 
@@ -57,6 +58,20 @@ def test_interrupt_route_decision_accepts_allowed_value() -> None:
         reason="Different intent request.",
     )
     assert decision.decision == "switch_intent"
+
+
+def test_interrupt_route_canonicalizes_legacy_linked_account_list_label() -> None:
+    decision = InterruptRouteDecision(
+        decision="switch_intent",
+        confidence=0.92,
+        detected_language="English",
+        target_intent="account",
+        account_action="list",
+        reason="user asked to show linked accounts",
+    )
+
+    assert decision.account_action == "list_accounts"
+    assert operation_spec("account", decision.account_action).action == "list_accounts"
 
 
 def test_interrupt_route_decision_accepts_status_query_value() -> None:

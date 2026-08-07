@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from banking.policy.loader import get_cached_policy, load_policy
-from banking.transactions.runtime.executors.transfer import TransferExecutor
+from banking.transactions.runtime.executors.transfer import TransferExecutor, _resolve_source_account
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
 from shared.database.enums import TransactionStatusEnum
 
@@ -211,6 +211,21 @@ def _install_disabled_schedule_policy(tmp_path: Path) -> None:
 
 def _reset_policy_cache() -> None:
     get_cached_policy(path=CAPABILITY_POLICY_PATH, force_reload=True)
+
+
+@pytest.mark.asyncio
+async def test_source_account_provider_reference_uses_external_account_lookup() -> None:
+    provider_account = SimpleNamespace(mandate_id="mandate-provider")
+    account_repo = SimpleNamespace(
+        get_by_account_id=AsyncMock(return_value=provider_account),
+        get_by_id=AsyncMock(side_effect=AssertionError("provider ID must not use the UUID lookup")),
+    )
+
+    resolved = await _resolve_source_account(account_repo, "seed-user-acct-2")
+
+    assert resolved is provider_account
+    account_repo.get_by_account_id.assert_awaited_once_with("seed-user-acct-2")
+    account_repo.get_by_id.assert_not_awaited()
 
 
 @pytest.mark.asyncio

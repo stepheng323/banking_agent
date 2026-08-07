@@ -198,7 +198,6 @@ class DataWorker:
                 error=render_message(
                     "data.error.pipeline_failed",
                     locale,
-                    {"error": str(e)},
                 ),
                 retryable=True,
                 patch={"idempotency_key": data.idempotency_key},

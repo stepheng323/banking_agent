@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
+from banking.transfers.funding.identifiers import coerce_account_id
 from banking.transfers.funding.models import FundingPlan
 from shared.money import MoneyAmount
 
@@ -87,7 +88,7 @@ class BatchFundingAccount:
 
     def __init__(self, data: dict[str, Any]):
         raw_id = data.get("id")
-        self.id: UUID | None = UUID(raw_id) if isinstance(raw_id, str) else raw_id if isinstance(raw_id, UUID) else None
+        self.id: UUID | str | None = coerce_account_id(raw_id)
         self.mono_account_id: str = str(data.get("mono_account_id") or data.get("account_id") or "")
         self.account_number: str = _account_display_number(data)
         self.last4: str = str(data.get("last4", data.get("account_number_last4", "")))

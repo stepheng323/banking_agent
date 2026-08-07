@@ -1,8 +1,10 @@
 import re
+from hashlib import sha1
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.utils.task_payload_recipients import (
+    clear_external_recipient_bindings_for_self,
     derive_recipient_from_user_text,
     recipient_account_grounded_in_user_text,
     recipient_bank_grounded_in_user_text,
@@ -20,7 +22,7 @@ from banking.runtime.operations import operation_spec
 from shared.types.balance import BalanceConversationState, BalanceQueryContract
 from shared.types.planner import BaseTaskParameters, dump_task_parameters
 from shared.types.read import normalize_read_request
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint, log_orchestrator_diagnostic
 from shared.utils.network_utils import normalize_nigerian_phone
 from shared.utils.sanitize import normalize_bank_account_number
 
@@ -79,7 +81,6 @@ def _apply_transfer_payload_fields(
         return
 
     authoritative_fanout_binding = payload.get("recipient_binding_source") == "fanout"
-
     if plan_item.parameters and plan_item.parameters.reference:
         payload["recipient_reference"] = plan_item.parameters.reference.model_dump(exclude_none=True)
 
@@ -208,6 +209,16 @@ def _apply_transfer_payload_fields(
             payload.pop("recipient_resolution_provider", None)
             payload.pop("recipient_resolution_mode", None)
             payload.pop("recipient_resolved_name", None)
+
+    if payload.get("is_self"):
+        # A mixed planner result can carry recipient identity fields from a
+        # sibling external transfer.  Once this task is typed as a linked-
+        # account destination, those fields are not merely stale display
+        # data: they can cause the resolver to select a saved beneficiary
+        # before it reaches the owned-account branch.  Keep only the user's
+        # own bank/account scope and let the resolver populate the canonical
+        # self-account display name.
+        clear_external_recipient_bindings_for_self(payload)
 
     if format_narration_requires_recipient_field and not has_recipient_field:
         return
@@ -455,6 +466,33 @@ def build_task_spec_from_plan_item(
     _apply_schedule_management_payload_fields(payload, plan_item, fallback_message)
     apply_source_account_fields(payload, plan_item)
 
+    if plan_item.executor == "transfer":
+        # This is the first durable boundary after planner output.  Keep the
+        # signal traceable without logging the instruction, recipient, bank,
+        # account number, or amount.  If ``planner_self_signal`` is true but
+        # ``payload_self_signal`` is false, the loss happened during task
+        # materialization/normalization; if both are true and execution later
+        # fails, the problem is downstream in context or account resolution.
+        planner_parameters = getattr(plan_item, "parameters", None)
+        planner_self_signal = getattr(planner_parameters, "is_self", None) is True
+        recipient_bank = str(payload.get("recipient_bank_name") or "").strip()
+        log_orchestrator_diagnostic(
+            logger,
+            "transfer_task_payload_materialized",
+            task_id=str(plan_item.task_id),
+            source_clause_index=(
+                source_clause_index if isinstance(source_clause_index, int) and source_clause_index > 0 else None
+            ),
+            planner_self_signal=planner_self_signal,
+            payload_self_signal=payload.get("is_self") is True,
+            recipient_bank_present=bool(recipient_bank),
+            recipient_bank_hash=log_fingerprint(recipient_bank) if recipient_bank else None,
+            recipient_name_present=bool(payload.get("recipient_name")),
+            recipient_account_present=bool(payload.get("recipient_account")),
+            source_bank_present=bool(payload.get("source_bank_name")),
+            source_account_id_present=bool(payload.get("source_account_id")),
+        )
+
     task_type = "schedule" if str(payload.get("action") or "") in SCHEDULE_MANAGEMENT_ACTIONS else plan_item.executor
     operation = operation_spec(str(task_type), str(payload.get("action") or ""))
     declared_risk = str(getattr(plan_item, "risk", "") or "")
@@ -492,8 +530,27 @@ def build_task_specs_from_plan_items(
     format_narration_requires_recipient_field: bool,
     payload_overrides_by_task_id: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, TaskSpec]:
+    def source_clause_index_for(item: Any) -> int | None:
+        raw_index = getattr(item, "source_clause_index", None)
+        return raw_index if isinstance(raw_index, int) and raw_index > 0 else None
+
     task_specs: dict[str, TaskSpec] = {}
-    for plan_item in plan_items:
+    indexed_items = list(enumerate(plan_items))
+    clause_indexes = [
+        source_clause_index
+        for _, item in indexed_items
+        if (source_clause_index := source_clause_index_for(item)) is not None
+    ]
+    if clause_indexes:
+        # Planner clauses are the user's order.  Keep the original order for
+        # tasks in the same clause and for legacy items without an index.
+        indexed_items.sort(
+            key=lambda pair: (
+                source_clause_index_for(pair[1]) or max(clause_indexes) + 1,
+                pair[0],
+            )
+        )
+    for _, plan_item in indexed_items:
         spec = build_task_spec_from_plan_item(
             plan_item,
             fallback_message,
@@ -531,4 +588,63 @@ def build_task_specs_and_waves_from_plan_items(
     task_ids = list(task_specs.keys())
     depends_on_by_task = {task_id: list(spec.depends_on) for task_id, spec in task_specs.items()}
     waves = build_dependency_waves(task_ids, depends_on_by_task)
+
+    transaction_types = {"transfer", "airtime", "data"}
+    tx_task_waves = {
+        task_id: wave_idx
+        for wave_idx, wave in enumerate(waves)
+        for task_id in wave
+        if task_specs[task_id].type in transaction_types
+    }
+    if tx_task_waves:
+        max_tx_wave_idx = max(tx_task_waves.values())
+        is_dependency_of_others = {
+            dep_id
+            for spec in task_specs.values()
+            for dep_id in spec.depends_on
+        }
+        for task_id, current_idx in tx_task_waves.items():
+            if current_idx < max_tx_wave_idx and task_id not in is_dependency_of_others:
+                waves[current_idx].remove(task_id)
+                waves[max_tx_wave_idx].append(task_id)
+        waves = [wave for wave in waves if wave]
+
+    _stamp_planner_transaction_batch(task_specs)
+
     return task_specs, waves
+
+
+def _stamp_planner_transaction_batch(task_specs: dict[str, TaskSpec]) -> None:
+    """Bind co-planned money movements before execution begins.
+
+    Runtime grouping normally derives this from the current wave.  Persisting
+    the planner batch as well means an interrupted selection can reunite all
+    of its original legs even if a stale checkpoint has split the wave.  The
+    value is an opaque hash of task ids, never a user/account identifier.
+    """
+    transaction_types = {"transfer", "airtime", "data"}
+    transaction_items = [
+        (task_id, task)
+        for task_id, task in task_specs.items()
+        if task.type in transaction_types
+    ]
+    if len(transaction_items) < 2:
+        return
+
+    fingerprint = "|".join(task_id for task_id, _task in transaction_items)
+    group_id = f"planned_{sha1(fingerprint.encode('utf-8')).hexdigest()[:20]}"
+    group_kind = (
+        "multi_transfer"
+        if all(task.type == "transfer" for _task_id, task in transaction_items)
+        else "mixed_batch"
+    )
+    group_size = len(transaction_items)
+    for index, (_task_id, task) in enumerate(transaction_items, start=1):
+        task.payload.update(
+            {
+                "async_group_id": group_id,
+                "async_group_size": group_size,
+                "async_group_kind": group_kind,
+                "async_group_index": index,
+            }
+        )

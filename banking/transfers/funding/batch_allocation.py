@@ -15,6 +15,7 @@ from banking.transfers.funding.batch_models import (
     ShortfallDetail,
     TransferDemand,
 )
+from banking.transfers.funding.identifiers import coerce_account_id
 from banking.transfers.funding.models import MIN_FUNDING_AMOUNT, FundingPlan, FundingStepPlan
 from banking.transfers.funding.planner import FundingPlanner
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
@@ -36,7 +37,7 @@ def adapt_batch_accounts(accounts: list[dict[str, Any]]) -> list[BatchFundingAcc
 
 
 def eligible_batch_accounts(accounts: list[BatchFundingAccount]) -> list[BatchFundingAccount]:
-    return [account for account in accounts if is_mandate_debit_ready(account)]
+    return [account for account in accounts if account.id is not None and is_mandate_debit_ready(account)]
 
 
 def prioritize_demands(demands: list[TransferDemand]) -> list[TransferDemand]:
@@ -74,12 +75,11 @@ async def allocate_auto_funding(
     locale: str,
     planner: FundingPlanner,
 ) -> AllocationOutcome:
-    preferred_account_id: UUID | None = None
+    preferred_account_id: UUID | str | None = None
     if demand.preferred_account_id:
-        try:
-            preferred_account_id = UUID(demand.preferred_account_id)
-        except ValueError:
-            preferred_account_id = None
+        preferred_account_id = coerce_account_id(demand.preferred_account_id)
+        if preferred_account_id is None:
+            logger.warning("batch_funding_preferred_account_id_invalid")
 
     plan = await planner.plan_funding(
         accounts=accounts,

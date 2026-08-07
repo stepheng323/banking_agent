@@ -44,6 +44,12 @@ def _expand_underproduced_transfer_tasks(
         return planned_tasks, None
     source_parameters = source_task.parameters
 
+    # Do not fan out an authoritative own-account task using recipient text
+    # from a sibling clause.  The linked-account destination is resolved from
+    # its typed bank scope downstream.
+    if source_parameters.is_self is True:
+        return planned_tasks, None
+
     recipient_allocations = _planned_recipient_allocations(source_task)
     recipients = derive_recipients_from_user_text(user_text)
     if clause_text_by_index:

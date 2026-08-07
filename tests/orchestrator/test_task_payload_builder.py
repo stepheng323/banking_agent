@@ -1,4 +1,7 @@
-from apps.chat.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
+from apps.chat.src.agent.orchestrator.utils.task_payload import (
+    build_task_spec_from_plan_item,
+    build_task_specs_from_plan_items,
+)
 from apps.chat.src.agent.orchestrator.utils.task_payload_recipients import (
     derive_recipient_from_user_text,
     derive_recipients_from_user_text,
@@ -61,6 +64,191 @@ def test_transfer_recipient_in_user_text_is_preserved() -> None:
 
     assert spec.payload.get("recipient_name") == "Tolu Adebayo"
     assert spec.payload.get("skip_extraction") is True
+
+
+def test_transfer_self_account_flag_is_preserved() -> None:
+    plan_item = make_planned_task(
+        task_id="t_self",
+        action="send_money",
+        executor="transfer",
+        instruction="Send 5k to my Access account",
+        parameters=TransferTaskParameters(amount=5000, bank_name="Access Bank", is_self=True),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "Send 5k to my Access account",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("is_self") is True
+    assert spec.payload.get("recipient_bank_name") == "Access Bank"
+
+
+def test_transfer_self_account_uses_typed_destination_signal() -> None:
+    plan_item = make_planned_task(
+        task_id="t_self_inferred",
+        action="send_money",
+        executor="transfer",
+        instruction="Send 5k to my Access account",
+        parameters=TransferTaskParameters(
+            amount=5000,
+            bank_name="Access Bank",
+            is_self=True,
+        ),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "Send 5k to my Access account",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("is_self") is True
+    assert spec.payload.get("recipient_bank_name") == "Access Bank"
+
+
+def test_external_destination_remains_external_without_self_signal() -> None:
+    plan_item = make_planned_task(
+        task_id="t_external",
+        action="send_money",
+        executor="transfer",
+        instruction="Send 2k to Tolu Adebayo",
+        parameters=TransferTaskParameters(amount=2000, recipient_name="Tolu Adebayo"),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "Send 2k to Tolu Adebayo and 5k to my Access account",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("is_self") is not True
+
+
+def test_self_task_drops_external_recipient_binding_from_mixed_planner_output() -> None:
+    """A self leg must not inherit the beneficiary chosen for its sibling."""
+    plan_item = make_planned_task(
+        task_id="t_self_mixed",
+        action="send_money",
+        executor="transfer",
+        instruction="Send 5k to my Access account",
+        parameters=TransferTaskParameters(
+            amount=5000,
+            recipient_name="Tolu Adebayo",
+            bank_name="Access Bank",
+            is_self=True,
+        ),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "Send 2k to Tolu Adebayo and 5k to my Access account",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload["is_self"] is True
+    assert "beneficiary_id" not in spec.payload
+    assert "recipient_resolved_name" not in spec.payload
+    assert "recipient_name" not in spec.payload
+    assert "recipient" not in spec.payload
+    assert spec.payload["recipient_bank_name"] == "Access Bank"
+
+
+def test_typed_mixed_self_task_uses_its_own_bank_scope() -> None:
+    """A typed own-account leg does not need the full raw turn to resolve."""
+    plan_item = make_planned_task(
+        task_id="t_self_placeholder",
+        action="send_money",
+        executor="transfer",
+        instruction="Send 5k to recipient",
+        parameters=TransferTaskParameters(
+            amount=5000,
+            recipient_name="recipient",
+            bank_name="Access Bank",
+            is_self=True,
+        ),
+        risk="MONEY_MOVE",
+        source_clause_index=2,
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "Send 2k to Tolu Adebayo and 5k to my Access account",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload["is_self"] is True
+    assert spec.payload["recipient_bank_name"] == "Access Bank"
+    assert "recipient_name" not in spec.payload
+
+
+def test_self_intent_line_does_not_reuse_sibling_recipient_name() -> None:
+    from banking.presentation.formatters.transaction_intent_lines import format_intent_line
+
+    assert (
+        format_intent_line(
+            "transfer",
+            {
+                "amount": 5000,
+                "is_self": True,
+                "recipient_name": "Tolu Adebayo",
+                "recipient_bank_name": "Access Bank",
+            },
+        )
+        == "Send ₦5,000 to My Access Bank"
+    )
+
+
+def test_mixed_task_specs_follow_source_clause_order() -> None:
+    later = make_planned_task(
+        task_id="later",
+        action="send_money",
+        executor="transfer",
+        instruction="Send 5k to my Access account",
+        parameters=TransferTaskParameters(amount=5000, bank_name="Access Bank", is_self=True),
+        risk="MONEY_MOVE",
+        source_clause_index=2,
+    )
+    first = make_planned_task(
+        task_id="first",
+        action="send_money",
+        executor="transfer",
+        instruction="Send 2k to Tolu",
+        parameters=TransferTaskParameters(amount=2000, recipient_name="Tolu"),
+        risk="MONEY_MOVE",
+        source_clause_index=1,
+    )
+
+    specs = build_task_specs_from_plan_items(
+        [later, first],
+        "Send 2k to Tolu and 5k to my Access account",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert list(specs) == ["first", "later"]
 
 
 def test_airtime_still_uses_skip_extraction() -> None:

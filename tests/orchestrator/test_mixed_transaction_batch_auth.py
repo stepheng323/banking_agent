@@ -677,6 +677,7 @@ class _TransferBeneficiaryThenSourceThenConfirmationWorker:
                 required_fields=["source_account_id"],
                 prompt="I found Tolu (Tolu Adebayo).\n\nWhich account would you like to use?",
                 patch={
+                    "beneficiary_id": "bene-1",
                     "recipient_name": "Tolu",
                     "recipient_resolved_name": "Tolu Adebayo",
                     "recipient_account": "2010000001",
@@ -694,7 +695,7 @@ class _TransferBeneficiaryThenSourceThenConfirmationWorker:
                     "sourceBank": "GTBank",
                     "sourceAccount": "0000000002",
                 },
-                patch={"source_account_id": "acct-2"},
+                patch={"beneficiary_id": "bene-1", "source_account_id": "acct-2"},
             )
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
@@ -702,14 +703,14 @@ class _TransferBeneficiaryThenSourceThenConfirmationWorker:
             prompt="I found multiple matches for 'Tolu'. Which one did you mean?\nReply with the number or rephrase.",
             details={
                 "options": [
-                    {"id": "bene-1", "title": "Tolu Access (Tolu Adebayo)"},
-                    {"id": "bene-2", "title": "Tolu GTB (Tolu Adeyemi)"},
+                    {"beneficiary_id": "bene-1", "id": "bene-1", "title": "Tolu Access (Tolu Adebayo)"},
+                    {"beneficiary_id": "bene-2", "id": "bene-2", "title": "Tolu GTB (Tolu Adeyemi)"},
                 ]
             },
             patch={
                 "beneficiary_candidates": [
-                    {"id": "bene-1", "label": "Tolu Access (Tolu Adebayo)"},
-                    {"id": "bene-2", "label": "Tolu GTB (Tolu Adeyemi)"},
+                    {"beneficiary_id": "bene-1", "id": "bene-1", "label": "Tolu Access (Tolu Adebayo)"},
+                    {"beneficiary_id": "bene-2", "id": "bene-2", "label": "Tolu GTB (Tolu Adeyemi)"},
                 ],
             },
         )
@@ -1306,15 +1307,21 @@ async def test_mixed_two_transfers_and_airtime_keep_all_tasks_after_late_source_
     state = _apply(state, details_updates)
 
     review_updates = await advance_wave(state, config)
-    assert "Recipient review" in review_updates["outbox"][0]["text"]
-    state = _apply(state, review_updates).model_copy(update={"last_message_text": "yes"})
-
-    review_acceptance_updates = await handle_pending_interrupt(state, config)
-    assert "Which account would you like to use?" in review_acceptance_updates["outbox"][0]["text"]
-    state = _apply(state, review_acceptance_updates).model_copy(update={"last_message_text": "1"})
+    source_prompt = review_updates["outbox"][0]["text"]
+    assert "Which account would you like to use?" in source_prompt
+    assert source_prompt.count("I found Gaines") == 1
+    assert "Recipient review" not in source_prompt
+    state = _apply(state, review_updates).model_copy(update={"last_message_text": "1"})
 
     source_selection_updates = await handle_pending_interrupt(state, config)
     state = _apply(state, source_selection_updates)
+    review_after_source = await advance_wave(state, config)
+    assert review_after_source["pending_interrupt"].kind == "input"
+    assert "Recipient review" in review_after_source["outbox"][0]["text"]
+
+    state = _apply(state, review_after_source).model_copy(update={"last_message_text": "yes"})
+    review_acceptance_updates = await handle_pending_interrupt(state, config)
+    state = _apply(state, review_acceptance_updates)
     final_updates = await advance_wave(state, config)
 
     confirmation = next(entry for entry in final_updates["outbox"] if entry["type"] == "request_confirmation")
@@ -1565,26 +1572,24 @@ async def test_mixed_transfer_clarification_keeps_airtime_in_final_confirmation(
     first_updates = await advance_wave(state, config)
     first_prompt = first_updates["outbox"][0]
     assert first_updates["pending_interrupt"].task_ids == ["t_transfer"]
-    assert "Also in this batch" in (first_prompt.get("title") or first_prompt.get("text") or "")
-    assert "Buy ₦500 airtime for 08162511023" in (first_prompt.get("title") or first_prompt.get("text") or "")
-    assert first_prompt["queue"]["queued_task_ids"] == ["t_airtime"]
+    first_prompt_text = first_prompt.get("title") or first_prompt.get("text") or ""
+    assert "Choose the recipient for ₦5,000 to “Tolu”." in first_prompt_text
+    assert "Other items in this batch are ready" not in first_prompt_text
+    assert "Buy ₦500 airtime for 08162511023" not in first_prompt_text
+    assert "queue" not in first_prompt
 
     state = _apply(state, first_updates).model_copy(update={"last_message_text": "1"})
     beneficiary_updates = await handle_pending_interrupt(state, config)
     state = _apply(state, beneficiary_updates)
     review_updates = await advance_wave(state, config)
     assert review_updates["pending_interrupt"].task_ids == ["t_transfer"]
-    assert "Recipient review" in review_updates["outbox"][0]["text"]
+    assert review_updates["pending_interrupt"].fields_by_task == {"t_transfer": ["source_account_id"]}
+    source_prompt = review_updates["outbox"][0]
+    source_text = source_prompt.get("title") or source_prompt.get("text") or ""
+    assert "Which account would you like to use?" in source_text
+    assert "Recipient review" not in source_text
 
-    state = _apply(state, review_updates).model_copy(update={"last_message_text": "yes"})
-    review_acceptance_updates = await handle_pending_interrupt(state, config)
-    source_prompt = review_acceptance_updates["outbox"][0]
-    assert review_acceptance_updates["pending_interrupt"].task_ids == ["t_transfer"]
-    assert "Also in this batch" in (source_prompt.get("title") or source_prompt.get("text") or "")
-    assert "Buy ₦500 airtime for 08162511023" in (source_prompt.get("title") or source_prompt.get("text") or "")
-    assert source_prompt["queue"]["queued_task_ids"] == ["t_airtime"]
-
-    state = _apply(state, review_acceptance_updates).model_copy(update={"last_message_text": "1"})
+    state = _apply(state, review_updates).model_copy(update={"last_message_text": "1"})
     source_selection_updates = await handle_pending_interrupt(state, config)
     state = _apply(state, source_selection_updates)
     final_updates = await advance_wave(state, config)

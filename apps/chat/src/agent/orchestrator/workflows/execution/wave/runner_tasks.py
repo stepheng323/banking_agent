@@ -6,7 +6,12 @@ from apps.chat.src.agent.orchestrator.workflows.execution.source_selection impor
     _propagate_batch_source_selection,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import get_task, non_terminal_tasks
-from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import fail_task
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import (
+    fail_task,
+    remove_task_payload_values,
+    set_task_confirmation,
+    set_task_stage,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_guards import (
     _active_input_task_types,
@@ -19,6 +24,44 @@ from banking.runtime.operations import DEFAULT_OPERATION_BY_EXECUTOR, operation_
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _promote_deferred_confirmations(*, state: OrchestratorState, runtime: ExecutionWaveRuntime) -> None:
+    """Promote private batch candidates once no task still needs input.
+
+    A worker may reach confirmation before a sibling has resolved a recipient.
+    Keeping that snapshot private avoids a partial review, while retaining it
+    lets the next selection turn assemble the whole batch without replaying a
+    completed leg.  Promotion is deliberately blocked while any input
+    request remains in the accumulator.
+    """
+    if runtime.accumulator.input_request_count() > 0:
+        return
+
+    for task_id in runtime.current_wave:
+        task = get_task(state, task_id)
+        if task is None or task.stage in {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}:
+            continue
+        deferred = task.payload.get("_deferred_confirmation")
+        if not isinstance(deferred, dict):
+            continue
+        outcome = str(deferred.get("outcome") or "")
+        if outcome not in {"needs_confirmation", "needs_auth"}:
+            remove_task_payload_values(task, "_deferred_confirmation")
+            continue
+        set_task_stage(task, TaskStage.AWAITING_AUTH if outcome == "needs_auth" else TaskStage.AWAITING_CONFIRMATION)
+        set_task_confirmation(
+            task,
+            summary=deferred.get("summary"),
+            snapshot=deferred.get("snapshot"),
+            update_message=deferred.get("update_message"),
+        )
+        remove_task_payload_values(task, "_deferred_confirmation")
+        if outcome == "needs_auth":
+            runtime.accumulator.add_auth_task(task_id)
+        else:
+            runtime.accumulator.add_confirmation_task(task_id)
+        logger.info("batch_confirmation_candidate_promoted", task_id=task_id, outcome=outcome)
 
 
 async def execute_current_wave_tasks(
@@ -109,6 +152,8 @@ async def execute_current_wave_tasks(
 
     if not progressed:
         _cancel_deadlocked_wave_tasks(state=state, current_wave=runtime.current_wave)
+
+    _promote_deferred_confirmations(state=state, runtime=runtime)
 
 
 __all__ = ["execute_current_wave_tasks"]

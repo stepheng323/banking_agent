@@ -130,7 +130,8 @@ Return ONLY JSON for this schema:
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | null
 - target_task_ids: list of task ids from the pending/removed context when the target is clear, else []
 - target_types: transfer | airtime | data values when the edit targets a class of tasks, else []
-- target_texts: user references to targets such as recipient, amount, bank, phone, "both transfers", "the airtime"
+- target_texts: user references to targets such as recipient, amount, bank, phone, "self transfer", "both transfers",
+  "the airtime"
 - updates: scoped edits when one message updates multiple targets differently. Each item has:
   {target_task_ids, target_types, target_texts, fields}. Put per-target fields inside fields.
 - amount_mutation: {basis:"current_pending_amount",steps:[...]} for an edit to an existing amount, else null.
@@ -155,12 +156,16 @@ Return ONLY JSON for this schema:
 - add_instruction: fresh transaction instruction when operation=add_tasks, else null
 - status_query_type: recap | requirements | null
 - target_intent: target domain when operation=add_tasks or switch_intent, else null
-- account_action: get_default | list | count | check_balance | null when target_intent=account
+- account_action: get_default | list_accounts | count | check_balance | null when target_intent=account
 - reason: short reason
 
 Semantic operations:
-1) remove_tasks: user wants one or more pending tasks removed from the confirmation batch.
-2) restore_tasks: user wants previously removed pending task(s) added back to the same batch.
+1) remove_tasks: user wants one or more pending tasks removed from the confirmation batch. For a transfer to the
+   user's own linked account, use target_texts such as "self transfer" or "my account"; do not target it by the
+   destination account holder name.
+2) restore_tasks: user wants previously removed pending task(s) added back to the same batch. This includes a
+   previously removed self transfer; use target_texts such as "self transfer" or "my account" when that is the
+   removed task being restored.
 3) update_fields: user wants to edit fields on existing pending task(s), such as amount, narration, recipient,
    source account/bank, pooled funding split, phone, network, or data plan.
    A user adding a purpose, reason, memo, note, description, or "what it is for" to an existing transfer is
@@ -205,7 +210,8 @@ Semantic operations:
    account, balances, authorization state, or account details, are switch_intent with target_intent=account. They are
    not status_query merely because a transaction confirmation is pending. The pending transaction will be preserved
    while the separate account request is answered. Set account_action=get_default for a request asking which linked
-   account is the default/primary account; use list, count, or check_balance for those corresponding account reads.
+   account is the default/primary account; use list_accounts, count, or check_balance for those corresponding account
+   reads.
 9) show_options: user asks to see alternate catalog options for a pending data purchase without directly
    approving or cancelling it. Examples: "what other plan within that range", "anything cheaper?", "what else
    can I get for 4k?", "show monthly ones", "more data if possible". Set target_types=["data"], show_options=true,
@@ -223,8 +229,9 @@ Rules:
 - Be semantic and language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed input.
 - Use only the supplied pending/removed task context. Do not invent accounts, beneficiaries, balances, or records.
 - The batch is not authorized yet. You only classify; deterministic code will re-render confirmation and require PIN.
-- If user says "add it back", "put it back", "restore that", "undo that removal", "revert that", or similar,
-  operation=restore_tasks and target the best removed task. Pronouns like it/that/that one in a "back" request
+- If user says "add it back", "put it back", "restore that", "include it again", "bring that one back",
+  "undo that removal", "revert that", or similar, operation=restore_tasks and target the best removed task.
+  Pronouns like it/that/that one in a "back" or "again" request
   refer to removed tasks before active tasks. If exactly one removed task exists, target that removed task.
 - If user says "add airtime too", "send 2k to X also", or similar, operation=add_tasks with add_instruction as
   the user's fresh task instruction.

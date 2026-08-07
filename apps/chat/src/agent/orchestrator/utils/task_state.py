@@ -33,6 +33,7 @@ def reset_tasks_to_extracted(
         task = tasks[task_id].model_copy(deep=True) if copy_task else tasks[task_id]
         task.stage = TaskStage.EXTRACTED
         task.payload["confirmation"] = {}
+        task.payload.pop("_deferred_confirmation", None)
         if clear_idempotency:
             task.payload.pop("idempotency_key", None)
         tasks[task_id] = task

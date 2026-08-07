@@ -119,6 +119,28 @@ def batch_limit_response(
     )
 
 
+def incomplete_plan_response(
+    *,
+    response: str,
+    normalized_instruction: str,
+    planner_output: PlannerOutput,
+    locale_updates: PlannerUpdates,
+) -> PlannerResolution:
+    """Fail closed when typed batch expectations exceed planner output."""
+    return _planner_route_updates(
+        updates={
+            "final_response": response,
+            "normalized_instruction": normalized_instruction,
+            "planner_output": planner_output,
+            "path_shape": "planner_incomplete_batch",
+            **locale_updates,
+        },
+        decision="planner_transaction_task_count_mismatch",
+        outcome_kind=TurnOutcomeKind.DIRECT_RESPONSE,
+        planner_output=planner_output,
+    )
+
+
 def task_dispatch(
     *,
     task_updates: PlannerUpdates,
@@ -155,6 +177,7 @@ __all__ = [
     "PlannerUpdates",
     "PlannerResolution",
     "batch_limit_response",
+    "incomplete_plan_response",
     "context_read_shortcut",
     "failure_response",
     "non_task_response",

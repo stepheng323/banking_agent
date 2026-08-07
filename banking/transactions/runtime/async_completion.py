@@ -46,6 +46,7 @@ ASYNC_GROUP_ACTIONABLE_PAYLOAD_KEYS = (
     "recipient_account_number",
     "recipient_bank_code",
     "recipient_bank_name",
+    "is_self",
     "resolved_from_saved_beneficiary",
     "source_bank_name",
     "source_account_id",

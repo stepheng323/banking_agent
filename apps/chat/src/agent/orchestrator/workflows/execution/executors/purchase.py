@@ -20,8 +20,10 @@ from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import t
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from shared.utils.logging import get_logger
 
 PurchaseWorkerName = Literal["airtime", "data"]
+logger = get_logger(__name__)
 
 
 class AirtimeTaskExecutor:
@@ -101,15 +103,30 @@ async def _handle_purchase_task(
     _stamp_async_group_metadata(task, ctx)
     await enter_task_progress(ctx, task)
 
-    result = cast(
-        TransactionResult,
-        await worker.run(
-            payload=task.payload,
-            context=context_data,
-            user_message=user_msg,
-            pin_verified=turn.pin_verified,
-        ),
-    )
+    try:
+        result = cast(
+            TransactionResult,
+            await worker.run(
+                payload=task.payload,
+                context=context_data,
+                user_message=user_msg,
+                pin_verified=turn.pin_verified,
+            ),
+        )
+    except Exception as exc:
+        logger.error(
+            "purchase_worker_execution_exception",
+            task_id=task_id,
+            worker=worker_name,
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
+        result = TransactionResult(
+            outcome=TransactionOutcome.FAILED,
+            error=default_error,
+            retryable=True,
+            patch={},
+        )
 
     _apply_result_patch(task, result)
 

@@ -19,13 +19,19 @@ PLANNER_QUERY_PREFERENCE_PROMPT = """## QUERY PREFERENCES
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Keep recipient exact.
+- Own linked account: emit `is_self=true` with target `bank_name` and no recipient fields;
+  external destination: `is_self=false` with recipient preserved.
 - Selector refs: previous or index.
-- explicit_split=source funding.
-- Don't guess."""
+- explicit_split=source.
+- No guessing."""
 
 PLANNER_TRANSFER_ONLY_PRECISION_PROMPT = """## TRANSFER_ONLY PRECISION
 - 2k=2000; Tolu Access/Tolu GTB are aliases.
-- Use/from/with <bank> to send -> source_bank_name only; omit bank_name unless destination account+bank.
+- Use/from/with <bank> to send -> source_bank_name only; omit bank_name unless destination account+bank,
+  except for an explicit bank-to-bank "from X to Y" destination: retain Y as `bank_name` with `is_self=true`.
+- For "from <source bank> to <destination bank>" with no person, saved-recipient alias, or account number,
+  emit `is_self=true`, keep the destination as `bank_name`, and omit recipient/recipient_name. The resolver
+  verifies that both bank endpoints are linked accounts; never turn the destination bank into a beneficiary.
 - Each/split->recipient_allocations."""
 
 PLANNER_MIXED_TX_PRECISION_PROMPT = """## MIXED_TX PRECISION
@@ -34,6 +40,8 @@ PLANNER_MIXED_TX_PRECISION_PROMPT = """## MIXED_TX PRECISION
 - Keep read-only query/balance separate; exact transfer recipient; 2k=2000,10k=10000.
 - Extract phone/network. Trailing/global source "from my <bank>" applies to every transaction task.
 - source phrase -> source_bank_name, not bank_name.
+- For "my <bank> account", emit `is_self=true` and that target `bank_name`;
+  preserve this independently per transfer. A self-transfer is not a recipient-account task.
 - Don't copy slots across clauses; don't drop read-only; don't guess."""
 
 PLANNER_OUTPUT_QUALITY_PROMPT = (
@@ -54,6 +62,13 @@ PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT = (
     "## EXECUTOR COVERAGE GUARD\n"
     "- expected_transaction_executors: {expected_executors}.\n"
     "- Emit every expected executor in user order."
+)
+
+PLANNER_TASK_COUNT_GUARD_PROMPT = (
+    "## TRANSACTION TASK COUNT GUARD\n"
+    "- expected_transaction_task_count: {expected_count}.\n"
+    "- Emit exactly this many independent transaction tasks in user order.\n"
+    "- Do not collapse separate explicit amounts into one task or omit a clause."
 )
 
 PLANNER_RULE_ATOMS: dict[str, str] = {
@@ -237,6 +252,9 @@ PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES = (
 
 PLANNER_RUNTIME_MIXED_TX_EXAMPLES = (
     "## TARGETED EXAMPLES (MIXED_TX)\n"
+    "- Send 2k to Tolu Adebayo and 5k to my Access account -> emit two send_money tasks in user order; "
+    "first recipient_name=Tolu Adebayo, second amount=5000,is_self=true,bank_name=Access Bank with no recipient_name; "
+    "never copy the first recipient into the own-account task.\n"
     "- Send 10k to Tolu Access + buy 1k airtime for me -> send_money recipient_name=Tolu Access "
     "+ buy_airtime amount=1000,is_self=true.\n"
     "- Send 10k to adebayo and buy me 2k airtime from my gtb -> action=send_money amount=10000,"

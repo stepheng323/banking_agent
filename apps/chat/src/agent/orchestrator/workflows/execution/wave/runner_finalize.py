@@ -5,6 +5,7 @@ from typing import Any
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
+from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.auth_gate_updates import _build_auth_gate_updates
@@ -19,17 +20,22 @@ from apps.chat.src.agent.orchestrator.workflows.execution.prompts.input_prompts 
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import (
     all_existing_tasks_terminal,
+    get_task,
     task_log_shapes,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import cancel_task
+from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import (
     _fail_stalled_wave_tasks,
     next_wave_index,
 )
 from apps.chat.src.agent.orchestrator.workflows.runtime_config import OrchestrationConfig
+from banking.presentation.i18n.renderer import render_message
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.observability.llm_call_metrics import record_llm_call
 from shared.utils.logging import get_logger
+from shared.utils.user_error import safe_user_error_message
 
 logger = get_logger(__name__)
 
@@ -85,6 +91,22 @@ def _deterministic_stack(texts: list[str]) -> str:
     return "\n\n".join(text for text in texts if text.strip())
 
 
+def _remove_suppressed_actionable_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Never present an actionable card beside an unresolved input surface.
+
+    A native option card is itself a pending input contract.  Treat its
+    presence as authoritative at the final outbox boundary as well as the
+    accumulator blocker check; this protects against a custom worker or stale
+    checkpoint that emitted a confirmation candidate without registering the
+    corresponding input request.
+    """
+    return [
+        entry
+        for entry in entries
+        if entry.get("type") not in {"request_confirmation", "request_pin"}
+    ]
+
+
 def _safe_transition(value: str) -> str | None:
     normalized = " ".join(value.split()).strip()
     if not normalized or len(normalized) > 120 or any(char.isdigit() for char in normalized):
@@ -122,7 +144,7 @@ async def _bridge_texts(
 
     config = build_llm_runnable_config(
         role="conversation",
-        phone_number=runtime.ctx.state.phone_number,
+        phone_number=turn_metadata(runtime.ctx.state).phone_number,
         path_label="outbox_bridge",
         task_domain="orchestrator",
         locale=runtime.locale,
@@ -238,9 +260,171 @@ def _advance_or_fail_stalled_wave(
     accumulator.set_current_wave_index(next_wave_index(state))
 
 
+def _preconfirmation_batch_failure(
+    *,
+    state: OrchestratorState,
+    current_wave: list[str],
+    accumulator: ExecutionAccumulator,
+    locale: str,
+) -> dict[str, Any] | None:
+    """Handle a pre-confirmation batch when one leg fails.
+
+    A failed leg must not disappear behind a sibling's input/confirmation
+    prompt.  If another leg is still live, preserve that leg and surface the
+    failure alongside its next gate; the user can review/continue the ready
+    item or repair the failed one.  Only an all-failed pre-confirmation batch
+    is aborted outright.
+    """
+    transaction_types = {"transfer", "airtime", "data"}
+    transaction_tasks = [
+        task
+        for task_id in current_wave
+        if (task := get_task(state, task_id)) is not None and task.type in transaction_types
+    ]
+    failed_tasks = [task for task in transaction_tasks if task.stage == TaskStage.FAILED]
+    if not failed_tasks or len(transaction_tasks) < 2:
+        return None
+
+    if any(task.stage == TaskStage.COMPLETED for task in transaction_tasks):
+        return None
+    if not (
+        accumulator.input_request_count()
+        or accumulator.confirmation_task_ids()
+        or accumulator.auth_task_ids()
+    ):
+        return None
+
+    error_items = [
+        (task.type, str(task.payload.get("error") or ""))
+        for task in failed_tasks
+        if str(task.payload.get("error") or "").strip()
+    ]
+    if not error_items:
+        error_items = [(failed_tasks[0].type, render_message("orchestrator.finalize.failed_unknown", locale))]
+
+    error_lines = [
+        render_message(
+            "orchestrator.finalize.failed_prefix",
+            locale,
+            {
+                "error": safe_user_error_message(error, task_type=task_type, locale=locale)
+            },
+        )
+        for task_type, error in error_items
+    ]
+    message = "\n\n".join(dict.fromkeys(error_lines))
+
+    live_tasks = [
+        task
+        for task in transaction_tasks
+        if task.stage not in {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
+    ]
+    if live_tasks:
+        partial_notice = render_message(
+            "orchestrator.finalize.batch_partial_failure",
+            locale,
+            {"failure": message},
+        )
+        for task in failed_tasks:
+            # The lifecycle reducer must not emit the same failure a second
+            # time.  Keep the notice on the failed leg so the next input,
+            # confirmation, or auth gate can present it with the live leg.
+            task.payload["_batch_failure_reported"] = True
+            task.payload["_batch_failure_notice"] = partial_notice
+        logger.warning(
+            "batch_partial_failure_preserved",
+            failed_task_count=len(failed_tasks),
+            live_task_count=len(live_tasks),
+            unresolved_input_count=accumulator.input_request_count(),
+        )
+        return None
+
+    # No live leg remains. Stop the already-blocked batch rather than leaving
+    # an orphaned input/confirmation interrupt behind.
+    for task in transaction_tasks:
+        if task.stage not in {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}:
+            cancel_task(
+                task,
+                render_message(
+                    "orchestrator.finalize.batch_aborted",
+                    locale,
+                ),
+            )
+        task.payload["_batch_failure_reported"] = True
+
+    message = (
+        f"{message}\n\n"
+        f"{render_message('orchestrator.finalize.batch_aborted', locale)}"
+    )
+    accumulator.set_outbox([{"type": "say", "text": message}])
+    accumulator.clear_pending_interrupt()
+    accumulator.set_current_wave_index(next_wave_index(state))
+    logger.warning(
+        "batch_aborted_before_confirmation",
+        failed_task_count=len(failed_tasks),
+        transaction_task_count=len(transaction_tasks),
+        unresolved_input_count=accumulator.input_request_count(),
+    )
+    return accumulator.to_updates()
+
+
+def _attach_partial_batch_failure_notice(
+    *,
+    state: OrchestratorState,
+    current_wave: list[str],
+    updates: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep a preserved leg's failure visible at every remaining gate."""
+    notices: list[str] = []
+    for task_id in current_wave:
+        task = get_task(state, task_id)
+        notice = task.payload.get("_batch_failure_notice") if task else None
+        if isinstance(notice, str) and notice.strip() and notice not in notices:
+            notices.append(notice)
+    if not notices:
+        return updates
+
+    notice = "\n\n".join(notices)
+    outbox = updates.get("outbox")
+    if isinstance(outbox, list):
+        # A pending selection is already a complete interactive card.  Put
+        # the failed-leg status in that card's title instead of sending a
+        # separate ``say`` immediately before the buttons.  Besides being
+        # easier to scan, this preserves the invariant that the option ids
+        # belong only to the focused task; the failed sibling has no options
+        # and cannot accidentally consume the selection reply.
+        option_entry = next(
+            (entry for entry in outbox if isinstance(entry, dict) and entry.get("type") == "show_options"),
+            None,
+        )
+        if option_entry is not None:
+            title = str(option_entry.get("title") or "").strip()
+            option_entry["title"] = f"{notice}\n\n{title}" if title else notice
+            option_entry["_batch_status"] = "partial_failure"
+            logger.info(
+                "batch_failure_folded_into_selection_card",
+                option_count=len(option_entry.get("options") or []),
+                active_task_count=len(getattr(updates.get("pending_interrupt"), "task_ids", []) or []),
+            )
+        else:
+            updates["outbox"] = [{"type": "say", "text": notice}, *outbox]
+
+    pending = updates.get("pending_interrupt")
+    prompt = getattr(pending, "prompt", None)
+    if pending is not None and isinstance(prompt, str) and prompt.strip() and hasattr(pending, "model_copy"):
+        updates["pending_interrupt"] = pending.model_copy(update={"prompt": f"{notice}\n\n{prompt}"})
+    return updates
+
+
 async def _coalesce_outbox(outbox: list[dict[str, Any]], runtime: ExecutionWaveRuntime) -> list[dict[str, Any]]:
     if not outbox:
         return []
+
+    # Native option surfaces are pending input, even when a custom worker
+    # forgot to register its input blocker.  Never let a stale confirmation
+    # candidate leak beside the buttons during composition.
+    if any(entry.get("type") == "show_options" for entry in outbox):
+        outbox = _remove_suppressed_actionable_entries(outbox)
 
     coalesced: list[dict[str, Any]] = []
     say_group: list[dict[str, Any]] = []
@@ -268,7 +452,26 @@ async def finalize_execution_wave_updates(
     state: OrchestratorState,
     runtime: ExecutionWaveRuntime,
 ) -> dict[str, Any]:
+    if failed_batch_updates := _preconfirmation_batch_failure(
+        state=state,
+        current_wave=runtime.current_wave,
+        accumulator=runtime.accumulator,
+        locale=runtime.locale,
+    ):
+        return failed_batch_updates
+
     blocker = choose_wave_blocker(state=state, current_wave=runtime.current_wave, agg=runtime.accumulator)
+    # Input is a batch-wide gate.  A sibling may already be confirmation-ready,
+    # but no review surface is valid while another task still has unresolved
+    # fields.  Keep this invariant here as a final safety net for accumulator
+    # updates produced by custom workers.
+    if blocker.kind in {"confirmation", "auth"} and runtime.accumulator.input_request_count() > 0:
+        logger.warning(
+            "execution_gate_input_overrides_actionable_blocker",
+            requested_blocker=blocker.kind,
+            unresolved_task_count=runtime.accumulator.input_request_count(),
+        )
+        blocker = choose_wave_blocker(state=state, current_wave=runtime.current_wave, agg=runtime.accumulator)
     if blocker.kind == "input":
         updates = _build_missing_field_interrupt_updates(
             state=state,
@@ -276,7 +479,13 @@ async def finalize_execution_wave_updates(
             agg=runtime.accumulator,
             locale=runtime.locale,
         )
+        updates = _attach_partial_batch_failure_notice(
+            state=state,
+            current_wave=runtime.current_wave,
+            updates=updates,
+        )
         if "outbox" in updates and isinstance(updates["outbox"], list):
+            updates["outbox"] = _remove_suppressed_actionable_entries(updates["outbox"])
             updates["outbox"] = await _coalesce_outbox(updates["outbox"], runtime)
         return updates
 
@@ -292,6 +501,11 @@ async def finalize_execution_wave_updates(
             locale=runtime.locale,
             task_ids=blocker.task_ids,
         )
+        updates = _attach_partial_batch_failure_notice(
+            state=state,
+            current_wave=runtime.current_wave,
+            updates=updates,
+        )
         if "outbox" in updates and isinstance(updates["outbox"], list):
             updates["outbox"] = await _coalesce_outbox(updates["outbox"], runtime)
         return updates
@@ -303,6 +517,11 @@ async def finalize_execution_wave_updates(
             agg=runtime.accumulator,
             locale=runtime.locale,
             task_ids=blocker.task_ids,
+        )
+        updates = _attach_partial_batch_failure_notice(
+            state=state,
+            current_wave=runtime.current_wave,
+            updates=updates,
         )
         if "outbox" in updates and isinstance(updates["outbox"], list):
             updates["outbox"] = await _coalesce_outbox(updates["outbox"], runtime)

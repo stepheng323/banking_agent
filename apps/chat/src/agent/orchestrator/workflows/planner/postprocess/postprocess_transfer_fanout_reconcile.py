@@ -37,6 +37,13 @@ def _reconcile_multi_transfer_recipient_tasks(
             return planned_tasks, None
         transfer_task_pairs.append((idx, task, task.parameters))
 
+    # A planner-marked own-account leg is already fully typed.  Recipient
+    # reconciliation is for external destinations only; attempting to match
+    # the raw turn's recipient candidates against a self-transfer can copy a
+    # sibling beneficiary back into that task.
+    if any(parameters.is_self is True for _, _, parameters in transfer_task_pairs):
+        return planned_tasks, None
+
     if any(parameters.recipient_allocations for _, _, parameters in transfer_task_pairs):
         return planned_tasks, None
     if any(parameters.recipient_account or parameters.bank_name for _, _, parameters in transfer_task_pairs):

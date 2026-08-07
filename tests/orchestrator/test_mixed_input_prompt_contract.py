@@ -60,7 +60,9 @@ def test_mixed_missing_input_keeps_complete_contract_and_guides_selection() -> N
     assert interrupt.batch_input.focused_slot.field == "beneficiary_id"
     outbox = updates["outbox"]
     assert outbox[0]["type"] == "show_options"
-    assert "Choose the Tolu recipient." in outbox[0]["title"]
+    assert "Choose the recipient for ₦2,000 to “Tolu”." in outbox[0]["title"]
+    assert "Still needed: the airtime amount for your line." in outbox[0]["title"]
+    assert "₦0" not in outbox[0]["title"]
     assert "₦0" not in outbox[0]["title"]
 
 

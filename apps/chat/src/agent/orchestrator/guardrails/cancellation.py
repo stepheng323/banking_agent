@@ -143,12 +143,15 @@ async def build_cancellation_reset_updates(
         "pending_query_clarification": None,
         "recent_query_context": None,
         "stashed_sessions": [],
+        "context_frames": [],
+        "referent_memory": {},
         "planner_output": None,
         "normalized_instruction": None,
         "pin_verified": False,
         "authorization_context": None,
         "last_callback": None,
         "preplanner_expected_transaction_executors": [],
+        "preplanner_expected_transaction_task_count": 0,
     }
 
 

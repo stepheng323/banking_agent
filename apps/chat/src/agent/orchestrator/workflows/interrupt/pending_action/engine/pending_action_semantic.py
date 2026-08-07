@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmat
     confirmation_scoped_task_restore_ids,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 
@@ -64,6 +65,14 @@ async def _resolve_semantic_pending_action_edit_updates(
             interrupt=interrupt,
             decision=decision,
         )
+        logger.info(
+            "pending_action_edit_target_resolution",
+            operation="remove_tasks",
+            matched_count=len(task_ids),
+            active_count=len(getattr(interrupt, "task_ids", []) or []),
+            target_types=getattr(decision, "target_types", None),
+            target_reference_count=len(getattr(decision, "target_texts", []) or []),
+        )
         if task_ids:
             return await _remove_or_cancel_confirmation_tasks(
                 state=state,
@@ -77,6 +86,14 @@ async def _resolve_semantic_pending_action_edit_updates(
             state=state,
             interrupt=interrupt,
             decision=decision,
+        )
+        logger.info(
+            "pending_action_edit_target_resolution",
+            operation="restore_tasks",
+            matched_count=len(task_ids),
+            removed_count=len(interrupt_state_view(state).removed_confirmation_tasks or {}),
+            target_types=getattr(decision, "target_types", None),
+            target_reference_count=len(getattr(decision, "target_texts", []) or []),
         )
         if task_ids:
             return restore_confirmation_tasks_and_reconfirm_updates(

@@ -16,7 +16,7 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 | source_account_index | Selection from numbered list for source account | 1 for "first"/"1", 2 for "second"/"2" |
 | recipient_binding_index | Selection from numbered list for recipient/beneficiary | 1 for "first"/"1", 2 for "second"/"2". **CRITICAL: NEVER resolve the index to the person's name. Always output the index.** |
 | recipient_name | Name/alias | "to mum", "john's gtb" |
-| is_self | Transfer to own account | true for "to my [bank]", "to myself" |
+| is_self | Transfer to own account | true for "to my [bank]", "to myself", or a bank-only destination between linked accounts |
 | narration | Optional memo | Capture explicit purpose/note, e.g. "for groceries", "purpose: rent" |
 | transfer_all | User wants to send entire available balance | true for "send all", "max amount", "whatever I have" |
 | transfer_percentage | Percentage of balance | 50 for "half", 10 for "tithe" |
@@ -32,6 +32,10 @@ DO NOT generate reply or decide missing fields — resolver handles that.
   - POSITIONAL: If no preposition, but follows "use" or "from", it's the source.
 - **bank_name**: Use when user indicates WHERE funds go TO (the destination).
   - TRIGGERS: "to [bank]", "into [bank]", "[bank] account", "send to [bank]".
+  - For "from [source bank] to [destination bank]" with no person, saved-recipient alias,
+    or account number, emit `is_self=true` and keep only the destination `bank_name`.
+    Do not put the destination bank into `recipient_name`; linked-account resolution
+    verifies that both endpoints belong to the user.
 - **recipient_allocations**: Use only when the split is across people/beneficiaries/recipients.
   - TRIGGERS: "split 20k between mum and gaines", "send 20k 70/30 btw mum and gaines".
   - Keep total transfer `amount` as the overall amount, and put each recipient share in `recipient_allocations`.
@@ -107,7 +111,7 @@ When user corrects mid-flow ("I meant 50k"):
 | Input | Key Extractions |
 |-------|-----------------|
 | "send 5k to mum" | amount=5000, recipient_name="mum" |
-| "GTB → Access 5k" | amount=5000, source_bank_name="GTBank", bank_name="Access Bank" |
+| "GTB → Access 5k" | amount=5000, source_bank_name="GTBank", bank_name="Access Bank", is_self=true |
 | "Send 25k to 0760505261 Access Bank" | amount=25000, recipient_account="0760505261", bank_name="Access Bank" |
 | "Send 25k to 0760505261 Access Bank for rent" | amount=25000, recipient_account="0760505261", bank_name="Access Bank", narration="rent" |
 | "5k, tolu" | amount=5000, recipient_name="tolu" |

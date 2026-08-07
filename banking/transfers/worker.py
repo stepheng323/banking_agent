@@ -265,7 +265,10 @@ class TransferWorker:
             logger.error("transfer_pipeline_failed", error=str(e), exc_info=True)
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
-                error=render_message("transfer.error.pipeline_failed", locale, {"error": str(e)}),
+                # Keep exception details in structured logs only.  The result
+                # is copied into task state and can otherwise reach the user
+                # through a batch failure card.
+                error=render_message("transfer.error.pipeline_failed", locale),
                 retryable=True,
                 patch={"idempotency_key": data.idempotency_key},
             )

@@ -22,7 +22,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.task_access import (
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import cancel_task, fail_task
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 from banking.accounts.mandate_state import is_mandate_debit_ready
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
 
@@ -62,6 +62,15 @@ def _is_same_batch_transaction_sibling(state: OrchestratorState, task_id: str) -
     task = task_map(state).get(task_id)
     if not task or task.type not in TRANSACTION_TASK_TYPES:
         return False
+
+    # Focused batch-input interrupts keep the user-facing task_ids narrow,
+    # but carry the complete live batch in metadata.  Those siblings must be
+    # allowed to re-run with their preserved payloads after the focused slot
+    # is answered.
+    metadata = getattr(interrupt.interrupt, "metadata", None)
+    raw_batch_scope = metadata.get("batch_task_ids") if isinstance(metadata, dict) else None
+    if isinstance(raw_batch_scope, list) and task_id in {str(value) for value in raw_batch_scope}:
+        return True
 
     group_id = task.payload.get("async_group_id")
     if not group_id:
@@ -106,8 +115,45 @@ def _apply_mandate_gate_failure(
     if task.type not in TRANSACTION_TASK_TYPES or _is_read_only_data_plan_query(task):
         return False
 
-    accounts = loaded_context(state).transaction_accounts
-    has_ready = any(isinstance(account, dict) and is_mandate_debit_ready(account) for account in accounts)
+    context = loaded_context(state)
+    accounts = context.transaction_accounts
+    ready_transaction_count = sum(
+        1 for account in accounts if isinstance(account, dict) and is_mandate_debit_ready(account)
+    )
+    has_ready = ready_transaction_count > 0
+    all_accounts = context.account_rows
+    ready_all_account_count = sum(
+        1 for account in all_accounts if isinstance(account, dict) and is_mandate_debit_ready(account)
+    )
+    log_orchestrator_diagnostic(
+        logger,
+        "mandate_gate_evaluated",
+        task_id=task.id,
+        task_type=task.type,
+        typed_self_signal=task.payload.get("is_self") is True,
+        transaction_account_count=len(accounts),
+        transaction_ready_count=ready_transaction_count,
+        all_account_count=len(all_accounts),
+        all_ready_count=ready_all_account_count,
+    )
+    if not has_ready:
+        # ``transaction_accounts`` is a derived, source-eligible view and may
+        # lag the authoritative linked-account snapshot after a reseed/link.
+        # Do not reject the entire batch on that stale projection.  The
+        # worker will still validate the selected source and refresh a typed
+        # self-transfer destination before resolution.
+        has_ready = ready_all_account_count > 0
+        if has_ready:
+            log_orchestrator_diagnostic(
+                logger,
+                "mandate_gate_full_account_fallback",
+                task_id=task.id,
+                task_type=task.type,
+                typed_self_signal=task.payload.get("is_self") is True,
+                transaction_account_count=len(accounts),
+                all_account_count=len(all_accounts),
+                all_ready_count=ready_all_account_count,
+            )
     if has_ready:
         return False
 

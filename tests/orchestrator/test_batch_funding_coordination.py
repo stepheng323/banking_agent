@@ -9,9 +9,14 @@ from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wa
 from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_input import (
     _input_shortcut_updates,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_continue import _continue_flow_updates
 from apps.chat.src.agent.orchestrator.workflows.interrupt.runtime import build_interrupt_runtime
+from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_build import (
+    _build_planner_task_updates,
+)
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.clients.abstractions.direct_debit import BalanceResult
+from shared.types.planner import PlannerOutput, TransferTaskParameters, make_planned_task
 from tests.orchestrator.routing_fixtures import execution_test_directive
 
 
@@ -191,6 +196,34 @@ class _TransferNeedsRecipientDetailsWithDD:
         return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
 
+class _TransferFailsSelfButKeepsExternalInputLive:
+    """Model a stale linked-account lookup in one leg of a mixed batch."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, user_message, pin_verified
+        self.calls.append(payload.copy())
+        if payload.get("is_self") is True:
+            return TransactionResult(
+                outcome=TransactionOutcome.FAILED,
+                error="I couldn't find an account matching 'Access Bank'.",
+            )
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["beneficiary_id"],
+            prompt="Choose a recipient.",
+            details={"options": [{"id": "bene-1", "title": "Tolu GTB"}]},
+        )
+
+
 class _TransferSingleLegFundingAdjustmentWithDD:
     def __init__(self, dd_provider: _MockDirectDebitProvider) -> None:
         self.dd_provider = dd_provider
@@ -258,6 +291,99 @@ class _TransferResolvesByAliasThenNeedsConfirmation:
             },
             confirmation_summary=f"Confirm one transfer for {amount}",
             confirmation_snapshot={"amount": amount},
+        )
+
+
+class _TransferResolvesSelfAndRecipientThenNeedsConfirmation:
+    """Resolve both legs while exercising the batch blocker path."""
+
+    def __init__(self, dd_provider: _MockDirectDebitProvider) -> None:
+        self.dd_provider = dd_provider
+        self.calls: list[dict] = []
+
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, user_message, pin_verified
+        self.calls.append(payload.copy())
+        amount = payload.get("amount")
+        if payload.get("is_self") is True:
+            patch = {
+                "recipient_account": "2010000001",
+                "recipient_bank_name": "Access Bank",
+                "recipient_resolved_name": "My Access Bank Account",
+                "recipient_resolution_provider": "mock",
+            }
+        else:
+            patch = {
+                "recipient_resolved_name": "Tolu Adebayo",
+                "recipient_resolution_provider": "mock",
+            }
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+            patch=patch,
+            confirmation_summary=f"Confirm one transfer for {amount}",
+            confirmation_snapshot={"amount": amount},
+        )
+
+
+class _TransferSelectionThenConfirmWithSelf:
+    """First ask for the external recipient, then confirm both batch legs."""
+
+    def __init__(self, dd_provider: _MockDirectDebitProvider) -> None:
+        self.dd_provider = dd_provider
+        self.calls: list[dict] = []
+
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, pin_verified
+        self.calls.append(payload.copy())
+        if payload.get("is_self") is True:
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+                patch={
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_resolved_name": "My Access Bank Account",
+                    "recipient_resolution_provider": "mock",
+                },
+                confirmation_summary="Confirm linked-account transfer",
+                confirmation_snapshot={"amount": payload.get("amount")},
+            )
+        # The live deterministic beneficiary shortcut may carry the resolved
+        # candidate in the typed payload while the raw option text is scoped
+        # away from the worker.  Accept either representation here so this
+        # fixture exercises the same post-selection path as production.
+        if not payload.get("beneficiary_id") and str(user_message or "").strip() != "1":
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
+                required_fields=["beneficiary_id"],
+                prompt="Choose a recipient.",
+                details={
+                    "options": [{"id": "bene-gtb", "title": "Tolu GTB"}],
+                },
+            )
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+            patch={
+                "beneficiary_id": "bene-gtb",
+                "recipient_account": "2010000002",
+                "recipient_bank_name": "GTBank",
+                "recipient_resolved_name": "Tolu Adebayo",
+                "recipient_resolution_provider": "mock",
+                "resolved_from_saved_beneficiary": True,
+            },
+            confirmation_summary="Confirm external transfer",
+            confirmation_snapshot={"amount": payload.get("amount")},
         )
 
 
@@ -758,6 +884,314 @@ async def test_batch_recipient_review_waits_until_new_sibling_details_are_resolv
     assert "Opay • ****3748" in prompt
 
 
+async def test_batch_confirmation_keeps_self_leg_after_recipient_selection() -> None:
+    """A hidden sibling must still become part of the final review."""
+    gtb = _account("GTBank", "acc_gtb", is_default=True)
+    access = _account("Access Bank", "acc_access")
+    provider = _MockDirectDebitProvider({"acc_gtb": 30000.0, "acc_access": 30000.0})
+    worker = _TransferResolvesSelfAndRecipientThenNeedsConfirmation(provider)
+
+    state = OrchestratorState(
+        turn_directive=execution_test_directive(),
+        user_id="u_batch_selected_self_leg",
+        phone_number="2348000001016",
+        channel="whatsapp",
+        waves=[["t_tolu", "t_self"]],
+        current_wave_index=0,
+        tasks={
+            "t_tolu": TaskSpec(
+                id="t_tolu",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "amount": 2000.0,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_account": "2010000002",
+                    "recipient_bank_name": "GTBank",
+                    "beneficiary_id": "bene-gtb",
+                    "resolved_from_saved_beneficiary": True,
+                    "source_account_id": gtb["id"],
+                    "source_bank_name": "GTBank",
+                },
+            ),
+            "t_self": TaskSpec(
+                id="t_self",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "amount": 5000.0,
+                    "is_self": True,
+                    "recipient_bank_name": "Access Bank",
+                    "source_account_id": gtb["id"],
+                    "source_bank_name": "GTBank",
+                },
+            ),
+        },
+        loaded_context={"language": "en", "accounts": [gtb, access]},
+    )
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+
+    interrupt = updates["pending_interrupt"]
+    assert interrupt.kind == "confirmation"
+    assert interrupt.task_ids == ["t_tolu", "t_self"]
+    text = updates["outbox"][0]["summary"]
+    assert "₦2,000" in text
+    assert "₦5,000" in text
+    assert "My Access Bank" in text
+
+
+async def test_focused_recipient_selection_rebuilds_one_review_for_the_whole_batch() -> None:
+    """A choice for leg one must not strand a prepared self-transfer leg."""
+    gtb = _account("GTBank", "acc_gtb", is_default=True)
+    access = _account("Access Bank", "acc_access")
+    provider = _MockDirectDebitProvider({"acc_gtb": 30000.0, "acc_access": 30000.0})
+    worker = _TransferSelectionThenConfirmWithSelf(provider)
+
+    state = OrchestratorState(
+        turn_directive=execution_test_directive(),
+        user_id="u_batch_focused_selection",
+        phone_number="2348000001017",
+        channel="whatsapp",
+        waves=[["t_tolu", "t_self"]],
+        current_wave_index=0,
+        tasks={
+            "t_tolu": TaskSpec(
+                id="t_tolu",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 2000.0, "recipient_name": "Tolu"},
+            ),
+            "t_self": TaskSpec(
+                id="t_self",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 5000.0, "is_self": True, "recipient_bank_name": "Access Bank"},
+            ),
+        },
+        loaded_context={"language": "en", "accounts": [gtb, access]},
+    )
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    first = await advance_wave(state, config)
+    first_interrupt = first["pending_interrupt"]
+    assert first_interrupt.kind == "input"
+    assert first_interrupt.task_ids == ["t_tolu"]
+    assert first_interrupt.metadata["batch_task_ids"] == ["t_tolu", "t_self"]
+    first_outbox_text = "\n".join(
+        str(entry.get("text") or entry.get("summary") or "")
+        for entry in first.get("outbox", [])
+        if isinstance(entry, dict)
+    )
+    assert "Review Transfer" not in first_outbox_text
+    assert not any(
+        isinstance(entry, dict) and entry.get("type") == "request_confirmation"
+        for entry in first.get("outbox", [])
+    )
+
+    state.tasks = first["tasks"]
+    state.last_interrupt = first_interrupt
+    state.pending_interrupt = None
+    state.last_message_text = "1"
+    # The beneficiary shortcut deliberately keeps the raw choice on the
+    # focused task; the batch metadata is what reactivates the sibling.
+    resumed = _continue_flow_updates(state, first_interrupt)
+    state.tasks = resumed["tasks"]
+    state.last_interrupt = resumed["last_interrupt"]
+    state.pending_interrupt = resumed["pending_interrupt"]
+
+    second = await advance_wave(state, config)
+    second_interrupt = second["pending_interrupt"]
+    # Saved-beneficiary selection should go straight to one batch-wide
+    # confirmation.  In particular, the prepared self-transfer must not be
+    # dropped when the external recipient choice resumes the wave.
+    assert second_interrupt.kind == "confirmation"
+    assert set(second_interrupt.task_ids) == {"t_tolu", "t_self"}
+    summary = next(entry for entry in second["outbox"] if entry.get("type") == "request_confirmation")["summary"]
+    assert "₦2,000" in summary
+    assert "₦5,000" in summary
+
+
+async def test_selection_resume_reunites_split_batch_before_combined_review() -> None:
+    """A stale/split wave must not turn one selected leg into a partial review."""
+    gtb = _account("GTBank", "acc_gtb", is_default=True)
+    access = _account("Access Bank", "acc_access")
+    provider = _MockDirectDebitProvider({"acc_gtb": 30000.0, "acc_access": 30000.0})
+    worker = _TransferSelectionThenConfirmWithSelf(provider)
+    batch_group_id = "planner_batch_test"
+    interrupt = PendingInterrupt(
+        kind="input",
+        task_ids=["t_tolu"],
+        fields_by_task={"t_tolu": ["beneficiary_id"]},
+        metadata={"batch_task_ids": ["t_tolu", "t_self"]},
+    )
+    state = OrchestratorState(
+        turn_directive=execution_test_directive(),
+        user_id="u_split_batch_selection",
+        phone_number="2348000001021",
+        channel="whatsapp",
+        # This shape can arise from a stale checkpoint or an old planner
+        # wave. The input reducer, not the test fixture, must repair it.
+        waves=[["t_tolu"], ["t_self"]],
+        current_wave_index=0,
+        last_message_text="1",
+        tasks={
+            "t_tolu": TaskSpec(
+                id="t_tolu",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "amount": 2000.0,
+                    "recipient_name": "Tolu Adebayo",
+                    "async_group_id": batch_group_id,
+                    "async_group_size": 2,
+                    "async_group_kind": "multi_transfer",
+                },
+            ),
+            "t_self": TaskSpec(
+                id="t_self",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 5000.0,
+                    "is_self": True,
+                    "recipient_bank_name": "Access Bank",
+                    "async_group_id": batch_group_id,
+                    "async_group_size": 2,
+                    "async_group_kind": "multi_transfer",
+                },
+            ),
+        },
+        loaded_context={"language": "en", "accounts": [gtb, access]},
+    )
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    resumed = _continue_flow_updates(state, interrupt)
+
+    assert resumed["waves"] == [["t_tolu", "t_self"]]
+    state.tasks = resumed["tasks"]
+    state.waves = resumed["waves"]
+    state.last_interrupt = resumed["last_interrupt"]
+    state.pending_interrupt = resumed["pending_interrupt"]
+
+    updates = await advance_wave(state, config)
+
+    confirmation = updates["pending_interrupt"]
+    assert confirmation.kind == "confirmation"
+    assert set(confirmation.task_ids) == {"t_tolu", "t_self"}
+    summary = next(entry for entry in updates["outbox"] if entry.get("type") == "request_confirmation")["summary"]
+    assert "₦2,000" in summary
+    assert "₦5,000" in summary
+
+
+async def test_planner_materialized_transfer_batch_cannot_emit_partial_review() -> None:
+    """Exercise planner materialization before the first execution wave.
+
+    The production failure was a partial confirmation after a planner turn,
+    so this intentionally does not hand-build ``TaskSpec`` objects.  It
+    verifies the planner contract, materializer, wave runner, and finalizer
+    together: an unresolved recipient on one leg must suppress the ready
+    sibling's review until the whole batch is complete.
+    """
+    planner_output = PlannerOutput(
+        primary_intent="transfer",
+        normalized_instruction="Send 2k to Tolu Adebayo and 5k to my Access account",
+        is_complex=True,
+        tasks=[
+            make_planned_task(
+                task_id="planned_tolu",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 2k to Tolu Adebayo",
+                parameters=TransferTaskParameters(amount=2000, recipient_name="Tolu Adebayo"),
+                risk="MONEY_MOVE",
+                source_clause_index=1,
+            ),
+            make_planned_task(
+                task_id="planned_self",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 5k to my Access account",
+                parameters=TransferTaskParameters(amount=5000, bank_name="Access Bank", is_self=True),
+                risk="MONEY_MOVE",
+                source_clause_index=2,
+            ),
+        ],
+    )
+    planner_updates = await _build_planner_task_updates(
+        planner_output=planner_output,
+        text="Send 2k to Tolu Adebayo and 5k to my Access account",
+        locale="en",
+        query_session_source=None,
+        query_session_snapshot=None,
+        expected_transaction_task_count=2,
+    )
+
+    assert set(planner_updates["new_tasks"]) == {"planned_tolu", "planned_self"}
+    assert planner_updates["waves"] == [["planned_tolu", "planned_self"]]
+    assert planner_updates["new_tasks"]["planned_tolu"].payload["async_group_id"] == planner_updates[
+        "new_tasks"
+    ]["planned_self"].payload["async_group_id"]
+    assert planner_updates["new_tasks"]["planned_self"].payload["async_group_size"] == 2
+
+    gtb = _account("GTBank", "acc_gtb", is_default=True)
+    access = _account("Access Bank", "acc_access")
+    worker = _TransferSelectionThenConfirmWithSelf(
+        _MockDirectDebitProvider({"acc_gtb": 30000.0, "acc_access": 30000.0})
+    )
+    state = OrchestratorState(
+        turn_directive=execution_test_directive(),
+        user_id="u_planner_materialized_batch",
+        phone_number="2348000001018",
+        channel="whatsapp",
+        waves=planner_updates["waves"],
+        current_wave_index=0,
+        tasks=planner_updates["new_tasks"],
+        last_message_text="Send 2k to Tolu Adebayo and 5k to my Access account",
+        loaded_context={"language": "en", "accounts": [gtb, access]},
+    )
+    config: RunnableConfig = {
+        "configurable": {"services": {"transfer": worker}},
+        "recursion_limit": 50,
+    }
+
+    updates = await advance_wave(state, config)
+
+    assert updates["pending_interrupt"].kind == "input"
+    visible_text = "\n".join(
+        str(entry.get("text") or entry.get("summary") or "")
+        for entry in updates["outbox"]
+        if isinstance(entry, dict)
+    )
+    assert "Review Transfer" not in visible_text
+    assert not any(entry.get("type") == "request_confirmation" for entry in updates["outbox"])
+    assert updates["pending_interrupt"].metadata["batch_task_ids"] == ["planned_tolu", "planned_self"]
+
+    # Continue from the exact materialized state, rather than a hand-built
+    # wave.  This is the path the user takes after tapping beneficiary option
+    # one; it must produce one review containing the linked-account leg too.
+    state.tasks = updates["tasks"]
+    state.last_interrupt = updates["pending_interrupt"]
+    state.pending_interrupt = None
+    state.last_message_text = "1"
+    resumed = _continue_flow_updates(state, updates["pending_interrupt"])
+    state.tasks = resumed["tasks"]
+    state.waves = resumed.get("waves", state.waves)
+    state.last_interrupt = resumed["last_interrupt"]
+    state.pending_interrupt = resumed["pending_interrupt"]
+
+    confirmation_updates = await advance_wave(state, config)
+    confirmation = confirmation_updates["pending_interrupt"]
+    assert confirmation.kind == "confirmation"
+    assert set(confirmation.task_ids) == {"planned_tolu", "planned_self"}
+    summary = next(
+        entry for entry in confirmation_updates["outbox"] if entry.get("type") == "request_confirmation"
+    )["summary"]
+    assert "₦2,000" in summary
+    assert "₦5,000" in summary
+
+
 async def test_batch_funding_waits_for_recipient_resolution_after_destination_details() -> None:
     access = _account("Access Bank", "acc_access", is_default=True)
     gtb = _account("GTBank", "acc_gtb")
@@ -806,6 +1240,68 @@ async def test_batch_funding_waits_for_recipient_resolution_after_destination_de
 
     assert len(worker.calls) == 2
     assert "pending_interrupt" not in updates
+
+
+async def test_one_failed_batch_leg_does_not_abort_live_sibling() -> None:
+    """A preparation failure is isolated from an unresolved sibling leg."""
+    worker = _TransferFailsSelfButKeepsExternalInputLive()
+    state = OrchestratorState(
+        turn_directive=execution_test_directive(),
+        user_id="u_partial_batch_failure",
+        phone_number="2348000001014",
+        channel="whatsapp",
+        waves=[["t_external", "t_self"]],
+        current_wave_index=0,
+        tasks={
+            "t_external": TaskSpec(
+                id="t_external",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "amount": 2_000.0,
+                    "recipient_name": "Tolu Adebayo",
+                    "async_group_id": "partial-failure",
+                    "async_group_size": 2,
+                    "async_group_kind": "multi_transfer",
+                },
+            ),
+            "t_self": TaskSpec(
+                id="t_self",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "amount": 5_000.0,
+                    "is_self": True,
+                    "recipient_bank_name": "Access Bank",
+                    "async_group_id": "partial-failure",
+                    "async_group_size": 2,
+                    "async_group_kind": "multi_transfer",
+                },
+            ),
+        },
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                _account("GTBank", "acc_gtb", is_default=True),
+                _account("Access Bank", "acc_access"),
+            ],
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"services": {"transfer": worker}},
+        "recursion_limit": 50,
+    }
+
+    updates = await advance_wave(state, config)
+
+    assert updates["pending_interrupt"].kind == "input"
+    assert updates["tasks"]["t_external"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t_self"].stage == TaskStage.FAILED
+    output = "\n".join(
+        str(entry.get("text") or entry.get("title") or "") for entry in updates["outbox"]
+    )
+    assert "Nothing was submitted" not in output
+    assert "still waiting for your input" in output
 
 
 async def test_batch_auto_pooled_funding_prompts_for_approval_before_worker() -> None:

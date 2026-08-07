@@ -186,6 +186,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         locale=current_locale,
         query_session_source=query_session_source,
         query_session_snapshot=query_session_snapshot,
+        expected_transaction_task_count=state_view.expected_transaction_task_count,
     )
     planner_output = task_updates["planner_output"]
     response_resolution = _build_planner_task_response(

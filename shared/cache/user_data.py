@@ -55,8 +55,14 @@ class UserDataCache:
 
     async def invalidate_user_profile(self, phone_number: str) -> None:
         """Invalidate user profile cache."""
-        key = f"cache:user:profile:{phone_number}"
-        await self.redis.delete(key)
+        # The snapshot is a fallback for granular keys after a Redis restart.
+        # It must be invalidated with the field it mirrors; otherwise a fresh
+        # profile can be followed by a stale snapshot backfill on the next
+        # turn.
+        await self.redis.delete(
+            f"cache:user:profile:{phone_number}",
+            f"cache:user:snapshot:{phone_number}",
+        )
 
     async def get_accounts(self, phone_number: str) -> list[dict[str, Any]] | None:
         """Get cached user accounts."""
@@ -74,8 +80,15 @@ class UserDataCache:
 
     async def invalidate_accounts(self, phone_number: str) -> None:
         """Invalidate accounts cache."""
-        key = f"cache:user:accounts:{phone_number}"
-        await self.redis.delete(key)
+        # Account mutations (link, unlink, mandate changes, reseeding) must
+        # also evict the 24-hour session snapshot.  If only the five-minute
+        # granular key is removed, context hydration can repopulate it from a
+        # snapshot that predates the account change and hide a newly linked
+        # destination from transfer resolution.
+        await self.redis.delete(
+            f"cache:user:accounts:{phone_number}",
+            f"cache:user:snapshot:{phone_number}",
+        )
 
     async def get_beneficiaries(self, phone_number: str) -> list[dict[str, Any]] | None:
         """Get cached beneficiaries."""
@@ -213,6 +226,7 @@ class UserDataCache:
         await self.redis.delete(
             f"cache:user:beneficiaries:{phone_number}",
             f"cache:user:beneficiary_aliases:{phone_number}",
+            f"cache:user:snapshot:{phone_number}",
         )
 
     async def invalidate_all_user_data(self, phone_number: str) -> None:
@@ -222,6 +236,7 @@ class UserDataCache:
             f"cache:user:accounts:{phone_number}",
             f"cache:user:beneficiaries:{phone_number}",
             f"cache:user:beneficiary_aliases:{phone_number}",
+            f"cache:user:snapshot:{phone_number}",
         )
 
     async def get_all_user_data(self, phone_number: str) -> dict[str, Any | None]:

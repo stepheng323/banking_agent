@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmat
     _task_for_target_id,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_scope import (
+    _task_is_self_transfer,
     _transfer_task_reference_matches,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_target_matching import (
@@ -41,12 +42,27 @@ def _target_task_ids_from_decision(
     if explicit_ids:
         return list(dict.fromkeys(explicit_ids))
 
+    target_texts = _decision_target_texts(decision)
     target_types = {
         str(task_type).strip().lower()
         for task_type in (getattr(decision, "target_types", []) or [])
         if str(task_type).strip().lower() in TRANSACTION_INTENTS
     }
     if target_types:
+        # A broad LLM type hint must not override a narrower typed reference.
+        # In particular, "remove the self transfer" can arrive with
+        # target_types=["transfer"] plus target_texts=["self transfer"].
+        # Resolve the self leg first rather than removing every transfer leg.
+        self_reference_matches = [
+            task_id
+            for task_id in task_ids
+            if (task := _task_for_target_id(state, task_id, removed=removed)) is not None
+            and task.type == "transfer"
+            and _task_is_self_transfer(task)
+            and any(_transfer_task_reference_matches(segment, task) for segment in target_texts)
+        ]
+        if self_reference_matches:
+            return list(dict.fromkeys(self_reference_matches))
         return [
             task_id
             for task_id in task_ids
@@ -54,7 +70,7 @@ def _target_task_ids_from_decision(
         ]
 
     matched_task_ids: list[str] = []
-    for segment in _decision_target_texts(decision):
+    for segment in target_texts:
         segment_matches = [
             task_id
             for task_id in task_ids

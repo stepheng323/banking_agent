@@ -34,13 +34,13 @@ def _normalize_text(value: str | None) -> str:
 
 
 def _beneficiary_identity_key(beneficiary: Beneficiary) -> tuple[str, str, str, str, str]:
-    account_number = re.sub(r"\D+", "", str(beneficiary.account_number or ""))
+    account_number = re.sub(r"\D+", "", (beneficiary.account_number or ""))
     return (
-        _normalize_text(str(beneficiary.alias or "")),
-        _normalize_text(str(beneficiary.account_name or "")),
+        _normalize_text(beneficiary.alias or ""),
+        _normalize_text(beneficiary.account_name or ""),
         account_number,
-        _normalize_text(str(beneficiary.bank_name or "")),
-        str(beneficiary.bank_code or "").strip().lower(),
+        _normalize_text(beneficiary.bank_name or ""),
+        (beneficiary.bank_code or "").strip().lower(),
     )
 
 
@@ -81,16 +81,16 @@ class BeneficiaryMatcher:
 
         exact_matches: list[Beneficiary] = []
         for beneficiary in _dedupe_beneficiaries(beneficiaries):
-            alias = _normalize_text(str(beneficiary.alias or ""))
-            account_name = _normalize_text(str(beneficiary.account_name or ""))
+            alias = _normalize_text(beneficiary.alias or "")
+            account_name = _normalize_text(beneficiary.account_name or "")
             if (alias and alias == normalized_query) or (account_name and account_name == normalized_query):
                 exact_matches.append(beneficiary)
         return exact_matches
 
     @staticmethod
     def _beneficiary_best_ratio(query: str, beneficiary: Beneficiary) -> float:
-        alias = _normalize_text(str(beneficiary.alias or ""))
-        account_name = _normalize_text(str(beneficiary.account_name or ""))
+        alias = _normalize_text(beneficiary.alias or "")
+        account_name = _normalize_text(beneficiary.account_name or "")
         candidate_names = [value for value in (alias, account_name) if value]
         if not candidate_names:
             return 0.0
@@ -117,6 +117,9 @@ class BeneficiaryMatcher:
         exact_matches = self.exact_matches(name, beneficiaries)
 
         if len(exact_matches) > 1:
+            dests = {(b.account_number, str(b.bank_code).strip().lower()) for b in exact_matches}
+            if len(dests) == 1:
+                return "single", exact_matches[0], []
             return "clarify", None, exact_matches[: self.max_candidates]
 
         if len(exact_matches) == 1:
@@ -126,53 +129,59 @@ class BeneficiaryMatcher:
                 for b in beneficiaries:
                     if b is exact:
                         continue
-                    alias = _normalize_text(str(b.alias or ""))
-                    account_name = _normalize_text(str(b.account_name or ""))
+                    alias = _normalize_text(b.alias or "")
+                    account_name = _normalize_text(b.account_name or "")
                     b_tokens = set(alias.split() + account_name.split())
                     if normalized_query in b_tokens:
                         related_matches.append(b)
                 if len(related_matches) > 1:
+                    dests = {(b.account_number, str(b.bank_code).strip().lower()) for b in related_matches}
+                    if len(dests) == 1:
+                        return "single", exact, []
                     return "clarify", None, related_matches[: self.max_candidates]
             return "single", exact, []
 
         startswith_matches = []
         for b in beneficiaries:
-            b_name = _normalize_text(str(b.account_name or ""))
-            alias = _normalize_text(str(b.alias or ""))
+            b_name = _normalize_text(b.account_name or "")
+            alias = _normalize_text(b.alias or "")
             if len(normalized_query) > 2 and (
                 (b_name and b_name.startswith(normalized_query)) or (alias and alias.startswith(normalized_query))
             ):
                 startswith_matches.append(b)
 
-        if len(startswith_matches) == 1:
-            return "single", startswith_matches[0], []
-        elif len(startswith_matches) > 1:
+        if startswith_matches:
+            dests = {(b.account_number, str(b.bank_code).strip().lower()) for b in startswith_matches}
+            if len(dests) == 1:
+                return "single", startswith_matches[0], []
             return "clarify", None, startswith_matches[: self.max_candidates]
 
+        # 5. Token matches
         token_matches = []
         if len(normalized_query) >= 3:
             for b in beneficiaries:
-                alias = _normalize_text(str(b.alias or ""))
-                account_name = _normalize_text(str(b.account_name or ""))
+                alias = _normalize_text(b.alias or "")
+                account_name = _normalize_text(b.account_name or "")
                 b_tokens = set(alias.split() + account_name.split())
 
-                matched = False
+                matched = True
                 for q_token in query_tokens:
-                    if q_token in b_tokens:
-                        matched = True
-                        break
-                    # only prefix match if token is long enough
-                    if len(q_token) >= 3 and any(t.startswith(q_token) for t in b_tokens):
-                        matched = True
+                    token_matched = False
+                    if q_token in b_tokens or (len(q_token) >= 3 and any(t.startswith(q_token) for t in b_tokens)):
+                        token_matched = True
+                    if not token_matched:
+                        matched = False
                         break
                 if matched:
                     token_matches.append(b)
 
-        if len(token_matches) == 1:
-            return "single", token_matches[0], []
-        elif len(token_matches) > 1:
+        if token_matches:
+            dests = {(b.account_number, str(b.bank_code).strip().lower()) for b in token_matches}
+            if len(dests) == 1:
+                return "single", token_matches[0], []
             return "clarify", None, token_matches[: self.max_candidates]
 
+        # 6. Fuzzy matches
         # If no exact/token match, fall back to fuzzy matching but with strict length checks
         # to avoid "ayo" matching "adebayo" (ratio 0.6). We raise the min threshold dynamically.
         min_thresh = self.threshold_min if len(normalized_query) > 4 else 0.75
@@ -192,6 +201,10 @@ class BeneficiaryMatcher:
             return "single", top[0][0], []
 
         if len(top) == 1:
+            return "single", top[0][0], []
+
+        dests = {(b.account_number, str(b.bank_code).strip().lower()) for b, _ in top}
+        if len(dests) == 1:
             return "single", top[0][0], []
 
         return "clarify", None, [b for b, _ in top]

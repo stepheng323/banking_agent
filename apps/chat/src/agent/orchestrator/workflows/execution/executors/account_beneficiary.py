@@ -73,14 +73,26 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
     }
     await enter_task_progress(ctx, task)
 
-    result = cast(
-        AccountResult,
-        await worker.run(
-            payload=task.payload,
-            context=context_data,
-            user_message=user_msg,
-        ),
-    )
+    try:
+        result = cast(
+            AccountResult,
+            await worker.run(
+                payload=task.payload,
+                context=context_data,
+                user_message=user_msg,
+            ),
+        )
+    except Exception as exc:
+        logger.error(
+            "account_worker_execution_exception",
+            task_id=task_id,
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
+        result = AccountResult(
+            outcome=AccountOutcome.FAILED,
+            error=render_message("orchestrator.error.account_action_failed", _state_locale(ctx.state)),
+        )
 
     action = str(task.payload.get("action") or "").strip()
     if (

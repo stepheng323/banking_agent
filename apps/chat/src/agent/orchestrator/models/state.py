@@ -128,6 +128,11 @@ class OrchestratorState(BaseModel):
     final_response: str | None = None
     policy_notice: str | None = None
     preplanner_expected_transaction_executors: list[str] = Field(default_factory=list)
+    # A routing hint for planner prompt specialization.  Executors are
+    # intentionally deduplicated, so this separate count preserves the fact
+    # that a turn may contain multiple tasks for the same executor (for
+    # example, two transfers to different destinations).
+    preplanner_expected_transaction_task_count: int = 0
 
     # Context Frames (Upstream)
     context_frames: list[ContextFrame] = Field(default_factory=list)

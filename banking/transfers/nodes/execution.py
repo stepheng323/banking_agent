@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from banking.presentation.formatters.transfer_notifications import format_transfer_queued_message
 from banking.presentation.i18n.renderer import render_message, render_text
@@ -25,6 +26,74 @@ from shared.utils.narration import format_narration
 logger = get_logger(__name__)
 
 
+async def _persistence_account_id_map(
+    *,
+    uow: Any,
+    user_id: Any,
+) -> tuple[dict[str, UUID], bool]:
+    """Build the provider-id → database-UUID map used by transaction writes.
+
+    Conversation/runtime payloads intentionally carry the provider account
+    identifier (for example a Mono account id).  The app transaction tables
+    reference ``accounts.id`` instead.  Keep that translation at the write
+    boundary so provider calls and checkpoint state continue using their
+    stable external identifiers.
+    """
+    accounts_repo = getattr(uow, "accounts", None)
+    if accounts_repo is None or not user_id:
+        return {}, False
+    try:
+        accounts = await accounts_repo.get_by_user(str(user_id))
+    except Exception as exc:
+        logger.warning(
+            "transfer_persistence_account_lookup_failed",
+            error_type=type(exc).__name__,
+        )
+        return {}, True
+
+    mapping: dict[str, UUID] = {}
+    for account in accounts if isinstance(accounts, list) else []:
+        database_id = getattr(account, "id", None)
+        if not isinstance(database_id, UUID):
+            try:
+                database_id = UUID(str(database_id)) if database_id else None
+            except (ValueError, TypeError, AttributeError):
+                database_id = None
+        if database_id is None:
+            continue
+        mapping[str(database_id)] = database_id
+        provider_id = getattr(account, "account_id", None)
+        if provider_id:
+            mapping[str(provider_id)] = database_id
+    logger.info(
+        "transfer_persistence_account_mapping_ready",
+        account_count=len(accounts) if isinstance(accounts, list) else 0,
+        reference_count=len(mapping),
+    )
+    return mapping, True
+
+
+def _database_account_id(
+    raw_id: Any,
+    mapping: dict[str, UUID],
+    *,
+    normalize: bool,
+) -> UUID | str | None:
+    """Resolve one runtime account reference for a persistence column."""
+    if raw_id is None or not str(raw_id).strip():
+        return None
+    value = str(raw_id).strip()
+    if not normalize:
+        return raw_id
+    mapped = mapping.get(value)
+    if mapped is not None:
+        return mapped
+    try:
+        return UUID(value)
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 class ExecutionStep(TransferStep):
     """Executes the transfer and creates transaction record."""
 
@@ -43,7 +112,7 @@ class ExecutionStep(TransferStep):
             logger.warning("transfer_execution_rejected_unauthorized")
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_AUTH,
-                patch=data.model_dump(exclude_none=True),
+                patch=data.model_dump(mode="json", exclude_none=True),
             )
 
         dd_provider = getattr(worker_context, "dd_provider", None)
@@ -89,9 +158,36 @@ class ExecutionStep(TransferStep):
 
             async with UnitOfWork() as uow:
                 try:
+                    persistence_account_ids, normalize_account_ids = await _persistence_account_id_map(
+                        uow=uow,
+                        user_id=getattr(worker_context, "user_id", None),
+                    )
+                    persisted_source_account_id = _database_account_id(
+                        data.source_account_id,
+                        persistence_account_ids,
+                        normalize=normalize_account_ids,
+                    )
+                    if data.source_account_id and persisted_source_account_id is None:
+                        logger.error(
+                            "transfer_persistence_source_account_unresolved",
+                            source_account_present=True,
+                            mapping_size=len(persistence_account_ids),
+                        )
+                        raise ValueError("source account could not be mapped for persistence")
+
                     existing = await uow.transactions.get_by_idempotency_key(key)
                     if existing:
                         transaction_id = str(existing.id)
+                        # A retry may encounter a row created before the
+                        # provider-id/DB-UUID boundary was hardened.  Backfill
+                        # only missing provenance; never replace an existing
+                        # source selected by a confirmed transfer.
+                        if not getattr(existing, "source_account_id", None) and persisted_source_account_id:
+                            existing.source_account_id = persisted_source_account_id
+                        if not getattr(existing, "source_account_number", None) and data.source_account_number:
+                            existing.source_account_number = data.source_account_number
+                        if not getattr(existing, "source_bank_name", None) and data.source_bank_name:
+                            existing.source_bank_name = data.source_bank_name
                         risk_review_released = existing.status == TransactionStatusEnum.REVIEW_PENDING.value
                         if risk_review_released:
                             existing.status = TransactionStatusEnum.PENDING.value
@@ -128,7 +224,7 @@ class ExecutionStep(TransferStep):
                             recipient_bank_code=data.recipient_bank_code,
                             recipient_name=data.recipient_resolved_name or data.recipient_name or "",
                             recipient_bank_name=data.recipient_bank_name or "",
-                            source_account_id=data.source_account_id,
+                            source_account_id=persisted_source_account_id,
                             source_account_number=data.source_account_number or "",
                             source_bank_name=data.source_bank_name or "",
                             narration=narration,
@@ -158,9 +254,20 @@ class ExecutionStep(TransferStep):
                         existing_steps = await uow.funding_steps.get_by_transfer(funded_transfer_id)
                         if not existing_steps:
                             for step in data.funding_plan.get("steps", []):
+                                persisted_step_account_id = _database_account_id(
+                                    step.get("account_id"),
+                                    persistence_account_ids,
+                                    normalize=normalize_account_ids,
+                                )
+                                if step.get("account_id") and persisted_step_account_id is None:
+                                    logger.error(
+                                        "transfer_persistence_funding_account_unresolved",
+                                        mapping_size=len(persistence_account_ids),
+                                    )
+                                    raise ValueError("funding account could not be mapped for persistence")
                                 await uow.funding_steps.create(
                                     funded_transfer_id=funded.id,
-                                    account_id=step.get("account_id"),
+                                    account_id=persisted_step_account_id,
                                     amount=require_naira(step.get("amount")),
                                     sequence=int(step.get("sequence", 0)),
                                     status=FundingStepStatusEnum.PENDING.value,
@@ -231,6 +338,7 @@ class ExecutionStep(TransferStep):
                                 "resolution_provider": data.recipient_resolution_provider,
                                 "name": data.recipient_resolved_name or data.recipient_name,
                                 "bank_name": data.recipient_bank_name,
+                                "is_self": data.is_self,
                             },
                             "source": {
                                 "account_id": data.source_account_id,
@@ -297,7 +405,7 @@ def _funding_adjustment_result(
             locale,
         ),
         details=funding_adjustment_details(reason),
-        patch={**data.model_dump(exclude_none=True), "funding_plan": None},
+        patch={**data.model_dump(mode="json", exclude_none=True), "funding_plan": None},
     )
 
 

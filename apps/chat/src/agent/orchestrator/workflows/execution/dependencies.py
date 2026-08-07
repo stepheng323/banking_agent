@@ -23,6 +23,14 @@ class BeneficiaryLookupRepositoryProtocol(Protocol):
     ) -> list[Any]: ...
 
 
+class AccountLookupRepositoryProtocol(Protocol):
+    async def get_by_user(self, user_id: str) -> list[Any]: ...
+
+
+class UserLookupRepositoryProtocol(Protocol):
+    async def get_by_phone(self, phone_number: str) -> Any | None: ...
+
+
 class BeneficiarySuggestionSaverProtocol(Protocol):
     async def save_beneficiary(self, phone_number: str, alias: Any = None, locale: str = "en") -> str: ...
 
@@ -35,6 +43,8 @@ class ReceiptPublisherProtocol(Protocol):
 class ExecutionDependencies:
     """Runtime dependencies available to execution handlers."""
 
+    account_repo: AccountLookupRepositoryProtocol | None
+    user_repo: UserLookupRepositoryProtocol | None
     beneficiary_repo: BeneficiaryLookupRepositoryProtocol | None
     beneficiary_suggestion_service: BeneficiarySuggestionSaverProtocol | None
     publisher: ReceiptPublisherProtocol | None
@@ -43,6 +53,8 @@ class ExecutionDependencies:
     @classmethod
     def empty(cls) -> ExecutionDependencies:
         return cls(
+            account_repo=None,
+            user_repo=None,
             beneficiary_repo=None,
             beneficiary_suggestion_service=None,
             publisher=None,
@@ -52,6 +64,14 @@ class ExecutionDependencies:
     @classmethod
     def from_configurable(cls, configurable: Mapping[str, Any]) -> ExecutionDependencies:
         return cls(
+            account_repo=cast(
+                AccountLookupRepositoryProtocol | None,
+                configurable.get("account_repo"),
+            ),
+            user_repo=cast(
+                UserLookupRepositoryProtocol | None,
+                configurable.get("user_repo"),
+            ),
             beneficiary_repo=cast(
                 BeneficiaryLookupRepositoryProtocol | None,
                 configurable.get("beneficiary_repo"),
@@ -71,6 +91,8 @@ class ExecutionDependencies:
 
 
 __all__ = [
+    "AccountLookupRepositoryProtocol",
+    "UserLookupRepositoryProtocol",
     "BeneficiaryLookupRepositoryProtocol",
     "BeneficiarySuggestionSaverProtocol",
     "ExecutionDependencies",

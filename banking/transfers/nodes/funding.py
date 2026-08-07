@@ -2,12 +2,12 @@
 
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
 
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.personality import render_personalized_message, transfer_personality_context_from_payload
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from banking.transfers.funding.identifiers import coerce_account_id, coerce_account_uuid
 from banking.transfers.funding.plan_validation import (
     build_funding_plan_signature,
     funding_adjustment_details,
@@ -62,7 +62,14 @@ class AccountAdapter:
     """Adapter to convert dict account data to FundingPlanner interface."""
 
     def __init__(self, data: dict[str, Any]):
-        self.id = UUID(data["id"]) if isinstance(data.get("id"), str) else data.get("id")
+        raw_id = data.get("id")
+        self.id = coerce_account_id(raw_id)
+        if raw_id is not None and coerce_account_uuid(raw_id) is None:
+            # Runtime account payloads use the provider's stable account id;
+            # the database UUID translation happens at transaction
+            # persistence.  This is expected for Mono/demo ids, not a
+            # malformed user request.
+            logger.debug("funding_account_id_provider_scoped", source="account_adapter")
         self.mono_account_id = data.get("mono_account_id") or data.get("account_id") or ""
         self.account_number = data.get("account_number", "")
         self.bank_name = data.get("bank_name", "")
@@ -221,14 +228,24 @@ async def plan_transaction_funding(
 
     funding_accounts = ctx.all_accounts or ctx.accounts
     adapted_accounts = [AccountAdapter(a) for a in funding_accounts]
+    invalid_account_count = sum(1 for account in adapted_accounts if account.id is None)
+    if invalid_account_count:
+        logger.warning(
+            "funding_accounts_skipped_invalid_ids",
+            invalid_account_count=invalid_account_count,
+            account_count=len(adapted_accounts),
+        )
+    # Keep stable non-UUID demo/checkpoint IDs for in-memory matching.  They
+    # are never parsed as UUIDs here, so malformed state cannot bubble a raw
+    # hexadecimal exception into the conversation.
+    adapted_accounts = [account for account in adapted_accounts if account.id is not None]
 
     amount = payload.amount or require_naira(0)
     preferred_id = None
     if payload.source_account_id:
-        try:
-            preferred_id = UUID(payload.source_account_id)
-        except ValueError:
-            preferred_id = None
+        preferred_id = coerce_account_id(payload.source_account_id)
+        if preferred_id is None:
+            logger.warning("funding_preferred_account_id_invalid")
 
     try:
         plan = await planner.plan_funding(

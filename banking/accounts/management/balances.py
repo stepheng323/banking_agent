@@ -41,9 +41,9 @@ async def check_balance(
         if not target_accounts:
             label = ", ".join(account_identifiers)
             return render_message(
-                "account.account_not_found",
+                "account.linked_account_not_found",
                 locale,
-                {"identifier": label},
+                {"bank_name": label},
             ), []
     else:
         target_accounts = accounts

@@ -120,9 +120,20 @@ def repair_source_first_transfer_params(params: TransferTaskParameters, text: st
     return patched
 
 
-def normalize_transfer_params(params: TransferTaskParameters, text: str) -> tuple[list[str], list[str]]:
+def normalize_transfer_params(
+    params: TransferTaskParameters,
+    text: str,
+) -> tuple[list[str], list[str]]:
     patched: list[str] = []
     ambiguous: list[str] = []
+
+    if params.is_self is True:
+        # The planner signal is authoritative.  Do not let a sibling's
+        # recipient alias survive normalization on a linked-account leg.
+        if params.recipient or params.recipient_name:
+            params.recipient = None
+            params.recipient_name = None
+            patched.extend(["recipient", "recipient_name"])
 
     account_ambiguous = False
     if not params.recipient_account:

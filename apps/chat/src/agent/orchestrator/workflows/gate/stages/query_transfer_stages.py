@@ -13,6 +13,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.query_followups
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _classify_obvious_transfer_request,
     _obvious_mixed_transaction_executors,
+    _obvious_transfer_task_count,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import (
@@ -244,6 +245,11 @@ async def _maybe_transfer_route(ctx: GateContext) -> RouteResolution | None:
         if transfer_request_reason in {"batch_transfer_command", "account_aware_transfer_command"}:
             transfer_updates = {
                 "preplanner_expected_transaction_executors": ["transfer"],
+                "preplanner_expected_transaction_task_count": (
+                    _obvious_transfer_task_count(ctx.message_text)
+                    if transfer_request_reason == "batch_transfer_command"
+                    else 1
+                ),
             }
             transfer_updates.update(await _query_session_exit_updates_if_needed(ctx))
             logger.info(
@@ -278,6 +284,7 @@ async def _maybe_mixed_transaction_planner_handoff(ctx: GateContext) -> RouteRes
 
     transfer_updates = {
         "preplanner_expected_transaction_executors": expected_executors,
+        "preplanner_expected_transaction_task_count": len(expected_executors),
     }
     transfer_updates.update(await _query_session_exit_updates_if_needed(ctx))
     logger.info(

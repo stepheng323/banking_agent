@@ -2,6 +2,9 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.context.referents.resolution import build_resolved_referents
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.utils.task_payload_recipients import (
+    clear_external_recipient_bindings_for_self,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.async_grouping import _stamp_async_group_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.beneficiary_resolution import (
     _beneficiary_cache_contains_recipient,
@@ -43,10 +46,12 @@ from apps.chat.src.agent.orchestrator.workflows.execution.task_access import get
 from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import (
     remove_task_payload_values,
+    set_task_stage,
     update_task_payload,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
+from banking.accounts.management.serialization import serialize_accounts
 from banking.beneficiaries.services.alias_grounding import restore_exact_saved_alias
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
@@ -55,7 +60,7 @@ from banking.transfers.funding.plan_validation import FUNDING_ADJUSTMENT_REVIEW_
 from banking.transfers.resolution.names import normalize_name
 from shared.messaging.body_blocks import MessageDocument
 from shared.types.read import normalize_read_request
-from shared.utils.logging import get_logger, log_orchestrator_diagnostic
+from shared.utils.logging import get_logger, log_fingerprint, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
 
@@ -105,6 +110,198 @@ def _text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+async def _refresh_self_transfer_accounts(
+    *,
+    task: TaskSpec,
+    ctx: ExecutionTurnContext,
+) -> bool:
+    """Refresh linked accounts before rejecting a bank-only self transfer.
+
+    Account rows can be stale after a demo reseed or an out-of-band link. The
+    normal context cache remains fast for ordinary turns, but a typed self
+    destination must not be rejected solely because its bank is absent from
+    that snapshot. A single authoritative repository read is used only for
+    this guarded recovery path; it cannot create or mutate an account.
+    """
+    destination_bank = str(task.payload.get("recipient_bank_name") or "").strip()
+    destination_code = "".join(ch for ch in str(task.payload.get("recipient_bank_code") or "") if ch.isdigit())
+    # Planner output may omit ``is_self`` for a natural bank-only phrase such
+    # as "to my Access account"; extraction can establish that signal later
+    # inside the worker.  Refresh this narrow, account-less bank scope before
+    # extraction as well, otherwise the resolver only ever sees the stale
+    # source-eligible snapshot.  Explicit beneficiary/account destinations do
+    # not enter this path.
+    if not destination_bank:
+        return False
+    if task.payload.get("recipient_account"):
+        return False
+    if task.payload.get("beneficiary_id") or task.payload.get("recipient_reference"):
+        return False
+    if task.payload.get("recipient_resolved_name") and not task.payload.get("is_self"):
+        return False
+
+    context = loaded_context(ctx.state)
+    current_accounts = context.account_rows
+    current_destination_matches = [
+        account
+        for account in current_accounts
+        if (
+            destination_bank.casefold() in str(
+                account.get("bank_name")
+                or account.get("bank")
+                or account.get("institution_name")
+                or account.get("name")
+                or ""
+            ).casefold()
+            or (
+                destination_code
+                and destination_code
+                == "".join(ch for ch in str(account.get("bank_code") or account.get("code") or "") if ch.isdigit())
+            )
+        )
+    ]
+    log_orchestrator_diagnostic(
+        logger,
+        "self_transfer_account_resolution_context",
+        task_id=task.id,
+        typed_self_signal=task.payload.get("is_self") is True,
+        bank_scoped_unresolved_candidate=not bool(task.payload.get("is_self")),
+        destination_bank_hash=log_fingerprint(destination_bank),
+        destination_code_present=bool(destination_code),
+        context_account_count=len(current_accounts),
+        context_destination_match_count=len(current_destination_matches),
+        context_destination_has_number=any(
+            bool(account.get("account_number") or account.get("number"))
+            for account in current_destination_matches
+        ),
+        user_id_present=bool(context.user_id),
+        account_repo_available=ctx.dependencies.account_repo is not None,
+        user_repo_available=ctx.dependencies.user_repo is not None,
+    )
+    if current_destination_matches and any(
+        bool(account.get("account_number") or account.get("number"))
+        for account in current_destination_matches
+    ):
+        log_orchestrator_diagnostic(
+            logger,
+            "self_transfer_account_refresh_skipped",
+            task_id=task.id,
+            reason="destination_present_in_context",
+            destination_bank_hash=log_fingerprint(destination_bank),
+        )
+        return False
+    if current_destination_matches:
+        log_orchestrator_diagnostic(
+            logger,
+            "self_transfer_account_refresh_required",
+            task_id=task.id,
+            reason="destination_context_missing_account_number",
+            destination_bank_hash=log_fingerprint(destination_bank),
+            context_destination_match_count=len(current_destination_matches),
+        )
+
+    # A missing destination in the cached snapshot is the only condition that
+    # justifies a repository read. This keeps ordinary transfers on the fast
+    # path while making stale self-account context observable and recoverable.
+    user_id = context.user_id
+    if not user_id:
+        # Direct transfer preflight deliberately permits a minimal profile
+        # load.  A stale account cache can therefore leave the database user
+        # id out of the execution context.  Resolve it only on this guarded
+        # self-transfer recovery path; ordinary transfers keep the fast path.
+        user_repo = ctx.dependencies.user_repo
+        if user_repo is not None:
+            try:
+                user = await user_repo.get_by_phone(turn_metadata(ctx.state).phone_number)
+                user_id = getattr(user, "id", None)
+                if user_id is None and isinstance(user, dict):
+                    user_id = user.get("id")
+            except Exception as exc:
+                logger.warning(
+                    "self_transfer_user_lookup_failed",
+                    error_type=type(exc).__name__,
+                )
+            else:
+                log_orchestrator_diagnostic(
+                    logger,
+                    "self_transfer_user_lookup_completed",
+                    task_id=task.id,
+                    user_found=bool(user_id),
+                )
+    account_repo = ctx.dependencies.account_repo
+    if not user_id or account_repo is None:
+        log_orchestrator_diagnostic(
+            logger,
+            "self_transfer_account_refresh_skipped",
+            task_id=task.id,
+            reason="missing_refresh_dependency",
+            user_id_present=bool(user_id),
+            account_repo_available=account_repo is not None,
+        )
+        return False
+
+    try:
+        rows = await account_repo.get_by_user(str(user_id))
+    except Exception as exc:
+        logger.warning(
+            "self_transfer_account_refresh_failed",
+            error_type=type(exc).__name__,
+        )
+        return False
+
+    accounts = serialize_accounts(rows if isinstance(rows, list) else [])
+    refreshed_destination_matches = [
+        account
+        for account in accounts
+        if destination_bank.casefold()
+        in str(
+            account.get("bank_name")
+            or account.get("bank")
+            or account.get("institution_name")
+            or account.get("name")
+            or ""
+        ).casefold()
+        or (
+            destination_code
+            and destination_code
+            == "".join(ch for ch in str(account.get("bank_code") or account.get("code") or "") if ch.isdigit())
+        )
+    ]
+    log_orchestrator_diagnostic(
+        logger,
+        "self_transfer_account_repository_result",
+        task_id=task.id,
+        destination_bank_hash=log_fingerprint(destination_bank),
+        fetched_account_count=len(accounts),
+        fetched_destination_match_count=len(refreshed_destination_matches),
+        fetched_destination_has_number=any(
+            bool(account.get("account_number") or account.get("number"))
+            for account in refreshed_destination_matches
+        ),
+    )
+    if not accounts:
+        log_orchestrator_diagnostic(
+            logger,
+            "self_transfer_account_refresh_finished",
+            task_id=task.id,
+            outcome="empty_repository_result",
+        )
+        return False
+
+    set_loaded_context_value(ctx.state, "accounts", accounts)
+    logger.info(
+        "self_transfer_account_context_refreshed",
+        account_count=len(accounts),
+        destination_bank_present=bool(refreshed_destination_matches),
+        destination_account_number_present=any(
+            bool(account.get("account_number") or account.get("number"))
+            for account in refreshed_destination_matches
+        ),
+        destination_bank_hash=log_fingerprint(destination_bank),
+    )
+    return True
 
 
 def _confirmed_snapshot(
@@ -255,6 +452,7 @@ def _transfer_payload_log_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "has_recipient_name": _present(payload.get("recipient_name")),
         "has_recipient_account": _present(payload.get("recipient_account")),
         "has_recipient_bank": _present(payload.get("recipient_bank_name")),
+        "is_self": payload.get("is_self") is True,
         "has_source_account_id": _present(payload.get("source_account_id")),
         "has_source_bank": _present(payload.get("source_bank_name")),
         "skip_extraction": payload.get("skip_extraction"),
@@ -276,6 +474,37 @@ def _has_transfer_destination(payload: dict[str, Any]) -> bool:
         _present(payload.get("recipient_account") or payload.get("recipient_account_number"))
         and _present(payload.get("recipient_bank_name") or payload.get("recipient_bank_code"))
     )
+
+
+def _normalize_self_destination_payload(task: TaskSpec) -> None:
+    """Prevent an external beneficiary binding from leaking into a self leg.
+
+    This is also applied at execution time so a checkpoint created before the
+    planner/materializer guard was deployed cannot turn a linked-account task
+    into a transfer to a saved recipient after a sibling selection callback.
+    """
+    payload = task.payload
+    log_orchestrator_diagnostic(
+        logger,
+        "transfer_destination_signal",
+        task_id=task.id,
+        typed_self_signal=payload.get("is_self") is True,
+        recipient_name_present=_present(payload.get("recipient_name")),
+        recipient_account_present=_present(payload.get("recipient_account")),
+        recipient_bank_present=_present(payload.get("recipient_bank_name")),
+        recipient_bank_hash=log_fingerprint(str(payload.get("recipient_bank_name") or ""))
+        if payload.get("recipient_bank_name")
+        else None,
+        source_bank_present=_present(payload.get("source_bank_name")),
+        source_account_id_present=_present(payload.get("source_account_id")),
+        async_group_index=payload.get("async_group_index"),
+        async_group_size=payload.get("async_group_size"),
+    )
+    if not payload.get("is_self"):
+        return
+
+    clear_external_recipient_bindings_for_self(payload)
+    logger.info("transfer_self_destination_normalized", task_id=task.id)
 
 
 def _recipient_resolution_patch_present(patch: dict[str, Any]) -> bool:
@@ -330,6 +559,24 @@ def _maybe_mark_recipient_review_required(
         return False
     if not _recipient_resolution_patch_present(result_patch):
         return False
+
+    # A saved-beneficiary option is an explicit, ID-backed recipient choice.
+    # Once that choice is selected, do not insert a second recipient-review
+    # interrupt merely because the worker rehydrates the same destination
+    # while collecting a source account.  Manual account/bank entry still
+    # uses the review checkpoint below.
+    if {"beneficiary_id", "referent_recipient_id"}.intersection(required_fields):
+        return False
+
+    # A typed linked-account destination is already an explicit recipient
+    # choice.  Requiring a second "recipient review" for a self-transfer
+    # makes a mixed batch appear to have two competing checkpoints and can
+    # surface that review before an external beneficiary selection is made.
+    # Keep an explicitly requested review intact, but do not create one while
+    # hydrating an ordinary self-transfer leg.
+    if task.payload.get("is_self") is True and not previous_payload.get("recipient_review_required"):
+        return False
+
     signature = recipient_review_signature(task.payload)
     if signature is None or signature == previous_signature:
         return False
@@ -392,6 +639,65 @@ def _beneficiary_candidates_need_hydration(payload: dict[str, Any]) -> bool:
         ):
             return True
     return False
+
+
+def _force_recipient_selection_before_confirmation(
+    *,
+    task: TaskSpec,
+    result: TransactionResult,
+    locale: str,
+) -> TransactionResult:
+    """Turn a stale candidate-bearing result back into a typed input result.
+
+    A resolver should normally return ``NEEDS_INPUT`` for ambiguous saved
+    beneficiaries.  This boundary guard protects older checkpoints and
+    custom/provider workers that may return a confirmation-shaped result
+    while retaining candidates.  Rendering that confirmation would select a
+    recipient implicitly and, in a batch, could expose a partial review.
+    """
+    if result.outcome not in {TransactionOutcome.NEEDS_CONFIRMATION, TransactionOutcome.NEEDS_AUTH}:
+        return result
+
+    payload = task.payload
+    candidate_field: str | None = None
+    required_field: str | None = None
+    for candidates_key, id_key, field_name in (
+        ("beneficiary_candidates", "beneficiary_id", "beneficiary_id"),
+        ("referent_recipient_candidates", "referent_recipient_id", "referent_recipient_id"),
+    ):
+        candidates = payload.get(candidates_key)
+        if isinstance(candidates, list) and candidates and not payload.get(id_key):
+            candidate_field = candidates_key
+            required_field = field_name
+            break
+    if not candidate_field or not required_field:
+        return result
+
+    details = dict(result.details) if isinstance(result.details, dict) else {}
+    details.setdefault("candidates", payload.get(candidate_field))
+    details.setdefault("ambiguity", "MULTIPLE_BENEFICIARIES")
+    prompt = result.prompt or render_message(
+        "transfer.resolve.which_recipient",
+        locale,
+        fallback_en="Which recipient did you mean?",
+    )
+    logger.warning(
+        "transfer_confirmation_blocked_by_unresolved_recipient_candidates",
+        task_id=task.id,
+        candidate_field=candidate_field,
+    )
+    return result.model_copy(
+        update={
+            "outcome": TransactionOutcome.NEEDS_INPUT,
+            "required_fields": [required_field],
+            "prompt": prompt,
+            "response": None,
+            "confirmation_summary": None,
+            "confirmation_snapshot": None,
+            "update_message": None,
+            "details": details,
+        }
+    )
 
 
 def _transfer_result_log_summary(result: TransactionResult) -> dict[str, Any]:
@@ -470,6 +776,29 @@ def _should_suppress_single_leg_batch_blocker(
     ctx: ExecutionTurnContext,
 ) -> tuple[bool, list[str]]:
     batch_task_ids = _active_batch_task_ids_for_transfer(task_id, ctx)
+    # A current-wave batch can reach this worker without async-group metadata
+    # (for example after planner/semantic-route handoff or checkpoint
+    # hydration).  Once a sibling has registered an input request, treat all
+    # live transfer legs in that wave as one blocker group so a confirmation
+    # response cannot leak while the sibling is still unresolved.
+    if (
+        len(batch_task_ids) < 2
+        and result.outcome in {TransactionOutcome.NEEDS_CONFIRMATION, TransactionOutcome.NEEDS_AUTH}
+        and ctx.accumulator.input_request_count() > 0
+    ):
+        current_wave = ctx.current_wave_task_ids or []
+        live_transfer_ids: list[str] = []
+        for candidate_id in current_wave:
+            candidate = get_task(ctx.state, candidate_id)
+            if candidate and candidate.type == "transfer" and candidate.stage not in {
+                TaskStage.COMPLETED,
+                TaskStage.FAILED,
+                TaskStage.CANCELLED,
+            }:
+                live_transfer_ids.append(candidate_id)
+        if task_id in live_transfer_ids and len(live_transfer_ids) >= 2:
+            batch_task_ids = live_transfer_ids
+
     if len(batch_task_ids) < 2:
         return False, []
 
@@ -526,7 +855,28 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
 
     user_msg = _maybe_user_message(task, ctx.state)
 
+    # Normalize again at the worker boundary for resumed/mixed batches.  The
+    # planner guard handles new tasks; this protects older in-memory/checkpoint
+    # payloads and selection callbacks from cross-task recipient leakage.
+    _normalize_self_destination_payload(task)
+
     context = loaded_context(ctx.state)
+    if task.payload.get("is_self") is True:
+        log_orchestrator_diagnostic(
+            logger,
+            "self_transfer_worker_context_before_run",
+            task_id=task_id,
+            typed_self_signal=True,
+            destination_bank_hash=log_fingerprint(str(task.payload.get("recipient_bank_name") or ""))
+            if task.payload.get("recipient_bank_name")
+            else None,
+            all_account_count=len(context.account_rows),
+            transaction_account_count=len(context.transaction_account_rows_or_account_rows),
+            user_id_present=bool(context.user_id),
+            source_account_id_present=bool(task.payload.get("source_account_id")),
+            account_repo_available=ctx.dependencies.account_repo is not None,
+            user_repo_available=ctx.dependencies.user_repo is not None,
+        )
     surface = context_surface(ctx.state)
     turn = turn_metadata(ctx.state)
     rehydrated_fields = _rehydrate_transfer_payload_from_confirmed_snapshot(
@@ -639,6 +989,13 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
             alias_token_count=len(grounded_alias.split()),
         )
 
+    # A linked-account destination is read-only context, but it must be
+    # refreshed once when a stale snapshot omitted the requested bank. This
+    # keeps self-transfer resolution deterministic without asking the user for
+    # an external recipient or account number.
+    await _refresh_self_transfer_accounts(task=task, ctx=ctx)
+    context = loaded_context(ctx.state)
+
     resolved_referents = build_resolved_referents(ctx.state, user_msg)
     context_data = {
         "phone_number": turn.phone_number,
@@ -672,21 +1029,52 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         **_transfer_payload_log_summary(task.payload),
     )
     await enter_task_progress(ctx, task)
-    result = cast(
-        TransactionResult,
-        await worker.run(
-            payload=task.payload,
-            context=context_data,
-            user_message=user_msg,
-            pin_verified=turn.pin_verified,
-        ),
-    )
+    try:
+        result = cast(
+            TransactionResult,
+            await worker.run(
+                payload=task.payload,
+                context=context_data,
+                user_message=user_msg,
+                pin_verified=turn.pin_verified,
+            ),
+        )
+    except Exception as exc:
+        # A malformed/stale selection must fail as a normal transfer result.
+        # Letting the exception escape here bypasses the lifecycle sanitizer
+        # and can expose UUID/serialization details to the user.
+        logger.error(
+            "transfer_worker_execution_exception",
+            task_id=task_id,
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
+        result = TransactionResult(
+            outcome=TransactionOutcome.FAILED,
+            error=render_message("transfer.error.execution_failed", _state_locale(ctx.state)),
+            retryable=True,
+            patch={},
+        )
     log_orchestrator_diagnostic(
         logger,
         "transfer_worker_returned",
         task_id=task_id,
         **_transfer_result_log_summary(result),
     )
+    if task.payload.get("is_self") is True:
+        result_patch = result.patch if isinstance(result.patch, dict) else {}
+        log_orchestrator_diagnostic(
+            logger,
+            "self_transfer_resolution_result",
+            task_id=task_id,
+            outcome=str(result.outcome),
+            result_has_recipient_account=bool(result_patch.get("recipient_account")),
+            result_has_recipient_bank=bool(result_patch.get("recipient_bank_name")),
+            payload_has_recipient_account=bool(task.payload.get("recipient_account")),
+            payload_has_recipient_bank=bool(task.payload.get("recipient_bank_name")),
+            error_present=bool(result.error),
+            required_field_count=len(result.required_fields or []),
+        )
     _log_post_pin_recipient_prompt_if_snapshot_was_complete(
         task=task,
         task_id=task_id,
@@ -710,6 +1098,16 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         result = _strip_single_leg_funding_artifacts(result)
 
     _apply_result_patch(task, result)
+    result = _force_recipient_selection_before_confirmation(
+        task=task,
+        result=result,
+        locale=_state_locale(ctx.state),
+    )
+    if not suppress_single_leg_batch_blocker:
+        # A previous batch pass may have retained a private confirmation
+        # candidate while another leg was collecting input.  A fresh worker
+        # result supersedes that candidate, including OK/FAILED outcomes.
+        remove_task_payload_values(task, "_deferred_confirmation")
     invalidated_domain = (
         result.patch.get("invalidate_conversation_set_domain") if isinstance(result.patch, dict) else None
     )
@@ -724,6 +1122,11 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
             previous_payload=previous_recipient_payload,
             previous_signature=previous_recipient_review_signature,
         )
+        if recipient_review_required:
+            # Recipient review supersedes any private candidate retained from
+            # an earlier batch pass.  Leaving it behind could promote a stale
+            # snapshot alongside the review after the remaining input clears.
+            remove_task_payload_values(task, "_deferred_confirmation")
         schedule_items = result.patch.get("schedule_context_items")
         if isinstance(schedule_items, list):
             metadata = (
@@ -761,10 +1164,36 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
     if result.outcome == TransactionOutcome.OK and result.receipt:
         logger.info("transfer_worker_ok_branch", has_receipt=bool(result.receipt))
 
-    defer_confirmation_for_recipient_review = (
-        recipient_review_required and result.outcome == TransactionOutcome.NEEDS_CONFIRMATION
-    )
-    if not defer_confirmation_for_recipient_review and not suppress_single_leg_batch_blocker:
+    # A batch blocker suppresses the leg-level confirmation until the focused
+    # input is resolved.  The focused-input metadata carries the full live
+    # batch, so the sibling is rerun on the answer turn and gets one combined
+    # confirmation.  Keep the task in its pre-blocker stage here; recording a
+    # confirmation candidate while another leg is unresolved makes legacy
+    # focused interrupts expose a partial review.  Recipient review is the
+    # deliberate exception because it needs the resolved task marked ready
+    # while its own review surface is built later.
+    if recipient_review_required and result.outcome == TransactionOutcome.NEEDS_CONFIRMATION:
+        set_task_stage(task, TaskStage.AWAITING_CONFIRMATION)
+    elif suppress_single_leg_batch_blocker and result.outcome in {
+        TransactionOutcome.NEEDS_CONFIRMATION,
+        TransactionOutcome.NEEDS_AUTH,
+    }:
+        # Keep the candidate private until the wave has no unresolved input.
+        # The finalizer must never construct a review from only the first leg,
+        # but the candidate must survive so a later selection can produce one
+        # complete batch review without executing the worker twice.
+        update_task_payload(
+            task,
+            {
+                "_deferred_confirmation": {
+                    "summary": result.confirmation_summary,
+                    "snapshot": result.confirmation_snapshot,
+                    "update_message": result.update_message,
+                    "outcome": result.outcome.value,
+                }
+            },
+        )
+    else:
         _handle_transaction_outcome(
             task,
             task_id,
@@ -781,8 +1210,11 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
             TransactionOutcome.NEEDS_AUTH,
             TransactionOutcome.NEEDS_CONFIRMATION,
         )
-        and not defer_confirmation_for_recipient_review
-        and not suppress_single_leg_batch_blocker
+        and not recipient_review_required
+        and (
+            not suppress_single_leg_batch_blocker
+            or result.outcome in (TransactionOutcome.NEEDS_CONFIRMATION, TransactionOutcome.NEEDS_AUTH)
+        )
     ):
         state_map: dict[TransactionOutcome, SessionState] = {
             TransactionOutcome.NEEDS_INPUT: "WAITING_FOR_INPUT",

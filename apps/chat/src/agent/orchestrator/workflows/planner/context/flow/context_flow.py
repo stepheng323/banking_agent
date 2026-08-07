@@ -67,6 +67,7 @@ async def _build_planner_context(
                 compact_context=True,
                 forced_domain_owner=flow_state.forced_domain_owner,
                 expected_transaction_executors=flow_state.expected_executors,
+                expected_transaction_task_count=flow_state.expected_transaction_task_count,
             ),
         )
 
@@ -115,6 +116,7 @@ async def _build_planner_context(
         compact_context=flow_state.compact_transaction_context,
         forced_domain_owner=flow_state.forced_domain_owner,
         expected_transaction_executors=flow_state.expected_executors,
+        expected_transaction_task_count=flow_state.expected_transaction_task_count,
     )
 
     return PlannerContextBundle(

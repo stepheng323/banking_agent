@@ -1,12 +1,13 @@
 from decimal import Decimal
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 
 from banking.runtime.results import TransactionOutcome
 from banking.transfers.models.types import TransferContext, TransferGates, TransferPayload
 from banking.transfers.nodes.confirmation import ConfirmationStep
-from banking.transfers.nodes.execution import ExecutionStep
+from banking.transfers.nodes.execution import ExecutionStep, _database_account_id
 from banking.transfers.nodes.funding import FundingStep
 
 ACCESS_ID = "11111111-1111-1111-1111-111111111111"
@@ -119,6 +120,12 @@ def _funding_plan(*, amount: Decimal = Decimal("40000.00")) -> dict:
             }
         ],
     }
+
+
+def test_runtime_provider_account_id_maps_to_database_uuid_at_persistence_boundary() -> None:
+    database_id = UUID("11111111-1111-1111-1111-111111111111")
+    assert _database_account_id("seed-user-acct-2", {"seed-user-acct-2": database_id}, normalize=True) == database_id
+    assert _database_account_id("seed-user-acct-2", {}, normalize=False) == "seed-user-acct-2"
 
 
 @pytest.mark.asyncio

@@ -132,3 +132,97 @@ async def test_no_blocker_allows_terminal_wave_to_advance() -> None:
     updates = await finalize_execution_wave_updates(state=state, runtime=runtime)
 
     assert updates["current_wave_index"] == 1
+
+
+async def test_finalize_never_emits_confirmation_alongside_unresolved_input() -> None:
+    state = _state(
+        {
+            "input": TaskSpec(
+                id="input",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 2_000, "recipient_name": "Tolu Adebayo"},
+            ),
+            "ready": _task("ready", stage=TaskStage.AWAITING_CONFIRMATION),
+        },
+        wave=["input", "ready"],
+    )
+    agg = _aggregation(state)
+    agg.add_missing_fields("input", ["beneficiary_id"])
+    agg.add_prompt("I found multiple matches. Which one did you mean?", task_id="input")
+    agg.add_details(
+        "input",
+        {"options": [{"id": "bene-1", "title": "Tolu GTB · GTBank"}]},
+    )
+    agg.add_confirmation_task("ready")
+    runtime = ExecutionWaveRuntime(
+        current_wave=["input", "ready"],
+        services=OrchestrationServices.empty(),
+        accumulator=agg,
+        ctx=ExecutionTurnContext(
+            state=state,
+            config={"configurable": {}},
+            services=OrchestrationServices.empty(),
+            current_wave_len=2,
+            accumulator=agg,
+            current_wave_task_ids=["input", "ready"],
+        ),
+        task_executors={},
+        locale="en",
+        mandate_gate_accounts=[],
+    )
+
+    updates = await finalize_execution_wave_updates(state=state, runtime=runtime)
+
+    assert updates["pending_interrupt"].kind == "input"
+    assert all(entry.get("type") != "request_confirmation" for entry in updates["outbox"])
+    assert "Confirm Transactions" not in "\n".join(str(entry.get("text") or "") for entry in updates["outbox"])
+
+
+async def test_finalize_preserves_ready_batch_siblings_when_one_leg_fails() -> None:
+    state = _state(
+        {
+            "failed": TaskSpec(
+                id="failed",
+                type="transfer",
+                stage=TaskStage.FAILED,
+                payload={"error": "I couldn't find your Access Bank account."},
+            ),
+            "input": TaskSpec(
+                id="input",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 2_000, "recipient_name": "Tolu Adebayo"},
+            ),
+        },
+        wave=["failed", "input"],
+    )
+    agg = _aggregation(state)
+    agg.add_missing_fields("input", ["beneficiary_id"])
+    agg.add_prompt("Choose a recipient.", task_id="input")
+    runtime = ExecutionWaveRuntime(
+        current_wave=["failed", "input"],
+        services=OrchestrationServices.empty(),
+        accumulator=agg,
+        ctx=ExecutionTurnContext(
+            state=state,
+            config={"configurable": {}},
+            services=OrchestrationServices.empty(),
+            current_wave_len=2,
+            accumulator=agg,
+            current_wave_task_ids=["failed", "input"],
+        ),
+        task_executors={},
+        locale="en",
+        mandate_gate_accounts=[],
+    )
+
+    updates = await finalize_execution_wave_updates(state=state, runtime=runtime)
+
+    output = "\n".join(str(entry.get("text") or "") for entry in updates["outbox"])
+    assert "I couldn't find your Access Bank account." in output
+    assert "Nothing was submitted" not in output
+    assert updates["tasks"]["input"].stage == TaskStage.EXTRACTED
+    assert updates.get("current_wave_index", 0) == 0
+    assert updates["pending_interrupt"].kind == "input"
+    assert "still waiting for your input" in output

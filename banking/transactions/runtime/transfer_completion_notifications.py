@@ -42,6 +42,15 @@ def _delivery_target(message: dict[str, Any]) -> str:
     return str(message.get("channel_identity") or message.get("phone_number") or "").strip()
 
 
+def _display_recipient_name(recipient: dict[str, Any], locale: str) -> str:
+    """Use the linked-account label for self transfers, not the account holder name."""
+    if recipient.get("is_self"):
+        bank_name = str(recipient.get("bank_name") or "").strip()
+        if bank_name:
+            return render_message("transfer.resolve.my_bank_name", locale, {"bank_name": bank_name})
+    return str(recipient.get("name") or render_message("transfer.format.summary.recipient_fallback", locale))
+
+
 class TransferCompletionNotifier:
     """Sends channel notifications after direct-transfer async state changes."""
 
@@ -207,6 +216,7 @@ class TransferCompletionNotifier:
                 or context.get("recipient_account"),
                 "bank_code": getattr(transaction, "recipient_bank_code", None) or context.get("recipient_bank_code"),
                 "bank_name": getattr(transaction, "recipient_bank_name", None) or context.get("recipient_bank_name"),
+                "is_self": bool(context.get("is_self")),
             },
             "source": {
                 "account_id": getattr(transaction, "source_account_id", None) or context.get("source_account_id"),
@@ -215,6 +225,7 @@ class TransferCompletionNotifier:
                 "account_name": context.get("source_account_name"),
                 "bank_name": getattr(transaction, "source_bank_name", None) or context.get("source_bank_name"),
             },
+            "is_self": bool(context.get("is_self")),
             "source_affinity_mode": context.get("source_affinity_mode"),
             "narration": getattr(transaction, "narration", None) or context.get("narration"),
         }
@@ -238,6 +249,7 @@ class TransferCompletionNotifier:
             "source_account_id": source.get("account_id"),
             "source_account_number": source.get("account_number"),
             "source_bank_name": source.get("bank_name"),
+            "is_self": bool(recipient.get("is_self") or transfer_data.get("is_self")),
             "source_affinity_mode": transfer_data.get("source_affinity_mode"),
             "narration": transfer_data.get("narration"),
             "final_status": final_status,
@@ -279,9 +291,7 @@ class TransferCompletionNotifier:
     ) -> None:
         amount = to_naira(transfer_data.get("amount")) or Decimal("0.00")
         recipient = transfer_data.get("recipient", {}) if isinstance(transfer_data.get("recipient"), dict) else {}
-        recipient_name = str(
-            recipient.get("name") or render_message("transfer.format.summary.recipient_fallback", locale)
-        )
+        recipient_name = _display_recipient_name(recipient, locale)
         transaction_id = str(getattr(transaction, "id", "") or "")
         context = await enrich_transfer_personality_context(
             transfer_personality_context_from_payload(transfer_data, moment="success"),
@@ -326,9 +336,7 @@ class TransferCompletionNotifier:
     ) -> None:
         amount = to_naira(transfer_data.get("amount")) or Decimal("0.00")
         recipient = transfer_data.get("recipient", {}) if isinstance(transfer_data.get("recipient"), dict) else {}
-        recipient_name = str(
-            recipient.get("name") or render_message("transfer.format.summary.recipient_fallback", locale)
-        )
+        recipient_name = _display_recipient_name(recipient, locale)
         transaction_id = str(getattr(transaction, "id", "") or "")
         await self.delivery_service.deliver_text(
             phone_number=_delivery_target(message),

@@ -292,6 +292,86 @@ async def test_task_planner_uses_narrow_transfer_output_schema_for_transfer_only
     assert "PlannerKnownTransferPlan" in planner_llm.schema_names
 
 
+async def test_narrow_transfer_planner_preserves_typed_self_destination_signal() -> None:
+    planner_llm = _StructuredFakeLLM(
+        {
+            "PlannerKnownTransferPlan": {
+                "primary_intent": "transfer",
+                "tasks": [
+                    {
+                        "task_id": "t1",
+                        "action": "send_money",
+                        "instruction": "Send 5k to my Access account",
+                        "parameters": {
+                            "amount": "5000",
+                            "bank_name": "Access Bank",
+                            "is_self": True,
+                        },
+                    }
+                ],
+            }
+        }
+    )
+    planner = TaskPlanner(planner_llm=planner_llm)
+
+    result = await planner.plan_tasks_with_quality(
+        "2348000000013",
+        "Send 5k to my Access account",
+        prompt_signals=PlannerPromptSignals(
+            forced_domain_owner="transfer",
+            expected_transaction_executors=("transfer",),
+            compact_context=True,
+        ),
+    )
+
+    params = result.raw_output.tasks[0].parameters
+    assert params.is_self is True
+    assert params.bank_name == "Access Bank"
+
+
+async def test_same_executor_batch_keeps_self_signal_on_its_own_transfer_task() -> None:
+    planner_llm = _StructuredFakeLLM(
+        {
+            "PlannerKnownTransferPlan": {
+                "primary_intent": "transfer",
+                "tasks": [
+                    {
+                        "task_id": "t_external",
+                        "action": "send_money",
+                        "instruction": "Send 2k to Tolu Adebayo",
+                        "parameters": {"amount": "2000", "recipient_name": "Tolu Adebayo"},
+                    },
+                    {
+                        "task_id": "t_self",
+                        "action": "send_money",
+                        "instruction": "Send 5k to my Access account",
+                        "parameters": {"amount": "5000", "bank_name": "Access Bank", "is_self": True},
+                    },
+                ],
+            }
+        }
+    )
+    planner = TaskPlanner(planner_llm=planner_llm)
+
+    result = await planner.plan_tasks_with_quality(
+        "2348000000015",
+        "Send 2k to Tolu Adebayo and 5k to my Access account",
+        prompt_signals=PlannerPromptSignals(
+            forced_domain_owner="transfer",
+            expected_transaction_executors=("transfer",),
+            expected_transaction_task_count=2,
+            compact_context=True,
+        ),
+    )
+
+    assert len(result.raw_output.tasks) == 2
+    self_task = next(task for task in result.raw_output.tasks if task.task_id == "t_self")
+    assert isinstance(self_task.parameters, TransferTaskParameters)
+    assert self_task.parameters.is_self is True
+    assert self_task.parameters.bank_name == "Access Bank"
+    assert self_task.parameters.recipient_name is None
+
+
 async def test_mixed_narrow_schema_drops_sibling_executor_defaults() -> None:
     planner_llm = _StructuredFakeLLM(
         {
@@ -453,7 +533,9 @@ def test_planner_output_schema_uses_executor_specific_parameter_union() -> None:
     assert "recipient_account" not in schema["$defs"]["AirtimeTaskParameters"]["properties"]
     # The canonical worker-operation cutover adds bounded schedule-history,
     # beneficiary-rename, and ticket-lifecycle fields to the planner contract.
-    assert schema_size < 28000
+    # The transfer parameter contract now carries the explicit self-transfer
+    # flag used for linked-account destinations.
+    assert schema_size < 28100
 
 
 def test_narrow_planner_output_schemas_limit_llm_facing_task_contracts() -> None:

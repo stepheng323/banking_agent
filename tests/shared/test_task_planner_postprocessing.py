@@ -1,3 +1,8 @@
+import pytest
+
+from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_build import (
+    _build_planner_task_updates,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_postprocessing import (
     _postprocess_planner_tasks,
 )
@@ -101,6 +106,50 @@ def test_transfer_fanout_keeps_single_recipient_bank_task_unchanged() -> None:
     assert postprocessed.tasks[0].parameters.recipient_name is None
 
 
+def test_self_transfer_leg_is_not_reconciled_with_external_recipient_text() -> None:
+    """A typed own-account leg must remain independent of its sibling."""
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        tasks=[
+            make_planned_task(
+                task_id="t_external",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 2k to Tolu Adebayo",
+                parameters=TransferTaskParameters(amount=2000, recipient_name="Tolu Adebayo"),
+                risk="MONEY_MOVE",
+            ),
+            make_planned_task(
+                task_id="t_self",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 5k to my Access account",
+                parameters=TransferTaskParameters(
+                    amount=5000,
+                    bank_name="Access Bank",
+                    recipient_name="Tolu Adebayo",
+                    is_self=True,
+                ),
+                risk="MONEY_MOVE",
+            ),
+        ],
+        confidence=0.98,
+        detected_language="English",
+    )
+
+    postprocessed = _postprocess_planner_tasks(
+        planner_output,
+        "Send 2k to Tolu Adebayo and 5k to my Access account",
+    )
+
+    self_task = next(task for task in postprocessed.tasks if task.task_id == "t_self")
+    assert self_task.parameters.is_self is True
+    assert self_task.parameters.recipient_name == "Tolu Adebayo"
+    # The planner-level contract still carries the raw signal; task
+    # materialization removes the external name before execution.
+    assert self_task.parameters.bank_name == "Access Bank"
+
+
 def test_clause_repair_adds_missing_transfer_task_for_mixed_transfer_airtime() -> None:
     planner_output = PlannerOutput(
         primary_intent="mixed",
@@ -145,3 +194,77 @@ def test_clause_repair_adds_missing_transfer_task_for_mixed_transfer_airtime() -
     assert transfer_task.parameters.amount == 10
     assert transfer_task.parameters.recipient_name == "adebayo"
     assert transfer_task.parameters.source_bank_name == "GTBank"
+
+
+@pytest.mark.asyncio
+async def test_underproduced_typed_batch_plan_fails_closed_before_task_materialization() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="transfer",
+        tasks=[
+            make_planned_task(
+                task_id="t_external",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 2k to Tolu Adebayo",
+                parameters=TransferTaskParameters(amount=2000, recipient_name="Tolu Adebayo"),
+                risk="MONEY_MOVE",
+            )
+        ],
+        confidence=0.98,
+        detected_language="English",
+    )
+
+    updates = await _build_planner_task_updates(
+        planner_output=planner_output,
+        text="Send 2k to Tolu Adebayo and 5k to my Access account",
+        locale="en",
+        query_session_source=None,
+        query_session_snapshot=None,
+        expected_transaction_task_count=2,
+    )
+
+    assert updates["planner_incomplete_response"] is True
+    assert updates["new_tasks"] == {}
+    assert updates["waves"] == []
+    assert "planner.transaction_task_count_mismatch" in updates["planner_quality_report"].dirty_reasons
+
+
+@pytest.mark.asyncio
+async def test_duplicate_typed_batch_task_ids_fail_closed_before_partial_confirmation() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        tasks=[
+            make_planned_task(
+                task_id="transfer_1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 2k to Tolu Adebayo",
+                parameters=TransferTaskParameters(amount=2000, recipient_name="Tolu Adebayo"),
+                risk="MONEY_MOVE",
+            ),
+            make_planned_task(
+                task_id="transfer_1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 5k to my Access account",
+                parameters=TransferTaskParameters(amount=5000, bank_name="Access Bank", is_self=True),
+                risk="MONEY_MOVE",
+            ),
+        ],
+        confidence=0.98,
+        detected_language="English",
+    )
+
+    updates = await _build_planner_task_updates(
+        planner_output=planner_output,
+        text="Send 2k to Tolu Adebayo and 5k to my Access account",
+        locale="en",
+        query_session_source=None,
+        query_session_snapshot=None,
+        expected_transaction_task_count=2,
+    )
+
+    assert updates["planner_incomplete_response"] is True
+    assert updates["new_tasks"] == {}
+    assert updates["waves"] == []
+    assert "planner.transaction_task_materialization_mismatch" in updates["planner_quality_report"].dirty_reasons

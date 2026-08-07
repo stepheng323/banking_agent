@@ -35,5 +35,5 @@ class AuthorizationStep(TransferStep):
         )
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_AUTH,
-            patch=data.model_dump(exclude_none=True),
+            patch=data.model_dump(mode="json", exclude_none=True),
         )

@@ -194,8 +194,12 @@ class PlannerStateView:
         )
 
     @property
+    def expected_transaction_task_count(self) -> int:
+        return max(0, int(self.state.preplanner_expected_transaction_task_count or 0))
+
+    @property
     def has_transfer_only_preplanner_expectation(self) -> bool:
-        return self.raw_expected_transaction_executors == ("transfer",)
+        return self.raw_expected_transaction_executors == ("transfer",) and self.expected_transaction_task_count <= 1
 
     @property
     def pending_query_clarification(self) -> dict[str, Any] | None:

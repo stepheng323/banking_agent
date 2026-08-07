@@ -237,6 +237,27 @@ def test_mixed_money_move_coverage_rules_present() -> None:
     assert "clauses[] in user order" in runtime_prompt
 
 
+def test_same_executor_batch_uses_mixed_task_contract() -> None:
+    runtime_prompt, profile, bundles = _build_prompt(
+        "Send 2k to Tolu Adebayo and 5k to my Access account",
+        "None",
+        PlannerPromptSignals(
+            forced_domain_owner="transfer",
+            expected_transaction_executors=("transfer",),
+            expected_transaction_task_count=2,
+        ),
+    )
+
+    assert "transfer_only" not in bundles
+    assert "mixed_tx" in bundles
+    assert "clauses[] in user order" in runtime_prompt
+    assert "my Access account" in runtime_prompt
+    assert "precision_mixed_tx" in profile
+    assert "expected_transaction_task_count: 2" in runtime_prompt
+    assert "exactly this many independent transaction tasks" in runtime_prompt
+    assert "guard_task_count" in profile
+
+
 def test_transaction_prompt_quality_contract_preserves_aliases_and_clean_slots() -> None:
     transfer_prompt, _, transfer_bundles = _build_prompt(
         "Send 2k each to Tolu Access and Tolu GTB",

@@ -1,5 +1,6 @@
 """Beneficiary resolution logic."""
 
+import re
 from typing import Any
 
 from banking.beneficiaries.services.matcher import BeneficiaryMatcher
@@ -34,13 +35,14 @@ from banking.transfers.resolution.saved_beneficiaries import (
 )
 from shared.config.settings import settings
 from shared.database.models import Beneficiary
-from shared.utils.logging import get_logger, log_orchestrator_diagnostic
+from shared.utils.bank_aliases import is_known_bank_alias, normalize_bank_name
+from shared.utils.logging import get_logger, log_fingerprint, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
 
 
 def _bank_alias_suffixes(bank_name: str | None) -> list[str]:
-    raw = str(bank_name or "").strip()
+    raw = (bank_name or "").strip()
     if not raw:
         return []
 
@@ -61,7 +63,7 @@ def _bank_alias_suffixes(bank_name: str | None) -> list[str]:
 
 
 def _recipient_bank_alias_candidates(payload: TransferPayload, recipient_name: str | None) -> list[str]:
-    name = str(recipient_name or "").strip()
+    name = (recipient_name or "").strip()
     if not name:
         return []
 
@@ -74,6 +76,163 @@ def _recipient_bank_alias_candidates(payload: TransferPayload, recipient_name: s
             seen.add(key)
             candidates.append(candidate)
     return candidates
+
+
+def _linked_account_bank(account: dict[str, Any]) -> str:
+    """Read the canonical bank label from any linked-account row shape."""
+    return str(
+        account.get("bank_name")
+        or account.get("bank")
+        or account.get("institution_name")
+        or account.get("name")
+        or ""
+    ).strip()
+
+
+def _linked_account_number(account: dict[str, Any]) -> str | None:
+    value = account.get("account_number") or account.get("number")
+    text = str(value or "").strip()
+    return text or None
+
+
+def _linked_account_bank_code(account: dict[str, Any]) -> str:
+    return str(account.get("bank_code") or account.get("code") or "").strip()
+
+
+def _canonical_bank_token(value: str | None) -> str:
+    """Return a comparison token for a bank name or bank-only destination."""
+    normalized = normalize_bank_name((value or "").strip()).casefold()
+    normalized = re.sub(r"\b(?:bank|account|my|own|linked)\b", "", normalized)
+    normalized = re.sub(r"bank$", "", normalized)
+    return re.sub(r"[^a-z0-9]+", "", normalized)
+
+
+def _bank_labels_match(left: str | None, right: str | None) -> bool:
+    left_token = _canonical_bank_token(left)
+    right_token = _canonical_bank_token(right)
+    return bool(left_token and right_token and left_token == right_token)
+
+
+def _linked_account_matches_bank(
+    account: dict[str, Any],
+    requested_bank: str | None,
+    requested_code: str | None,
+) -> bool:
+    """Match a linked account by canonical label, qualified label, or code."""
+    account_bank = _linked_account_bank(account)
+    if _bank_labels_match(account_bank, requested_bank):
+        return True
+
+    requested_token = _canonical_bank_token(requested_bank)
+    if requested_token and requested_token in _canonical_bank_token(account_bank):
+        return True
+
+    normalized_requested_code = re.sub(r"\D+", "", str(requested_code or ""))
+    normalized_account_code = re.sub(r"\D+", "", _linked_account_bank_code(account))
+    return bool(normalized_requested_code and normalized_requested_code == normalized_account_code)
+
+
+def _bank_only_recipient_matches(
+    recipient_name: str | None,
+    destination_bank: str | None,
+) -> bool:
+    """Only treat a recipient token as self when it is the destination bank."""
+    name = (recipient_name or "").strip()
+    if not name:
+        return True
+    if not is_known_bank_alias(name):
+        # "my Access account" may survive extraction as a short phrase rather
+        # than the bare bank token.  It is still safe only when its normalized
+        # token equals the known destination bank.
+        name_token = _canonical_bank_token(name)
+        destination_token = _canonical_bank_token(destination_bank)
+        return bool(destination_token and name_token == destination_token)
+    return _bank_labels_match(name, destination_bank)
+
+
+def _infer_linked_account_destination(payload: TransferPayload, ctx: TransferContext) -> bool:
+    """Infer a bank-only linked-account destination before beneficiary matching.
+
+    A destination such as ``from GTB to Access`` is not an external recipient
+    merely because a saved alias contains the word ``Access``.  We infer a
+    self-transfer only when both bank endpoints are explicit, both resolve to
+    the user's linked accounts, the destination is unique, and no person,
+    account number, or saved-beneficiary reference is present.
+    """
+    if payload.is_self or payload.recipient_account:
+        return False
+    if payload.beneficiary_id or payload.recipient_reference or payload.recipient_resolved_name:
+        return False
+    source_bank = (payload.source_bank_name or "").strip()
+    destination_bank = (payload.recipient_bank_name or "").strip()
+    log_orchestrator_diagnostic(
+        logger,
+        "self_transfer_inference_attempt",
+        typed_self_signal=payload.is_self is True,
+        source_bank_present=bool(source_bank),
+        destination_bank_present=bool(destination_bank),
+        destination_bank_hash=log_fingerprint(destination_bank) if destination_bank else None,
+        source_account_id_present=bool(payload.source_account_id),
+        recipient_account_present=bool(payload.recipient_account),
+        beneficiary_binding_present=bool(payload.beneficiary_id or payload.recipient_reference),
+        context_account_count=len(ctx.all_accounts or ctx.accounts),
+    )
+    if not source_bank or not destination_bank or _bank_labels_match(source_bank, destination_bank):
+        return False
+
+    accounts = ctx.all_accounts or ctx.accounts
+    if not accounts:
+        return False
+
+    source_matches = [
+        account for account in accounts if _linked_account_matches_bank(account, source_bank, None)
+    ]
+    destination_matches = [
+        account
+        for account in accounts
+        if _linked_account_matches_bank(account, destination_bank, payload.recipient_bank_code)
+    ]
+    log_orchestrator_diagnostic(
+        logger,
+        "self_transfer_inference_candidates",
+        source_match_count=len(source_matches),
+        destination_match_count=len(destination_matches),
+        destination_has_account_number=any(bool(_linked_account_number(account)) for account in destination_matches),
+        destination_bank_hash=log_fingerprint(destination_bank),
+    )
+    if len(source_matches) != 1 or len(destination_matches) != 1:
+        return False
+    if not _linked_account_number(destination_matches[0]):
+        return False
+    recipient_was_bank_only = _bank_only_recipient_matches(payload.recipient_name, destination_bank)
+    if not recipient_was_bank_only:
+        return False
+
+    source_id = str(payload.source_account_id or source_matches[0].get("id") or "").strip()
+    destination_id = str(destination_matches[0].get("id") or "").strip()
+    if source_id and destination_id and source_id == destination_id:
+        return False
+
+    payload.is_self = True
+    payload.recipient_name = None
+    payload.recipient_resolved_name = None
+    payload.beneficiary_id = None
+    payload.beneficiary_candidates = []
+    payload.referent_recipient_candidates = []
+    payload.recipient_reference = None
+    payload.resolved_from_saved_beneficiary = False
+    payload.name_mismatch = False
+    payload.name_match_score = None
+    payload.name_mismatch_warning = None
+    logger.info(
+        "self_transfer_inferred_from_linked_banks",
+        source_account_matched=True,
+        destination_account_matched=True,
+        destination_candidate_count=len(destination_matches),
+        recipient_token_was_bank_only=recipient_was_bank_only,
+        destination_bank_hash=log_fingerprint(destination_bank),
+    )
+    return True
 
 
 async def resolve_beneficiary(
@@ -109,7 +268,7 @@ async def resolve_beneficiary(
                 )
                 clear_stale_beneficiary_binding(payload, selected)
             else:
-                current_name = str(payload.recipient_name or "").strip()
+                current_name = (payload.recipient_name or "").strip()
                 selected_alias = str(selected.get("alias") or "").strip()
                 selected_account_name = str(
                     selected.get("account_name") or selected.get("recipient_resolved_name") or ""
@@ -180,6 +339,13 @@ async def resolve_beneficiary(
                 # Update payload directly as we are about to use it for account resolution
                 payload.recipient_bank_code = code
                 payload.recipient_bank_code_provider = provider_name(bank_cache)
+
+    # Resolve an explicit bank-to-bank destination before the beneficiary
+    # matcher sees a short bank token such as ``access``. A saved alias like
+    # ``Tolu Access`` must not win over the user's own linked Access account.
+    if _infer_linked_account_destination(payload, ctx):
+        raw_recipient_name = None
+        recipient_name_for_match = None
 
     if payload.recipient_account and payload.recipient_bank_code and not payload.recipient_resolved_name:
         if resolver_provider:
@@ -252,7 +418,11 @@ async def resolve_beneficiary(
             return memory_result
         recipient_name_for_match = None
 
-    if not recipient_name_for_match:
+    # A self-transfer can be fully grounded by a linked bank name (for
+    # example, "send 5k to my Access account") and therefore has no external
+    # recipient name.  Let the linked-account resolver below handle it before
+    # asking for an external account number and bank.
+    if not recipient_name_for_match and not payload.is_self:
         # 2b. If we have an account number, we tried resolution above and failed (or bank was missing)
         if payload.recipient_account:
             if not payload.recipient_bank_code and not payload.recipient_bank_name:
@@ -306,16 +476,42 @@ async def resolve_beneficiary(
         )
 
     bank_term = (payload.recipient_bank_name or "").lower()
+    if payload.is_self and not bank_term:
+        bank_term = (payload.recipient_name or "").lower()
 
-    own_accounts = ctx.accounts or []
+    # ``ctx.accounts`` is the transaction/source-eligible subset in the
+    # orchestrator. A self-transfer destination may be a linked account that
+    # is not eligible as the current funding source, so resolve it from the
+    # complete linked-account set first. Falling back keeps older callers
+    # that only populate ``accounts`` compatible.
+    own_accounts = ctx.all_accounts or ctx.accounts or []
     candidate_account = None
 
     if payload.is_self:
         if bank_term:
-            candidate_account = next(
-                (a for a in own_accounts if bank_term in (a.get("bank_name") or "").lower()),
-                None,
-            )
+            bank_term_token = _canonical_bank_token(bank_term)
+            if bank_term_token:
+                candidate_account = next(
+                    (
+                        a
+                        for a in own_accounts
+                        if _linked_account_matches_bank(a, bank_term, payload.recipient_bank_code)
+                    ),
+                    None,
+                )
+                if candidate_account is None:
+                    # Provider rows sometimes carry a qualified label (for
+                    # example ``Access Bank Nigeria``). Keep the normalized
+                    # comparison authoritative, but accept a qualified label
+                    # containing the explicitly requested bank token.
+                    candidate_account = next(
+                        (
+                            account
+                            for account in own_accounts
+                            if bank_term_token in _canonical_bank_token(_linked_account_bank(account))
+                        ),
+                        None,
+                    )
         elif payload.is_self and len(own_accounts) == 2:
             # "Send to myself" (no bank specified) - Smart Inference
             # If we know the source, the recipient MUST be the other account
@@ -325,7 +521,7 @@ async def resolve_beneficiary(
             if not source_id and payload.source_bank_name:
                 src_bank = payload.source_bank_name.lower()
                 src_match = next(
-                    (a for a in own_accounts if src_bank in (a.get("bank_name") or "").lower()),
+                    (a for a in own_accounts if src_bank in _linked_account_bank(a).lower()),
                     None,
                 )
                 if src_match:
@@ -337,27 +533,41 @@ async def resolve_beneficiary(
                     None,
                 )
 
-    if candidate_account:
+    if candidate_account and _linked_account_number(candidate_account):
         # Confirm intent: User likely meant this account if they specified the bank
         # and didn't provide an external account number
-        if not payload.recipient_account:
+        if not payload.recipient_account or payload.recipient_account == _linked_account_number(candidate_account):
+            resolved_bank_name = _linked_account_bank(candidate_account) or payload.recipient_bank_name
+            log_orchestrator_diagnostic(
+                logger,
+                "self_transfer_linked_account_resolved",
+                destination_bank_hash=log_fingerprint(resolved_bank_name) if resolved_bank_name else None,
+                linked_account_count=len(own_accounts),
+                candidate_has_account_number=True,
+                bank_code_present=bool(
+                    candidate_account.get("bank_code") or candidate_account.get("code")
+                ),
+            )
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
                 patch={
-                    "recipient_account": str(candidate_account.get("account_number")),
-                    "recipient_bank_code": str(candidate_account.get("bank_code")),
-                    "recipient_bank_name": candidate_account.get("bank_name"),
+                    "recipient_account": _linked_account_number(candidate_account),
+                    "recipient_bank_code": str(
+                        candidate_account.get("bank_code") or candidate_account.get("code") or ""
+                    )
+                    or None,
+                    "recipient_bank_name": resolved_bank_name,
                     "recipient_bank_code_provider": settings.transfer_resolver_provider_name,
                     "recipient_resolution_provider": settings.transfer_resolver_provider_name,
                     "recipient_resolved_name": render_message(
                         "transfer.resolve.my_bank_account",
                         locale,
-                        {"bank_name": candidate_account.get("bank_name")},
+                        {"bank_name": resolved_bank_name or "linked"},
                     ),
                     "recipient_name": render_message(
                         "transfer.resolve.my_bank_name",
                         locale,
-                        {"bank_name": candidate_account.get("bank_name")},
+                        {"bank_name": resolved_bank_name or "linked"},
                     ),
                     "is_self": True,
                     "resolved_from_saved_beneficiary": False,
@@ -366,6 +576,46 @@ async def resolve_beneficiary(
                     "name_mismatch_warning": None,
                 },
             )
+
+    if payload.is_self:
+        # Never reinterpret a typed linked-account destination as an external
+        # recipient when account context is stale, incomplete, or unavailable.
+        # The old fall-through entered BeneficiaryMatcher and eventually asked
+        # for an arbitrary recipient account number, which is unsafe and
+        # confusing for self transfers.
+        log_orchestrator_diagnostic(
+            logger,
+            "self_transfer_resolution_candidates",
+            typed_self_signal=True,
+            destination_bank_hash=log_fingerprint(payload.recipient_bank_name or bank_term)
+            if (payload.recipient_bank_name or bank_term)
+            else None,
+            linked_account_count=len(own_accounts),
+            candidate_match_count=1 if candidate_account else 0,
+            candidate_has_account_number=bool(candidate_account and _linked_account_number(candidate_account)),
+            bank_scope_present=bool(bank_term),
+        )
+        logger.warning(
+            "self_transfer_linked_account_unavailable",
+            linked_account_count=len(own_accounts),
+            bank_scope_present=bool(bank_term),
+            candidate_found=bool(candidate_account),
+            candidate_has_account_number=bool(candidate_account and _linked_account_number(candidate_account)),
+            destination_bank_hash=log_fingerprint(payload.recipient_bank_name or bank_term)
+            if (payload.recipient_bank_name or bank_term)
+            else None,
+        )
+        bank_name = payload.recipient_bank_name or "requested"
+        # This is a linked-account destination, not an external beneficiary.
+        # Keep the recovery explicit so the user is directed to account reads
+        # rather than being asked for a recipient account number.
+        message = render_message("account.linked_account_not_found", locale, {"bank_name": bank_name})
+        return TransactionResult(
+            outcome=TransactionOutcome.FAILED,
+            response=message,
+            error=message,
+            details={"self_account_unavailable": True},
+        )
 
     matcher = BeneficiaryMatcher()
     log_orchestrator_diagnostic(
@@ -395,7 +645,8 @@ async def resolve_beneficiary(
             )
         return build_beneficiary_clarify_result(alias_candidate, exact_candidates, locale)
 
-    status, single, candidates = matcher.match(recipient_name_for_match, beneficiaries)
+    match_name = recipient_name_for_match or ""
+    status, single, candidates = matcher.match(match_name, beneficiaries)
     log_orchestrator_diagnostic(
         logger,
         "beneficiary_match_result",
@@ -406,14 +657,14 @@ async def resolve_beneficiary(
 
     if status == "single" and single:
         return await saved_beneficiary_result(
-            build_single_beneficiary_patch(single, recipient_name_for_match),
+            build_single_beneficiary_patch(single, match_name),
             payload,
             locale,
             resolver_provider,
             bank_cache,
         )
     elif status == "clarify" and candidates:
-        return build_beneficiary_clarify_result(recipient_name_for_match, candidates, locale)
+        return build_beneficiary_clarify_result(match_name, candidates, locale)
 
     required_fields = compute_missing_recipient_fields(payload)
     missing = []

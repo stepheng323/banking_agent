@@ -4,7 +4,9 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
+    _classify_obvious_transfer_request,
     _obvious_mixed_transaction_executors,
+    _obvious_transfer_task_count,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import (
@@ -157,6 +159,7 @@ async def _handle_semantic_domain_dispatch(
     mixed_executors = _obvious_mixed_transaction_executors(ctx.message_text)
     if domain in TRANSACTION_EXECUTORS and mixed_executors:
         updates["preplanner_expected_transaction_executors"] = mixed_executors
+        updates["preplanner_expected_transaction_task_count"] = len(mixed_executors)
         logger.info(
             "gate_semantic_router_mixed_veto",
             decision=canonical_decision,
@@ -172,6 +175,38 @@ async def _handle_semantic_domain_dispatch(
             path_shape="semantic_router_mixed_planner_handoff",
             extra_updates=updates,
         )
+
+    # A same-executor transfer batch (for example, two independent sends in
+    # one turn) has no mixed executor list, but it still needs planner
+    # decomposition.  If semantic routing reaches this stage—typically
+    # because a live interrupt or a locale-specific gate prevented the
+    # deterministic transfer guard from running—preserve the typed count
+    # contract instead of dispatching one direct transfer task.  The planner
+    # materializer will fail closed if it cannot produce that many tasks.
+    if domain == "transfer":
+        expected_transfer_tasks = _obvious_transfer_task_count(ctx.message_text)
+        # Do not apply the amount-count signal to captioned media/receipt
+        # text.  Those turns can contain several numeric values but are still
+        # one typed transfer instruction; only the classifier's explicit
+        # batch-transfer decision authorizes decomposition.
+        transfer_request_reason = _classify_obvious_transfer_request(ctx.message_text)
+        if expected_transfer_tasks > 1 and transfer_request_reason == "batch_transfer_command":
+            updates["preplanner_expected_transaction_executors"] = ["transfer"]
+            updates["preplanner_expected_transaction_task_count"] = expected_transfer_tasks
+            logger.info(
+                "gate_semantic_router_same_executor_transfer_batch_veto",
+                expected_task_count=expected_transfer_tasks,
+            )
+            return planner_handoff(
+                ctx,
+                owner="semantic_router",
+                decision="planner_handoff",
+                target_domain="transfer",
+                mode=canonical_mode,
+                source="semantic_router_same_executor_batch_veto",
+                path_shape="semantic_router_same_executor_batch_planner_handoff",
+                extra_updates=updates,
+            )
 
     if block_message := _direct_domain_capability_block_message(ctx.state_view, domain):
         logger.info(

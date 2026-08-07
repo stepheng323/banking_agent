@@ -37,6 +37,7 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
         "final_response": None,
         "policy_notice": None,
         "preplanner_expected_transaction_executors": [],
+        "preplanner_expected_transaction_task_count": 0,
         "last_interrupt": None,
         "last_activity_date": today,
         "turn_context_summary": None,

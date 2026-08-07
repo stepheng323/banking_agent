@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import SCHEDULE_DATE_PATTERN
 from shared.utils.bank_aliases import get_bank_search_terms
@@ -90,6 +91,31 @@ def recipient_grounded_in_user_text(recipient: str | None, user_text: str) -> bo
     if not _is_plausible_recipient_candidate(norm_recipient):
         return False
     return norm_recipient in norm_text
+
+
+def clear_external_recipient_bindings_for_self(payload: dict[str, Any]) -> None:
+    """Keep a typed own-account transfer from carrying a sibling recipient."""
+    for key in (
+        "beneficiary_id",
+        "beneficiary_candidates",
+        "referent_recipient_candidates",
+        "recipient",
+        "recipient_reference",
+        # A sibling account-number resolution can otherwise make the
+        # pipeline short-circuit before it reaches linked-account resolution.
+        # The own-account bank scope is retained; the concrete destination is
+        # always re-resolved from the user's linked accounts.
+        "recipient_account",
+        "recipient_account_number",
+        "recipient_bank_code",
+        "recipient_bank_code_provider",
+        "resolved_from_saved_beneficiary",
+        "recipient_resolution_provider",
+        "recipient_resolution_mode",
+        "recipient_resolved_name",
+        "recipient_name",
+    ):
+        payload.pop(key, None)
 
 
 def derive_recipients_from_user_text(user_text: str) -> list[str]:

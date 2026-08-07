@@ -233,6 +233,26 @@ def _obvious_mixed_transaction_executors(message_text: str) -> list[str]:
     return executors
 
 
+def _obvious_transfer_task_count(message_text: str) -> int:
+    """Return the conservative task count for an obvious transfer batch.
+
+    This is a routing signal, not an extraction result.  A single amount
+    split across several people remains one planner task with recipient
+    allocations; multiple explicit amounts represent independent transfer
+    tasks and need the mixed-task planner contract even when the executor is
+    the same for every task.
+    """
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized or not _looks_like_multi_recipient_transfer(normalized):
+        return 1
+    amount_matches = [
+        match
+        for match in _TRANSFER_DIRECT_AMOUNT_RE.findall(normalized)
+        if not re.fullmatch(r"\s*\d{10,11}\s*", match)
+    ]
+    return min(max(len(amount_matches), 1), 5)
+
+
 def classify_obvious_transfer_request(message_text: str, *, locale: str | None = None) -> str | None:
     """Public helper for pre-graph fast-path hints."""
     if locale and not _allow_phrase_heavy_fastpath(message_text, LocaleManager.normalize(locale).value):
@@ -246,5 +266,6 @@ __all__ = [
     "_is_obvious_airtime_request",
     "_is_obvious_data_request",
     "_obvious_mixed_transaction_executors",
+    "_obvious_transfer_task_count",
     "classify_obvious_transfer_request",
 ]

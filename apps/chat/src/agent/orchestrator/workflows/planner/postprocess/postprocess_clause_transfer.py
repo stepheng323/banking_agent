@@ -2,7 +2,9 @@
 
 from decimal import Decimal
 
-from apps.chat.src.agent.orchestrator.utils.task_payload_recipients import derive_recipients_from_user_text
+from apps.chat.src.agent.orchestrator.utils.task_payload_recipients import (
+    derive_recipients_from_user_text,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_clause_utils import (
     _coerce_clause_field_text,
 )
@@ -40,6 +42,24 @@ def _repair_transfer_task_from_clause(
     if not isinstance(task.parameters, TransferTaskParameters):
         return task, False
     params = task.parameters.model_copy(deep=True)
+    if params.is_self is True:
+        # ``is_self`` is an authoritative planner signal.  A clause repair
+        # must never reintroduce an external recipient from the surrounding
+        # mixed turn (for example, the beneficiary of a sibling transfer).
+        changed = bool(params.recipient or params.recipient_name)
+        params.recipient = None
+        params.recipient_name = None
+        if changed or task.source_clause_index != clause.clause_index:
+            return (
+                task.model_copy(
+                    update={
+                        "parameters": params,
+                        "source_clause_index": clause.clause_index,
+                    }
+                ),
+                True,
+            )
+        return task, False
     current_recipient = str(params.recipient_name or params.recipient or "").strip()
     if not _looks_like_cross_clause_recipient_leak(current_recipient, non_transfer_clauses=non_transfer_clauses):
         if task.source_clause_index == clause.clause_index:
@@ -83,8 +103,9 @@ def _amount_from_clause(clause: PlannerClause) -> MoneyAmount | None:
 
 
 def _transfer_params_from_clause(clause: PlannerClause) -> TransferTaskParameters:
-    recipient_name = _coerce_clause_field_text(clause, "recipient_name", "recipient")
-    if not recipient_name:
+    is_self = clause.extracted_fields.get("is_self") is True
+    recipient_name = None if is_self else _coerce_clause_field_text(clause, "recipient_name", "recipient")
+    if not recipient_name and not is_self:
         derived = derive_recipients_from_user_text(clause.text)
         recipient_name = derived[0] if len(derived) == 1 else None
 
@@ -92,7 +113,6 @@ def _transfer_params_from_clause(clause: PlannerClause) -> TransferTaskParameter
     source_bank_name = _coerce_clause_field_text(clause, "source_bank_name", "source_bank")
     bank_name = _coerce_clause_field_text(clause, "bank_name", "recipient_bank_name", "recipient_bank")
     recipient_account = _coerce_clause_field_text(clause, "recipient_account", "account_number")
-
     return TransferTaskParameters(
         amount=_amount_from_clause(clause),
         recipient=recipient_name,
@@ -101,6 +121,7 @@ def _transfer_params_from_clause(clause: PlannerClause) -> TransferTaskParameter
         source_bank_name=source_bank_name,
         bank_name=bank_name,
         recipient_account=recipient_account,
+        is_self=is_self or None,
     )
 
 

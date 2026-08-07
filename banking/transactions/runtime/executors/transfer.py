@@ -46,6 +46,55 @@ _TERMINAL_TRANSACTION_STATUSES = {
 }
 
 
+async def _resolve_source_account(account_repo: Any, source_account_id: Any) -> Any | None:
+    """Resolve a source account using the identifier carried by the queue payload.
+
+    Queue messages intentionally carry the provider/account reference used by the
+    debit provider (for example ``seed-...-acct-2``), while ``Account.id`` is the
+    database UUID.  Calling the generic ``get_by_id`` with the provider reference
+    either returns no row or raises a UUID cast error.  Prefer the repository's
+    external-id lookup and only use the UUID lookup for UUID-shaped references.
+    """
+    reference = str(source_account_id or "").strip()
+    if not reference:
+        return None
+
+    external_lookup = getattr(account_repo, "get_by_account_id", None)
+    if callable(external_lookup):
+        try:
+            account = await external_lookup(reference)
+        except Exception as exc:
+            logger.warning(
+                "transfer_source_account_external_lookup_failed",
+                reference_kind="provider_account_id",
+                error_type=type(exc).__name__,
+            )
+        else:
+            if account is not None:
+                logger.debug("transfer_source_account_resolved", reference_kind="provider_account_id")
+                return account
+
+    # Test doubles and a few legacy adapters expose only get_by_id.  Do not pass
+    # arbitrary provider IDs to a UUID-backed SQL predicate.
+    try:
+        uuid.UUID(reference)
+    except ValueError:
+        if not callable(external_lookup):
+            generic_lookup = getattr(account_repo, "get_by_id", None)
+            if callable(generic_lookup):
+                return await generic_lookup(reference)
+        logger.warning("transfer_source_account_not_found", reference_kind="provider_account_id")
+        return None
+
+    generic_lookup = getattr(account_repo, "get_by_id", None)
+    if callable(generic_lookup):
+        account = await generic_lookup(reference)
+        if account is not None:
+            logger.debug("transfer_source_account_resolved", reference_kind="database_uuid")
+        return account
+    return None
+
+
 def _transaction_status(transaction: Any) -> str:
     return str(getattr(transaction, "status", "") or "").strip().lower()
 
@@ -69,6 +118,15 @@ def _transaction_user_id(transaction: Any) -> str | None:
 
 def _execution_error_message(locale: str) -> str:
     return render_message("transfer.error.execution_failed", locale)
+
+
+def _display_recipient_name(recipient: dict[str, Any], locale: str) -> str:
+    """Render a linked-account destination as an account, not its holder name."""
+    if recipient.get("is_self"):
+        bank_name = str(recipient.get("bank_name") or "").strip()
+        if bank_name:
+            return render_message("transfer.resolve.my_bank_name", locale, {"bank_name": bank_name})
+    return str(recipient.get("name") or render_message("transfer.format.summary.recipient_fallback", locale))
 
 
 class TransferExecutor:
@@ -291,6 +349,7 @@ class TransferExecutor:
             "source_account_name": source.get("account_name"),
             "source_bank_name": source.get("bank_name"),
             "source_affinity_mode": transfer_data.get("source_affinity_mode"),
+            "is_self": bool(recipient.get("is_self") or transfer_data.get("is_self")),
             "narration": transfer_data.get("narration"),
             "final_status": final_status,
         }
@@ -341,6 +400,7 @@ class TransferExecutor:
             "source_account_name": source.get("account_name"),
             "source_bank_name": source.get("bank_name"),
             "source_affinity_mode": transfer_data.get("source_affinity_mode"),
+            "is_self": bool(recipient.get("is_self") or transfer_data.get("is_self")),
             "narration": transfer_data.get("narration"),
         }
         return {"completion_context": {key: value for key, value in context.items() if value not in (None, "", [], {})}}
@@ -425,7 +485,7 @@ class TransferExecutor:
             pending_context = transfer_personality_context_from_payload(transfer_data, moment="pending")
             failure_context = transfer_personality_context_from_payload(transfer_data, moment="failure")
 
-            source_account = await self.account_repo.get_by_id(str(source_account_id))
+            source_account = await _resolve_source_account(self.account_repo, source_account_id)
             if not source_account or not source_account.mandate_id:
                 raise ValueError("source_account_mandate_not_ready")
 
@@ -530,9 +590,7 @@ class TransferExecutor:
                         summary_result=batch_summary,
                     )
                 elif not is_grouped_async_message(data):
-                    recipient_name = str(
-                        recipient.get("name") or render_message("transfer.format.summary.recipient_fallback", locale)
-                    )
+                    recipient_name = _display_recipient_name(recipient, locale)
                     success_context = await enrich_transfer_personality_context(
                         success_context,
                         user_id=_transaction_user_id(applied_transaction)
@@ -585,9 +643,7 @@ class TransferExecutor:
                         summary_result=batch_summary,
                     )
                 elif not is_grouped_async_message(data):
-                    recipient_name = str(
-                        recipient.get("name") or render_message("transfer.format.summary.recipient_fallback", locale)
-                    )
+                    recipient_name = _display_recipient_name(recipient, locale)
                     await self._deliver_text(
                         data=data,
                         text=format_transfer_pending_message(
@@ -672,7 +728,17 @@ class TransferExecutor:
                 logger.info("transfer_execution_result_skipped", transaction_id=transaction_id, outcome=applied_outcome)
 
         except Exception as e:
-            logger.error("transfer_execution_exception", transaction_id=transaction_id, error=str(e))
+            logger.error(
+                "transfer_execution_exception",
+                transaction_id=transaction_id,
+                error_type=type(e).__name__,
+                failure_category=classify_failure_category(message=str(e), context="execution"),
+                provider_call_attempted=provider_call_attempted,
+                source_account_present=bool(source.get("account_id")),
+                source_bank_present=bool(source.get("bank_name")),
+                recipient_account_present=bool(recipient.get("account_number")),
+                recipient_bank_present=bool(recipient.get("bank_code")),
+            )
             if provider_call_attempted:
                 await self._queue_direct_transfer_reconciliation(
                     transaction_id=str(transaction_id),

@@ -42,6 +42,37 @@ def test_transfer_one_shot_normalizer_patches_missing_account_bank_and_amount() 
     assert params.bank_name == "First Bank"
 
 
+def test_transfer_normalizer_preserves_typed_self_destination() -> None:
+    """The planner signal survives normalization without raw-text inference."""
+    planner_output = _planner_output(
+        [
+            make_planned_task(
+                task_id="t_self",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 5k to recipient",
+                parameters=TransferTaskParameters(
+                    amount=5000,
+                    recipient_name="recipient",
+                    bank_name="Access Bank",
+                    is_self=True,
+                ),
+                risk="MONEY_MOVE",
+                source_clause_index=2,
+            )
+        ]
+    )
+
+    normalized = normalize_planner_transaction_output(
+        planner_output,
+        "unrelated original wording",
+    )
+
+    assert normalized.tasks[0].parameters.is_self is True
+    assert normalized.tasks[0].parameters.recipient is None
+    assert normalized.tasks[0].parameters.recipient_name is None
+
+
 def test_transfer_normalizer_does_not_overwrite_existing_fields() -> None:
     planner_output = _planner_output(
         [

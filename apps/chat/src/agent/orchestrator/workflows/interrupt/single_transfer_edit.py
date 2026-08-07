@@ -51,6 +51,13 @@ _TRANSFER_EDIT_EVIDENCE = frozenset(
 def _single_pending_transfer_task(state: OrchestratorState, runtime: InterruptRuntime) -> tuple[str, Any] | None:
     if getattr(runtime.interrupt, "kind", None) != "confirmation":
         return None
+    # A removed sibling means this is still a mutable batch, even if only one
+    # task remains active.  Let the pending-action interpreter see the whole
+    # active/removed context so requests such as "include the self transfer
+    # again" restore the removed leg instead of being mistaken for a recipient
+    # amendment to the remaining transfer.
+    if runtime.state_view.removed_confirmation_tasks:
+        return None
     task_ids = runtime.state_view.active_task_ids_for_interrupt(runtime.interrupt)
     if len(task_ids) != 1:
         return None

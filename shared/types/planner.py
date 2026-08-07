@@ -32,7 +32,6 @@ QueryInsightType: TypeAlias = Literal[
     "cash_flow_quality",
 ]
 
-
 class ContextReference(BaseModel):
     """Pointer to a context entity."""
 
@@ -89,6 +88,9 @@ class TransferTaskParameters(BaseTaskParameters):
     recipient_phone: str | None = None
     recipient_account: str | None = None
     bank_name: str | None = None
+    # Typed planner signal for a transfer to one of the user's own linked
+    # accounts. The planner emits this; downstream resolves the account.
+    is_self: bool | None = None
     schedule: str | None = None
     scheduled: str | None = None
     recurring: bool | None = None
@@ -105,7 +107,6 @@ class TransferTaskParameters(BaseTaskParameters):
     recipient_allocations: list[RecipientAllocation] | None = None
     recipient_binding_source: Literal["fanout"] | None = None
     recipient_binding_index: int | None = None
-
 
 class AirtimeTaskParameters(BaseTaskParameters):
     """Airtime task parameters."""
@@ -1590,6 +1591,11 @@ class InterruptRouteDecision(BaseModel):
 
     @model_validator(mode="after")
     def canonicalize_account_read_switch(self) -> "InterruptRouteDecision":
+        # ``list`` is the historical short label for the linked-account
+        # surface. Accept it at the routing boundary, but materialize only
+        # the canonical worker operation.
+        if self.account_action == "list":
+            self.account_action = "list_accounts"
         if self.account_read is None:
             return self
         if self.account_read.subject not in {"balance", "linked_account", "default_account"}:

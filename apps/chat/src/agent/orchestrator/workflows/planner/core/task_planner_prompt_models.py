@@ -24,6 +24,7 @@ class PlannerPromptSignals:
     compact_context: bool = False
     forced_domain_owner: RouterDomainIntent | None = None
     expected_transaction_executors: tuple[TransactionExecutor, ...] = field(default_factory=tuple)
+    expected_transaction_task_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)

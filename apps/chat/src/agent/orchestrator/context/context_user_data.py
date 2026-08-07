@@ -5,6 +5,7 @@ import time
 from collections.abc import Awaitable
 from typing import Any, Literal
 
+from banking.accounts.management.serialization import serialize_accounts
 from shared.utils.logging import log_fingerprint, log_orchestrator_diagnostic
 from shared.utils.serialization import sqlalchemy_to_dict
 
@@ -117,7 +118,14 @@ async def hydrate_user_context_from_cache_snapshot(
             else:
                 beneficiaries = list(value)
 
-    safe_accounts = serialize_rows(accounts)
+    # Account numbers are exposed through the Account model's decrypted
+    # property, not its mapped ciphertext column. Generic SQLAlchemy
+    # serialization therefore drops them and makes bank-scoped self transfers
+    # look unresolved. Serialize fresh repository rows with the account-aware
+    # helper; preserve already-cached dictionaries to avoid reshaping the
+    # established cache contract. The transfer executor has a guarded refresh
+    # path for stale cached rows.
+    safe_accounts = serialize_accounts(accounts) if cache_accounts is None else list(cache_accounts)
     safe_beneficiaries = serialize_rows(beneficiaries)
 
     cache_profile_write = safe_profile is not None and cache_profile is None

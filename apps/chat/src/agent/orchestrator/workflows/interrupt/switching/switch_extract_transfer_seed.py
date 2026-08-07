@@ -88,6 +88,9 @@ async def _seed_transfer_switch_payload(
         parameters.recipient = recipient_name
         parameters.recipient_name = recipient_name
 
+    if entities.get("is_self") is not None:
+        parameters.is_self = bool(entities.get("is_self"))
+
     recipient_account = str(entities.get("recipient_account") or "").strip()
     if recipient_account:
         parameters.recipient_account = recipient_account

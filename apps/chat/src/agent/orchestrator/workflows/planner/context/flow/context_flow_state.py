@@ -41,6 +41,7 @@ class PlannerContextFlowState:
     recent_answer_focus: str | None
     has_transaction_intent_hint: bool
     expected_executors: tuple[TransactionExecutor, ...]
+    expected_transaction_task_count: int
     forced_domain_owner: RouterDomainIntent | None
     compact_transaction_context: bool
 
@@ -95,6 +96,9 @@ async def build_context_flow_state(
         recent_answer_focus=recent_answer_focus,
         has_transaction_intent_hint=has_transaction_intent_hint,
         expected_executors=expected_executors,
+        expected_transaction_task_count=(
+            max(1, state_view.expected_transaction_task_count) if expected_executors else 0
+        ),
         forced_domain_owner=forced_domain_owner,
         compact_transaction_context=compact_transaction_context,
     )

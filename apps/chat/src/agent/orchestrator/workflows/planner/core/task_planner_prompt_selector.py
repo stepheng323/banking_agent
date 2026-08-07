@@ -62,6 +62,8 @@ def _include_transfer_only_bundle(signals: PlannerPromptSignals) -> bool:
         return False
     if signals.expected_transaction_executors != ("transfer",):
         return False
+    if signals.expected_transaction_task_count > 1:
+        return False
     if signals.has_quote:
         return False
     if signals.query_session_active:
@@ -73,7 +75,7 @@ def _include_transfer_only_bundle(signals: PlannerPromptSignals) -> bool:
 
 def _include_mixed_tx_bundle(signals: PlannerPromptSignals) -> bool:
     expected = signals.expected_transaction_executors
-    if len(expected) < 2:
+    if len(expected) < 2 and signals.expected_transaction_task_count < 2:
         return False
     if signals.has_quote:
         return False

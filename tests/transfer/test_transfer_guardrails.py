@@ -355,6 +355,163 @@ async def test_resolver_relationship_prompt_uses_second_person_label() -> None:
     assert "my sister" not in result.prompt
 
 
+async def test_self_transfer_to_linked_bank_resolves_without_recipient_details() -> None:
+    payload = TransferPayload(amount=5000, recipient_bank_name="Access Bank", is_self=True)
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[],
+        accounts=[
+            {"id": "acc-gtb", "bank_name": "GTBank", "account_number": "0000000002"},
+            {
+                "id": "acc-access",
+                "bank_name": "Access Bank",
+                "account_number": "0000000003",
+                "bank_code": "044",
+            },
+        ],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "ok"
+    assert result.patch["recipient_account"] == "0000000003"
+    assert result.patch["recipient_bank_name"] == "Access Bank"
+    assert result.patch["is_self"] is True
+
+
+async def test_self_transfer_missing_linked_bank_uses_linked_account_recovery() -> None:
+    payload = TransferPayload(amount=5000, recipient_bank_name="Access Bank", is_self=True)
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[],
+        accounts=[{"id": "acc-gtb", "bank_name": "GTBank", "account_number": "0000000002"}],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "failed"
+    assert result.error is not None
+    assert "linked Access Bank account" in result.error
+    assert "beneficiary" not in result.error.lower()
+    assert "account matching" not in result.error.lower()
+
+
+async def test_self_transfer_uses_complete_linked_accounts_when_destination_is_not_source_eligible() -> None:
+    """A mixed batch must not drop a self leg filtered out of source accounts."""
+    payload = TransferPayload(amount=5000, recipient_bank_name="Access Bank", is_self=True)
+    source_account = {
+        "id": "acc-gtb",
+        "bank_name": "GTBank",
+        "account_number": "0000000002",
+    }
+    destination_account = {
+        "id": "acc-access",
+        "bank_name": "Access Bank",
+        "account_number": "0000000003",
+        "bank_code": "044",
+    }
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[],
+        # This is the source-eligible subset passed by the orchestrator.
+        accounts=[source_account],
+        # The destination remains a linked account, even though it is not in
+        # the source subset for this turn.
+        all_accounts=[source_account, destination_account],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_account"] == "0000000003"
+    assert result.patch["recipient_bank_name"] == "Access Bank"
+    assert result.patch["is_self"] is True
+
+
+async def test_self_transfer_can_match_destination_by_bank_code_when_label_is_unavailable() -> None:
+    payload = TransferPayload(
+        amount=5000,
+        recipient_bank_name="Access Bank",
+        recipient_bank_code="044",
+        is_self=True,
+    )
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[],
+        all_accounts=[
+            {
+                "id": "acc-access",
+                "bank_code": "044",
+                "account_number": "0000000003",
+            }
+        ],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_account"] == "0000000003"
+    assert result.patch["recipient_bank_code"] == "044"
+
+
+async def test_bank_only_destination_between_linked_accounts_beats_saved_alias() -> None:
+    """A bank token must not be fuzzy-matched to an alias such as Tolu Access."""
+    payload = TransferPayload(
+        amount=3000,
+        source_bank_name="GTBank",
+        recipient_bank_name="Access Bank",
+        recipient_name="Access",
+    )
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[
+            {
+                "id": "bene-access",
+                "alias": "Tolu Access",
+                "account_name": "Tolu Adebayo",
+                "account_number": "2010000001",
+                "bank_name": "Access Bank",
+                "bank_code": "044",
+                "beneficiary_type": "transfer",
+            }
+        ],
+        accounts=[
+            {"id": "acc-gtb", "bank_name": "GTBank", "account_number": "0000000002"},
+            {
+                "id": "acc-access",
+                "bank_name": "Access Bank",
+                "account_number": "0000000003",
+                "bank_code": "044",
+            },
+        ],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["is_self"] is True
+    assert result.patch["recipient_account"] == "0000000003"
+    assert result.patch["recipient_resolved_name"] != "Tolu Adebayo"
+
+
+async def test_self_transfer_never_falls_back_to_external_recipient_prompt() -> None:
+    """A missing linked-account row must not ask for a recipient account number."""
+    payload = TransferPayload(amount=5000, recipient_bank_name="Access Bank", is_self=True)
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[])
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome == TransactionOutcome.FAILED
+    assert result.details["self_account_unavailable"] is True
+    assert "recipient account" not in (result.response or "").lower()
+    assert "access bank" in (result.response or "").lower()
+
+
 async def test_confirmation_summary_includes_name_mismatch_warning() -> None:
     payload = TransferPayload(
         amount=5000,

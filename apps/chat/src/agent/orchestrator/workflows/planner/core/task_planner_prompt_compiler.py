@@ -17,6 +17,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt
     PLANNER_RUNTIME_PROMPT_SUFFIX,
     PLANNER_RUNTIME_SCHEMA_PROMPT,
     PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES,
+    PLANNER_TASK_COUNT_GUARD_PROMPT,
     PLANNER_TRANSFER_ONLY_PRECISION_PROMPT,
     PLANNER_TRANSFER_PRECISION_PROMPT,
 )
@@ -86,6 +87,12 @@ def compile_planner_system_prompt(
     if "executor_coverage_guard" in bundles and prompt_input.signals.expected_transaction_executors:
         sections.append(_coverage_guard_section(prompt_input.signals.expected_transaction_executors))
         profile_parts.append("guard_exec_cov")
+    expected_task_count = prompt_input.signals.expected_transaction_task_count
+    if expected_task_count > 1:
+        sections.append(
+            PLANNER_TASK_COUNT_GUARD_PROMPT.format(expected_count=expected_task_count)
+        )
+        profile_parts.append("guard_task_count")
     if prompt_input.signals.forced_domain_owner == "query":
         sections.append(PLANNER_QUERY_PREFERENCE_PROMPT)
         profile_parts.append("query_preferences")

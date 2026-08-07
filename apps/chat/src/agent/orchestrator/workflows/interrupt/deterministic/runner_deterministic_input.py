@@ -128,7 +128,7 @@ async def _recipient_review_acceptance_updates(
         resume_outbox = payload.get("recipient_review_resume_outbox")
         if isinstance(resume_outbox, dict):
             resume_outbox_entries.append(dict(resume_outbox))
-        payload_overrides[task_id] = {
+        review_override: dict[str, Any] = {
             "recipient_review_confirmed": True,
             "recipient_review_required": False,
             "recipient_review_signature": signature,
@@ -136,6 +136,25 @@ async def _recipient_review_acceptance_updates(
             "recipient_review_resume_prompt": None,
             "recipient_review_resume_outbox": None,
         }
+        # Recipient review can follow a source-account choice when a manual
+        # destination was entered.  Preserve that typed source selection
+        # through the review acknowledgement; otherwise resetting the task
+        # for the next worker pass silently asks for the account again and
+        # strands the batch before its combined confirmation.
+        for field in (
+            "source_account_id",
+            "source_account_number",
+            "source_bank_name",
+            "source_account_name",
+            "source_affinity_mode",
+            "source_accounts",
+            "use_dual_accounts",
+            "explicit_split",
+            "funding_plan",
+        ):
+            if field in payload:
+                review_override[field] = payload[field]
+        payload_overrides[task_id] = review_override
 
     logger.info("recipient_review_accepted", task_ids=task_ids)
     updates = _continue_flow_updates(state, interrupt, precomputed_payload_overrides=payload_overrides)
@@ -305,6 +324,74 @@ def _single_funding_source_choice_updates(
     )
 
 
+def _single_source_account_selection_updates(
+    *,
+    state: OrchestratorState,
+    runtime: InterruptRuntime,
+) -> dict[str, Any] | None:
+    """Apply a plain source-account choice before re-running the worker.
+
+    A source prompt emitted by a worker is deliberately a typed input
+    interrupt, not a new extraction request.  Resolving its ordinal/bank
+    choice here keeps the selected account on the task while the rest of a
+    mixed batch is resumed.  Without this patch the raw ``1`` is replayed to
+    the worker and a previously reviewed destination can be lost.
+    """
+    interrupt = runtime.interrupt
+    if getattr(interrupt, "kind", None) != "input":
+        return None
+    task_ids = [str(task_id) for task_id in getattr(interrupt, "task_ids", []) or []]
+    if len(task_ids) != 1:
+        return None
+    fields_by_task = getattr(interrupt, "fields_by_task", {}) or {}
+    if set(fields_by_task.get(task_ids[0]) or []) != {"source_account_id"}:
+        return None
+
+    loaded = interrupt_state_view(state).loaded_context_or_empty
+    raw_accounts = loaded.get("transaction_accounts") or loaded.get("accounts") or loaded.get("all_accounts")
+    accounts = [account for account in raw_accounts or [] if isinstance(account, dict)]
+    if not accounts:
+        return None
+
+    text = runtime.text.strip()
+    selected: dict[str, Any] | None = None
+    if text.isdigit():
+        index = int(text)
+        if 1 <= index <= len(accounts):
+            selected = accounts[index - 1]
+    else:
+        selected = match_source_account_reference(text, accounts)
+    if selected is None:
+        return None
+
+    account_id = str(selected.get("id") or selected.get("account_id") or "").strip()
+    if not account_id:
+        return None
+    override: dict[str, Any] = {
+        "source_account_id": account_id,
+        "source_affinity_mode": "explicit",
+        "source_account_index": None,
+        "source_bank_name": selected.get("bank_name") or selected.get("bank"),
+        "source_account_name": selected.get("account_name") or selected.get("name"),
+        "source_account_number": selected.get("account_number") or selected.get("number"),
+        "source_accounts": None,
+        "use_dual_accounts": False,
+        "explicit_split": None,
+        "funding_plan": None,
+        "suggested_funding_plan": None,
+        "confirmation": {"confirmed": False},
+    }
+    logger.info(
+        "single_source_account_choice_applied",
+        selection_mode="index" if text.isdigit() else "account_reference",
+    )
+    return _continue_flow_updates(
+        state,
+        interrupt,
+        precomputed_payload_overrides={task_ids[0]: override},
+    )
+
+
 async def _input_shortcut_updates(
     *,
     state: OrchestratorState,
@@ -322,6 +409,10 @@ async def _input_shortcut_updates(
     single_funding_updates = _single_funding_source_choice_updates(state=state, runtime=runtime)
     if single_funding_updates is not None:
         return single_funding_updates
+
+    source_account_updates = _single_source_account_selection_updates(state=state, runtime=runtime)
+    if source_account_updates is not None:
+        return source_account_updates
 
     batch_scope = resolve_batch_input_message_scope(state=state, interrupt=interrupt, text=runtime.text)
     if batch_scope:

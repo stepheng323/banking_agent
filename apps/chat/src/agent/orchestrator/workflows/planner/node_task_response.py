@@ -5,11 +5,13 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.workflows.planner.outcomes import (
     PlannerResolution,
     batch_limit_response,
+    incomplete_plan_response,
     policy_block,
     task_dispatch,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_unsupported import _build_policy_notice
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
+from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
@@ -53,6 +55,13 @@ def _build_planner_task_response(
     if task_updates.get("batch_limit_response"):
         return batch_limit_response(
             response=task_updates["batch_limit_response"],
+            normalized_instruction=text,
+            planner_output=planner_output,
+            locale_updates=locale_updates,
+        )
+    if task_updates.get("planner_incomplete_response"):
+        return incomplete_plan_response(
+            response=render_message("orchestrator.fallback.planner_incomplete", current_locale),
             normalized_instruction=text,
             planner_output=planner_output,
             locale_updates=locale_updates,

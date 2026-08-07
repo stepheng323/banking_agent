@@ -38,7 +38,7 @@ _CLAUSE_BOUNDARY_RE = re.compile(r"\s+\band\b\s+|[;]", re.IGNORECASE)
 _BANK_STOP_RE = re.compile(r"\b(?:for|to|ti|fun|si|ga|zuwa)\b|\s+\band\b\s+|[;]", re.IGNORECASE)
 _DETAIL_SIGNAL_RE = re.compile(
     r"\b(?:for|to|ti|fun|si|ga|zuwa|own| na | is |reduce|make|change|use|from|source|"
-    r"narration|purpose|reason|remove|cancel)\b",
+    r"narration|purpose|reason)\b",
     re.IGNORECASE,
 )
 _AMOUNT_TOKEN_RE = re.compile(r"(?:₦|ngn)?\s*(?P<amount>\d[\d,]*(?:\.\d+)?)\s*(?P<suffix>[kKhH]?)\b")

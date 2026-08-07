@@ -66,6 +66,7 @@ class PlannerLLMTransferParameters(BaseModel):
     recipient_allocations: list[PlannerLLMRecipientAllocation] | None = None
     recipient_account: str | None = None
     bank_name: str | None = None
+    is_self: bool = False
     narration: str | None = None
     source_bank_name: str | None = None
     source_account_index: int | None = None

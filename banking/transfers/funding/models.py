@@ -16,7 +16,7 @@ MIN_FUNDING_AMOUNT = Decimal("100.00")
 class FundingStepPlan:
     """Planned debit from a single account."""
 
-    account_id: UUID
+    account_id: UUID | str
     account_number: str
     bank_name: str
     amount: MoneyAmount
@@ -38,7 +38,7 @@ class FundingPlan:
     trigger_mode: Literal["auto", "explicit"] = "auto"
     requested_sources: list[str] = field(default_factory=list)
     explicit_split_applied: bool = False
-    primary_account_id: UUID | None = None
+    primary_account_id: UUID | str | None = None
     primary_bank_name: str | None = None
     primary_available_balance: MoneyAmount | None = None
     candidate_sources: list[dict[str, Any]] = field(default_factory=list)

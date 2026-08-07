@@ -9,7 +9,10 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import _with_policy_notice
 from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
-from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_options import _build_show_options_entry
+from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_options import (
+    _build_show_options_entry,
+    clean_options_prompt,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import require_task
 from banking.presentation.formatters.transaction_copy_context import format_amount_compact
 from banking.presentation.i18n.message_keys import as_message_key
@@ -41,7 +44,20 @@ def _batch_slots(
     agg: ExecutionAccumulator,
 ) -> list[BatchInputSlot]:
     slots: list[BatchInputSlot] = []
-    for task_id in current_wave:
+    ordered_task_ids = list(enumerate(current_wave))
+    source_indexes = [
+        index
+        for _, task_id in ordered_task_ids
+        if (index := _source_clause_index(state=state, task_id=task_id)) is not None
+    ]
+    if source_indexes:
+        ordered_task_ids.sort(
+            key=lambda pair: (
+                _source_clause_index(state=state, task_id=pair[1]) or max(source_indexes) + 1,
+                pair[0],
+            )
+        )
+    for _, task_id in ordered_task_ids:
         if not agg.has_input_request(task_id):
             continue
         task = require_task(state, task_id)
@@ -55,6 +71,11 @@ def _has_options(*, task_id: str, agg: ExecutionAccumulator) -> bool:
     return isinstance(details, dict) and isinstance(details.get("options"), list)
 
 
+def _source_clause_index(*, state: OrchestratorState, task_id: str) -> int | None:
+    raw_index = require_task(state, task_id).payload.get("source_clause_index")
+    return raw_index if isinstance(raw_index, int) and raw_index > 0 else None
+
+
 def _focus_slot(slots: list[BatchInputSlot], agg: ExecutionAccumulator) -> BatchInputSlot:
     for slot in slots:
         if slot.kind == "selection" and (_has_options(task_id=slot.task_id, agg=agg) or slot.field == "beneficiary_id"):
@@ -66,6 +87,18 @@ def _slot_copy(*, slot: BatchInputSlot, state: OrchestratorState, locale: str) -
     task = require_task(state, slot.task_id)
     payload = task.payload
     if slot.kind == "selection" and task.type == "transfer":
+        if payload.get("is_self") is True:
+            bank_name = str(payload.get("recipient_bank_name") or "").strip()
+            amount = to_naira(payload.get("amount"))
+            if bank_name and amount is not None and amount > 0:
+                return render_message(
+                    "orchestrator.execution.batch_input.self_transfer_pending",
+                    locale,
+                    {
+                        "amount": format_amount_compact(amount),
+                        "bank_name": bank_name,
+                    },
+                )
         amount = to_naira(payload.get("amount"))
         if amount is not None and amount > 0:
             return render_message(
@@ -91,6 +124,47 @@ def _slot_copy(*, slot: BatchInputSlot, state: OrchestratorState, locale: str) -
     if slot.kind == "account":
         return render_message("orchestrator.execution.batch_input.account", locale)
     return render_message("orchestrator.execution.batch_input.detail", locale)
+
+
+def selection_prompt_for_task(*, task: Any, locale: str) -> str | None:
+    """Build a concise, task-aware lead for a recipient choice surface.
+
+    The worker still owns candidate resolution and option payloads.  This
+    helper only describes the typed slot being requested, so a sibling task
+    can never leak its recipient label into the question.
+    """
+    if getattr(task, "type", None) != "transfer":
+        return None
+    payload = getattr(task, "payload", None)
+    if not isinstance(payload, dict):
+        return None
+    recipient = str(payload.get("recipient_name") or "").strip()
+    amount = to_naira(payload.get("amount"))
+    if not recipient:
+        # Candidate metadata is rendered separately as buttons (or a numbered
+        # fallback).  Keep the lead useful even when a worker did not echo the
+        # original recipient label into the task payload.
+        if amount is not None and amount > 0:
+            return render_message(
+                "orchestrator.execution.batch_input.selection_prompt_generic",
+                locale,
+                {"amount": format_amount_compact(amount)},
+            )
+        return render_message(
+            "orchestrator.execution.batch_input.selection_prompt_generic_no_amount",
+            locale,
+        )
+    if amount is not None and amount > 0:
+        return render_message(
+            "orchestrator.execution.batch_input.selection_prompt",
+            locale,
+            {"recipient": recipient, "amount": format_amount_compact(amount)},
+        )
+    return render_message(
+        "orchestrator.execution.batch_input.selection_prompt_no_amount",
+        locale,
+        {"recipient": recipient},
+    )
 
 
 def _resolved_focus_copy(*, state: OrchestratorState, previous: BatchInputContract, locale: str) -> str | None:
@@ -134,8 +208,19 @@ def build_guided_batch_input_updates(
     focus = _focus_slot(slots, agg)
     previous = last_interrupt(state).interrupt
     previous_batch = previous.batch_input if previous and previous.kind == "input" else None
+    # An interrupt may be retained as ``last_interrupt`` while a fresh
+    # execution wave is being assembled.  Only acknowledge the previous
+    # selection after that exact slot has disappeared from the new unresolved
+    # slot set.  If it is still focused/unresolved, combining the old
+    # acknowledgement with the current options produces contradictory copy:
+    # "Done ..." followed by "Which one did you mean?".
+    previous_focus_still_unresolved = bool(
+        previous_batch is not None and previous_batch.focused_slot in slots
+    )
     resolved_copy = (
-        _resolved_focus_copy(state=state, previous=previous_batch, locale=locale) if previous_batch else None
+        _resolved_focus_copy(state=state, previous=previous_batch, locale=locale)
+        if previous_batch and not previous_focus_still_unresolved
+        else None
     )
     remaining = [slot for slot in slots if slot != focus]
     focus_copy = _slot_copy(slot=focus, state=state, locale=locale)
@@ -152,17 +237,43 @@ def build_guided_batch_input_updates(
         else:
             parts.append(render_message("orchestrator.execution.batch_input.next", locale, {"item": focus_copy}))
     else:
-        if worker_prompt:
+        selection_copy = (
+            selection_prompt_for_task(task=require_task(state, focus.task_id), locale=locale)
+            if focus.kind == "selection"
+            else None
+        )
+        if selection_copy:
+            parts.append(selection_copy)
+        elif worker_prompt:
             parts.append(worker_prompt)
         else:
             parts.append(render_message("orchestrator.execution.batch_input.first", locale, {"item": focus_copy}))
+
+    if remaining:
+        # A logical input can occupy more than one typed field.  For example,
+        # an unresolved recipient account has both an account-number and bank
+        # slot, but the user should see one conversational request for
+        # "account details", not the same item twice.
+        remaining_labels = list(
+            dict.fromkeys(
+                _slot_copy(slot=slot, state=state, locale=locale) for slot in remaining
+            )
+        )
+        remaining_copy = ", ".join(remaining_labels)
+        parts.append(
+            render_message(
+                "orchestrator.execution.batch_input.still_needed",
+                locale,
+                {"items": remaining_copy},
+            )
+        )
 
     prompt = "\n\n".join(parts)
 
     details = agg.details_for_task(focus.task_id)
     options_entry = _build_show_options_entry(
         details=details,
-        prompt_text=prompt,
+        prompt_text=clean_options_prompt(prompt) if details else prompt,
         task_id=focus.task_id,
         focused_missing_fields=[focus.field],
     )
@@ -200,4 +311,4 @@ def build_guided_batch_input_updates(
     return agg.to_updates()
 
 
-__all__ = ["build_guided_batch_input_updates"]
+__all__ = ["build_guided_batch_input_updates", "selection_prompt_for_task"]

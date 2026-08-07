@@ -41,7 +41,7 @@ class FundingPlanner:
         self,
         accounts: list[Any],
         transfer_amount: MoneyAmount,
-        preferred_account_id: UUID | None = None,
+        preferred_account_id: UUID | str | None = None,
         use_dual_accounts: bool | None = None,
         requested_source_banks: list[str] | None = None,
         explicit_split: dict[str, MoneyAmount] | None = None,
@@ -144,7 +144,7 @@ class FundingPlanner:
         eligible: list[Any],
         all_accounts: list[Any],
         transfer_amount: MoneyAmount,
-        preferred_account_id: UUID,
+        preferred_account_id: UUID | str,
         locale: str,
     ) -> funding_models.FundingPlan:
         """Plan using preferred account first, then pool if needed."""

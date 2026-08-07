@@ -42,6 +42,14 @@ def _transfer_task_reference_matches(reference: str, task: TaskSpec) -> bool:
     if not normalized_reference:
         return False
 
+    # ``is_self`` is a typed planner/resolution signal.  Treat a semantic
+    # self-transfer reference as targeting that task even though it has no
+    # external recipient name to match.  This is deliberately evaluated here,
+    # after the pending-action interpreter has classified the edit, rather than
+    # as a raw-message routing shortcut.
+    if _task_is_self_transfer(task) and _SELF_TRANSFER_REFERENCE_RE.search(normalized_reference):
+        return True
+
     for field in ("recipient_name", "recipient_resolved_name"):
         normalized_candidate = _normalize_recipient_match_text(str(payload.get(field) or ""))
         if not normalized_candidate:
@@ -51,6 +59,18 @@ def _transfer_task_reference_matches(reference: str, task: TaskSpec) -> bool:
         if re.search(rf"\b{re.escape(normalized_reference)}\b", normalized_candidate):
             return True
     return False
+
+
+def _task_is_self_transfer(task: TaskSpec) -> bool:
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    confirmation = payload.get("confirmation")
+    snapshot = confirmation.get("snapshot") if isinstance(confirmation, dict) else None
+    return payload.get("is_self") is True or (isinstance(snapshot, dict) and snapshot.get("is_self") is True)
+
+
+_SELF_TRANSFER_REFERENCE_RE = re.compile(
+    r"\b(?:self|myself|own|to\s+me|to\s+my|my\s+(?:[a-z0-9]+\s+){0,2}(?:account|bank|wallet))\b"
+)
 
 
 def _transfer_task_amount(task: TaskSpec) -> float | None:
@@ -69,6 +89,7 @@ def _transfer_task_amount(task: TaskSpec) -> float | None:
 
 __all__ = [
     "_parse_scoped_confirmation_amount",
+    "_task_is_self_transfer",
     "_transfer_task_amount",
     "_transfer_task_reference_matches",
 ]

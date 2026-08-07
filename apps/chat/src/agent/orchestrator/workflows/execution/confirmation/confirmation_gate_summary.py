@@ -36,6 +36,28 @@ def _transfer_amount(payload: dict[str, Any], snapshot: dict[str, Any]) -> Money
     return to_naira(snapshot.get("amount"))
 
 
+def _recipient_display(
+    *,
+    task_payload: dict[str, Any],
+    snapshot: dict[str, Any],
+    locale: str,
+) -> str | None:
+    """Render a linked-account destination independently of sibling recipients."""
+    if task_payload.get("is_self") is True or snapshot.get("is_self") is True:
+        bank_name = str(
+            task_payload.get("recipient_bank_name")
+            or snapshot.get("recipient_bank")
+            or ""
+        ).strip()
+        if bank_name:
+            return render_message("transfer.resolve.my_bank_name", locale, {"bank_name": bank_name})
+    recipient_name = str(task_payload.get("recipient_name") or snapshot.get("recipient_name") or "").strip()
+    resolved_name = str(
+        task_payload.get("recipient_resolved_name") or snapshot.get("recipient_resolved_name") or ""
+    ).strip()
+    return format_recipient_display_label(recipient_name, resolved_name)
+
+
 def _batch_transfer_payload_summary(
     *,
     task_payload: dict[str, Any],
@@ -43,11 +65,7 @@ def _batch_transfer_payload_summary(
     locale: str,
 ) -> str | None:
     amount = _transfer_amount(task_payload, snapshot)
-    recipient_name = str(task_payload.get("recipient_name") or snapshot.get("recipient_name") or "").strip()
-    resolved_name = str(
-        task_payload.get("recipient_resolved_name") or snapshot.get("recipient_resolved_name") or ""
-    ).strip()
-    recipient_display = format_recipient_display_label(recipient_name, resolved_name)
+    recipient_display = _recipient_display(task_payload=task_payload, snapshot=snapshot, locale=locale)
     recipient_bank = str(task_payload.get("recipient_bank_name") or snapshot.get("recipient_bank") or "").strip()
     recipient_account = str(task_payload.get("recipient_account") or snapshot.get("recipient_account") or "").strip()
     if amount is None or amount <= 0 or not recipient_display or not recipient_bank or not recipient_account:
@@ -178,23 +196,21 @@ def _batch_transfer_body_item(
     *,
     task_payload: dict[str, Any],
     snapshot: dict[str, Any],
+    accounts: list[dict[str, Any]],
     locale: str,
 ) -> dict[str, Any] | None:
     amount = _transfer_amount(task_payload, snapshot)
-    recipient_name = str(task_payload.get("recipient_name") or snapshot.get("recipient_name") or "").strip()
-    resolved_name = str(
-        task_payload.get("recipient_resolved_name") or snapshot.get("recipient_resolved_name") or ""
-    ).strip()
-    recipient_display = format_recipient_display_label(recipient_name, resolved_name)
+    recipient_display = _recipient_display(task_payload=task_payload, snapshot=snapshot, locale=locale)
     recipient_bank = str(task_payload.get("recipient_bank_name") or snapshot.get("recipient_bank") or "").strip()
     recipient_account = str(task_payload.get("recipient_account") or snapshot.get("recipient_account") or "").strip()
     if amount is None or amount <= 0 or not recipient_display or not recipient_bank or not recipient_account:
         return None
-    return {
+    item: dict[str, Any] = {
         "type": "transaction_item",
         "title": f"{format_amount_compact(amount)} → {recipient_display}",
         "subtitle": f"{recipient_bank} • {recipient_account}",
     }
+    return item
 
 
 def _build_confirmation_gate_summary(
@@ -235,11 +251,15 @@ def _build_confirmation_gate_body_blocks(
     locale: str,
     accounts: list[dict[str, Any]],
 ) -> MessageDocument | None:
-    if len(task_ids) <= 1 or task_types_for_ids(state, task_ids) != {"transfer"}:
+    # Use the same structured review surface for one transfer and a transfer
+    # batch.  The header still communicates whether this is a single review or
+    # a combined confirmation, but the rows, source provenance, and spacing are
+    # identical on every channel.
+    if not task_ids or task_types_for_ids(state, task_ids) != {"transfer"}:
         return None
 
     total_amount = Decimal("0.00")
-    body_items: MessageDocument = []
+    body_items: list[tuple[dict[str, Any], str | None]] = []
     transfer_tasks = required_tasks(state, task_ids)
     for _tid, task in transfer_tasks:
         confirmation_payload = task.payload.get("confirmation") or {}
@@ -248,9 +268,20 @@ def _build_confirmation_gate_body_blocks(
         amount = _transfer_amount(task.payload, snapshot_mapping)
         if amount is not None:
             total_amount += amount
-        item = _batch_transfer_body_item(task_payload=task.payload, snapshot=snapshot_mapping, locale=locale)
+        item = _batch_transfer_body_item(
+            task_payload=task.payload,
+            snapshot=snapshot_mapping,
+            accounts=accounts,
+            locale=locale,
+        )
         if item:
-            body_items.append(item)
+            source_info = build_source_account_info(
+                task_payload=task.payload,
+                snapshot=snapshot_mapping,
+                accounts=accounts,
+                locale=locale,
+            )
+            body_items.append((item, source_info))
 
     if not body_items:
         return None
@@ -271,7 +302,15 @@ def _build_confirmation_gate_body_blocks(
                 "items": [item.removeprefix("• ").strip() for item in funding_items],
             }
         )
-    blocks.extend(body_items)
+    source_infos = [source for _item, source in body_items]
+    distinct_sources = {source for source in source_infos if source}
+    same_source_for_all = len(distinct_sources) == 1 and all(source_infos)
+    for item, source_info in body_items:
+        if not same_source_for_all and source_info:
+            item["details"] = [source_info]
+        blocks.append(item)
+    if same_source_for_all:
+        blocks.append({"type": "text", "text": next(iter(distinct_sources))})
     return blocks
 
 
@@ -283,10 +322,8 @@ def _build_batch_transfer_confirmation_summary(
     accounts: list[dict[str, Any]],
 ) -> str:
     total_amount = Decimal("0.00")
-    source_account_info: str | None = None
-    source_account_infos: set[str] = set()
     has_multi_source_funding = False
-    summaries: list[str] = []
+    summaries_with_sources: list[tuple[str, str | None]] = []
     transfer_tasks = required_tasks(state, task_ids)
     for _tid, task in transfer_tasks:
         confirmation_payload = task.payload.get("confirmation") or {}
@@ -298,15 +335,6 @@ def _build_batch_transfer_confirmation_summary(
         funding_plan = task.payload.get("funding_plan")
         if isinstance(funding_plan, dict) and not funding_plan.get("is_single_source", True):
             has_multi_source_funding = True
-        if not has_multi_source_funding:
-            task_source_account_info = build_source_account_info(
-                task_payload=task.payload,
-                snapshot=snapshot_mapping,
-                accounts=accounts,
-                locale=locale,
-            )
-            if task_source_account_info:
-                source_account_infos.add(task_source_account_info)
         task_summary = _batch_transfer_payload_summary(
             task_payload=task.payload,
             snapshot=snapshot_mapping,
@@ -318,11 +346,33 @@ def _build_batch_transfer_confirmation_summary(
                 task_summary = _strip_batch_name_mismatch_warning(raw_summary, task.payload)
         if not task_summary:
             task_summary = _render_task_confirmation_summary(task=task, locale=locale, accounts=accounts)
-        task_summary = strip_source_account_info_lines(task_summary, locale=locale)
+        task_source_account_info = build_source_account_info(
+            task_payload=task.payload,
+            snapshot=snapshot_mapping,
+            accounts=accounts,
+            locale=locale,
+        )
         if task_summary:
-            summaries.append(task_summary)
-    if not has_multi_source_funding and len(source_account_infos) == 1:
-        source_account_info = next(iter(source_account_infos))
+            summaries_with_sources.append((task_summary, task_source_account_info))
+
+    distinct_sources = {source for _summary, source in summaries_with_sources if source}
+    same_source_for_all = (
+        not has_multi_source_funding
+        and len(distinct_sources) == 1
+        and len(distinct_sources) == len(summaries_with_sources)
+    )
+    if same_source_for_all:
+        summaries = [summary for summary, _source in summaries_with_sources]
+        source_account_info = next(iter(distinct_sources))
+    else:
+        summaries = []
+        for summary, source_info in summaries_with_sources:
+            if has_multi_source_funding:
+                summary = strip_source_account_info_lines(summary, locale=locale)
+            elif source_info:
+                summary = append_source_account_info(summary, source_info, locale=locale)
+            summaries.append(summary)
+        source_account_info = None
     return format_batch_transfer_summary(
         num_transfers=len(task_ids),
         total_amount=total_amount,

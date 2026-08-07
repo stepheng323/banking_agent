@@ -784,7 +784,9 @@ async def test_beneficiary_ambiguity_prompt_is_preserved() -> None:
     assert options_intent["type"] == "show_options"
     assert "I found multiple matches for 'Tolu'. Which one did you mean?" in options_intent["title"]
     assert "Reply with the number or rephrase." in options_intent["title"]
-    assert "1. Tolu A" in options_intent["title"]
+    # Candidate rows are rendered once as native buttons or as the numbered
+    # text fallback, rather than being duplicated inside the title.
+    assert "1. Tolu A" not in options_intent["title"]
     assert "account number and bank" not in options_intent["title"]
     assert options_intent["task_ids"] == ["t1"]
     assert [opt["id"] for opt in options_intent["options"]] == ["bene-1", "bene-2"]
@@ -837,7 +839,7 @@ async def test_source_account_prompt_emits_options_when_flag_enabled(monkeypatch
 
     assert updates["outbox"][0]["type"] == "show_options"
     assert "*Which account would you like to use?*" in updates["outbox"][0]["title"]
-    assert "1. Access" in updates["outbox"][0]["title"]
+    assert "1. Access" not in updates["outbox"][0]["title"]
     assert [opt["id"] for opt in updates["outbox"][0]["options"]] == ["1", "2"]
 
 

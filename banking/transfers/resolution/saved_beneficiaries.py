@@ -249,11 +249,21 @@ def build_beneficiary_clarify_result(
             }
         )
 
-        button_title = f"{idx}. {primary_name}"
-        if len(button_title) > 24:
-            button_title = button_title[:21] + "..."
+        button_name = candidate.alias or primary_name
+        button_title = f"{idx}. {button_name}"
+        if candidate.bank_name:
+            button_title = f"{button_title} · {candidate.bank_name}"
+        if len(button_title) > 36:
+            button_title = button_title[:33] + "..."
 
-        options.append({"id": option_id, "title": button_title, "description": bank_details})
+        options.append(
+            {
+                "id": option_id,
+                "title": button_title,
+                "display_title": fallback_label,
+                "description": bank_details,
+            }
+        )
 
     numbered_lines = [f"{candidate['index']}. {candidate['body_label']}" for candidate in candidate_list]
     candidates_list = "\n".join(numbered_lines)

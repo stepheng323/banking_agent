@@ -1906,7 +1906,7 @@ async def test_input_source_account_reference_shortcut_skips_interrupt_router() 
 
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
-    assert updates["tasks"]["t1"].payload["confirmation"] == {}
+    assert updates["tasks"]["t1"].payload["confirmation"] == {"confirmed": False}
 
 
 @pytest.mark.asyncio

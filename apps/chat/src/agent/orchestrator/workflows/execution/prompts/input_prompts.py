@@ -24,6 +24,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.prompts.input_prompts_
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_options import (
     _build_show_options_entry,
     _compact_prompt_for_options,
+    clean_options_prompt,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_queue import (
     _append_queued_notice,
@@ -110,7 +111,7 @@ def _build_missing_field_interrupt_updates(
         )
         if fallback_options_entry:
             prompt_text = _compact_prompt_for_options(prompt_text)
-            fallback_options_entry["title"] = prompt_text
+            fallback_options_entry["title"] = clean_options_prompt(prompt_text)
     elif agg.input_request_count() > 1:
         pass
 

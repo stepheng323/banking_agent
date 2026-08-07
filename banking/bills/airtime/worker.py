@@ -382,7 +382,7 @@ class AirtimeWorker:
             logger.error("airtime_pipeline_failed", error=str(e), exc_info=True)
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
-                error=render_message("airtime.error.pipeline_failed", locale, {"error": str(e)}),
+                error=render_message("airtime.error.pipeline_failed", locale),
                 retryable=True,
                 patch={"idempotency_key": data.idempotency_key},
             )

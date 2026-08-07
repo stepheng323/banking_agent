@@ -578,6 +578,7 @@ def build_confirmation(
     schedule_line = format_schedule_confirmation_line(payload, ctx.language)
     snap = {
         "amount": payload.amount,
+        "is_self": payload.is_self,
         "recipient_name": recipient_display_name,
         "recipient_bank": payload.recipient_bank_name,
         "recipient_account": payload.recipient_account,

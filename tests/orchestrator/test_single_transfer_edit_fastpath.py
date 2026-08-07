@@ -40,6 +40,18 @@ class _PendingEditPlanner:
         )
 
 
+class _RestorePlanner:
+    calls = 0
+
+    async def interpret_pending_action_edit(self, *_: object, **__: object) -> PendingActionEditDecision:
+        self.calls += 1
+        return PendingActionEditDecision(
+            operation="restore_tasks",
+            confidence=0.95,
+            target_texts=["self transfer"],
+        )
+
+
 def _state() -> OrchestratorState:
     return OrchestratorState(
         user_id="u_single_transfer_edit",
@@ -144,6 +156,42 @@ async def test_batch_confirmation_does_not_attempt_single_transfer_edit_fast_pat
 
     assert worker.calls == 0
     assert planner.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_removed_batch_sibling_bypasses_single_edit_for_restore() -> None:
+    state = _state()
+    state.removed_confirmation_tasks = {
+        "self_transfer": {
+            "task": TaskSpec(
+                id="self_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 5000,
+                    "is_self": True,
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_account": "6000000003",
+                },
+            ),
+            "wave_index": 0,
+            "position": 0,
+        }
+    }
+    state.waves = [["transfer_1"]]
+    state.last_message_text = "Include the self transaction again"
+    worker = _TransferEditWorker(TransactionResult(outcome=TransactionOutcome.OK, patch={"recipient_name": "wrong"}))
+    planner = _RestorePlanner()
+
+    updates = await handle_pending_interrupt(
+        state,
+        {"configurable": {"services": {"transfer": worker}, "task_planner": planner}},
+    )
+
+    assert worker.calls == 0
+    assert planner.calls == 1
+    assert set(updates["tasks"]) == {"transfer_1", "self_transfer"}
+    assert updates["removed_confirmation_tasks"] == {}
 
 
 @pytest.mark.asyncio

@@ -129,12 +129,28 @@ async def _stage_deterministic_meta(ctx: GateContext) -> RouteResolution | None:
                 SOCIAL_META_RESPONSE_KEY_CTX: response_key,
                 SOCIAL_META_RENDER_PARAMS_CTX: render_params or {},
             }
-        final_response = await _build_bounded_conversational_reply(
-            ctx,
-            locale,
-            mode=response_mode,
-            extra_user_ctx=extra_user_ctx,
-        ) or render_message(response_key, locale, render_params)
+        # High-confidence pure social turns already have a localized catalog
+        # response.  Do not spend a conversation-model call rewriting a
+        # greeting/check-in/thanks: apart from adding latency, a free-form
+        # rewrite can misread colloquial greetings (for example, Pidgin
+        # ``How far``) as a literal question about distance or money.  A
+        # greeting that contains an actionable clause never reaches this
+        # stage—the deterministic classifier returns ``None`` and normal
+        # semantic/domain routing owns the turn.
+        if response_key in SOCIAL_META_RESPONSE_KEYS:
+            final_response = render_message(response_key, locale, render_params)
+            logger.info(
+                "gate_social_response_deterministic",
+                response_key=response_key,
+                locale=locale,
+            )
+        else:
+            final_response = await _build_bounded_conversational_reply(
+                ctx,
+                locale,
+                mode=response_mode,
+                extra_user_ctx=extra_user_ctx,
+            ) or render_message(response_key, locale, render_params)
     else:
         final_response = render_message(response_key, locale, render_params)
 

@@ -166,6 +166,46 @@ class _RedisStub:
         return self.pipeline_stub
 
 
+class _DeleteRedisStub:
+    def __init__(self) -> None:
+        self.deleted: list[tuple[str, ...]] = []
+
+    async def delete(self, *keys: str) -> int:
+        self.deleted.append(keys)
+        return len(keys)
+
+
+async def test_account_invalidation_evicts_snapshot_fallback() -> None:
+    redis = _DeleteRedisStub()
+    cache = UserDataCache(redis_client=redis)  # type: ignore[arg-type]
+
+    await cache.invalidate_accounts("2348000000100")
+
+    assert redis.deleted == [
+        (
+            "cache:user:accounts:2348000000100",
+            "cache:user:snapshot:2348000000100",
+        )
+    ]
+
+
+async def test_all_user_data_invalidation_evicts_snapshot_fallback() -> None:
+    redis = _DeleteRedisStub()
+    cache = UserDataCache(redis_client=redis)  # type: ignore[arg-type]
+
+    await cache.invalidate_all_user_data("2348000000100")
+
+    assert redis.deleted == [
+        (
+            "cache:user:profile:2348000000100",
+            "cache:user:accounts:2348000000100",
+            "cache:user:beneficiaries:2348000000100",
+            "cache:user:beneficiary_aliases:2348000000100",
+            "cache:user:snapshot:2348000000100",
+        )
+    ]
+
+
 async def test_load_user_context_full_cache_hit_skips_repos() -> None:
     cache = _FakeUserDataCache(
         {
@@ -268,6 +308,27 @@ async def test_load_user_context_fetches_accounts_and_beneficiaries_concurrently
     assert ctx["accounts"][0]["bank_name"] == "Test Bank"
     assert ctx["beneficiaries"][0]["alias"] == "Mum"
     assert cache.batch_calls
+
+
+async def test_load_user_context_preserves_decrypted_account_number() -> None:
+    """Account context must retain the property used by self-transfer resolution."""
+    cache = _FakeUserDataCache(
+        {
+            "profile": {"id": "user-1"},
+            "accounts": None,
+            "beneficiaries": [],
+        }
+    )
+    manager = ContextManager(
+        user_repo=None,
+        beneficiary_repo=_FakeBeneficiaryRepo([]),  # type: ignore[arg-type]
+        account_repo=_FakeAccountRepo(),  # type: ignore[arg-type]
+    )
+    manager.data_cache = cache  # type: ignore[assignment]
+
+    ctx = await manager.load_user_context("2348000000100", user=SimpleNamespace(id="user-1"))
+
+    assert ctx["accounts"][0]["account_number"] == "0000000001"
 
 
 async def test_load_context_parallel_reuses_prefetched_cache_snapshot() -> None:

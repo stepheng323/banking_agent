@@ -47,29 +47,42 @@ async def _reduce_completed_task_outputs(runtime: FinalizeRuntime, acc: Finalize
 
 
 def _reduce_failed_task_outputs(runtime: FinalizeRuntime, acc: FinalizeAccumulator) -> None:
+    emitted_messages: set[str] = set()
     for task in runtime.failed_tasks:
+        if task.payload.get("_batch_failure_reported"):
+            continue
         if task.payload.get("capability_blocked"):
             message = task.payload.get("error") or render_generic_capability_blocked(runtime.locale)
+            if message in emitted_messages:
+                continue
+            emitted_messages.add(message)
             acc.append_outbox({"type": "say", "text": message})
         elif task.payload.get("is_pending_mandate"):
             error_text = safe_user_error_message(task.payload.get("error"), task_type=task.type, locale=runtime.locale)
+            if error_text in emitted_messages:
+                continue
+            emitted_messages.add(error_text)
             acc.append_outbox({"type": "say", "text": error_text})
         else:
             error_text = safe_user_error_message(task.payload.get("error"), task_type=task.type, locale=runtime.locale)
+            message = render_message(
+                "orchestrator.finalize.failed_prefix",
+                runtime.locale,
+                {"error": error_text},
+            )
+            if message in emitted_messages:
+                continue
+            emitted_messages.add(message)
             acc.append_outbox(
                 {
                     "type": "say",
-                    "text": render_message(
-                        "orchestrator.finalize.failed_prefix",
-                        runtime.locale,
-                        {"error": error_text},
-                    ),
+                    "text": message,
                 }
             )
 
 
 def _reduce_cancelled_task_outputs(runtime: FinalizeRuntime, acc: FinalizeAccumulator) -> None:
-    if runtime.cancelled_tasks:
+    if any(not task.payload.get("_batch_failure_reported") for task in runtime.cancelled_tasks):
         acc.append_outbox({"type": "say", "text": render_cancelled_prompt(runtime.locale)})
 
 
