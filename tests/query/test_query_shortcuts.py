@@ -37,11 +37,13 @@ def test_query_shortcut_detail_request_falls_back_for_semantic_resolver() -> Non
     assert reason == "no_match"
 
 
-def test_query_shortcut_semantic_followup_falls_back_for_english() -> None:
+def test_query_shortcut_matches_underlying_rows_request_for_english() -> None:
     decision, reason = resolve_query_shortcut_with_reason("show me", "en")
 
-    assert decision is None
-    assert reason == "no_match"
+    assert decision is not None
+    assert decision.kind == "actionable"
+    assert decision.action == "show_evidence"
+    assert reason == "matched"
 
 
 def test_query_shortcut_time_rescope_followup_falls_back_for_english() -> None:

@@ -1465,6 +1465,67 @@ async def test_direct_answer_recipient_delta_follow_up_reuses_scope_and_swaps_co
 
 
 @pytest.mark.asyncio
+async def test_mislabelled_recipient_drilldown_cannot_replay_focused_transaction() -> None:
+    """Provider adapters may call a recipient scope change a generic drill-down."""
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 8, 1)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_range=TimeRange(start=date(2026, 7, 1), end=today),
+        filters=Filters(counterparty=["Tolu Adebayo"], transaction_type="debit"),
+        result_limit=1,
+        result_reference="latest",
+        answer_fact_field="date",
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            # This is the malformed/legacy adapter shape that caused the
+            # current focused transaction to be rendered for the new person.
+            continuation_type="drill_down",
+            drill_down_action="answer_fact",
+            fact_field="date",
+            recipient_name="Mum",
+            confidence=0.98,
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What about mum?", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_request": session_contract.model_dump(),
+            "query_result": {
+                "summary_text": "The last time you paid Tolu Adebayo was July 21, 2026.",
+                "items": [
+                    {
+                        "id": "tolu-1",
+                        "description": "Transfer to Tolu Adebayo",
+                        "amount": 2000,
+                        "date": "2026-07-21",
+                        "metadata": {"recipient_name": "Tolu Adebayo", "bank_name": "Access Bank"},
+                    }
+                ],
+                "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
+            },
+        },
+    )
+
+    query_request = updates["query_request"]
+    assert updates["continuation_type"] == "recipient_drill_down"
+    assert updates["flow_state"] == "executing"
+    assert query_request.filters is not None
+    assert query_request.filters.counterparty == ["Mum"]
+    assert query_request.answer_fact_field == "date"
+    assert query_request.result_reference == "latest"
+    assert "selected_item_index" not in updates
+
+
+@pytest.mark.asyncio
 async def test_show_me_follow_up_converts_summary_to_transactions_when_explicitly_requested() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 6)

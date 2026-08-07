@@ -31,6 +31,11 @@ Preserve explicit filters, time, direction, aggregation, result limit/reference,
 """
 
 _FOCUSED = """Focused-item rules:
+- A complete standalone transaction question can replace this focused item.
+  For existence/fact/list questions such as "Did I pay Uber last month?",
+  return new_query (or reinterpret_query) with a complete extraction,
+  including the counterparty, direction, period, and request shape. Do not
+  return new_query without extraction.
 - Safe referential fact questions use drill_down + answer_fact and fact_field from
 status|amount|recipient|counterparty|bank|date|description|reference|account|direction|category.
 - Details/receipt/issue/re-transfer use the matching drill_down_action. Respect fact_capabilities in context.
@@ -39,6 +44,9 @@ status|amount|recipient|counterparty|bank|date|description|reference|account|dir
   other scope (for example, "what about Mum?") is a recipient_drill_down continuation. Return the normalized
   recipient_name and preserve the existing fact_field/result reference; do not treat it as an unclear turn or a
   replacement query.
+- An explicit request to see the underlying transaction(s) from a focused fact answer ("show me", "show it", or
+  equivalent wording) is show_more with followup_intent=refine_existing. The runtime clears the fact projection and
+  reruns the same recipient, period, direction, account, and other filters as a transaction list.
 """
 
 _REPAIR = """Repair rules:

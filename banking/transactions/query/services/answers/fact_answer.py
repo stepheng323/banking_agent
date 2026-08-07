@@ -52,7 +52,14 @@ def build_direct_fact_answer(
 ) -> QueryAnswerContext:
     """Build a compact conversational answer for a single fact-style transaction answer."""
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
-    direction = _normalize_direction(str(metadata.get("type") or ""))
+    # Provider and mirrored rows can expose the canonical direction under
+    # ``type`` or the older ``transaction_type``/``direction`` names.  The
+    # query predicate is a final safe fallback because this request already
+    # constrained the returned row to debit or credit.
+    raw_direction = metadata.get("type") or metadata.get("transaction_type") or metadata.get("direction")
+    if not raw_direction and query_request is not None and query_request.filters is not None:
+        raw_direction = query_request.filters.transaction_type
+    direction = _normalize_direction(str(raw_direction or ""))
     fact = DirectAnswerFact(
         fact_kind=_normalize_fact_kind(fact_field),
         direction=direction,

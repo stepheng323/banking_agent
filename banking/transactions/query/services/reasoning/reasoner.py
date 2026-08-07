@@ -515,6 +515,14 @@ class QuerySemanticReasoner:
                 continuation_type="show_more",
                 followup_intent=followup_intent,
             )
+        if shortcut.action == "show_evidence":
+            return reasoner_models.QuerySemanticDecision(
+                decision="continuation",
+                confidence=1.0,
+                reason="deterministic_show_evidence",
+                continuation_type="show_more",
+                followup_intent="refine_existing",
+            )
         action_map = {
             "get_receipt": ("deterministic_receipt", "get_receipt", None),
             "report_issue": ("deterministic_report_issue", "report_issue", None),

@@ -56,6 +56,18 @@ class QueryPipeline:
             last_result = result
             if result.patch:
                 state.update(result.patch)
+                # A new authoritative query request starts a fresh execution
+                # surface.  Clear selection/fact navigation state before the
+                # next pipeline step runs, not only in ``_finalize``.  The
+                # execution step may otherwise see a stale selected row from
+                # the previous result and call the drill-down handler instead
+                # of executing the replacement request (notably for scoped
+                # follow-ups such as "what about Mum?").
+                if "query_request" in result.patch:
+                    explicit_patch_keys = set(result.patch)
+                    for key in _STALE_SELECTION_KEYS:
+                        if key not in explicit_patch_keys:
+                            state.pop(key, None)
             if result.response is not None:
                 state["response"] = result.response
 

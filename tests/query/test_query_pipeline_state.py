@@ -18,9 +18,20 @@ class _NewContractStep(QueryStep):
         return TransactionResult(outcome=TransactionOutcome.OK, patch={"query_request": contract})
 
 
+class _ObserveStateAfterContractStep(QueryStep):
+    async def run(self, state: dict, worker_context: object = None) -> TransactionResult:
+        del worker_context
+        assert "selected_item_index" not in state
+        assert "selected_item_id" not in state
+        assert "selected_payload" not in state
+        assert "fact_field" not in state
+        assert "drill_down_action" not in state
+        return TransactionResult(outcome=TransactionOutcome.OK, patch={})
+
+
 @pytest.mark.asyncio
 async def test_pipeline_clears_stale_selection_when_new_query_request_is_patched() -> None:
-    result = await QueryPipeline([_NewContractStep()]).run(
+    result = await QueryPipeline([_NewContractStep(), _ObserveStateAfterContractStep()]).run(
         {
             "selected_item_index": 0,
             "selected_item_id": "old",

@@ -133,6 +133,30 @@ def test_focused_reasoner_adapter_preserves_recipient_followup() -> None:
     assert public.recipient_name == "mum"
 
 
+def test_focused_reasoner_adapter_preserves_complete_replacement_extraction() -> None:
+    decision = FocusedItemDecision.model_validate(
+        {
+            "decision": "new_query",
+            "confidence": 0.94,
+            "extraction": {
+                "intent": "transaction_search",
+                "filters": {"recipient": "Uber", "transaction_type": "debit"},
+                "time_range": {"reference_type": "explicit", "period": "last_month"},
+                "request_shape": "existence",
+            },
+        }
+    )
+
+    public = decision.to_public_decision()
+
+    assert public.decision == "new_query"
+    assert public.extraction is not None
+    assert public.extraction.filters.recipient == "Uber"
+    assert public.extraction.filters.transaction_type == "debit"
+    assert public.extraction.time_range.period == "last_month"
+    assert public.extraction.request_shape == QueryRequestShape.EXISTENCE
+
+
 def test_narrow_reasoner_adapter_preserves_explicit_preference_update() -> None:
     decision = TransactionListDecision.model_validate(
         {

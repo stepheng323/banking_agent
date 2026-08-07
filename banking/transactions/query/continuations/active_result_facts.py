@@ -71,6 +71,11 @@ def maybe_build_fact_answer_from_decision(
         return None
     if getattr(decision, "continuation_type", None) != "drill_down":
         return None
+    # Recipient-scoped fact turns are compiled by the recipient continuation
+    # branch.  Do not answer from the currently focused item before that
+    # branch can replace the counterparty filter.
+    if str(getattr(decision, "recipient_name", None) or "").strip():
+        return None
     if getattr(decision, "drill_down_action", None) != "answer_fact":
         return None
     if session_query_request is None:

@@ -677,3 +677,36 @@ def test_select_answer_strategy_uses_compact_followup_fact_answer_without_eviden
     assert selected.answer_context is not None
     assert selected.answer_context.primary_text == "You paid Mum on March 24, 2026."
     assert selected.answer_context.secondary_text == "₦50,000 • Opay"
+
+
+def test_latest_fact_uses_transaction_type_when_provider_omits_type() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx-mum",
+                description="Transfer to Mum",
+                amount=20000,
+                date=date(2026, 8, 1),
+                metadata={
+                    "transaction_type": "debit",
+                    "recipient_name": "Mum",
+                    "recipient_bank_name": "Access Bank",
+                },
+            )
+        ],
+        query_request=_query_request(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                answer_fact_field="date",
+                result_reference="latest",
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "The last time you paid Mum was on August 01, 2026."
+    assert selected.answer_context.secondary_text == "₦20,000 • Access Bank"

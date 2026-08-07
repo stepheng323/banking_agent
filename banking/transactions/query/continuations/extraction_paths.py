@@ -249,6 +249,14 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         _plan_step_request(session.get("execution_contract"), target_step_id) or session_query_request
     )
     cont_type = decision.continuation_type or "unclear"
+    # The focused-item schema has a dedicated typed recipient delta, but the
+    # provider may still return the older generic drill-down label.  Normalize
+    # that adapter result before any visible-target or fact-answer resolver can
+    # consume the current item.  The recipient branch then rebuilds the source
+    # fact request with the new counterparty deterministically.
+    if cont_type == "drill_down" and str(getattr(decision, "recipient_name", None) or "").strip():
+        cont_type = "recipient_drill_down"
+        logger.info("query_recipient_continuation_normalized", source_type="drill_down")
 
     if state.get("recent_read_only") and getattr(decision, "drill_down_action", None) in {
         "re_transfer",

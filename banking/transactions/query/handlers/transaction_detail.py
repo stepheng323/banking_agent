@@ -67,8 +67,11 @@ async def handle_transaction_detail(
             metadata={
                 **t,
                 "bank_name": t.get("bank_name", ""),
-                "type": t.get("type", ""),
-                "counterparty": t.get("counterparty"),
+                "type": t.get("type") or t.get("transaction_type") or t.get("direction") or "",
+                "transaction_type": t.get("transaction_type") or t.get("type") or t.get("direction"),
+                "counterparty": t.get("counterparty") or t.get("recipient_name"),
+                "recipient_name": t.get("recipient_name") or t.get("counterparty"),
+                "recipient_bank_name": t.get("recipient_bank_name") or t.get("bank_name"),
                 "status": t.get("status", "unknown"),
                 "reference": t.get("reference", ""),
                 "category": t.get("category", ""),
@@ -109,8 +112,11 @@ async def handle_transaction_detail(
             metadata={
                 **t,
                 "bank_name": t.get("bank_name", ""),
-                "type": t.get("type", ""),
-                "counterparty": t.get("counterparty"),
+                "type": t.get("type") or t.get("transaction_type") or t.get("direction") or "",
+                "transaction_type": t.get("transaction_type") or t.get("type") or t.get("direction"),
+                "counterparty": t.get("counterparty") or t.get("recipient_name"),
+                "recipient_name": t.get("recipient_name") or t.get("counterparty"),
+                "recipient_bank_name": t.get("recipient_bank_name") or t.get("bank_name"),
             },
         )
         for i, t in enumerate(paginated_txns)

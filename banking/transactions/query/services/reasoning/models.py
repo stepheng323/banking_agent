@@ -358,6 +358,12 @@ class RepairDecision(BaseModel):
 class FocusedItemDecision(_NarrowActiveDecision):
     """Fact and drill-down decisions for one focused result."""
 
+    # A focused result can be interrupted by a complete, standalone query
+    # (for example, "Did I pay for Uber last month?").  Keep the ordinary
+    # transaction extraction in this narrow adapter so the active reasoner
+    # can hand the replacement directly to the compiler instead of emitting
+    # ``new_query`` without the extraction that the runtime requires.
+    extraction: ActiveReasonerExtraction | None = None
     drill_down_index: int | None = None
     drill_down_action: DrillDownActionType | None = None
     fact_field: FactFieldType | None = None

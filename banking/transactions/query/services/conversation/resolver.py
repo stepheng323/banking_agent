@@ -38,7 +38,20 @@ def build_query_conversation_updates(
     if getattr(decision, "decision", None) != "continuation":
         return None
     continuation_type = getattr(decision, "continuation_type", None)
-    if continuation_type in {"filter_delta", "time_delta", "aggregate", "coverage", "reconcile"}:
+    # A recipient change is a scope mutation, not a request to select the
+    # currently visible transaction.  Some provider responses still label a
+    # scoped recipient turn as ``drill_down`` while carrying the typed
+    # ``recipient_name`` field.  Keep both forms out of visible-target
+    # resolution so a one-item detail surface cannot be replayed for the new
+    # recipient.
+    if continuation_type in {
+        "filter_delta",
+        "time_delta",
+        "aggregate",
+        "coverage",
+        "reconcile",
+        "recipient_drill_down",
+    } or (continuation_type == "drill_down" and getattr(decision, "recipient_name", None)):
         return None
     if continuation_type not in {"drill_down", "recipient_drill_down"} and not decision_has_target_reference(
         decision, text

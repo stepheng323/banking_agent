@@ -108,6 +108,24 @@ def test_query_conversation_resolver_defers_reconciliation_to_its_own_path() -> 
     assert updates is None
 
 
+def test_query_conversation_resolver_defers_recipient_scope_even_when_label_is_drill_down() -> None:
+    """A typed recipient delta must not select the currently focused row."""
+    updates = build_query_conversation_updates(
+        surface_view=_surface(),
+        query_result=_query_result(),
+        decision=QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            drill_down_action="answer_fact",
+            fact_field="date",
+            recipient_name="Dad",
+        ),
+        text="What about Dad?",
+    )
+
+    assert updates is None
+
+
 def test_query_conversation_resolver_selects_visible_amount_reference() -> None:
     updates = build_query_conversation_updates(
         surface_view=_surface(),
