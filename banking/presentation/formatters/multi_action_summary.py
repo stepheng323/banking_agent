@@ -10,6 +10,7 @@ from banking.presentation.formatters.transaction_copy_context import derive_task
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from shared.messaging.body_blocks import MessageDocument
+from shared.security.redaction import mask_account_number
 from shared.utils.network_utils import format_network_display_name
 from shared.utils.user_error import safe_user_error_message
 
@@ -120,6 +121,22 @@ def format_multi_action_summary_blocks(completed_tasks: list, locale: str = "en"
 
     blocks: MessageDocument = [{"type": "heading", "text": _strip_markup(header)}]
     total_spent = 0.0
+    transfer_payloads: list[dict[str, Any]] = []
+    for task in completed_tasks:
+        payload = getattr(task, "payload", None)
+        if str(getattr(task, "type", "") or "") == "transfer" and isinstance(payload, dict):
+            transfer_payloads.append(payload)
+    transfer_source_lines = [
+        source
+        for payload in transfer_payloads
+        for source in _source_lines_for_payload(payload, locale)
+    ]
+    distinct_transfer_sources = {source for source in transfer_source_lines if source}
+    shared_transfer_source = (
+        next(iter(distinct_transfer_sources))
+        if transfer_source_lines and len(distinct_transfer_sources) == 1 and all(transfer_source_lines)
+        else None
+    )
 
     for task in completed_tasks:
         task_type = str(getattr(task, "type", "") or "")
@@ -127,7 +144,13 @@ def format_multi_action_summary_blocks(completed_tasks: list, locale: str = "en"
         if not isinstance(payload, dict):
             continue
         if task_type == "transfer":
-            total_spent = _append_transfer_blocks(blocks, payload, locale=locale, total_spent=total_spent)
+            total_spent = _append_transfer_blocks(
+                blocks,
+                payload,
+                locale=locale,
+                total_spent=total_spent,
+                include_source=shared_transfer_source is None,
+            )
         elif task_type == "airtime":
             total_spent = _append_airtime_block(blocks, payload, locale=locale, total_spent=total_spent)
         elif task_type == "data":
@@ -143,6 +166,9 @@ def format_multi_action_summary_blocks(completed_tasks: list, locale: str = "en"
                     ),
                 }
             )
+
+    if shared_transfer_source:
+        blocks.append({"type": "text", "text": shared_transfer_source})
 
     if len(completed_tasks) > 1 and total_spent > 0:
         blocks.append(
@@ -187,6 +213,7 @@ def format_multi_action_summary_blocks(completed_tasks: list, locale: str = "en"
 
 
 def _append_transfer_lines(lines: list[str], transfer_tasks: list[Any], *, locale: str, total_spent: float) -> float:
+    rendered: list[tuple[str, str | None]] = []
     for task in transfer_tasks:
         recipients = task.payload.get("recipients", [])
         is_batch = task.payload.get("is_batch", False) or len(recipients) > 1
@@ -195,16 +222,29 @@ def _append_transfer_lines(lines: list[str], transfer_tasks: list[Any], *, local
             for recipient_entry in recipients:
                 amount = float(recipient_entry.get("amount", 0) or 0)
                 total_spent += amount
-                lines.append(_format_batch_transfer_line(recipient_entry, amount=amount, locale=locale))
+                rendered.append(
+                    (
+                        _format_batch_transfer_line(recipient_entry, amount=amount, locale=locale),
+                        _source_line(recipient_entry, locale),
+                    )
+                )
             continue
 
         amount = float(task.payload.get("amount", 0) or 0)
         status = _normalize_final_status(str(task.payload.get("final_status") or "success").lower())
         if status == "success":
             total_spent += amount
-        lines.append(_format_single_transfer_line(task.payload, amount=amount, status=status, locale=locale))
+        line = _format_single_transfer_line(task.payload, amount=amount, status=status, locale=locale)
         if status == "failed" and (reason := _failure_reason(task.payload)):
-            lines.append(_format_failure_reason(reason, locale, task_type=task.type))
+            line = f"{line}\n{_format_failure_reason(reason, locale, task_type=task.type)}"
+        rendered.append((line, _source_line(task.payload, locale)))
+
+    distinct_sources = {source for _line, source in rendered if source}
+    same_source_for_all = len(distinct_sources) == 1 and bool(rendered) and all(source for _line, source in rendered)
+    for line, source in rendered:
+        lines.append(line if same_source_for_all or not source else f"{line}\n{source}")
+    if same_source_for_all:
+        lines.append(next(iter(distinct_sources)))
 
     lines.append("")
     return total_spent
@@ -216,9 +256,11 @@ def _append_transfer_blocks(
     *,
     locale: str,
     total_spent: float,
+    include_source: bool = True,
 ) -> float:
     recipients = payload.get("recipients", [])
     is_batch = payload.get("is_batch", False) or (isinstance(recipients, list) and len(recipients) > 1)
+    rendered: list[tuple[dict[str, Any], str | None]] = []
     if is_batch and isinstance(recipients, list):
         for recipient_entry in recipients:
             if not isinstance(recipient_entry, dict):
@@ -227,22 +269,39 @@ def _append_transfer_blocks(
             status = _normalize_final_status(str(recipient_entry.get("status", "success")).lower())
             if status == "success":
                 total_spent += amount
-            blocks.append(_batch_transfer_block(recipient_entry, amount=amount, status=status, locale=locale))
-        return total_spent
+            rendered.append(
+                (
+                    _batch_transfer_block(recipient_entry, amount=amount, status=status, locale=locale),
+                    _source_line(recipient_entry, locale),
+                )
+            )
+    else:
+        amount = float(payload.get("amount", 0) or 0)
+        status = _normalize_final_status(str(payload.get("final_status") or "success").lower())
+        if status == "success":
+            total_spent += amount
+        rendered.append(
+            (
+                _single_transfer_block(payload, amount=amount, status=status, locale=locale),
+                _source_line(payload, locale),
+            )
+        )
 
-    amount = float(payload.get("amount", 0) or 0)
-    status = _normalize_final_status(str(payload.get("final_status") or "success").lower())
-    if status == "success":
-        total_spent += amount
-    blocks.append(_single_transfer_block(payload, amount=amount, status=status, locale=locale))
+    distinct_sources = {source for _block, source in rendered if source}
+    same_source_for_all = include_source and len(distinct_sources) == 1 and bool(rendered) and all(
+        source for _block, source in rendered
+    )
+    for block, source in rendered:
+        if include_source and not same_source_for_all and source:
+            block["details"] = [source]
+        blocks.append(block)
+    if same_source_for_all:
+        blocks.append({"type": "text", "text": next(iter(distinct_sources))})
     return total_spent
 
 
 def _format_batch_transfer_line(recipient_entry: dict[str, Any], *, amount: float, locale: str) -> str:
-    recipient = format_summary_recipient_display_label(
-        recipient_entry.get("recipient_name") or recipient_entry.get("alias"),
-        recipient_entry.get("recipient_resolved_name") or recipient_entry.get("name"),
-    ) or render_message("transaction_summary.multi.recipient_unknown", locale)
+    recipient = _recipient_display_name(recipient_entry, locale)
     bank = str(
         recipient_entry.get("bank_name") or recipient_entry.get("recipient_bank_name") or ""
     ).strip() or render_message("transaction_summary.multi.bank_fallback", locale)
@@ -250,7 +309,7 @@ def _format_batch_transfer_line(recipient_entry: dict[str, Any], *, amount: floa
         recipient_entry.get("account") or recipient_entry.get("recipient_account") or ""
     ).strip() or render_message("transaction_summary.multi.account_fallback", locale)
     status = _normalize_final_status(str(recipient_entry.get("status", "success")).lower())
-    return _format_transfer_line(
+    line = _format_transfer_line(
         amount=amount,
         recipient=recipient,
         bank=bank,
@@ -258,6 +317,7 @@ def _format_batch_transfer_line(recipient_entry: dict[str, Any], *, amount: floa
         status=status,
         locale=locale,
     )
+    return line
 
 
 def _batch_transfer_block(
@@ -267,17 +327,14 @@ def _batch_transfer_block(
     status: str,
     locale: str,
 ) -> dict[str, Any]:
-    recipient = format_summary_recipient_display_label(
-        recipient_entry.get("recipient_name") or recipient_entry.get("alias"),
-        recipient_entry.get("recipient_resolved_name") or recipient_entry.get("name"),
-    ) or render_message("transaction_summary.multi.recipient_unknown", locale)
+    recipient = _recipient_display_name(recipient_entry, locale)
     bank = str(
         recipient_entry.get("bank_name") or recipient_entry.get("recipient_bank_name") or ""
     ).strip() or render_message("transaction_summary.multi.bank_fallback", locale)
     account = str(
         recipient_entry.get("account") or recipient_entry.get("recipient_account") or ""
     ).strip() or render_message("transaction_summary.multi.account_fallback", locale)
-    return _transfer_block(
+    block = _transfer_block(
         amount=amount,
         recipient=recipient,
         bank=bank,
@@ -286,13 +343,11 @@ def _batch_transfer_block(
         reason=_failure_reason(recipient_entry) if status == "failed" else None,
         locale=locale,
     )
+    return block
 
 
 def _format_single_transfer_line(payload: dict[str, Any], *, amount: float, status: str, locale: str) -> str:
-    recipient = format_summary_recipient_display_label(
-        payload.get("recipient_name"),
-        payload.get("recipient_resolved_name"),
-    ) or render_message("transaction_summary.multi.recipient_fallback", locale)
+    recipient = _recipient_display_name(payload, locale, fallback_key="transaction_summary.multi.recipient_fallback")
     bank = str(payload.get("recipient_bank_name") or "").strip() or render_message(
         "transaction_summary.multi.bank_fallback",
         locale,
@@ -301,7 +356,7 @@ def _format_single_transfer_line(payload: dict[str, Any], *, amount: float, stat
         "transaction_summary.multi.account_fallback",
         locale,
     )
-    return _format_transfer_line(
+    line = _format_transfer_line(
         amount=amount,
         recipient=recipient,
         bank=bank,
@@ -309,6 +364,7 @@ def _format_single_transfer_line(payload: dict[str, Any], *, amount: float, stat
         status=status,
         locale=locale,
     )
+    return line
 
 
 def _single_transfer_block(
@@ -318,10 +374,7 @@ def _single_transfer_block(
     status: str,
     locale: str,
 ) -> dict[str, Any]:
-    recipient = format_summary_recipient_display_label(
-        payload.get("recipient_name"),
-        payload.get("recipient_resolved_name"),
-    ) or render_message("transaction_summary.multi.recipient_fallback", locale)
+    recipient = _recipient_display_name(payload, locale, fallback_key="transaction_summary.multi.recipient_fallback")
     bank = str(payload.get("recipient_bank_name") or "").strip() or render_message(
         "transaction_summary.multi.bank_fallback",
         locale,
@@ -330,7 +383,7 @@ def _single_transfer_block(
         "transaction_summary.multi.account_fallback",
         locale,
     )
-    return _transfer_block(
+    block = _transfer_block(
         amount=amount,
         recipient=recipient,
         bank=bank,
@@ -339,6 +392,43 @@ def _single_transfer_block(
         reason=_failure_reason(payload) if status == "failed" else None,
         locale=locale,
     )
+    return block
+
+
+def _recipient_display_name(
+    payload: dict[str, Any],
+    locale: str,
+    *,
+    fallback_key: MessageKey = "transaction_summary.multi.recipient_unknown",
+) -> str:
+    if payload.get("is_self"):
+        bank_name = str(payload.get("recipient_bank_name") or payload.get("bank_name") or "").strip()
+        if bank_name:
+            return render_message("transfer.resolve.my_bank_name", locale, {"bank_name": bank_name})
+    return format_summary_recipient_display_label(
+        payload.get("recipient_name") or payload.get("alias"),
+        payload.get("recipient_resolved_name") or payload.get("name"),
+    ) or render_message(fallback_key, locale)
+
+
+def _source_line(payload: dict[str, Any], locale: str) -> str:
+    bank = str(payload.get("source_bank_name") or "").strip()
+    account = mask_account_number(payload.get("source_account_number"))
+    if not bank or not account:
+        return ""
+    return render_message(
+        "transfer.format.summary.source_line",
+        locale,
+        {"source_bank": bank, "last4": account[-4:]},
+    )
+
+
+def _source_lines_for_payload(payload: dict[str, Any], locale: str) -> list[str]:
+    recipients = payload.get("recipients")
+    is_batch = payload.get("is_batch", False) or (isinstance(recipients, list) and len(recipients) > 1)
+    if is_batch and isinstance(recipients, list):
+        return [_source_line(item, locale) for item in recipients if isinstance(item, dict)]
+    return [_source_line(payload, locale)]
 
 
 def _transfer_block(

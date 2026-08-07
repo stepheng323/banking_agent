@@ -15,14 +15,26 @@ def format_intent_line(task_type: str, payload: dict[str, Any], locale: str = "e
         amount = to_naira(payload.get("amount"))
         if amount is None or amount <= 0:
             return ""
-        recipient = (
-            payload.get("recipient_resolved_name")
-            or payload.get("recipient_name")
-            or render_message(
-                "transaction_summary.intent.transfer_recipient_fallback",
-                locale,
+        if payload.get("is_self"):
+            bank_name = str(payload.get("recipient_bank_name") or "").strip()
+            recipient = (
+                payload.get("recipient_resolved_name")
+                or (
+                    render_message("transfer.resolve.my_bank_name", locale, {"bank_name": bank_name})
+                    if bank_name
+                    else None
+                )
+                or render_message("transaction_summary.intent.transfer_recipient_fallback", locale)
             )
-        )
+        else:
+            recipient = (
+                payload.get("recipient_resolved_name")
+                or payload.get("recipient_name")
+                or render_message(
+                    "transaction_summary.intent.transfer_recipient_fallback",
+                    locale,
+                )
+            )
         return render_message(
             "transaction_summary.intent.transfer",
             locale,

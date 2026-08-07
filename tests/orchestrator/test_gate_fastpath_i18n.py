@@ -18,8 +18,6 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_regist
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.context.referents.frame_memory import remember_referents_from_frame
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_modes import (
-    SOCIAL_META_RENDER_PARAMS_CTX,
-    SOCIAL_META_RESPONSE_KEY_CTX,
     ConversationResponseMode,
 )
 from apps.chat.src.agent.orchestrator.models.domain import (
@@ -665,6 +663,11 @@ def test_addressed_greeting_distinguishes_generic_and_wrong_names() -> None:
         params={"addressed_name": "Claude Code"},
     )
     assert classify_deterministic_meta_response("Hi I want to send money") is None
+    # A greeting is only a meta fast path when it is the complete turn.  Once
+    # an actionable clause is present, the normal semantic/domain route must
+    # own the turn rather than returning a social reply.
+    assert classify_deterministic_meta_response("How far, check my balance") is None
+    assert classify_deterministic_meta_response("Hello, show my transactions") is None
 
 
 def test_deterministic_capability_question_ignores_actionable_payloads() -> None:
@@ -6240,7 +6243,7 @@ async def test_gate_explicit_latest_status_query_not_stolen_by_contextual_ack_or
     assert updates["tasks"]["direct_query"].type == "query"
 
 
-async def test_gate_exact_thanks_uses_social_meta_responder_with_context() -> None:
+async def test_gate_exact_thanks_uses_localized_social_copy() -> None:
     responder = _FakeConversationResponder("Anytime, I'm here when you want to check or move money.")
     state = OrchestratorState(
         user_id="u_gate_contextual_worker_ack_3",
@@ -6259,12 +6262,10 @@ async def test_gate_exact_thanks_uses_social_meta_responder_with_context() -> No
 
     updates = await session_gate_direct_path(state, config)
 
-    assert responder.calls
-    assert responder.calls[0]["mode"] == ConversationResponseMode.SOCIAL_META
-    assert responder.calls[0]["user_ctx"][SOCIAL_META_RESPONSE_KEY_CTX] == "conversational.appreciation"
+    assert responder.calls == []
     assert "direct_path_triggered" not in updates
     assert updates["turn_directive"].path_shape == "meta_direct"
-    assert updates["final_response"] == responder.reply
+    assert updates["final_response"] == render_message("conversational.appreciation", "en")
 
 
 async def test_gate_contextual_worker_acknowledgement_does_not_steal_active_interrupt() -> None:
@@ -6646,6 +6647,36 @@ async def test_gate_batch_transfer_turn_falls_through_to_planner() -> None:
     assert updates["turn_directive"].source == "transfer_domain_guard"
     assert updates["turn_directive"].heuristic_type == "slot_parser"
     assert updates["turn_directive"].heuristic_name == "batch_transfer_command"
+
+
+async def test_gate_explicit_same_executor_transfers_mark_multiple_planner_tasks() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_mixed",
+            confidence=0.93,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="two explicit transfer clauses",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_same_executor_batch",
+        phone_number="23489999999201",
+        channel="whatsapp",
+        last_message_text="Send 2k to Tolu Adebayo and 5k to my Access account",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
+    assert updates["preplanner_expected_transaction_task_count"] == 2
 
 
 async def test_gate_split_transfer_turn_falls_through_to_planner() -> None:
@@ -7747,7 +7778,7 @@ class _FakeConversationResponder:
         ("Thanks", "en", "conversational.appreciation"),
     ],
 )
-async def test_gate_deterministic_social_meta_uses_conversation_responder(
+async def test_gate_deterministic_social_meta_uses_localized_catalog_without_llm(
     message_text: str,
     expected_locale: str,
     expected_key: str,
@@ -7766,11 +7797,8 @@ async def test_gate_deterministic_social_meta_uses_conversation_responder(
 
     assert "direct_path_triggered" not in updates
     assert updates["turn_directive"].path_shape == "meta_direct"
-    assert updates["final_response"] == responder.reply
-    assert responder.calls
-    assert responder.calls[0]["mode"] == ConversationResponseMode.SOCIAL_META
-    assert responder.calls[0]["user_ctx"]["language"] == expected_locale
-    assert responder.calls[0]["user_ctx"][SOCIAL_META_RESPONSE_KEY_CTX] == expected_key
+    assert updates["final_response"] == render_message(expected_key, expected_locale)
+    assert responder.calls == []
 
 
 @pytest.mark.asyncio
@@ -7788,7 +7816,9 @@ async def test_fresh_greeting_clears_stale_unsupported_capability_boundary() -> 
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["final_response"] == "Hi Olamide—how can I help?"
+    assert updates["final_response"] == render_message(
+        "conversational.greeting_named", "en", {"display_name": "Olamide"}
+    )
     assert updates["capability_boundary"] is None
     assert updates["turn_directive"].path_shape == "meta_direct"
 
@@ -7812,7 +7842,10 @@ async def test_fresh_greeting_clears_stale_query_clarification() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["final_response"] == responder.reply
+    assert updates["final_response"] == render_message(
+        "conversational.greeting_named", "en", {"display_name": "Olamide"}
+    )
+    assert responder.calls == []
     assert updates["pending_query_clarification"] is None
     assert updates["turn_directive"].path_shape == "meta_direct"
 
@@ -7832,12 +7865,11 @@ async def test_gate_deterministic_social_meta_falls_back_when_responder_returns_
     updates = await session_gate_direct_path(state, config)
 
     assert updates["final_response"] == render_message("conversational.greeting", "en")
-    assert responder.calls
-    assert responder.calls[0]["mode"] == ConversationResponseMode.SOCIAL_META
+    assert responder.calls == []
 
 
 @pytest.mark.asyncio
-async def test_gate_deterministic_social_meta_passes_safe_display_name_to_responder() -> None:
+async def test_gate_deterministic_social_meta_renders_safe_display_name_without_responder() -> None:
     responder = _FakeConversationResponder("Hi Gaines, what banking task should we handle?")
     state = OrchestratorState(
         user_id="u_social_meta_named_responder",
@@ -7850,10 +7882,10 @@ async def test_gate_deterministic_social_meta_passes_safe_display_name_to_respon
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["final_response"] == responder.reply
-    assert responder.calls
-    assert responder.calls[0]["user_ctx"][SOCIAL_META_RESPONSE_KEY_CTX] == "conversational.greeting_named"
-    assert responder.calls[0]["user_ctx"][SOCIAL_META_RENDER_PARAMS_CTX] == {"display_name": "Gaines"}
+    assert updates["final_response"] == render_message(
+        "conversational.greeting_named", "en", {"display_name": "Gaines"}
+    )
+    assert responder.calls == []
 
 
 @pytest.mark.asyncio

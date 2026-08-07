@@ -91,6 +91,32 @@ def test_multi_action_summary_uses_compact_transfer_line_with_alias_and_resolved
     assert "₦10,000.00" not in summary
 
 
+def test_multi_action_summary_labels_self_destination_and_source_account() -> None:
+    task = _transfer_task(
+        task_id="t1",
+        amount=5000,
+        recipient_name="Mercy Johnson",
+        recipient_resolved_name="Mercy Johnson",
+        bank="Access Bank",
+        account="6000000003",
+    )
+    task.payload.update(
+        {
+            "is_self": True,
+            "source_bank_name": "GTBank",
+            "source_account_number": "1234560002",
+            "final_status": "failed",
+            "error_message": "Transfer could not be completed.",
+        }
+    )
+
+    summary = format_multi_action_summary([task], locale="en")
+
+    assert "→ My Access Bank" in summary
+    assert "From: GTBank (···0002)" in summary
+    assert "→ Mercy Johnson" not in summary
+
+
 def test_multi_action_summary_total_spent_is_compact_for_multiple_tasks() -> None:
     tasks = [
         _transfer_task(

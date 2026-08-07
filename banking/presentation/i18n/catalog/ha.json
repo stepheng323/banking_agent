@@ -752,6 +752,7 @@
     "user_not_found": "Ba a samu user ba.",
     "no_linked_accounts": "Ba ka da linked account.",
     "account_not_found": "Ban iya samun an account matching '{identifier}'.",
+    "linked_account_not_found": "Ban sami linked {bank_name} account mai aiki ba. Ka ce ‘show my linked accounts’ don ganin account ɗin da zan iya amfani da su.",
     "account_not_found_with_count": "Ban iya samun an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
     "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now kar default.",
     "default_identity": "Asusunka na asali shi ne {bank_name} ({masked}).",
@@ -816,6 +817,7 @@
       "processing_error": "Yi hakuri, ina samun matsala wajen sarrafa wannan yanzu.",
       "router_timeout": "Wannan ya dauki lokaci fiye da kima. Da fatan a sake aika bukatar; ban tura komai ba.",
       "planner_timeout": "Ban iya kammala shirya bukatar nan a kan lokaci ba. Da fatan a sake gwadawa; ba a tura komai ba.",
+      "planner_incomplete": "Ban iya shirya dukkan abubuwan bukatar nan cikin aminci ba. Da fatan a sake tura cikakkiyar bukatar; ba a aika komai ba.",
       "query_timeout": "Ban iya kammala fahimtar wannan karin tambaya a kan lokaci ba. Sakamakon ma'amalolinka suna nan, don haka a sake gwadawa.",
       "transfer_timeout": "Ban iya aiwatar da canjin nan a kan lokaci ba. Bayanan canja wurin da ke jira ba su canza ba; a sake gwadawa."
     },
@@ -919,6 +921,15 @@
         "next": "Sa'an nan, {item}.",
         "still_needed": "Har yanzu ana bukata: {items}.",
         "remaining_more": "{items}; da wasu bayanai {count}",
+        "selection_prompt": "Zaɓi wanda zai karɓi {amount} don \u201c{recipient}\u201d.",
+        "selection_prompt_no_amount": "Zaɓi wanda aka adana zai karɓi don \u201c{recipient}\u201d.",
+        "selection_prompt_generic": "Zaɓi mai karɓa da aka adana don {amount}.",
+        "selection_prompt_generic_no_amount": "Zaɓi mai karɓa da aka adana.",
+        "after_selection": "Zan haɗa sauran abubuwan cikin bita ɗaya bayan wannan zaɓin.",
+        "other_transfer_item": "Wani canjin {amount} ya shirya domin bita guda ɗaya.",
+        "other_transfer_item_no_amount": "Wani canji ya shirya domin bita guda ɗaya.",
+        "self_transfer_item": "{amount} zuwa asusun {bank_name} naka",
+        "self_transfer_pending": "Za a haɗa canjin {amount} zuwa asusun {bank_name} naka cikin bita ɗaya.",
         "choose_transfer_recipient": "zabi wanda zai karbi {amount}",
         "choose_transfer_recipient_no_amount": "zabi mai karbar canjin",
         "airtime_amount": "adadin airtime na layinka",
@@ -928,8 +939,12 @@
         "network": "cibiyar sadarwa",
         "account": "bayanan asusu",
         "detail": "wani bayani",
-        "selection_resolved": "An gama. Za a tura {amount} zuwa {recipient}.",
-        "next_prompt": "Mataki na gaba: {prompt}"
+        "selection_resolved": "Madalla — za a tura {amount} zuwa {recipient}.",
+        "next_prompt": "Mataki na gaba: {prompt}",
+        "recipient_review_heading": "Bita na mai karɓa",
+        "recipient_review_intro": "Kafin in shirya cikakkiyar bitar wannan rukuni, da fatan ka tabbatar da waɗannan wuraren:",
+        "recipient_review_confirm": "Shin waɗannan wuraren suna daidai? Amsa eh don ci gaba, ko ka faɗi abin da za a canza.",
+        "recipient_review_other_items": "Wannan ma yana cikin rukuni:\n{items}\n\nBayan ka tabbatar da mai karɓa, zan ci gaba da cikakkiyar bitar rukuni."
       },
       "need_some_details": "Ina bukatar some details.",
       "auth_reason_transfer": "Authorization na Transfer",
@@ -948,6 +963,8 @@
     "finalize": {
       "failed_unknown": "Kuskure da ba a sani ba.",
       "failed_prefix": "Ya gaza: {error}",
+      "batch_aborted": "Na dakatar da dukkan bukatun saboda ba a iya shirya daya daga cikinsu ba. Ba a aika komai ba.",
+      "batch_partial_failure": "{failure}\n\nAkwai wani abu a wannan batch da ke jiran amsarka. Ba a aika wanda ya kasa ba.",
       "resume_prompt": "Kana so to resume your {intent}?",
       "resume_prompt_transfer_specific": "Kana da transfer da ke jira: {amount} zuwa {recipient}. A ci gaba?",
       "resume_prompt_transfer_generic": "Kana da transfer da ke jira. A ci gaba?",
@@ -1232,7 +1249,7 @@
         "standard": "Transfer bai kammala ba. Da fatan sake gwadawa.",
         "reassuring": "Transfer din bai kammala ba yanzu. Don Allah ka sake gwadawa."
       },
-      "pipeline_failed": "Pipeline gaza: {error}",
+      "pipeline_failed": "Ba zan iya kammala wannan buƙatar yanzu ba. Da fatan a sake gwadawa.",
       "provider_failed": "Transfer gaza at provider",
       "provider_failed_variants": {
         "standard": "Transfer gaza at provider",
@@ -1294,7 +1311,7 @@
     },
     "error": {
       "execution_failed": "Siyan airtime bai kammala ba. Da fatan sake gwadawa.",
-      "pipeline_failed": "Pipeline gaza: {error}",
+      "pipeline_failed": "Ba zan iya kammala wannan buƙatar yanzu ba. Da fatan a sake gwadawa.",
       "provider_failed": "Airtime purchase gaza at provider"
     },
     "executor": {
@@ -1365,7 +1382,7 @@
     },
     "error": {
       "execution_failed": "Siyan data bai kammala ba. Da fatan sake gwadawa.",
-      "pipeline_failed": "Pipeline gaza: {error}",
+      "pipeline_failed": "Ba zan iya kammala wannan buƙatar yanzu ba. Da fatan a sake gwadawa.",
       "system_processing": "System error during transaction sarrafawa.",
       "pipeline_no_result": "Pipeline kammala without definitive result.",
       "provider_failed": "Data purchase gaza at provider"

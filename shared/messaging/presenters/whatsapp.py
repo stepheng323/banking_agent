@@ -365,7 +365,11 @@ class WhatsAppPresenter(Presenter):
         options = [
             {
                 "id": str(option.get("id", "")).strip() or str(idx),
-                "title": str(option.get("title", option.get("label", f"Option {idx}"))),
+                "title": str(
+                    option.get("button_title")
+                    or option.get("title", option.get("label", f"Option {idx}"))
+                ),
+                "display_title": str(option.get("title", option.get("label", f"Option {idx}"))),
             }
             for idx, option in enumerate(intent.options, start=1)
             if isinstance(option, dict)
@@ -387,7 +391,7 @@ class WhatsAppPresenter(Presenter):
                 return _message_result_id(interactive_resp)
             logger.warning("whatsapp_show_options_interactive_failed", error=_message_result_error(interactive_resp))
 
-        numbered = "\n".join(f"{idx}. {opt['title']}" for idx, opt in enumerate(options, start=1))
+        numbered = "\n".join(f"{idx}. {opt['display_title']}" for idx, opt in enumerate(options, start=1))
         logger.info("option_render_mode", channel="whatsapp", mode="text", option_count=len(options))
         logger.info("option_fallback_text_used", channel="whatsapp", option_count=len(options))
         fallback_text = f"{intent.title}\n{numbered}"

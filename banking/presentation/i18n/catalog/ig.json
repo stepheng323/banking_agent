@@ -752,6 +752,7 @@
     "user_not_found": "Ahụghị user.",
     "no_linked_accounts": "Ị nweghị linked account.",
     "account_not_found": "Ahụghị m an account matching '{identifier}'.",
+    "linked_account_not_found": "Ahụghị m {bank_name} account ejikọtara nke na-arụ ọrụ. Kwuo ‘show my linked accounts’ ka ị hụ account ndị m nwere ike iji.",
     "account_not_found_with_count": "Ahụghị m an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
     "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now ịr default.",
     "default_identity": "Akaụntụ ndabara gị bụ {bank_name} ({masked}).",
@@ -816,6 +817,7 @@
       "processing_error": "Ndo, enwere nsogbu n’ịrụ nke a ugbu a.",
       "router_timeout": "Nke a were oge kariri. Biko ziga aririo ahu ozo; ezigabeghi m ihe obula.",
       "planner_timeout": "Enweghi m ike imecha kwadebe aririo ahu n'oge. Biko nwaa ozo; ezigaghi ihe obula.",
+      "planner_incomplete": "Enweghi m ike ịkwadebe ihe niile dị na aririo ahu nke ọma. Biko zighachi batch ahu dum; ezigaghi ihe obula.",
       "query_timeout": "Enweghi m ike imecha ghota ajuju na-esote n'oge. Nsonaazu azumahia gi ka di, ya mere biko nwaa ozo.",
       "transfer_timeout": "Enweghi m ike itinye mgbanwe ahu n'oge. Nkowa nnyefe na-eche agbanwebeghi; biko nwaa ozo."
     },
@@ -919,6 +921,15 @@
         "next": "Mgbe ahụ, {item}.",
         "still_needed": "Ihe ka di mkpa: {items}.",
         "remaining_more": "{items}; na nkowa {count} ozo",
+        "selection_prompt": "Họrọ onye ga-anata {amount} maka \u201c{recipient}\u201d.",
+        "selection_prompt_no_amount": "Họrọ onye nnata echekwara maka \u201c{recipient}\u201d.",
+        "selection_prompt_generic": "Họrọ onye nnata echekwara maka {amount}.",
+        "selection_prompt_generic_no_amount": "Họrọ onye nnata echekwara.",
+        "after_selection": "Aga m tinye ihe ndị ọzọ n’ime nyocha jikọtara ọnụ mgbe ị họrọchara.",
+        "other_transfer_item": "Nbufe ọzọ nke {amount} adịla njikere maka nyocha jikọtara ọnụ.",
+        "other_transfer_item_no_amount": "Nbufe ọzọ adịla njikere maka nyocha jikọtara ọnụ.",
+        "self_transfer_item": "{amount} gaa na akaụntụ {bank_name} gị",
+        "self_transfer_pending": "A ga-etinye mbufe {amount} gaa na akaụntụ {bank_name} gị na nyocha otu a.",
         "choose_transfer_recipient": "horo onye ga-anata {amount}",
         "choose_transfer_recipient_no_amount": "horo onye nnata nnyefe",
         "airtime_amount": "ego airtime maka ahiri gi",
@@ -928,8 +939,12 @@
         "network": "network",
         "account": "nkwa akauntu",
         "detail": "nkwa ozo",
-        "selection_resolved": "Emechaala. A ga-eziga {amount} na {recipient}.",
-        "next_prompt": "Nzọụkwụ ọzọ: {prompt}"
+        "selection_resolved": "Ọ dị mma — a ga-eziga {amount} nye {recipient}.",
+        "next_prompt": "Nzọụkwụ ọzọ: {prompt}",
+        "recipient_review_heading": "Nyocha onye nnata",
+        "recipient_review_intro": "Tupu m hazie nyocha zuru ezu nke batch a, biko kwado ebe ego ga-aga:",
+        "recipient_review_confirm": "Ebe ndị a ọ̀ dị mma? Zaa ee ka anyị gaa n’ihu, ma ọ bụ gwa m ihe ị chọrọ ịgbanwe.",
+        "recipient_review_other_items": "Ndị a sokwa na batch a:\n{items}\n\nMgbe ị kwadoro onye nnata, aga m aga n'ihu na nyocha zuru ezu nke batch."
       },
       "need_some_details": "Achọrọ m some details.",
       "auth_reason_transfer": "Authorization Transfer",
@@ -948,6 +963,8 @@
     "finalize": {
       "failed_unknown": "Nsogbu amaghi ama.",
       "failed_prefix": "Ọ dara: {error}",
+      "batch_aborted": "Akwụsịrị m batch ahụ n’ihi na enweghị ike ịkwadebe otu ihe. E zigaghị ihe ọ bụla.",
+      "batch_partial_failure": "{failure}\n\nOtu ihe n’ime batch a ka na-eche azịza gị. E zigaghị ihe ahụ dara.",
       "resume_prompt": "Ị chọrọ to resume your {intent}?",
       "resume_prompt_transfer_specific": "I ka nwere transfer na-eche: {amount} nye {recipient}. Ka m gaa n'ihu?",
       "resume_prompt_transfer_generic": "I ka nwere transfer na-eche. Ka m gaa n'ihu?",
@@ -1232,7 +1249,7 @@
         "standard": "Transfer agwụchaghị. Biko nwaa ọzọ.",
         "reassuring": "Transfer ahụ enweghị ike imecha ugbu a. Biko nwaa ọzọ."
       },
-      "pipeline_failed": "Pipeline dara: {error}",
+      "pipeline_failed": "Enweghị m ike imecha arịrịọ ahụ ugbu a. Biko nwaa ọzọ.",
       "provider_failed": "Transfer dara at provider",
       "provider_failed_variants": {
         "standard": "Transfer dara at provider",
@@ -1294,7 +1311,7 @@
     },
     "error": {
       "execution_failed": "Ịzụta airtime agwụchaghị. Biko nwaa ọzọ.",
-      "pipeline_failed": "Pipeline dara: {error}",
+      "pipeline_failed": "Enweghị m ike imecha arịrịọ ahụ ugbu a. Biko nwaa ọzọ.",
       "provider_failed": "Airtime purchase dara at provider"
     },
     "executor": {
@@ -1365,7 +1382,7 @@
     },
     "error": {
       "execution_failed": "Ịzụta data agwụchaghị. Biko nwaa ọzọ.",
-      "pipeline_failed": "Pipeline dara: {error}",
+      "pipeline_failed": "Enweghị m ike imecha arịrịọ ahụ ugbu a. Biko nwaa ọzọ.",
       "system_processing": "System error during transaction na-arụ ọrụ.",
       "pipeline_no_result": "Pipeline gwụrụ without definitive result.",
       "provider_failed": "Data purchase dara at provider"

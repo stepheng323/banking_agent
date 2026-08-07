@@ -751,6 +751,7 @@
     "user_not_found": "User not found.",
     "no_linked_accounts": "You don't have any linked accounts.",
     "account_not_found": "I couldn't find an account matching '{identifier}'.",
+    "linked_account_not_found": "I couldn't find an active linked {bank_name} account. Say ‘show my linked accounts’ to see the accounts I can use.",
     "account_not_found_with_count": "I couldn't find an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
     "default_updated": "✓ *Default account updated!*\n\n{bank_name} ({masked}) is now your default.",
     "default_identity": "Your default account is {bank_name} ({masked}).",
@@ -815,6 +816,7 @@
       "processing_error": "I'm sorry, I'm having trouble processing that right now.",
       "router_timeout": "That took longer than expected. Please send your request again; I haven't submitted anything.",
       "planner_timeout": "I couldn't finish preparing that request in time. Please try again; nothing was submitted.",
+      "planner_incomplete": "I couldn't safely prepare every item in that request. Please send the full batch again; nothing was submitted.",
       "query_timeout": "I couldn't finish interpreting that follow-up in time. Your transaction results are still available, so please try again.",
       "transfer_timeout": "I couldn't apply that change in time. Your pending transfer details are unchanged, so please try again."
     },
@@ -918,6 +920,15 @@
         "next": "Next, {item}.",
         "still_needed": "Still needed: {items}.",
         "remaining_more": "{items}; and {count} more detail(s)",
+        "selection_prompt": "Choose the recipient for {amount} to \u201c{recipient}\u201d.",
+        "selection_prompt_no_amount": "Choose which saved recipient to use for \u201c{recipient}\u201d.",
+        "selection_prompt_generic": "Choose a saved recipient for {amount}.",
+        "selection_prompt_generic_no_amount": "Choose a saved recipient.",
+        "after_selection": "I’ll include the other items in the combined review after this choice.",
+        "other_transfer_item": "Another transfer of {amount} is ready for the combined review.",
+        "other_transfer_item_no_amount": "Another transfer is ready for the combined review.",
+        "self_transfer_item": "{amount} to your {bank_name} account",
+        "self_transfer_pending": "Your {amount} transfer to your {bank_name} account will be included in the same review.",
         "choose_transfer_recipient": "choose who should receive {amount}",
         "choose_transfer_recipient_no_amount": "choose the transfer recipient",
         "airtime_amount": "the airtime amount for your line",
@@ -927,8 +938,12 @@
         "network": "the network",
         "account": "the account details",
         "detail": "one more detail",
-        "selection_resolved": "Done. {amount} will go to {recipient}.",
-        "next_prompt": "Next, {prompt}"
+        "selection_resolved": "Great — {amount} will go to {recipient}.",
+        "next_prompt": "Next up: {prompt}",
+        "recipient_review_heading": "Recipient review",
+        "recipient_review_intro": "Before I prepare the full batch review, please confirm these destinations:",
+        "recipient_review_confirm": "Do these destinations look right? Reply yes to continue, or tell me what to change.",
+        "recipient_review_other_items": "Also included in this batch:\n{items}\n\nOnce you confirm the recipient above, I’ll continue to the complete batch review."
       },
       "need_some_details": "I need some details.",
       "auth_reason_transfer": "Transfer Authorization",
@@ -947,6 +962,8 @@
     "finalize": {
       "failed_unknown": "Unknown error.",
       "failed_prefix": "Failed: {error}",
+      "batch_aborted": "I stopped the batch because one item could not be prepared. Nothing was submitted.",
+      "batch_partial_failure": "{failure}\n\nOne item in this batch is still waiting for your input. The failed item was not submitted.",
       "resume_prompt": "Would you like to resume your {intent}?",
       "resume_prompt_transfer_specific": "You still have a transfer waiting: {amount} to {recipient}. Continue it?",
       "resume_prompt_transfer_generic": "You still have a transfer waiting. Continue it?",
@@ -1165,7 +1182,7 @@
         "standard": "Transfer could not be completed. Please try again.",
         "reassuring": "The transfer could not be completed right now. Please try again."
       },
-      "pipeline_failed": "Pipeline failed: {error}",
+      "pipeline_failed": "I couldn't complete that request right now. Please try again.",
       "provider_failed": "Transfer failed at provider",
       "provider_failed_variants": {
         "standard": "Transfer failed at provider",
@@ -1280,7 +1297,7 @@
     },
     "error": {
       "execution_failed": "Airtime purchase could not be completed. Please try again.",
-      "pipeline_failed": "Pipeline failed: {error}",
+      "pipeline_failed": "I couldn't complete that request right now. Please try again.",
       "provider_failed": "Airtime purchase failed at provider"
     },
     "validation": {
@@ -1364,7 +1381,7 @@
     },
     "error": {
       "execution_failed": "Data purchase could not be completed. Please try again.",
-      "pipeline_failed": "Pipeline failed: {error}",
+      "pipeline_failed": "I couldn't complete that request right now. Please try again.",
       "system_processing": "System error during transaction processing.",
       "pipeline_no_result": "Pipeline completed without definitive result.",
       "provider_failed": "Data purchase failed at provider"

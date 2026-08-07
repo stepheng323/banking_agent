@@ -752,6 +752,7 @@
     "user_not_found": "A ko ri user.",
     "no_linked_accounts": "O ko ni account ti a ti link.",
     "account_not_found": "Mi o le ri an account matching '{identifier}'.",
+    "linked_account_not_found": "Mi o ri {bank_name} account ti o so mọ́ ọ lọwọlọwọ. Sọ ‘show my linked accounts’ lati wo awọn account ti mo le lo.",
     "account_not_found_with_count": "Mi o le ri an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
     "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now or default.",
     "default_identity": "Akọọlẹ aiyipada rẹ ni {bank_name} ({masked}).",
@@ -816,6 +817,7 @@
       "processing_error": "Ma binu, iṣoro wa nigba ṣiṣe eyi bayi.",
       "router_timeout": "Eyi gba akoko ju. Jowo fi ibeere naa ranse leekansi; mi o fi ohunkohun ranse.",
       "planner_timeout": "Mi o le pari imurasile ibeere naa ni akoko. Jowo gbiyanju leekansi; a ko fi ohunkohun ranse.",
+      "planner_incomplete": "Mi o le mura gbogbo awon ohun inu ibeere naa lailewu. Jowo tun fi gbogbo batch naa ranse; a ko fi ohunkohun ranse.",
       "query_timeout": "Mi o le pari oye ibeere-atele naa ni akoko. Awon esi idunadura re si wa, jowo gbiyanju leekansi.",
       "transfer_timeout": "Mi o le lo ayipada naa ni akoko. Awon alaye gbigbe owo ti o wa ko yipada; jowo gbiyanju leekansi."
     },
@@ -919,6 +921,15 @@
         "next": "Lẹ́yìn náà, {item}.",
         "still_needed": "Ohun to si ku: {items}.",
         "remaining_more": "{items}; ati alaye {count} miiran",
+        "selection_prompt": "Yan ẹni tí yóò gba {amount} fún \u201c{recipient}\u201d.",
+        "selection_prompt_no_amount": "Yan recipient tí a fipamọ́ fún \u201c{recipient}\u201d.",
+        "selection_prompt_generic": "Yan recipient tí a fipamọ́ fún {amount}.",
+        "selection_prompt_generic_no_amount": "Yan recipient tí a fipamọ́.",
+        "after_selection": "Màá fi àwọn nkan mìíràn kún àyẹ̀wò papọ̀ lẹ́yìn yìí.",
+        "other_transfer_item": "Gbigbe mìíràn ti {amount} ti ṣetan fún àyẹ̀wò papọ̀.",
+        "other_transfer_item_no_amount": "Gbigbe mìíràn ti ṣetan fún àyẹ̀wò papọ̀.",
+        "self_transfer_item": "{amount} si akanti {bank_name} rẹ",
+        "self_transfer_pending": "Gbigbe {amount} si akanti {bank_name} rẹ yoo wa ninu atunyẹwo kanna.",
         "choose_transfer_recipient": "yan eni to maa gba {amount}",
         "choose_transfer_recipient_no_amount": "yan eni to maa gba gbigbe owo",
         "airtime_amount": "iye airtime fun laini re",
@@ -928,8 +939,12 @@
         "network": "netiwoki",
         "account": "alaye akanti",
         "detail": "alaye miiran",
-        "selection_resolved": "O ti ṣetan. {amount} yoo lọ si {recipient}.",
-        "next_prompt": "Igbesẹ to tẹle: {prompt}"
+        "selection_resolved": "Ó dára — {amount} yoo lọ si {recipient}.",
+        "next_prompt": "Igbesẹ to tẹle: {prompt}",
+        "recipient_review_heading": "Atunyẹwo olùgbà",
+        "recipient_review_intro": "Ṣáájú kí n tó ṣeto atunyẹwo gbogbo ìbéèrè, jọ̀wọ́ jẹ́rìí àwọn ibi tí owó máa lọ:",
+        "recipient_review_confirm": "Ṣé àwọn ibi tí owó máa lọ yìí tọ́? Dáhùn béẹ̀ni láti tẹ̀síwájú, tàbí sọ ohun tí o fẹ́ yí padà.",
+        "recipient_review_other_items": "Àwọn míì tó wà nínú ìbéèrè yìí:\n{items}\n\nLẹ́yìn ìjẹ́rìí olùgbà yìí, màá tẹ̀síwájú sí atunyẹwo gbogbo rẹ."
       },
       "need_some_details": "Mo nilo some details.",
       "auth_reason_transfer": "Authorization Transfer",
@@ -948,6 +963,8 @@
     "finalize": {
       "failed_unknown": "Aṣiṣe aimọ.",
       "failed_prefix": "O kuna: {error}",
+      "batch_aborted": "Mo da gbogbo ìbéèrè dúró nítorí a kò lè pèsè ohun kan. A kò fi ohunkóhun ránṣẹ́.",
+      "batch_partial_failure": "{failure}\n\nOhun kan nínú ìdìpọ̀ yìí ṣì ń dúró de ìdáhùn rẹ. A kò fi ohun tí kò ṣiṣẹ́ ránṣẹ́.",
       "resume_prompt": "Ṣe o fẹ to resume your {intent}?",
       "resume_prompt_transfer_specific": "O tun ni transfer kan ti o duro: {amount} si {recipient}. Se ki n tesiwaju?",
       "resume_prompt_transfer_generic": "O tun ni transfer kan ti o duro. Se ki n tesiwaju?",
@@ -1232,7 +1249,7 @@
         "standard": "Transfer ko pari. Jọwọ gbiyanju lẹẹkansi.",
         "reassuring": "Transfer ko le pari ni bayi. Jọwọ gbiyanju lẹẹkansi."
       },
-      "pipeline_failed": "Pipeline kuna: {error}",
+      "pipeline_failed": "Mi ò lè parí ìbéèrè yẹn báyìí. Jọ̀wọ́ tún gbìyànjú.",
       "provider_failed": "Transfer kuna at provider",
       "provider_failed_variants": {
         "standard": "Transfer kuna at provider",
@@ -1294,7 +1311,7 @@
     },
     "error": {
       "execution_failed": "Rira airtime ko pari. Jọwọ gbiyanju lẹẹkansi.",
-      "pipeline_failed": "Pipeline kuna: {error}",
+      "pipeline_failed": "Mi ò lè parí ìbéèrè yẹn báyìí. Jọ̀wọ́ tún gbìyànjú.",
       "provider_failed": "Airtime purchase kuna at provider"
     },
     "executor": {
@@ -1365,7 +1382,7 @@
     },
     "error": {
       "execution_failed": "Rira data ko pari. Jọwọ gbiyanju lẹẹkansi.",
-      "pipeline_failed": "Pipeline kuna: {error}",
+      "pipeline_failed": "Mi ò lè parí ìbéèrè yẹn báyìí. Jọ̀wọ́ tún gbìyànjú.",
       "system_processing": "System error during transaction n ṣiṣẹ.",
       "pipeline_no_result": "Pipeline pari without definitive result.",
       "provider_failed": "Data purchase kuna at provider"

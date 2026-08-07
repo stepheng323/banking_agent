@@ -752,6 +752,7 @@
     "user_not_found": "I no find user.",
     "no_linked_accounts": "You no get linked account.",
     "account_not_found": "I no fit find an account matching '{identifier}'.",
+    "linked_account_not_found": "I no fit find an active linked {bank_name} account. Talk say ‘show my linked accounts’ make I show you the accounts wey I fit use.",
     "account_not_found_with_count": "I no fit find an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
     "default_updated": "*Default account updated!*\n\n{bank_name} ({masked}) is now your default.",
     "default_identity": "Your default account na {bank_name} ({masked}).",
@@ -816,6 +817,7 @@
       "processing_error": "I dey get issue processing that one now.",
       "router_timeout": "That one take too long. Abeg send the request again; I never submit anything.",
       "planner_timeout": "I no fit finish prepare that request on time. Abeg try again; nothing submit.",
+      "planner_incomplete": "I no fit safely prepare every item for that request. Abeg send the full batch again; nothing submit.",
       "query_timeout": "I no fit finish understand that follow-up on time. Your transaction results still dey, so abeg try again.",
       "transfer_timeout": "I no fit apply that change on time. Your pending transfer details never change, so abeg try again."
     },
@@ -919,6 +921,15 @@
         "next": "After that, {item}.",
         "still_needed": "Wetin still remain: {items}.",
         "remaining_more": "{items}; plus {count} more detail(s)",
+        "selection_prompt": "Choose who go receive {amount} for \u201c{recipient}\u201d.",
+        "selection_prompt_no_amount": "Choose which saved recipient make I use for \u201c{recipient}\u201d.",
+        "selection_prompt_generic": "Choose one saved recipient for {amount}.",
+        "selection_prompt_generic_no_amount": "Choose one saved recipient.",
+        "after_selection": "I go include the other things for the combined review after this choice.",
+        "other_transfer_item": "Another transfer of {amount} dey ready for the combined review.",
+        "other_transfer_item_no_amount": "Another transfer dey ready for the combined review.",
+        "self_transfer_item": "{amount} go your {bank_name} account",
+        "self_transfer_pending": "Your {amount} transfer go your {bank_name} account go join the same review.",
         "choose_transfer_recipient": "choose who go receive {amount}",
         "choose_transfer_recipient_no_amount": "choose the transfer person",
         "airtime_amount": "how much airtime you wan put for your line",
@@ -928,8 +939,12 @@
         "network": "which network",
         "account": "the account information",
         "detail": "one other thing",
-        "selection_resolved": "Done. {amount} go enter {recipient}.",
-        "next_prompt": "Next one: {prompt}"
+        "selection_resolved": "Sharp — {amount} go enter {recipient}.",
+        "next_prompt": "Next one: {prompt}",
+        "recipient_review_heading": "Check who go receive",
+        "recipient_review_intro": "Before I prepare the full batch review, abeg confirm these destinations:",
+        "recipient_review_confirm": "These destinations dey correct? Reply yes to continue, or tell me wetin to change.",
+        "recipient_review_other_items": "These ones dey inside this batch too:\n{items}\n\nOnce you confirm the recipient above, I go continue to the complete batch review."
       },
       "need_some_details": "I need some details.",
       "auth_reason_transfer": "Transfer authorization",
@@ -948,6 +963,8 @@
     "finalize": {
       "failed_unknown": "Unknown error happen.",
       "failed_prefix": "E fail: {error}",
+      "batch_aborted": "I stop the batch because one item no fit prepare. Nothing submit.",
+      "batch_partial_failure": "{failure}\n\nOne item for this batch still dey wait for your input. We no submit the one wey fail.",
       "resume_prompt": "You want to resume your {intent}?",
       "resume_prompt_transfer_specific": "You still get transfer wey dey wait: {amount} to {recipient}. Make I continue am?",
       "resume_prompt_transfer_generic": "You still get transfer wey dey wait. Make I continue am?",
@@ -1232,7 +1249,7 @@
         "standard": "Transfer no complete. Abeg try again.",
         "reassuring": "Transfer no complete right now. Abeg try again."
       },
-      "pipeline_failed": "Pipeline fail: {error}",
+      "pipeline_failed": "I no fit complete that request now. Abeg try again.",
       "provider_failed": "Transfer fail at provider",
       "provider_failed_variants": {
         "standard": "Transfer fail at provider",
@@ -1294,7 +1311,7 @@
     },
     "error": {
       "execution_failed": "Airtime purchase no complete. Abeg try again.",
-      "pipeline_failed": "Pipeline fail: {error}",
+      "pipeline_failed": "I no fit complete that request now. Abeg try again.",
       "provider_failed": "Airtime purchase fail at provider"
     },
     "executor": {
@@ -1365,7 +1382,7 @@
     },
     "error": {
       "execution_failed": "Data purchase no complete. Abeg try again.",
-      "pipeline_failed": "Pipeline fail: {error}",
+      "pipeline_failed": "I no fit complete that request now. Abeg try again.",
       "system_processing": "System error during transaction processing.",
       "pipeline_no_result": "Pipeline complete without definitive result.",
       "provider_failed": "Data purchase fail at provider"

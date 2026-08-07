@@ -5,6 +5,16 @@ from __future__ import annotations
 from banking.presentation.i18n.renderer import render_message
 
 
+def _dedupe_sections(parts: list[str]) -> str:
+    unique: list[str] = []
+    for part in parts:
+        for section in part.split("\n\n"):
+            section = section.strip()
+            if section and (not unique or section != unique[-1]):
+                unique.append(section)
+    return "\n\n".join(unique)
+
+
 def format_missing_details_prompt(
     found_names: list[str],
     missing_prompts: list[str],
@@ -42,7 +52,7 @@ def format_missing_details_prompt(
         parts.append(joined_missing)
 
     if parts:
-        return "\n\n".join(parts)
+        return _dedupe_sections(parts)
     return render_message("orchestrator.execution.need_some_details", locale)
 
 
