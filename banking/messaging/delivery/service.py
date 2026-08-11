@@ -32,7 +32,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def _build_default_messaging_clients() -> dict[str, MessagingClient]:
+def _build_default_messaging_clients(redis_client: Any | None = None) -> dict[str, MessagingClient]:
     clients: dict[str, MessagingClient] = {}
 
     try:
@@ -41,7 +41,7 @@ def _build_default_messaging_clients() -> dict[str, MessagingClient]:
         clients["whatsapp"] = DisabledMessagingClient("whatsapp")
 
     try:
-        clients["telegram"] = TelegramClient()
+        clients["telegram"] = TelegramClient(redis_client=redis_client)
     except ValueError:
         clients["telegram"] = DisabledMessagingClient("telegram")
 
@@ -55,11 +55,11 @@ class DeliveryService:
         self,
         messaging_clients: dict[str, MessagingClient] | None = None,
     ) -> None:
+        self.redis = RedisClient.get_client()
         if messaging_clients is not None:
             self.messaging_clients = messaging_clients
         else:
-            self.messaging_clients = _build_default_messaging_clients()
-        self.redis = RedisClient.get_client()
+            self.messaging_clients = _build_default_messaging_clients(redis_client=self.redis)
         self._background_tasks: set[asyncio.Task[None]] = set()
 
     @staticmethod

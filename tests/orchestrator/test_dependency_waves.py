@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from banking.runtime.results import AccountOutcome, AccountResult
 from shared.types.planner import (
@@ -17,14 +18,14 @@ from shared.types.planner import (
     TransferTaskParameters,
     make_planned_task,
 )
-from tests.orchestrator.routing_fixtures import execution_test_directive
+from tests.orchestrator.routing_fixtures import execution_test_directive, planner_test_result
 
 
 class _MockPlanner:
     def __init__(self, output: PlannerOutput) -> None:
         self._output = output
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -32,9 +33,9 @@ class _MockPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
-        return self._output
+        return planner_test_result(self._output)
 
 
 class _AccountWorker:
@@ -56,7 +57,7 @@ class _PlannerWithLegacyRepairMethods:
         self.review_calls = 0
         self.repair_calls = 0
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -64,10 +65,10 @@ class _PlannerWithLegacyRepairMethods:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
         self.plan_calls += 1
-        return self._output
+        return planner_test_result(self._output)
 
     async def review_task_completeness(self, *args: object, **kwargs: object) -> object:
         del args, kwargs
@@ -86,7 +87,7 @@ class _SignalAwarePlanner:
         self.plan_calls = 0
         self.last_prompt_signals: object | None = None
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -94,11 +95,11 @@ class _SignalAwarePlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
         self.plan_calls += 1
         self.last_prompt_signals = prompt_signals
-        return self._output
+        return planner_test_result(self._output)
 
 
 @pytest.mark.asyncio

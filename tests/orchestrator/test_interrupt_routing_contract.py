@@ -7,7 +7,7 @@ from apps.chat.src.agent.orchestrator.models.turn_directive import (
     TurnNextStep,
     TurnOutcomeKind,
 )
-from apps.chat.src.agent.orchestrator.workflows.interrupt.outcome import commit_interrupt_outcome
+from apps.chat.src.agent.orchestrator.workflows.interrupt.outcome import resolve_interrupt_updates
 
 
 def _state(*, current_wave_index: int = 0) -> OrchestratorState:
@@ -38,14 +38,14 @@ def test_interrupt_waiting_response_ends_turn() -> None:
         prompt="Need amount.",
     )
 
-    updates = commit_interrupt_outcome(
+    updates = resolve_interrupt_updates(
         state,
         {
             "pending_interrupt": interrupt,
             "outbox": [{"type": "say", "text": "Need amount."}],
             "path_shape": "interrupt_router_only",
         },
-    )
+    ).materialize()
 
     directive = updates["turn_directive"]
     assert directive.owner == "interrupt"
@@ -57,10 +57,10 @@ def test_interrupt_waiting_response_ends_turn() -> None:
 
 
 def test_interrupt_approval_advances_existing_wave() -> None:
-    updates = commit_interrupt_outcome(
+    updates = resolve_interrupt_updates(
         _state(),
         {"pending_interrupt": None, "path_shape": "interrupt_router_only"},
-    )
+    ).materialize()
 
     directive = updates["turn_directive"]
     assert directive.owner == "interrupt"
@@ -69,10 +69,10 @@ def test_interrupt_approval_advances_existing_wave() -> None:
 
 
 def test_interrupt_replacement_without_runnable_wave_returns_to_planner() -> None:
-    updates = commit_interrupt_outcome(
+    updates = resolve_interrupt_updates(
         _state(current_wave_index=1),
         {"pending_interrupt": None, "path_shape": "interrupt_replan_switch"},
-    )
+    ).materialize()
 
     directive = updates["turn_directive"]
     assert directive.owner == "interrupt"
@@ -83,7 +83,7 @@ def test_interrupt_replacement_without_runnable_wave_returns_to_planner() -> Non
 
 def test_interrupt_boundary_rejects_legacy_route_override() -> None:
     with pytest.raises(RoutingContractError, match="controlled routing fields"):
-        commit_interrupt_outcome(
+        resolve_interrupt_updates(
             _state(),
             {"pending_interrupt": None, "direct_path_triggered": True},
-        )
+        ).materialize()

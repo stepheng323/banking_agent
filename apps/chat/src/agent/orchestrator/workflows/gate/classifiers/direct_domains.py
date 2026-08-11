@@ -51,9 +51,14 @@ _QUERY_DOMAIN_PATTERNS = (
     r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?last\s+\d+\s+transactions?",
     r"^(?:(?:show|list|view|get)\s+(?:me\s+)?)?(?:my\s+)?(?:last|latest)\s+transaction\b",
     r"^how\s+much\s+(?:(?:total|in\s+total)\s+)?(?:did|have)\s+i\s+(?:spend|spent|send|sent|pay|paid|receive|received)",
+    r"^(?:have|did)\s+i\s+(?:send|sent|pay|paid|receive|received)\b",
     r"^how\s+much\s+(?:came|come)\s+in\b",
     r"^how\s+much\s+(?:money\s+)?(?:entered|was\s+received|got\s+credited)\b",
     r"^(?:what(?:'s| is|'s)|how\s+much\s+is)\s+my\s+(?:spending|expenses?|income|inflow)",
+    r"^(?:show|list|view|get|tell\s+me)\s+(?:my\s+)?"
+    r"(?:(?:gtb|gtbank|access|zenith|wema|uba|opay|kuda|moniepoint|palmpay|first bank|fcmb|stanbic|"
+    r"sterling|union|fidelity|keystone|providus|polaris)\s+)?"
+    r"(?:spending|expenses?|income|inflows?|outflows?|cash[\s-]?flow)\b",
     r"^who\s+did\s+i\s+(?:send|transfer|pay)\s+(?:money\s+)?to",
     r"^who\s+sent\s+me\s+(?:the\s+most\s+)?(?:money\s+)?",
     r"^where\s+did\s+my\s+money\s+go\b",

@@ -15,6 +15,8 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_flow import _status_query_updates
 from shared.types.planner import InterruptRouteDecision
+from shared.types.read import ReadRequest
+from shared.utils.bank_aliases import extract_known_bank_names
 
 
 async def _deterministic_status_query_updates(
@@ -63,6 +65,19 @@ async def _account_balance_switch_updates(
         active_type=runtime.active_type,
         tasks=interrupt.task_ids,
     )
+
+    # The switch is a typed account read, not merely a domain hint.  Supplying
+    # the canonical request here is important: the account worker rejects
+    # read actions without their specialized contract, and a bare
+    # ``target_intent=account`` task would otherwise surface a misleading
+    # status-check failure and strand the stashed transaction.
+    bank_names = extract_known_bank_names(runtime.text)
+    bank_name = bank_names[0] if len(bank_names) == 1 else None
+    account_read = ReadRequest(
+        subject="balance",
+        response_shape="fact_value",
+        bank_name=bank_name,
+    )
     return await _handle_switch_intent_route(
         state=state,
         interrupt=interrupt,
@@ -72,6 +87,8 @@ async def _account_balance_switch_updates(
             detected_language=None,
             target_intent="account",
             target_mode="new",
+            account_action="check_balance",
+            account_read=account_read,
             reason="deterministic account balance request during transaction interrupt",
         ),
         task_planner=runtime.task_planner,

@@ -75,7 +75,7 @@
     "brand_origin_fallback": "{brand_origin}",
     "capabilities_fallback": "Mo le ran ọ lọwọ pẹlu: {supported}.",
     "limits_fallback": "Mi o le ṣe {unsupported} nibi. Mo le ran ọ lọwọ pẹlu {supported}.",
-    "melkor_easter_egg": "Nice try, Melkor. The music is not changing today.\nPada si banking: Mo le ran ọ lọwọ pẹlu transfer, airtime/data, balance, transactions, ati receipts."
+    "melkor_easter_egg": "Ẹnu-ọ̀nà náà ṣì wà ní títì, Melkor. Kò sí àṣẹ aṣírí tó lè yí àwọn ìlànà padà tàbí ṣí ohun tó farapamọ́. Mo tún lè ràn ọ́ lọ́wọ́ láti ṣàyẹ̀wò ìwọ̀ntúnwọ̀nsì, àwọn ìṣúná, tàbí ìgbéwọ̀lórí ìfowópamọ́."
   },
   "conversational": {
     "greeting": "Pẹlẹ o. Emi ni {app_name}. Mo le ran ọ lọwọ pẹlu transfer, airtime/data, balance, ati transactions. Kini o fẹ ṣe?",

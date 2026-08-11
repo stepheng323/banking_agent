@@ -17,7 +17,11 @@ from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.grounding.frames import (
     restore_query_frames,
 )
-from banking.transactions.query.models.conversation import PendingInterpretationProposal, QueryFocus
+from banking.transactions.query.models.conversation import (
+    PendingFieldClarification,
+    PendingInterpretationProposal,
+    QueryFocus,
+)
 from banking.transactions.query.models.domain import (
     QueryFrame,
     QueryIntent,
@@ -26,7 +30,6 @@ from banking.transactions.query.models.domain import (
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
-    PendingClarificationState,
     QueryExtractionResult,
     ResolverOutcome,
     TimeReference,
@@ -35,6 +38,7 @@ from banking.transactions.query.pipeline import QueryStep
 from banking.transactions.query.services.parsing.parser import QueryParser
 from banking.transactions.query.services.reasoning.models import SemanticReasonerContext
 from banking.transactions.query.services.reasoning.reasoner import QuerySemanticReasoner
+from banking.transactions.query.session_state import restore_query_session_v3, session_query_request
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -280,7 +284,7 @@ class ExtractionStep(QueryStep):
             "response": render_message("query.clarify.unsure_rephrase", locale),
             "flow_state": "parsing",
             "session_active": True,
-            "pending_clarification": None,
+            "pending_input": None,
             "show_expanded": bool(session.get("show_expanded", False)),
             "current_page": session.get("current_page", 0),
         }
@@ -296,30 +300,23 @@ class ExtractionStep(QueryStep):
         return response_text
 
     def _load_session_query_request(self, session: dict[str, Any]) -> QueryRequest | None:
-        raw_contract = session.get("query_request")
-        if isinstance(raw_contract, QueryRequest):
-            return raw_contract
-        if isinstance(raw_contract, dict):
-            try:
-                return QueryRequest.model_validate(raw_contract)
-            except Exception:
-                return None
-        return None
+        restored = restore_query_session_v3(session)
+        return session_query_request(restored) if restored is not None else None
 
-    def _load_pending_clarification(self, session: dict[str, Any]) -> PendingClarificationState | None:
-        raw_pending = session.get("pending_clarification")
-        if isinstance(raw_pending, PendingClarificationState):
+    def _load_pending_field_clarification(self, session: dict[str, Any]) -> PendingFieldClarification | None:
+        raw_pending = session.get("pending_input")
+        if isinstance(raw_pending, PendingFieldClarification):
             return raw_pending
-        if isinstance(raw_pending, dict):
+        if isinstance(raw_pending, dict) and raw_pending.get("kind") == "field_clarification":
             try:
-                return PendingClarificationState.model_validate(raw_pending)
+                return PendingFieldClarification.model_validate(raw_pending)
             except Exception:
                 return None
         return None
 
     @staticmethod
     def _load_pending_query_input(session: dict[str, Any]) -> PendingInterpretationProposal | None:
-        raw_pending = session.get("pending_query_input")
+        raw_pending = session.get("pending_input")
         if not isinstance(raw_pending, dict) or raw_pending.get("kind") != "interpretation_proposal":
             return None
         try:
@@ -350,7 +347,7 @@ class ExtractionStep(QueryStep):
         items: list[QueryResultItem] | None = None,
         surface_view: SurfaceView | None = None,
         query_frames: list[QueryFrame] | None = None,
-        pending_clarification: PendingClarificationState | None = None,
+        pending_input: PendingFieldClarification | None = None,
     ) -> SemanticReasonerContext:
         raw_preferences = state.get("query_preferences")
         reasoner_preferences = None
@@ -376,7 +373,7 @@ class ExtractionStep(QueryStep):
             items=items,
             surface_view=surface_view,
             query_frames=query_frames,
-            pending_clarification=pending_clarification,
+            pending_input=pending_input,
             active_focus=_restore_active_focus(state.get("active_focus")),
             query_preferences=reasoner_preferences,
             turn_id=state.get("turn_id"),
@@ -528,7 +525,11 @@ class ExtractionStep(QueryStep):
                 updates = await self._handle_continuation(state, query_session)
             else:
                 updates = proposal_updates
-        elif query_session and query_session.get("session_active") and self._load_pending_clarification(query_session):
+        elif (
+            query_session
+            and query_session.get("session_active")
+            and self._load_pending_field_clarification(query_session)
+        ):
             updates = await pending_clarification.handle_pending_clarification(self, state, query_session)
         elif query_session and query_session.get("session_active"):
             updates = await self._handle_continuation(state, query_session)

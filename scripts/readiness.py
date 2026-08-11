@@ -8,6 +8,7 @@ from collections.abc import Sequence
 
 os.environ.setdefault("READINESS_VERBOSE_EVENTS", "true")
 
+from scripts.readiness_conversation_mutations import CONVERSATION_MUTATIONS
 from scripts.readiness_runner import run_readiness_sync
 
 
@@ -43,6 +44,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "extended_casual",
             "complex_interruptions",
             "robustness",
+            "adversarial-conversations",
+            "jarvis-conversations",
         ),
     )
     parser.add_argument("--phone", help="Existing test user's phone number. Required for --mode dry-run.")
@@ -60,6 +63,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=int,
         default=1,
         help="Run every scenario this many times with a fresh session.",
+    )
+    parser.add_argument(
+        "--conversation-mutation",
+        choices=tuple(CONVERSATION_MUTATIONS),
+        help="Apply one deterministic conversation mutation to each selected scenario.",
     )
     parser.add_argument("--json-output", help="Optional path to write a JSON readiness report.")
     parser.add_argument("--transcript-output", help="Optional path to write the rendered transcript report.")
@@ -79,6 +87,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             reset_session=args.reset_session,
             stop_on_fail=args.stop_on_fail,
             repeat=args.repeat,
+            conversation_mutation=args.conversation_mutation,
             json_output=args.json_output,
             transcript_output=args.transcript_output,
         )

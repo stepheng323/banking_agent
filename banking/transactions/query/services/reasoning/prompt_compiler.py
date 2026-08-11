@@ -47,6 +47,10 @@ status|amount|recipient|counterparty|bank|date|description|reference|account|dir
 - An explicit request to see the underlying transaction(s) from a focused fact answer ("show me", "show it", or
   equivalent wording) is show_more with followup_intent=refine_existing. The runtime clears the fact projection and
   reruns the same recipient, period, direction, account, and other filters as a transaction list.
+- A contrastive direction follow-up such as "what about income?", "what came in instead?", or equivalent
+  multilingual wording changes only the active direction. Emit transaction_direction_delta=credit for income/inflow,
+  debit for spending/outflow, and both only when the user explicitly asks for both. Use aggregate or filter_delta with
+  refine_existing; preserve the active period, account, status, recipient, and other filters.
 """
 
 _REPAIR = """Repair rules:

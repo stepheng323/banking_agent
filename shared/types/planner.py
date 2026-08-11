@@ -18,6 +18,7 @@ from shared.types.conversation_sets import (
     SetAmountAllocation,
     SetScopeDelta,
 )
+from shared.types.prompt_boundary import PromptBoundaryIntent
 from shared.types.query_preferences import QueryPreferenceUpdate
 from shared.types.read import ReadRequest, ReadSubject, ResponseShape
 
@@ -1027,6 +1028,7 @@ PlannerResponseKey: TypeAlias = Literal[
     "conversational.casual_chat",
     "conversational.out_of_scope",
     "conversational.clarify",
+    "conversational.security_confirmation_required",
     "planner.cancelled",
     "capability.unsupported_unavailable",
 ]
@@ -1041,6 +1043,7 @@ SemanticRouterResponseKey: TypeAlias = Literal[
     "conversational.casual_chat",
     "conversational.out_of_scope",
     "conversational.clarify",
+    "conversational.security_confirmation_required",
     "planner.cancelled",
     "capability.unsupported_unavailable",
     "meta.melkor_easter_egg",
@@ -1655,6 +1658,18 @@ class SemanticRouteDecision(BaseModel):
         alias="res",
         description="Direct response text when decision=direct_reply or direct_context_answer",
     )
+    boundary_intent: PromptBoundaryIntent | None = Field(
+        default=None,
+        alias="b_intent",
+        description="Typed prompt-boundary classification when a direct response is a safety boundary.",
+    )
+    boundary_confidence: float | None = Field(
+        default=None,
+        alias="b_conf",
+        ge=0.0,
+        le=1.0,
+        description="Confidence in the prompt-boundary classification.",
+    )
     expected_transaction_executors: list[TransactionExecutor] = Field(
         default_factory=list,
         alias="execs",
@@ -1793,6 +1808,13 @@ class SemanticRouteDecision(BaseModel):
                 mandate_statuses=[request.status] if request.status else [],
             )
         return completed
+
+    @model_validator(mode="after")
+    def default_boundary_confidence(self) -> "SemanticRouteDecision":
+        """Use router confidence when a boundary classifier omits its duplicate field."""
+        if self.boundary_intent is not None and self.boundary_confidence is None:
+            self.boundary_confidence = self.confidence
+        return self
 
     @model_validator(mode="after")
     def require_specialized_read_contract(self) -> "SemanticRouteDecision":

@@ -4,6 +4,7 @@ from typing import Any
 
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
+from banking.transactions.query.conversation_focus import focused_item_index
 from banking.transactions.query.models.domain import (
     QueryRequest,
     QueryResult,
@@ -14,7 +15,8 @@ from banking.transactions.query.services.fetching.fetch import apply_filters, ap
 
 
 def _coerce_cached_transactions(session: dict[str, Any]) -> list[dict[str, Any]]:
-    raw_transactions = session.get("cached_transactions")
+    raw_cache = session.get("cache")
+    raw_transactions = raw_cache.get("cached_transactions") if isinstance(raw_cache, dict) else None
     if not isinstance(raw_transactions, list):
         return []
     return [item for item in raw_transactions if isinstance(item, dict)]
@@ -102,8 +104,11 @@ def maybe_build_fact_answer_from_decision(
     if _requires_scoped_fact_query(session_query_request):
         return None
 
-    selected_index_raw = session.get("selected_item_index")
-    selected_index = selected_index_raw if isinstance(selected_index_raw, int) and selected_index_raw >= 0 else None
+    selected_index = (
+        focused_item_index(session.get("active_focus"), restored_query_result.items)
+        if restored_query_result is not None and restored_query_result.items
+        else None
+    )
     raw_drill_index = getattr(decision, "drill_down_index", None)
     drill_index = raw_drill_index if isinstance(raw_drill_index, int) and raw_drill_index >= 0 else selected_index
 

@@ -45,11 +45,10 @@ from banking.transactions.query.models.domain import QueryIntent, QueryResult, T
 from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
-    PendingClarificationState,
     QueryExtractionResult,
 )
-from banking.transactions.query.session_state import build_query_session_v3, pending_input_from_legacy
-from tests.query.factories import make_query_request
+from banking.transactions.query.session_state import build_query_session_v3
+from tests.query.factories import make_pending_input, make_query_request
 
 
 def _pending_query_clarification_snapshot(*, timestamp: float | None = None) -> dict[str, object]:
@@ -57,15 +56,19 @@ def _pending_query_clarification_snapshot(*, timestamp: float | None = None) -> 
         intent=QueryIntent.ANALYTICS_SUMMARY,
         time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 31)),
     )
-    return {
-        "session_active": True,
-        "timestamp": timestamp if timestamp is not None else time.time(),
-        "pending_clarification": {
-            "original_query": "How much did I spend last?",
-            "resolver_message": "Which period did you mean?",
-        },
-        "query_request": query_request.model_dump(mode="json"),
-    }
+    pending = make_pending_input(
+        original_query="How much did I spend last?",
+        original_extraction=QueryExtractionResult(intent=QueryIntent.ANALYTICS_SUMMARY),
+        resolver_message="Which period did you mean?",
+        query_request=query_request,
+    )
+    return build_query_session_v3(
+        request=query_request,
+        result=None,
+        raw_frames=[],
+        pending_input=pending,
+        timestamp=timestamp if timestamp is not None else time.time(),
+    ).model_dump(mode="json")
 
 
 def _query_surface_frame(*, summary_text: str = "Netflix was ₦5,000.") -> ContextFrame:
@@ -158,15 +161,12 @@ async def test_load_query_session_snapshot_prefers_pending_clarification_over_co
     assert "query_result" not in snapshot
 
 
-async def test_load_query_session_snapshot_projects_v3_pending_input_before_context_frame() -> None:
-    pending_state = PendingClarificationState(
+async def test_load_query_session_snapshot_preserves_v3_pending_input_before_context_frame() -> None:
+    pending = make_pending_input(
         original_query="How much did I spend last?",
-        current_intent=QueryIntent.ANALYTICS_SUMMARY,
         original_extraction=QueryExtractionResult(intent=QueryIntent.ANALYTICS_SUMMARY),
         resolver_message="Which period did you mean?",
     )
-    pending = pending_input_from_legacy(pending_state)
-    assert pending is not None
     request = make_query_request(
         intent=QueryIntent.ANALYTICS_SUMMARY,
         time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 31)),
@@ -189,7 +189,7 @@ async def test_load_query_session_snapshot_projects_v3_pending_input_before_cont
 
     assert source == "pending_clarification"
     assert snapshot is not None
-    assert snapshot["pending_clarification"]["resolver_message"] == "Which period did you mean?"
+    assert snapshot["pending_input"]["resolver_message"] == "Which period did you mean?"
 
 
 async def test_load_query_session_snapshot_no_longer_prefers_redis() -> None:
@@ -386,7 +386,11 @@ def test_turn_context_summary_builds_compact_shared_view() -> None:
 
     summary = build_turn_context_summary(
         state,
-        query_session_snapshot={"session_active": True, "query_result": {"summary_text": "You spent ₦5,000 today."}},
+        query_session_snapshot={
+            "schema_version": 3,
+            "session_active": True,
+            "display_result": {"summary_text": "You spent ₦5,000 today."},
+        },
         query_session_source="context_frame",
     )
 
@@ -461,13 +465,15 @@ def test_router_context_includes_pending_query_clarification_hint() -> None:
         ),
         query_session_snapshot={
             "session_active": True,
-            "query_result": {"summary_text": "You spent ₦5,000 today."},
-            "pending_clarification": {
+            "schema_version": 3,
+            "display_result": {"summary_text": "You spent ₦5,000 today."},
+            "pending_input": {
+                "kind": "field_clarification",
                 "original_query": "How much did I spend last",
                 "resolver_message": "What time period did you mean by last?",
             },
         },
-        query_session_source="stashed_compat",
+        query_session_source="pending_clarification",
     )
 
     router_context = build_router_context_from_summary(summary, expected_executors=["transfer"])
@@ -485,7 +491,11 @@ def test_router_context_ignores_inactive_query_session_for_continuation() -> Non
             channel="whatsapp",
             active_domain="query",
         ),
-        query_session_snapshot={"session_active": False, "query_result": {"summary_text": "You spent ₦5,000 today."}},
+        query_session_snapshot={
+            "schema_version": 3,
+            "session_active": False,
+            "display_result": {"summary_text": "You spent ₦5,000 today."},
+        },
         query_session_source="context_frame",
     )
 
@@ -612,9 +622,8 @@ def test_get_or_build_turn_context_summary_reuses_cached_state_payload(monkeypat
 
 
 def test_turn_context_summary_compacts_pydantic_payload_objects() -> None:
-    pending = PendingClarificationState(
+    pending = make_pending_input(
         original_query="How much did I spend last",
-        current_intent=QueryIntent.ANALYTICS_SUMMARY,
         original_extraction=QueryExtractionResult(
             intent=QueryIntent.ANALYTICS_SUMMARY,
             ambiguities=[Ambiguity(code=AmbiguityCode.TIME_VAGUE, context="last")],
@@ -636,7 +645,7 @@ def test_turn_context_summary_compacts_pydantic_payload_objects() -> None:
                 id="q1",
                 type="query",
                 stage=TaskStage.EXTRACTED,
-                payload={"pending_clarification": pending},
+                payload={"pending_input": pending},
             )
         },
         waves=[["q1"]],
@@ -646,5 +655,5 @@ def test_turn_context_summary_compacts_pydantic_payload_objects() -> None:
     summary = build_turn_context_summary(state)
 
     assert summary.active_flow_summary is not None
-    assert "pending_clarification" in summary.active_flow_summary
+    assert "pending_input" in summary.active_flow_summary
     assert "How much did I spend last" in summary.active_flow_summary

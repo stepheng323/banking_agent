@@ -29,7 +29,6 @@ class PlannerContextSections:
 def build_planner_context_sections(
     *,
     turn_summary: TurnContextSummary,
-    query_session_source: str | None,
     is_transactional_flow: bool,
     active_intent: str | None,
     compact_transaction_context: bool,
@@ -40,7 +39,7 @@ def build_planner_context_sections(
 
     query_session_summary = getattr(turn_summary, "query_session_summary", None)
     if query_session_summary and not is_transactional_flow:
-        section_name = "query_session_stashed_compat" if query_session_source == "stashed_compat" else "query_session"
+        section_name = "query_session"
         sections.append((section_name, _clip_text(query_session_summary, PLANNER_CONTEXT_QUERY_SESSION_MAX_CHARS)))
         logger.info("planner_context_injected", context=section_name)
 

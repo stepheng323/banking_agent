@@ -33,8 +33,10 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_runtime import (
     build_runtime_planner_system_prompt,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import PlannerOutput
+from tests.orchestrator.routing_fixtures import planner_test_result
 
 _PROMPT_SIZE_BASELINE = {
     "generic": 8475,
@@ -161,7 +163,7 @@ class _CapturingPlanner:
         self.last_context: str | None = None
         self.last_prompt_signals: object | None = None
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -169,11 +171,11 @@ class _CapturingPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text
         self.last_context = context
         self.last_prompt_signals = prompt_signals
-        return self._output
+        return planner_test_result(self._output)
 
 
 @pytest.mark.asyncio

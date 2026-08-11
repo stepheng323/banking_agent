@@ -24,6 +24,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_context_for_state,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks as _plan_tasks
 from banking.transactions.query.models.domain import QueryIntent, TimeRange
 from shared.types.balance import BalanceFollowupDelta, BalanceOperation
@@ -45,7 +46,7 @@ from shared.types.planner import (
     make_planned_task,
 )
 from shared.types.read import ReadRequest
-from tests.orchestrator.routing_fixtures import finalize_test_directive
+from tests.orchestrator.routing_fixtures import finalize_test_directive, planner_test_result
 from tests.query.factories import make_query_request
 
 
@@ -87,7 +88,7 @@ class _SurfaceFollowupPlanner:
         self.last_replay_modifier_context = context
         return self.replay_modifier
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -95,12 +96,12 @@ class _SurfaceFollowupPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context, prompt_signals
         self.plan_calls += 1
         if self.planner_output is None:
             raise AssertionError("planner should not be called for grounded frame follow-up")
-        return self.planner_output
+        return planner_test_result(self.planner_output)
 
 
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, object]:

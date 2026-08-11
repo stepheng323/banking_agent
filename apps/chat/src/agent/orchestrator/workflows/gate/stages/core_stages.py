@@ -72,7 +72,7 @@ async def _stage_cancel(ctx: GateContext) -> RouteResolution | None:
     if (
         isinstance(ctx.query_session_snapshot, dict)
         and ctx.query_session_snapshot.get("session_active")
-        and ctx.query_session_snapshot.get("pending_clarification")
+        and ctx.query_session_snapshot.get("pending_input")
     ):
         return direct_response(
             ctx,

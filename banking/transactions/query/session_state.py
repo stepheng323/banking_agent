@@ -1,8 +1,8 @@
-"""Construction and safe projection of the v3 query session envelope."""
+"""Construction and typed access for the v3 query session envelope."""
 
 from __future__ import annotations
 
-from typing import Any, Literal, cast
+from typing import Any
 
 from pydantic import TypeAdapter
 
@@ -13,19 +13,11 @@ from banking.transactions.query.models.conversation import (
     PendingInterpretationProposal,
     QueryExecutionContract,
     QueryFocus,
-    QueryInputCandidate,
     QuerySessionV3,
     QueryTurnPlan,
     SingleQueryExecution,
 )
-from banking.transactions.query.models.domain import QueryIntent, QueryResult
-from banking.transactions.query.models.extraction import (
-    Ambiguity,
-    ClarificationCandidate,
-    ClarificationOperation,
-    PendingClarificationState,
-    QueryExtractionResult,
-)
+from banking.transactions.query.models.domain import QueryResult
 from banking.transactions.query.models.operations import QueryRequest
 
 _CACHE_KEYS = (
@@ -111,153 +103,27 @@ def build_query_session_v3(
     )
 
 
-def pending_input_from_legacy(raw: object) -> PendingFieldClarification | None:
-    """Translate old clarification state once at the v3 persistence boundary."""
+def restore_query_session_v3(raw: object) -> QuerySessionV3 | None:
+    """Validate the sole query-session checkpoint contract."""
     try:
-        pending = raw if isinstance(raw, PendingClarificationState) else PendingClarificationState.model_validate(raw)
-    except Exception:
-        return None
-    request: QueryRequest | None = None
-    if isinstance(pending.query_request, dict):
-        try:
-            request = QueryRequest.model_validate(pending.query_request)
-        except Exception:
-            request = None
-    return PendingFieldClarification(
-        source_frame_id=next(
-            (candidate.frame_id for candidate in pending.candidate_payloads if candidate.frame_id),
-            None,
-        ),
-        original_query=pending.original_query,
-        clarification_type=pending.clarification_type,
-        target_field=pending.target_field,
-        candidate_payloads=[
-            QueryInputCandidate(label=candidate.label, payload=candidate.payload, frame_id=candidate.frame_id)
-            for candidate in pending.candidate_payloads[:5]
-        ],
-        original_operation=(
-            pending.original_operation.model_dump(mode="json") if pending.original_operation is not None else {}
-        ),
-        query_request=request,
-        original_extraction=(
-            pending.original_extraction.model_dump(mode="json") if pending.original_extraction is not None else None
-        ),
-        ambiguities=[ambiguity.model_dump(mode="json") for ambiguity in pending.ambiguities],
-        resolver_message=pending.resolver_message,
-        language=pending.language,
-        attempt_count=pending.attempt_count,
-        created_turn_id=pending.created_turn_id,
-    )
-
-
-def legacy_pending_from_input(raw: object) -> PendingClarificationState | None:
-    """Adapt v3 field input for the existing deterministic clarification resolver.
-
-    The adapter is deliberately ephemeral: checkpoints contain only
-    ``PendingFieldClarification``.  It can be removed when the resolver itself
-    consumes ``PendingQueryInput`` directly.
-    """
-    try:
-        pending = raw if isinstance(raw, PendingFieldClarification) else PendingFieldClarification.model_validate(raw)
-    except Exception:
-        return None
-    try:
-        extraction = (
-            QueryExtractionResult.model_validate(pending.original_extraction)
-            if isinstance(pending.original_extraction, dict)
-            else None
-        )
-        operation = (
-            ClarificationOperation.model_validate(pending.original_operation) if pending.original_operation else None
-        )
-        clarification_type = pending.clarification_type or cast_clarification_type(pending.target_field)
-        # Early v3 checkpoints did not persist the discriminator.  Candidate
-        # payloads are only produced for selectable clarifications, so infer
-        # selection for those checkpoints rather than sending a numeric answer
-        # back through the semantic reasoner.
-        if clarification_type is None and pending.candidate_payloads:
-            clarification_type = "selection"
-        return PendingClarificationState(
-            original_query=pending.original_query,
-            current_intent=extraction.intent if extraction is not None else QueryIntent.TRANSACTION_LIST,
-            original_extraction=extraction,
-            ambiguities=_restore_ambiguities(pending.ambiguities),
-            resolver_message=pending.resolver_message,
-            language=pending.language,
-            clarification_type=clarification_type,
-            target_field=pending.target_field,
-            candidate_payloads=[
-                ClarificationCandidate(label=candidate.label, payload=candidate.payload, frame_id=candidate.frame_id)
-                for candidate in pending.candidate_payloads
-            ],
-            original_operation=operation,
-            query_request=pending.query_request.model_dump(mode="json") if pending.query_request is not None else None,
-            attempt_count=pending.attempt_count,
-            created_turn_id=pending.created_turn_id,
-        )
+        return raw if isinstance(raw, QuerySessionV3) else QuerySessionV3.model_validate(raw)
     except Exception:
         return None
 
 
-ClarificationType = Literal[
-    "time", "selection", "recipient", "account", "direction", "category", "status", "amount", "scope"
-]
-
-
-def cast_clarification_type(value: str | None) -> ClarificationType | None:
-    allowed = {"time", "selection", "recipient", "account", "direction", "category", "status", "amount", "scope"}
-    return cast(ClarificationType, value) if value in allowed else None
-
-
-def _restore_ambiguities(raw: list[dict[str, object]]) -> list[Ambiguity]:
-    restored: list[Ambiguity] = []
-    for item in raw:
-        try:
-            restored.append(Ambiguity.model_validate(item))
-        except Exception:
-            continue
-    return restored
-
-
-def project_query_session_v3(raw: object) -> dict[str, Any] | None:
-    """Create ephemeral worker state from a v3 checkpoint envelope."""
-    try:
-        session = raw if isinstance(raw, QuerySessionV3) else QuerySessionV3.model_validate(raw)
-    except Exception:
-        return None
+def session_query_request(session: QuerySessionV3) -> QueryRequest | None:
+    """Return the primary executable request without creating flat state authority."""
     contract = session.execution_contract
-    request: QueryRequest | None
     if isinstance(contract, SingleQueryExecution):
-        request = contract.request
-    elif isinstance(contract, QueryTurnPlan):
+        return contract.request
+    if isinstance(contract, QueryTurnPlan):
         primary = next((step for step in contract.steps if step.role == "primary"), None)
-        request = primary.request if primary is not None else None
-    else:
-        request = None
-    pending = session.pending_input
-    legacy_pending = legacy_pending_from_input(pending) if isinstance(pending, PendingFieldClarification) else None
-    return {
-        "session_active": session.session_active,
-        "query_request": request.model_dump(mode="json") if request is not None else None,
-        "execution_contract": contract.model_dump(mode="json") if contract is not None else None,
-        "query_result": session.display_result,
-        "query_frames": session.query_frames,
-        "pending_query_input": pending.model_dump(mode="json") if pending is not None else None,
-        "pending_clarification": legacy_pending.model_dump(mode="json") if legacy_pending is not None else None,
-        "current_page": session.current_page,
-        "page_size": session.page_size,
-        "show_expanded": session.show_expanded,
-        "timestamp": session.timestamp,
-        "recent_read_only": session.recent_read_only,
-        "active_focus": session.active_focus.model_dump(mode="json") if session.active_focus is not None else None,
-        "display_frame_id": session.display_frame_id,
-        **session.cache,
-    }
+        return primary.request if primary is not None else None
+    return None
 
 
 __all__ = [
     "build_query_session_v3",
-    "legacy_pending_from_input",
-    "pending_input_from_legacy",
-    "project_query_session_v3",
+    "restore_query_session_v3",
+    "session_query_request",
 ]

@@ -56,12 +56,17 @@ def _hydrate_cached_identity(payload: dict[str, Any]) -> Any | None:
     )
 
 
-async def load_channel_identity_user(channel: str, channel_user_id: str) -> Any | None:
+async def load_channel_identity_user(
+    channel: str,
+    channel_user_id: str,
+    *,
+    redis_client: Any | None = None,
+) -> Any | None:
     if channel not in _CACHEABLE_CHANNELS:
         return None
     try:
-        redis_client = RedisClient.get_client()
-        cached = await redis_client.get(channel_identity_cache_key(channel, channel_user_id))
+        client = redis_client if redis_client is not None else RedisClient.get_client()
+        cached = await client.get(channel_identity_cache_key(channel, channel_user_id))
         if not cached:
             return None
         payload = json.loads(cached)
@@ -74,7 +79,7 @@ async def load_channel_identity_user(channel: str, channel_user_id: str) -> Any 
                 channel=channel,
                 channel_user_id=channel_user_id,
             )
-            delete = getattr(redis_client, "delete", None)
+            delete = getattr(client, "delete", None)
             if callable(delete):
                 await delete(channel_identity_cache_key(channel, channel_user_id))
         return user
@@ -88,7 +93,13 @@ async def load_channel_identity_user(channel: str, channel_user_id: str) -> Any 
         return None
 
 
-async def store_channel_identity_user(channel: str, channel_user_id: str, user: Any) -> None:
+async def store_channel_identity_user(
+    channel: str,
+    channel_user_id: str,
+    user: Any,
+    *,
+    redis_client: Any | None = None,
+) -> None:
     if channel not in _CACHEABLE_CHANNELS:
         return
     payload = _serialize_cached_identity(user)
@@ -100,8 +111,8 @@ async def store_channel_identity_user(channel: str, channel_user_id: str, user: 
         )
         return
     try:
-        redis_client = RedisClient.get_client()
-        await redis_client.set(
+        client = redis_client if redis_client is not None else RedisClient.get_client()
+        await client.set(
             channel_identity_cache_key(channel, channel_user_id),
             json.dumps(payload),
             ex=CHANNEL_IDENTITY_CACHE_TTL_SECONDS,

@@ -43,7 +43,14 @@ def build_mirrored_account_contexts(
     indexed: dict[str, MirroredAccountContext] = {}
     for account in accounts_info:
         external_id = str(account.get("account_id") or account.get("mono_account_id") or "").strip()
-        linked_account_id = str(account.get("id") or "").strip()
+        # ``id`` is historically the provider-scoped account identifier in
+        # serialized execution context.  Durable mirror rows and coverage,
+        # however, are keyed by the database Account UUID.  Prefer the
+        # explicit database linkage when present and retain the old ``id``
+        # fallback for callers that already provide a database-shaped record.
+        linked_account_id = str(
+            account.get("database_id") or account.get("linked_account_id") or account.get("id") or ""
+        ).strip()
         if not external_id or not linked_account_id:
             continue
         indexed[external_id] = MirroredAccountContext(

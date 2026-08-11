@@ -20,6 +20,7 @@ def build_transfer_worker(
     payout_resolver_provider: Any | None = None,
     payout_bank_cache: Any | None = None,
     validation_service: Any | None = None,
+    risk_advisory_enabled: bool = True,
 ) -> TransferWorker:
     """Build the transfer worker through the transfer domain boundary."""
     return TransferWorker(
@@ -33,4 +34,5 @@ def build_transfer_worker(
         payout_bank_cache=payout_bank_cache,
         dd_provider=dd_provider,
         redis_client=redis_client,
+        risk_advisory_enabled=risk_advisory_enabled,
     )

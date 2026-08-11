@@ -77,6 +77,18 @@ class ConversationResponder:
 
         # Determine allowed suggestions from live capability policy
         allowed_suggestions = resolve_available_conversational_suggestions(locale=locale)
+        boundary_confidence = _coerce_boundary_confidence(user_ctx.get("boundary_confidence"))
+        boundary_telemetry = (
+            {
+                "boundary_intent": user_ctx.get("boundary_intent"),
+                "boundary_confidence_band": (
+                    "high" if (boundary_confidence or 0.0) >= 0.90 else "low"
+                ),
+                "boundary_response_source": str(user_ctx.get("boundary_response_source") or "generated"),
+            }
+            if mode == ConversationResponseMode.MELKOR_BOUNDARY
+            else {}
+        )
 
         is_joke_turn = responder_text.is_joke_turn(text, history)
         is_banking_reaction = (
@@ -85,6 +97,7 @@ class ConversationResponder:
                 ConversationResponseMode.CONTEXTUAL_WORKER,
                 ConversationResponseMode.CONTEXTUAL_META,
                 ConversationResponseMode.UNSUPPORTED_BOUNDARY,
+                ConversationResponseMode.MELKOR_BOUNDARY,
                 ConversationResponseMode.SOCIAL_META,
             )
             and casual_streak == 0
@@ -97,6 +110,12 @@ class ConversationResponder:
                 return grounded_reply
 
         prompt_grounding: dict[str, Any] | None = grounding if isinstance(grounding, dict) else None
+        if mode == ConversationResponseMode.MELKOR_BOUNDARY:
+            # Boundary copy is generated from typed metadata only.  Do not
+            # expose the raw attack text, history, profile, or private state
+            # to the response model.
+            prompt_grounding = None
+            name = None
         if mode == ConversationResponseMode.SOCIAL_META and user_ctx.get(SOCIAL_META_RESPONSE_KEY_CTX) in {
             "conversational.greeting",
             "conversational.greeting_named",
@@ -120,6 +139,14 @@ class ConversationResponder:
             is_banking_reaction=is_banking_reaction,
             mode=mode,
             allowed_suggestions=allowed_suggestions,
+            boundary_intent=(
+                str(user_ctx.get("boundary_intent"))
+                if user_ctx.get("boundary_intent") is not None
+                else None
+            ),
+            boundary_confidence=(
+                boundary_confidence
+            ),
         )
 
         messages = responder_prompts.build_conversation_responder_messages(prompt_input)
@@ -165,6 +192,7 @@ class ConversationResponder:
                 output_token_estimate=0,
                 extra_fields={
                     **http_metrics,
+                    **boundary_telemetry,
                     "mode": mode.value,
                     "prompt_profile": mode.value,
                     "prompt_cache_key_version": "none",
@@ -226,6 +254,7 @@ class ConversationResponder:
             output_token_estimate=estimated_tokens_from_chars(output_chars),
             extra_fields={
                 **provider_fields,
+                **boundary_telemetry,
                 "mode": mode.value,
                 "prompt_profile": mode.value,
                 "prompt_cache_key_version": "none",
@@ -261,3 +290,14 @@ def _message_char_counts(messages: list[dict[str, str]]) -> tuple[int, int]:
         else:
             user_chars += len(content)
     return system_chars, user_chars
+
+
+def _coerce_boundary_confidence(value: Any) -> float | None:
+    """Accept only finite numeric boundary confidence from routing metadata."""
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return None
+    if confidence != confidence:  # NaN
+        return None
+    return max(0.0, min(1.0, confidence))

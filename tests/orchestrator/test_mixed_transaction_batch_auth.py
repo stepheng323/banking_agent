@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wa
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.ingest import ingest_message
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from banking.bills.airtime.worker import AirtimeWorker
 from banking.presentation.formatters.accounts import format_source_account_info_from_account_number
@@ -31,7 +32,7 @@ from shared.types.planner import (
     TransferTaskParameters,
     make_planned_task,
 )
-from tests.orchestrator.routing_fixtures import execution_test_directive
+from tests.orchestrator.routing_fixtures import execution_test_directive, planner_test_result
 
 SHARED_SOURCE_LINE = format_source_account_info_from_account_number(
     bank="Zenith Bank",
@@ -45,7 +46,7 @@ class _MockPlanner:
     def __init__(self, output: PlannerOutput) -> None:
         self._output = output
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -53,9 +54,9 @@ class _MockPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
-        return self._output
+        return planner_test_result(self._output)
 
     async def interpret_pending_action_edit(
         self,
@@ -74,7 +75,7 @@ class _SequentialPlanner:
         self._outputs = outputs
         self._idx = 0
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -82,15 +83,15 @@ class _SequentialPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
         if not self._outputs:
             raise AssertionError("expected at least one planner output")
         if self._idx >= len(self._outputs):
-            return self._outputs[-1]
+            return planner_test_result(self._outputs[-1])
         output = self._outputs[self._idx]
         self._idx += 1
-        return output
+        return planner_test_result(output)
 
     async def route_pending_input(
         self,

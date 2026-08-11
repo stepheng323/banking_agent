@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+from pydantic import ValidationError
+
 from apps.chat.src.agent.orchestrator.graph.invocation_context import build_invocation_result
 from apps.chat.src.agent.orchestrator.graph.route_metrics import (
     resolve_path_label,
@@ -103,21 +106,18 @@ def test_semantic_path_fallback_uses_directive_derived_path() -> None:
     assert resolve_semantic_path_shape(context, state, path_label) == "planner"
 
 
-def test_v1_checkpoint_hydration_drops_legacy_route_metadata() -> None:
-    state = OrchestratorState.model_validate(
-        {
-            "schema_version": "v1",
-            "user_id": "user-1",
-            "phone_number": "2348000000000",
-            "routing_owner": "planner",
-            "routing_decision": "transfer",
-            "turn_directive": _directive().model_dump(mode="json"),
-        }
-    )
-
-    assert state.schema_version == "v2"
-    assert state.turn_directive is None
-    assert "routing_owner" not in state.model_dump()
+def test_v1_checkpoint_is_rejected_after_atomic_cutover() -> None:
+    with pytest.raises(ValidationError, match="schema_version"):
+        OrchestratorState.model_validate(
+            {
+                "schema_version": "v1",
+                "user_id": "user-1",
+                "phone_number": "2348000000000",
+                "routing_owner": "planner",
+                "routing_decision": "transfer",
+                "turn_directive": _directive().model_dump(mode="json"),
+            }
+        )
 
 
 def test_missing_directive_does_not_infer_interrupt_authority() -> None:
@@ -143,19 +143,17 @@ def test_missing_version_with_new_directive_is_not_misclassified_as_v1() -> None
     assert state.turn_directive == _directive()
 
 
-def test_invalid_optional_directive_is_dropped_without_losing_state() -> None:
-    state = OrchestratorState.model_validate(
-        {
-            "schema_version": "v2",
-            "user_id": "user-1",
-            "phone_number": "2348000000000",
-            "active_domain": "query",
-            "turn_directive": {"owner": "unknown", "decision": "bad"},
-        }
-    )
-
-    assert state.turn_directive is None
-    assert state.active_domain == "query"
+def test_invalid_directive_is_rejected_after_atomic_cutover() -> None:
+    with pytest.raises(ValidationError, match="turn_directive"):
+        OrchestratorState.model_validate(
+            {
+                "schema_version": "v2",
+                "user_id": "user-1",
+                "phone_number": "2348000000000",
+                "active_domain": "query",
+                "turn_directive": {"owner": "unknown", "decision": "bad"},
+            }
+        )
 
 
 def test_current_checkpoint_round_trip_preserves_directive() -> None:

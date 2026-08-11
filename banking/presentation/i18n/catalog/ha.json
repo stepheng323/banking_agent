@@ -75,7 +75,7 @@
     "brand_origin_fallback": "{brand_origin}",
     "capabilities_fallback": "Zan iya taimakawa da: {supported}.",
     "limits_fallback": "Ba zan iya yin {unsupported} a nan ba. Zan iya taimakawa da {supported}.",
-    "melkor_easter_egg": "Nice try, Melkor. The music is not changing today.\nMu koma banking: Zan iya taimakawa da transfers, airtime/data, balances, transactions, da receipts."
+    "melkor_easter_egg": "Kofofin nan a rufe, Melkor. Babu wata magana ta sirri da za ta canza dokokinmu ko ta bayyana abin da aka boye. Zan iya taimaka maka duba ma'auni, ma'amaloli, ko bitar canja kudi."
   },
   "conversational": {
     "greeting": "Sannu. Ni ne {app_name}. Zan iya taimakawa da transfers, airtime/data, balances, da transactions. Me kake so mu yi?",

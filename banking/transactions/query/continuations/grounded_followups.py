@@ -29,7 +29,7 @@ def resolve_grounded_followup(
             "response": render_message("query.clarify.missing_scope", language),
             "flow_state": "parsing",
             "session_active": True,
-            "pending_clarification": None,
+            "pending_input": None,
             "show_expanded": bool(session.get("show_expanded", False)),
             "current_page": session.get("current_page", 0),
         }
@@ -47,7 +47,7 @@ def resolve_grounded_followup(
                 "response": render_message("query.clarify.memory_unavailable", language),
                 "flow_state": "parsing",
                 "session_active": True,
-                "pending_clarification": None,
+                "pending_input": None,
                 "show_expanded": bool(session.get("show_expanded", False)),
                 "current_page": session.get("current_page", 0),
             }
@@ -55,7 +55,7 @@ def resolve_grounded_followup(
             "response": response,
             "flow_state": "complete",
             "session_active": True,
-            "pending_clarification": None,
+            "pending_input": None,
             "resolver_message": None,
             "show_expanded": bool(session.get("show_expanded", False)),
             "current_page": session.get("current_page", 0),
@@ -73,7 +73,7 @@ def resolve_grounded_followup(
                 "response": render_message("query.clarify.grounded_query_failed", language),
                 "flow_state": "parsing",
                 "session_active": True,
-                "pending_clarification": None,
+                "pending_input": None,
                 "show_expanded": bool(session.get("show_expanded", False)),
                 "current_page": session.get("current_page", 0),
             }

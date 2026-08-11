@@ -63,6 +63,36 @@ _ORDINAL_WORDS: dict[str, int] = {
     "4th": 3,
     "fifth": 4,
     "5th": 4,
+    "sixth": 5,
+    "6th": 5,
+    "seventh": 6,
+    "7th": 6,
+    "eighth": 7,
+    "8th": 7,
+    "ninth": 8,
+    "9th": 8,
+    "tenth": 9,
+    "10th": 9,
+    "eleventh": 10,
+    "11th": 10,
+    "twelfth": 11,
+    "12th": 11,
+    "thirteenth": 12,
+    "13th": 12,
+    "fourteenth": 13,
+    "14th": 13,
+    "fifteenth": 14,
+    "15th": 14,
+    "sixteenth": 15,
+    "16th": 15,
+    "seventeenth": 16,
+    "17th": 16,
+    "eighteenth": 17,
+    "18th": 17,
+    "nineteenth": 18,
+    "19th": 18,
+    "twentieth": 19,
+    "20th": 19,
 }
 
 
@@ -428,9 +458,11 @@ class QuerySemanticReasoner:
         for token, index in _ORDINAL_WORDS.items():
             if re.search(rf"\b{re.escape(token)}\b", normalized):
                 return index
-        match = re.search(r"\b(?:item|number|no\.?|#)\s*([1-5])\b", normalized)
+        match = re.search(r"\b(?:item|number|no\.?|#)\s*(\d{1,2})\b", normalized)
         if match:
-            return int(match.group(1)) - 1
+            value = int(match.group(1))
+            if 1 <= value <= 20:
+                return value - 1
         return None
 
     @staticmethod
@@ -607,7 +639,7 @@ class QuerySemanticReasoner:
             else None
         )
         pending_clarification_section = (
-            self._serialize(context.pending_clarification) if prompt_profile == "pending_clarification" else "none"
+            self._serialize(context.pending_input) if prompt_profile == "pending_clarification" else "none"
         )
         dynamic_context = QUERY_SEMANTIC_REASONER_CONTEXT.format(
             today=context.today.isoformat(),

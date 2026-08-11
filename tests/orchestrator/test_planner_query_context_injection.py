@@ -5,10 +5,12 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from banking.transactions.query.grounding.frames import build_query_frame
 from banking.transactions.query.models.domain import Filters, QueryIntent, QueryResult, TimeRange
 from shared.types.planner import PlannerOutput
+from tests.orchestrator.routing_fixtures import planner_test_result
 from tests.query.factories import make_query_request
 
 
@@ -16,7 +18,7 @@ class _CapturingPlanner:
     def __init__(self) -> None:
         self.last_context: str | None = None
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -24,10 +26,10 @@ class _CapturingPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text
         self.last_context = context
-        return PlannerOutput(
+        output = PlannerOutput(
             primary_intent="conversational",
             response="Noted.",
             response_key=None,
@@ -39,6 +41,7 @@ class _CapturingPlanner:
             normalized_instruction="",
             tasks=[],
         )
+        return planner_test_result(output)
 
 
 class _RedisWithoutQuerySession:

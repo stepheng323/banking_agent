@@ -52,12 +52,16 @@ async def test_data_confirmation_persists_data_token() -> None:
 
 
 @pytest.mark.asyncio
-async def test_data_confirmation_falls_back_to_global_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_data_confirmation_without_redis_skips_token_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     redis = _StubRedis()
 
     from shared.cache.redis_client import RedisClient
 
-    monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls, redis_url=None: redis))
+    monkeypatch.setattr(
+        RedisClient,
+        "get_client",
+        classmethod(lambda cls, redis_url=None: (_ for _ in ()).throw(AssertionError("global Redis is not allowed"))),
+    )
 
     step = ConfirmationStep()
     payload = DataPayload(
@@ -80,6 +84,4 @@ async def test_data_confirmation_falls_back_to_global_redis(monkeypatch: pytest.
 
     assert result is not None
     assert result.outcome.value == "needs_confirmation"
-    assert redis.calls == [
-        ("data:token:data-test-token:phone", 3600, "2348162511023"),
-    ]
+    assert redis.calls == []

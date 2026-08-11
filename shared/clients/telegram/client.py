@@ -29,9 +29,10 @@ class TelegramClient(MessagingClient):
     def supports_flows(self) -> bool:
         return False
 
-    def __init__(self) -> None:
+    def __init__(self, redis_client: Any | None = None) -> None:
         self.bot_token = settings.telegram_bot_token
         self.mini_app_base_url = settings.telegram_mini_app_base_url
+        self.redis_client = redis_client
         self._http_client: httpx.AsyncClient | None = None
         self._validate_config()
 
@@ -292,6 +293,7 @@ class TelegramClient(MessagingClient):
             header=header,
             body_text=body_text,
             cta_text=cta_text,
+            redis_client=self.redis_client,
         )
 
     async def get_media_url(self, media_id: str) -> str:

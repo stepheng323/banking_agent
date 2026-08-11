@@ -118,9 +118,7 @@ def _maybe_direct_context_recap(ctx: GateContext) -> RouteResolution | None:
 async def _maybe_query_followup_bypass(ctx: GateContext) -> RouteResolution | None:
     if not ctx.live_pending_interrupt and not ctx.state_view.has_quote:
         raw_pending = ctx.state_view.pending_query_clarification
-        has_pending_query_input = isinstance(raw_pending, dict) and bool(
-            raw_pending.get("pending_clarification") or raw_pending.get("pending_input")
-        )
+        has_pending_query_input = isinstance(raw_pending, dict) and bool(raw_pending.get("pending_input"))
         active_query = await ctx.has_active_query_session()
         bypass_reason, bypass_detail = _query_followup_bypass_reason(
             message_text=ctx.message_text,
@@ -133,7 +131,7 @@ async def _maybe_query_followup_bypass(ctx: GateContext) -> RouteResolution | No
                 has_pending_query_input
                 or (
                     isinstance(ctx.query_session_snapshot, dict)
-                    and ctx.query_session_snapshot.get("pending_clarification")
+                    and ctx.query_session_snapshot.get("pending_input")
                 )
             ),
         )
@@ -161,14 +159,28 @@ async def _maybe_query_followup_bypass(ctx: GateContext) -> RouteResolution | No
 
 
 def _maybe_structural_query_domain(ctx: GateContext, *, can_consider_query_domain: bool) -> RouteResolution | None:
-    if not can_consider_query_domain or not _is_structural_query_domain_request(ctx.message_text):
+    if not can_consider_query_domain:
         return None
+
+    # The existing query-domain classifier is already the typed, high
+    # confidence ownership signal for fresh transaction questions.  The
+    # narrower ``structural`` subset used to be the only subset allowed to
+    # dispatch here, which meant ordinary analytical questions (for example
+    # "how much did I spend this month?") paid for a semantic-router call
+    # before reaching the query parser.  Keep the semantic router for
+    # ambiguous/mixed turns, but let every unambiguous query-domain candidate
+    # go straight to the query worker.  The parser still owns all filters and
+    # response-shape interpretation; this guard only decides domain ownership.
+    if not _is_query_domain_request(ctx.message_text):
+        return None
+    structural = _is_structural_query_domain_request(ctx.message_text)
     semantic_router_available = ctx.task_planner is not None
     task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="query", mode="new")
     logger.info(
         "gate_deterministic_query_domain",
         task_id=task_id,
-        structural_query_request=True,
+        structural_query_request=structural,
+        query_domain_request=True,
         semantic_router_available=semantic_router_available,
     )
     return task_dispatch(
@@ -183,7 +195,7 @@ def _maybe_structural_query_domain(ctx: GateContext, *, can_consider_query_domai
         mode="new",
         source="query_domain_guard",
         heuristic_type="guardrail_shortcut",
-        heuristic_name="structural_query_domain",
+        heuristic_name="structural_query_domain" if structural else "query_domain_request",
     )
 
 

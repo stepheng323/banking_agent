@@ -13,12 +13,11 @@ def test_architecture_no_legacy_routing_keys() -> None:
         "routing_heuristic_name",
     }
 
-    # Flat names survive only at log projections and the v1 checkpoint migration boundary.
+    # Flat names survive only at log projections.
     exclude_paths = {
         "apps/chat/src/agent/orchestrator/workflows/gate/core/trace.py",
         "apps/chat/src/agent/orchestrator/graph/turn_trace.py",
         "apps/chat/src/agent/orchestrator/graph/route_metrics.py",
-        "apps/chat/src/agent/orchestrator/models/state.py",
         "apps/chat/src/agent/orchestrator/models/turn_directive.py",
     }
 

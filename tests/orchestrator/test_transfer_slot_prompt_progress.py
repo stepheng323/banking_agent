@@ -16,7 +16,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
 )
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transfers.worker import TransferWorker
-from shared.config.settings import settings
 from shared.types.planner import ContextFrameFollowupDecision
 from tests.orchestrator.routing_fixtures import execution_test_directive, finalize_test_directive
 
@@ -795,8 +794,7 @@ async def test_beneficiary_ambiguity_prompt_is_preserved() -> None:
     assert options_intent["options"][1]["button_title"] == "2. Tolu B • GTBank • ****5678"
 
 
-async def test_amount_suggestion_prompt_emits_options_when_flag_enabled(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "enable_channel_option_ux_v2", True)
+async def test_amount_suggestion_prompt_emits_options() -> None:
     suggestion_prompt = "How much should I send to Tolu? I can use your last amount (₦5,000)."
     worker = _MockTransferNeedsInputWorker(
         ["amount"],
@@ -819,8 +817,7 @@ async def test_amount_suggestion_prompt_emits_options_when_flag_enabled(monkeypa
     assert [opt["id"] for opt in updates["outbox"][0]["options"]] == ["1", "2"]
 
 
-async def test_source_account_prompt_emits_options_when_flag_enabled(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "enable_channel_option_ux_v2", True)
+async def test_source_account_prompt_emits_options() -> None:
     source_prompt = "*Which account would you like to use?*\n\n1. Access (···1234)\n2. GTBank (···5678)"
     worker = _MockTransferNeedsInputWorker(
         ["source_account_id"],

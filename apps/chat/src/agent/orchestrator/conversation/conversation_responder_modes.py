@@ -12,6 +12,7 @@ class ConversationResponseMode(str, Enum):
     CASUAL = "casual"
     OUT_OF_SCOPE = "out_of_scope"
     UNSUPPORTED_BOUNDARY = "unsupported_boundary"
+    MELKOR_BOUNDARY = "melkor_boundary"
     CONTEXTUAL_WORKER = "contextual_worker"
     CONTEXTUAL_META = "contextual_meta"
 
@@ -54,4 +55,6 @@ def map_response_key_to_mode(key: str) -> ConversationResponseMode | None:
         "capability.unsupported_unavailable",
     }:
         return ConversationResponseMode.UNSUPPORTED_BOUNDARY
+    if key == "meta.melkor_easter_egg":
+        return ConversationResponseMode.MELKOR_BOUNDARY
     return None

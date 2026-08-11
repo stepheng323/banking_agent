@@ -294,6 +294,7 @@ async def test_process_update_uses_cached_linked_identity(monkeypatch: pytest.Mo
         publisher=publisher,
         user_repository=user_repository,
         telegram_client=telegram_client,  # type: ignore[arg-type]
+        redis_client=redis_stub,
     )
 
     handled = await service.process_update(

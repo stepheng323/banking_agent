@@ -105,7 +105,7 @@ def _proposal_updates(
         "response": render_message("query.clarify.multiple_matches", locale, {"options": options}),
         "session_active": True,
         "flow_state": "parsing",
-        "pending_query_input": pending.model_dump(mode="json"),
+        "pending_input": pending.model_dump(mode="json"),
         "query_frames": session.get("query_frames"),
         "query_request": request,
     }
@@ -148,7 +148,7 @@ def _execute_updates(
         "execute_query_plan": isinstance(execution_contract, QueryTurnPlan),
         "flow_state": "executing",
         "session_active": True,
-        "pending_query_input": None,
+        "pending_input": None,
         "current_page": 0,
         "show_expanded": False,
         "continuation_type": "repair",
@@ -239,7 +239,7 @@ def resolve_pending_proposal(
             "response": render_message("query.clarify.cancelled", locale),
             "session_active": False,
             "flow_state": "complete",
-            "pending_query_input": None,
+            "pending_input": None,
         }
     index = None
     if normalized.isdigit():
@@ -272,14 +272,14 @@ def resolve_pending_proposal(
             "response": render_message("query.clarify.exhausted", locale),
             "session_active": True,
             "flow_state": "parsing",
-            "pending_query_input": None,
+            "pending_input": None,
         }
     return {
         "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
         "response": render_message("query.clarify.reply_number_or_rephrase", locale),
         "session_active": True,
         "flow_state": "parsing",
-        "pending_query_input": pending.model_copy(update={"attempt_count": attempts}).model_dump(mode="json"),
+        "pending_input": pending.model_copy(update={"attempt_count": attempts}).model_dump(mode="json"),
     }
 
 

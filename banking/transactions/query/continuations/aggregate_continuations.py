@@ -269,7 +269,7 @@ async def compile_aggregate_continuation_updates(
             "flow_state": "executing",
             "current_page": 0,
             "session_active": True,
-            "pending_clarification": None,
+            "pending_input": None,
             "show_expanded": False,
         }
 
@@ -301,7 +301,7 @@ async def compile_aggregate_continuation_updates(
             "flow_state": "executing",
             "current_page": 0,
             "session_active": True,
-            "pending_clarification": None,
+            "pending_input": None,
             "show_expanded": False,
         }
 
@@ -334,7 +334,7 @@ async def compile_aggregate_continuation_updates(
                 "flow_state": "executing",
                 "current_page": 0,
                 "session_active": True,
-                "pending_clarification": None,
+                "pending_input": None,
                 "show_expanded": False,
             }
         if extraction.intent == QueryIntent.CASH_FLOW_SUMMARY and extracted_contract is not None:
@@ -555,6 +555,6 @@ async def compile_aggregate_continuation_updates(
         "flow_state": "executing",
         "current_page": 0,
         "session_active": True,
-        "pending_clarification": None,
+        "pending_input": None,
         "show_expanded": False,
     }

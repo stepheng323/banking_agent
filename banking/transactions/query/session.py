@@ -12,7 +12,7 @@ SESSION_TTL = 300
 
 def _session_has_surface_view(session: dict[str, Any]) -> bool:
     """Return whether the snapshot carries typed surface state."""
-    query_result = session.get("query_result")
+    query_result = session.get("display_result")
     if hasattr(query_result, "surface_view"):
         return getattr(query_result, "surface_view", None) is not None
     if isinstance(query_result, dict):

@@ -11,6 +11,7 @@ from banking.presentation.i18n.locale import LocaleManager
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.continuations.clarification_state import resolve_selection_clarification
 from banking.transactions.query.continuations.grounded_followups import resolve_grounded_followup
+from banking.transactions.query.models.conversation import PendingFieldClarification
 from banking.transactions.query.models.extraction import AmbiguityCode, ClarificationPatch, QueryExtractionResult
 from banking.transactions.query.utils.timezone import lagos_today
 from shared.utils.logging import get_logger
@@ -32,9 +33,10 @@ def looks_like_explicit_fresh_query_interrupt(message: str) -> bool:
 
 async def handle_pending_clarification(step: Any, state: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
     """Resolve a follow-up against an unresolved semantic query state."""
-    pending = step._load_pending_clarification(session)
+    pending = step._load_pending_field_clarification(session)
     if pending is None:
         return await compiler_paths.parse_new_query(step, state)
+    original_extraction = _restore_original_extraction(pending)
 
     message = state.get("message", "")
     today_state = state.get("today")
@@ -62,8 +64,8 @@ async def handle_pending_clarification(step: Any, state: dict[str, Any], session
         message,
         parsed_time_range=clarification_time_range,
     )
-    if deterministic_patch is not None and pending.original_extraction is not None:
-        patched = _apply_clarification_patch(pending.original_extraction, deterministic_patch)
+    if deterministic_patch is not None and original_extraction is not None:
+        patched = _apply_clarification_patch(original_extraction, deterministic_patch)
         result = step.parser.compile_extraction(patched, today=today, language=locale)
         logger.info(
             "query_clarification_resolved",
@@ -78,7 +80,7 @@ async def handle_pending_clarification(step: Any, state: dict[str, Any], session
             today=today,
             language=locale,
             state=state,
-            pending_clarification=pending,
+            pending_input=pending,
             query_frames=step._load_query_frames(session),
         )
     )
@@ -94,7 +96,7 @@ async def handle_pending_clarification(step: Any, state: dict[str, Any], session
             "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
             "response": decision.response_text,
             "session_active": True,
-            "pending_clarification": pending,
+            "pending_input": pending,
             "flow_state": "parsing",
             **step._semantic_trace_updates(decision),
         }
@@ -105,7 +107,7 @@ async def handle_pending_clarification(step: Any, state: dict[str, Any], session
                 "transaction_outcome": TransactionOutcome.OK,
                 "response": step._resolve_end_session_response(decision, locale=locale),
                 "session_active": False,
-                "pending_clarification": None,
+                "pending_input": None,
                 "flow_state": "complete",
                 **step._semantic_trace_updates(decision),
             },
@@ -132,9 +134,9 @@ async def handle_pending_clarification(step: Any, state: dict[str, Any], session
         return grounded_updates
 
     if decision.decision == "clarification_answer":
-        if pending.original_extraction is None:
+        if original_extraction is None:
             return step._ambiguous_followup_updates(locale=locale, session=session)
-        patched_extraction = pending.original_extraction.model_copy(deep=True)
+        patched_extraction = original_extraction.model_copy(deep=True)
         if decision.clarification_patch is not None:
             patched_extraction = _apply_clarification_patch(patched_extraction, decision.clarification_patch)
         if decision.time_period:
@@ -164,6 +166,16 @@ async def handle_pending_clarification(step: Any, state: dict[str, Any], session
     )
     updates.update(step._semantic_trace_updates(decision))
     return updates
+
+
+def _restore_original_extraction(pending: PendingFieldClarification) -> QueryExtractionResult | None:
+    raw = pending.original_extraction
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return QueryExtractionResult.model_validate(raw)
+    except Exception:
+        return None
 
 
 def _apply_clarification_patch(extraction: QueryExtractionResult, patch: ClarificationPatch) -> QueryExtractionResult:

@@ -5,10 +5,8 @@ from banking.transactions.query.continuations.clarification_state import (
     resolve_selection_clarification,
 )
 from banking.transactions.query.contracts import SelectionPayload
-from banking.transactions.query.models.extraction import (
-    ClarificationOperation,
-    PendingClarificationState,
-)
+from banking.transactions.query.models.conversation import PendingFieldClarification
+from banking.transactions.query.models.extraction import ClarificationOperation
 
 
 def _payload(entity_id: str, label: str) -> SelectionPayload:
@@ -20,7 +18,7 @@ def _payload(entity_id: str, label: str) -> SelectionPayload:
     )
 
 
-def _pending() -> PendingClarificationState:
+def _pending() -> PendingFieldClarification:
     updates = build_selection_clarification_updates(
         candidates=[
             clarification_candidate(payload=_payload("tx-1", "Ada transfer"), label="Ada transfer"),
@@ -36,7 +34,7 @@ def _pending() -> PendingClarificationState:
         session={"current_page": 1},
         turn_id="turn-1",
     )
-    return PendingClarificationState.model_validate(updates["pending_clarification"])
+    return PendingFieldClarification.model_validate(updates["pending_input"])
 
 
 def test_numeric_selection_restores_original_fact_operation() -> None:
@@ -53,12 +51,12 @@ def test_ambiguous_fuzzy_selection_reprompts_then_exhausts() -> None:
     first = resolve_selection_clarification(pending, "transfer", locale="en", session={})
     assert first is not None
     assert first["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
-    reprompted = PendingClarificationState.model_validate(first["pending_clarification"])
+    reprompted = PendingFieldClarification.model_validate(first["pending_input"])
     assert reprompted.attempt_count == 1
 
     second = resolve_selection_clarification(reprompted, "still not sure", locale="en", session={})
     assert second is not None
-    assert second["pending_clarification"] is None
+    assert second["pending_input"] is None
 
 
 def test_neither_cancels_selection() -> None:
@@ -68,13 +66,7 @@ def test_neither_cancels_selection() -> None:
     assert updates["session_active"] is False
 
 
-def test_legacy_pending_clarification_remains_valid() -> None:
-    pending = PendingClarificationState.model_validate(
-        {
-            "original_query": "show spending recently",
-            "current_intent": "analytics_summary",
-            "language": "en",
-        }
-    )
-    assert pending.clarification_type is None
-    assert pending.candidate_payloads == []
+def test_pending_field_clarification_round_trips() -> None:
+    pending = PendingFieldClarification(original_query="show spending recently", language="en")
+    restored = PendingFieldClarification.model_validate(pending.model_dump(mode="json"))
+    assert restored == pending

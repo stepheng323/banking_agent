@@ -25,13 +25,12 @@ from banking.transactions.query.models.operations import AnalyzeOperation, Compa
 from banking.transactions.query.nodes.execution import ExecutionStep
 from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.nodes.generative_formatter import GenerativeFormattingStep
-from banking.transactions.query.pipeline import QueryPipeline
 from banking.transactions.query.preferences import (
     QueryPreferenceAccountError,
     persist_query_preferences,
 )
 from banking.transactions.query.session import _session_has_surface_view
-from banking.transactions.query.session_state import project_query_session_v3
+from banking.transactions.query.session_state import restore_query_session_v3, session_query_request
 from banking.transactions.query.utils.timezone import lagos_today
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.types.query_preferences import QueryPreferenceUpdate, query_preferences_from_profile
@@ -60,7 +59,6 @@ class QueryWorker:
         self.extractor = ExtractionStep(llm)
         self.executor = ExecutionStep()
         self.formatter = GenerativeFormattingStep(llm)
-        self._default_pipeline = QueryPipeline([self.extractor, self.executor, self.formatter])
         self.pipeline: Any = _InstrumentedQueryPipeline(self)
 
     @staticmethod
@@ -68,10 +66,9 @@ class QueryWorker:
         query_session = state.get("query_session")
         if not isinstance(query_session, dict) or not query_session.get("session_active"):
             return "fresh"
-        if query_session.get("pending_clarification"):
-            return "pending_clarification"
-        if query_session.get("pending_query_input"):
-            return "pending_query_input"
+        pending_input = query_session.get("pending_input")
+        if isinstance(pending_input, dict):
+            return str(pending_input.get("kind") or "pending_input")
         return "active_result"
 
     @staticmethod
@@ -106,11 +103,11 @@ class QueryWorker:
             event,
             session_source=session_source,
             session_active=bool(snapshot.get("session_active")),
-            has_query_request=bool(snapshot.get("query_request")),
-            has_query_result=bool(snapshot.get("query_result")),
+            has_query_request=bool(snapshot.get("execution_contract")),
+            has_query_result=bool(snapshot.get("display_result")),
             has_surface=_session_has_surface_view(snapshot),
             has_query_frames=bool(snapshot.get("query_frames")),
-            has_pending_clarification=bool(snapshot.get("pending_clarification")),
+            has_pending_clarification=bool(snapshot.get("pending_input")),
         )
 
     def _log_turn_summary(
@@ -143,7 +140,7 @@ class QueryWorker:
             flow_state=final_state.get("flow_state"),
             surface_type=self._surface_type_name_from_state(final_state),
             session_active=final_state.get("session_active"),
-            has_pending_clarification=bool(final_state.get("pending_clarification")),
+            has_pending_clarification=bool(final_state.get("pending_input")),
             session_source=session_source,
         )
 
@@ -431,14 +428,15 @@ class QueryWorker:
             query_session = {}
             session_source = "none"
 
+        session_model = None
         if isinstance(query_session, dict) and query_session.get("schema_version") == 3:
-            projected_session = project_query_session_v3(query_session)
-            if projected_session is None:
+            session_model = restore_query_session_v3(query_session)
+            if session_model is None:
                 logger.warning("query_session_v3_invalid_cleared", session_source=session_source)
                 query_session = {}
                 session_source = "none"
             else:
-                query_session = projected_session
+                query_session = session_model.model_dump(mode="json")
 
         if query_session:
             self._log_session_shape(
@@ -448,15 +446,14 @@ class QueryWorker:
             )
         if (
             query_session
-            and not query_session.get("query_request")
-            and not query_session.get("pending_clarification")
-            and not query_session.get("pending_query_input")
+            and not query_session.get("execution_contract")
+            and not query_session.get("pending_input")
         ):
             logger.warning(
                 "query_session_missing_contract_cleared",
                 session_source=session_source,
                 session_active=bool(query_session.get("session_active")),
-                has_query_result=bool(query_session.get("query_result")),
+                has_query_result=bool(query_session.get("display_result")),
                 has_surface=_session_has_surface_view(query_session),
                 has_query_frames=bool(query_session.get("query_frames")),
             )
@@ -467,26 +464,27 @@ class QueryWorker:
         today = today_context if isinstance(today_context, date) else lagos_today()
 
         # Merge key session fields into state so continuation steps have context.
+        raw_session_cache = query_session.get("cache")
+        session_cache: dict[str, Any] = raw_session_cache if isinstance(raw_session_cache, dict) else {}
+        active_request = session_query_request(session_model) if session_model is not None else None
         session_defaults = {
-            "query_request": query_session.get("query_request"),
-            "query_result": query_session.get("query_result"),
+            "query_request": active_request,
+            "query_result": query_session.get("display_result"),
             "show_expanded": query_session.get("show_expanded"),
             "current_page": query_session.get("current_page"),
             "page_size": query_session.get("page_size"),
-            "account_id": query_session.get("account_id"),
-            "account_ids": query_session.get("account_ids"),
-            "cached_transactions": query_session.get("cached_transactions"),
-            "cache_fetched_at": query_session.get("cache_fetched_at"),
-            "cache_fingerprint": query_session.get("cache_fingerprint"),
-            "cache_scope_fingerprint": query_session.get("cache_scope_fingerprint"),
-            "cache_window_start": query_session.get("cache_window_start"),
-            "cache_window_end": query_session.get("cache_window_end"),
-            "pending_clarification": query_session.get("pending_clarification"),
-            "pending_query_input": query_session.get("pending_query_input"),
+            "account_id": session_cache.get("account_id"),
+            "account_ids": session_cache.get("account_ids"),
+            "cached_transactions": session_cache.get("cached_transactions"),
+            "cache_fetched_at": session_cache.get("cache_fetched_at"),
+            "cache_fingerprint": session_cache.get("cache_fingerprint"),
+            "cache_scope_fingerprint": session_cache.get("cache_scope_fingerprint"),
+            "cache_window_start": session_cache.get("cache_window_start"),
+            "cache_window_end": session_cache.get("cache_window_end"),
+            "pending_input": query_session.get("pending_input"),
             "query_frames": query_session.get("query_frames"),
             "active_focus": query_session.get("active_focus"),
             "execution_contract": query_session.get("execution_contract"),
-            "selected_item_index": query_session.get("selected_item_index"),
         }
 
         # 2. Build Initial State
@@ -530,14 +528,13 @@ class QueryWorker:
         if (
             isinstance(query_session, dict)
             and query_session.get("session_active")
-            and not query_session.get("query_request")
-            and not query_session.get("pending_clarification")
-            and not query_session.get("pending_query_input")
+            and not query_session.get("execution_contract")
+            and not query_session.get("pending_input")
         ):
             logger.warning(
                 "query_active_session_missing_continuation_context",
                 session_source=session_source,
-                has_query_result=bool(query_session.get("query_result")),
+                has_query_result=bool(query_session.get("display_result")),
                 has_surface=_session_has_surface_view(query_session),
                 has_query_frames=bool(query_session.get("query_frames")),
             )
@@ -545,7 +542,7 @@ class QueryWorker:
         if (
             isinstance(query_session, dict)
             and query_session.get("session_active")
-            and not query_session.get("pending_clarification")
+            and not query_session.get("pending_input")
             and not state["force_new_query"]
         ):
             await self._set_query_progress_stage(

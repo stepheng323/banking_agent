@@ -29,8 +29,8 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     refresh_runtime_planner_system_prompt()
 
     queue_publisher = QueuePublisherFactory.get_async_publisher()
-    messaging_clients = build_messaging_clients()
     shared_redis = RedisClient.get_client()
+    messaging_clients = build_messaging_clients(redis_client=shared_redis)
     role_models = build_chat_role_models(
         planner_model=settings.planner_model,
         query_model=settings.query_model,

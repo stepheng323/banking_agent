@@ -44,12 +44,16 @@ def _context() -> TransferContext:
 
 
 @pytest.mark.asyncio
-async def test_transfer_confirmation_falls_back_to_global_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_transfer_confirmation_without_redis_skips_token_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     redis = _StubRedis()
 
     from shared.cache.redis_client import RedisClient
 
-    monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls, redis_url=None: redis))
+    monkeypatch.setattr(
+        RedisClient,
+        "get_client",
+        classmethod(lambda cls, redis_url=None: (_ for _ in ()).throw(AssertionError("global Redis is not allowed"))),
+    )
 
     result = await ConfirmationStep().execute(
         _payload(),
@@ -59,18 +63,20 @@ async def test_transfer_confirmation_falls_back_to_global_redis(monkeypatch: pyt
     )
 
     assert result.outcome == TransactionOutcome.NEEDS_CONFIRMATION
-    assert redis.calls == [
-        ("transfer:token:transfer-test-token:phone", 3600, "2348162511023"),
-    ]
+    assert redis.calls == []
 
 
 @pytest.mark.asyncio
-async def test_transfer_authorization_request_falls_back_to_global_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_transfer_authorization_without_redis_skips_token_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     redis = _StubRedis()
 
     from shared.cache.redis_client import RedisClient
 
-    monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls, redis_url=None: redis))
+    monkeypatch.setattr(
+        RedisClient,
+        "get_client",
+        classmethod(lambda cls, redis_url=None: (_ for _ in ()).throw(AssertionError("global Redis is not allowed"))),
+    )
 
     result = await AuthorizationStep().execute(
         _payload(),
@@ -80,9 +86,7 @@ async def test_transfer_authorization_request_falls_back_to_global_redis(monkeyp
     )
 
     assert result.outcome == TransactionOutcome.NEEDS_AUTH
-    assert redis.calls == [
-        ("transfer:token:transfer-test-token:phone", 3600, "2348162511023"),
-    ]
+    assert redis.calls == []
 
 
 @pytest.mark.asyncio

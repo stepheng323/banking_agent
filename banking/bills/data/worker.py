@@ -35,6 +35,7 @@ class DataWorkerContext:
     plan_service: Any
     publisher: Any
     transaction_repo: Any
+    redis_client: Any | None
     user_id: str | None
     channel_identity: str | None
     required_fields: list[str]
@@ -56,6 +57,7 @@ class DataWorker:
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
         self.publisher = publisher
+        self.redis_client = redis_client
         self.plan_service = DataPlanService(bill_provider, redis_client)
         self.scheduling = DataSchedulingHandler(build_pipeline=build_data_pipeline)
 
@@ -104,6 +106,7 @@ class DataWorker:
             plan_service=self.plan_service,
             publisher=self.publisher,
             transaction_repo=self.transaction_repo,
+            redis_client=self.redis_client,
             user_id=context.get("user_id"),
             channel_identity=str(context.get("channel_identity")) if context.get("channel_identity") else None,
             required_fields=required_fields if isinstance(required_fields, list) else [],

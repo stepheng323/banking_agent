@@ -5,14 +5,16 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from banking.presentation.i18n.bridge import render_cancelled_prompt
 from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import PlannerOutput
+from tests.orchestrator.routing_fixtures import planner_test_result
 
 
 class _CancelPlanner:
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -20,9 +22,9 @@ class _CancelPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context, prompt_signals
-        return PlannerOutput(
+        output = PlannerOutput(
             primary_intent="cancel",
             response="",
             response_key="planner.cancelled",
@@ -34,6 +36,7 @@ class _CancelPlanner:
             normalized_instruction="cancel",
             tasks=[],
         )
+        return planner_test_result(output)
 
 
 class _TrackingRedis:

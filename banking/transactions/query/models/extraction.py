@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from banking.transactions.query.contracts import SelectionPayload
+from banking.transactions.query.models.conversation import PendingFieldClarification
 from banking.transactions.query.models.domain import QueryFactField, QueryIntent
 
 # Schema version for future-proofing
@@ -317,33 +318,11 @@ class QueryParseResult(BaseModel):
     execution_contract: dict[str, Any] | None = None
     resolver_message: str | None = Field(default=None, description="Message to show user (e.g. clarification)")
     notices: list[str] = Field(default_factory=list, description="Infos like 'Clamped to 30 days'")
-    pending_clarification: dict[str, Any] | None = Field(
+    pending_input: PendingFieldClarification | None = Field(
         default=None,
         description="Structured unresolved clarification state for multi-turn query follow-ups",
     )
     patch: dict[str, Any] | None = Field(default=None, description="State updates")
-
-
-class PendingClarificationState(BaseModel):
-    """Semantic unresolved query state persisted between clarification turns."""
-
-    kind: Literal["pending_clarification"] = "pending_clarification"
-    original_query: str
-    current_intent: QueryIntent
-    original_extraction: QueryExtractionResult | None = None
-    ambiguities: list[Ambiguity] = Field(default_factory=list)
-    resolver_message: str | None = None
-    language: str = "en"
-    clarification_type: (
-        Literal["time", "selection", "recipient", "account", "direction", "category", "status", "amount", "scope"]
-        | None
-    ) = None
-    target_field: str | None = None
-    candidate_payloads: list["ClarificationCandidate"] = Field(default_factory=list, max_length=5)
-    original_operation: "ClarificationOperation | None" = None
-    query_request: dict[str, Any] | None = None
-    attempt_count: int = Field(default=0, ge=0, le=2)
-    created_turn_id: str | None = None
 
 
 class ClarificationCandidate(BaseModel):

@@ -54,6 +54,7 @@ class TransferWorkerContext:
     previous_response: str | None
     confirmation_task_count: int | None = None
     progress_tracker: Any | None = None
+    risk_advisory_enabled: bool = False
 
 
 class TransferWorker:
@@ -71,6 +72,7 @@ class TransferWorker:
         redis_client: Any | None = None,
         payout_resolver_provider: Any | None = None,
         payout_bank_cache: Any | None = None,
+        risk_advisory_enabled: bool = False,
     ) -> None:
         self.validation_service = validation_service or ValidationService()
         self.publisher = publisher
@@ -82,6 +84,7 @@ class TransferWorker:
         self.transaction_repo = transaction_repo
         self.dd_provider = dd_provider
         self.redis_client = redis_client
+        self.risk_advisory_enabled = risk_advisory_enabled
         self.scheduling = TransferSchedulingHandler(build_pipeline=build_transfer_pipeline)
 
     def _ensure_idempotency_key(self, data: TransferPayload) -> TransferPayload:
@@ -132,6 +135,7 @@ class TransferWorker:
             previous_response=previous_response if isinstance(previous_response, str) else None,
             confirmation_task_count=confirmation_task_count if isinstance(confirmation_task_count, int) else None,
             progress_tracker=context.get("progress_tracker"),
+            risk_advisory_enabled=self.risk_advisory_enabled,
         )
 
     async def interpret_pending_confirmation_edit(

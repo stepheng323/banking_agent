@@ -36,7 +36,9 @@ from banking.policy.guardrails.loader import get_cached_guardrails
 from banking.policy.loader import get_cached_policy
 from banking.policy.validation import validate_policy_coverage
 from banking.presentation.i18n.renderer import validate_catalog_completeness
+from scripts.readiness_conversation_mutations import mutate_scenarios
 from scripts.readiness_models import (
+    ReadinessConversationMutation,
     ReadinessInvocation,
     ReadinessMode,
     ReadinessRunResult,
@@ -45,11 +47,14 @@ from scripts.readiness_models import (
     ReadinessTurn,
 )
 from scripts.readiness_scenarios import resolve_scenarios
+from scripts.readiness_state import snapshot_state
 from scripts.seed_user_test_data import _resolve_target_user, _seed_for_user
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
 from shared.observability.llm_call_metrics import start_llm_call_recording, stop_llm_call_recording
+from shared.types.conversation_sets import ScheduleQueryContract
 from shared.types.planner import SemanticRouteDecision
+from shared.types.read import ReadRequest
 
 
 class NoopPublisher:
@@ -104,7 +109,8 @@ class DeterministicReadinessPlanner:
             target_intent="schedule",
             mode="new",
             confidence=0.91,
-            schedule_response_mode="list",
+            read_request=ReadRequest(subject="schedule", response_shape="surface_list"),
+            schedule_contract=ScheduleQueryContract(operation="list"),
             expected_transaction_executors=[],
             reason="deterministic readiness schedule read",
         )
@@ -122,6 +128,18 @@ def _repeat_scenarios(scenarios: tuple[ReadinessScenario, ...], repeat: int) -> 
     )
 
 
+def _prepare_scenarios(
+    scenario_name: ReadinessScenarioName,
+    *,
+    repeat: int,
+    conversation_mutation: ReadinessConversationMutation | None = None,
+) -> tuple[ReadinessScenario, ...]:
+    scenarios = resolve_scenarios(scenario_name)
+    if conversation_mutation is not None:
+        scenarios = mutate_scenarios(scenarios, conversation_mutation)
+    return _repeat_scenarios(scenarios, repeat)
+
+
 def _route_metadata_from_state(state: OrchestratorState) -> dict[str, Any]:
     pending = state.pending_query_clarification if isinstance(state.pending_query_clarification, dict) else {}
     pending_payload = pending.get("pending_clarification")
@@ -136,6 +154,38 @@ def _route_metadata_from_state(state: OrchestratorState) -> dict[str, Any]:
         "recent_query_context": state.recent_query_context,
         "clarification_type": clarification.get("clarification_type"),
     }
+
+
+async def _snapshot_dry_run_checkpoint(
+    *,
+    agent: OrchestratorAgent,
+    phone_number: str,
+    channel: str,
+) -> dict[str, Any]:
+    """Read the post-turn checkpoint without exposing raw state in reports.
+
+    The public invocation result intentionally contains only presentation and
+    routing metadata.  Readiness needs a little more information to prove that
+    an interruption preserved a pending task or query frame, so it reads the
+    checkpoint through the graph's typed state API and immediately reduces it
+    to the privacy-safe snapshot vocabulary.
+    """
+
+    graph = getattr(agent.orchestrator_handler, "graph", None)
+    get_state = getattr(graph, "aget_state", None)
+    if not callable(get_state):
+        return {"available": False}
+    try:
+        checkpoint = await get_state({"configurable": {"thread_id": f"{channel}:{phone_number}"}})
+        values = getattr(checkpoint, "values", checkpoint)
+        if not isinstance(values, dict):
+            return {"available": False}
+        return snapshot_state(OrchestratorState.model_validate(values))
+    except Exception:
+        # A provider/checkpointer failure must not make the readiness report
+        # leak raw state or turn a correctness assertion into an execution
+        # failure.  The report simply omits state assertions for this turn.
+        return {"available": False}
 
 
 def _base_deterministic_state(*, scenario_id: str) -> OrchestratorState:
@@ -175,8 +225,13 @@ async def run_deterministic_readiness(
     scenario_name: ReadinessScenarioName,
     stop_on_fail: bool = False,
     repeat: int = 1,
+    conversation_mutation: ReadinessConversationMutation | None = None,
 ) -> ReadinessRunResult:
-    scenarios = _repeat_scenarios(resolve_scenarios(scenario_name), repeat)
+    scenarios = _prepare_scenarios(
+        scenario_name,
+        repeat=repeat,
+        conversation_mutation=conversation_mutation,
+    )
     planner = DeterministicReadinessPlanner()
     states = {scenario.id: _base_deterministic_state(scenario_id=scenario.id) for scenario in scenarios}
 
@@ -206,6 +261,7 @@ async def run_deterministic_readiness(
             response={"outbox": state.outbox, "text": state.final_response},
             route_metadata=_route_metadata_from_state(state),
             task_types=tuple(task.type for task in state.tasks.values()),
+            state_snapshot=snapshot_state(state),
         )
 
     async def before_turn(scenario: ReadinessScenario, turn: ReadinessTurn, index: int) -> None:
@@ -377,6 +433,7 @@ async def run_dry_run_readiness(
     reset_session: bool = False,
     stop_on_fail: bool = False,
     repeat: int = 1,
+    conversation_mutation: ReadinessConversationMutation | None = None,
 ) -> ReadinessRunResult:
     target_user = await _resolve_target_user(phone)
     if seed:
@@ -387,7 +444,11 @@ async def run_dry_run_readiness(
     if user is None:
         raise RuntimeError(f"Could not load user {target_user.phone_number}")
 
-    scenarios = _repeat_scenarios(resolve_scenarios(scenario_name), repeat)
+    scenarios = _prepare_scenarios(
+        scenario_name,
+        repeat=repeat,
+        conversation_mutation=conversation_mutation,
+    )
     run_id = uuid.uuid4().hex[:8]
     reset_scenarios: set[str] = set()
 
@@ -449,6 +510,11 @@ async def run_dry_run_readiness(
         finally:
             llm_calls = stop_llm_call_recording(llm_recording_token)
         async_jobs = tuple(publisher.messages[before_jobs:])
+        state_snapshot = await _snapshot_dry_run_checkpoint(
+            agent=agent,
+            phone_number=target_user.phone_number,
+            channel=channel,
+        )
         route_metadata = {
             key: response.get(key)
             for key in (
@@ -465,6 +531,7 @@ async def run_dry_run_readiness(
             async_jobs=async_jobs,
             llm_calls=llm_calls,
             turn_timing=dict(response.get("turn_timing") or {}),
+            state_snapshot=state_snapshot,
         )
 
     async def before_turn(scenario: ReadinessScenario, turn: ReadinessTurn, index: int) -> None:
@@ -502,9 +569,15 @@ async def run_readiness(
     reset_session: bool = False,
     stop_on_fail: bool = False,
     repeat: int = 1,
+    conversation_mutation: ReadinessConversationMutation | None = None,
 ) -> ReadinessRunResult:
     if mode == "deterministic":
-        return await run_deterministic_readiness(scenario_name=scenario, stop_on_fail=stop_on_fail, repeat=repeat)
+        return await run_deterministic_readiness(
+            scenario_name=scenario,
+            stop_on_fail=stop_on_fail,
+            repeat=repeat,
+            conversation_mutation=conversation_mutation,
+        )
     if not phone:
         raise ValueError("--phone is required in dry-run mode")
     return await run_dry_run_readiness(
@@ -516,6 +589,7 @@ async def run_readiness(
         reset_session=reset_session,
         stop_on_fail=stop_on_fail,
         repeat=repeat,
+        conversation_mutation=conversation_mutation,
     )
 
 
@@ -530,6 +604,7 @@ def run_readiness_sync(
     reset_session: bool = False,
     stop_on_fail: bool = False,
     repeat: int = 1,
+    conversation_mutation: ReadinessConversationMutation | None = None,
     json_output: str | None = None,
     transcript_output: str | None = None,
 ) -> int:
@@ -544,6 +619,7 @@ def run_readiness_sync(
             reset_session=reset_session,
             stop_on_fail=stop_on_fail,
             repeat=repeat,
+            conversation_mutation=conversation_mutation,
         )
     )
     readiness_report.print_readiness_report(result)

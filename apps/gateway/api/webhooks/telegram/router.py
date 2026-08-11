@@ -19,6 +19,7 @@ from banking.identity.channel_linking.authorization import is_channel_link_pin_t
 from banking.identity.channel_linking.pin_completion import complete_channel_link_with_pin
 from banking.identity.channel_linking.telegram_miniapp_bootstrap import consume_telegram_miniapp_bootstrap
 from banking.identity.repositories.user_repository import UserRepository
+from shared.cache.redis_client import RedisClient
 from shared.clients.telegram.client import TelegramClient
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config.settings import settings
@@ -92,7 +93,11 @@ async def telegram_webhook(
         update = await request.json()
         user_repo = UserRepository(db)
         publisher = QueuePublisherFactory.get_publisher()
-        service = TelegramWebhookService(publisher=publisher, user_repository=user_repo)
+        service = TelegramWebhookService(
+            publisher=publisher,
+            user_repository=user_repo,
+            redis_client=RedisClient.get_client(),
+        )
         handled = await service.process_update(update)
         logger.info(
             "telegram_webhook_processed",

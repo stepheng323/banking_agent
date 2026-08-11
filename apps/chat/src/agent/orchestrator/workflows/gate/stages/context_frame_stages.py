@@ -961,7 +961,7 @@ async def _stage_context_frame_followup(ctx: GateContext) -> RouteResolution | N
     if not _context_frame_followup_eligible(ctx):
         return None
     raw_pending = ctx.state_view.pending_query_clarification
-    if isinstance(raw_pending, dict) and (raw_pending.get("pending_clarification") or raw_pending.get("pending_input")):
+    if isinstance(raw_pending, dict) and raw_pending.get("pending_input"):
         # Pending query input owns numeric/ordinal/label replies.  Never let
         # the visible frame reinterpret them as a generic historical target.
         logger.info("gate_context_frame_followup_skipped_for_pending_query_input")

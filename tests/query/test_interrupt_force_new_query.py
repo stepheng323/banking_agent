@@ -52,7 +52,7 @@ async def test_force_new_query_bypasses_continuation_classifier() -> None:
             "force_new_query": True,
             "language": "en",
             "today": date.today(),
-            "query_session": {"session_active": True},
+            "query_session": {"schema_version": 3, "session_active": True},
         }
     )
 

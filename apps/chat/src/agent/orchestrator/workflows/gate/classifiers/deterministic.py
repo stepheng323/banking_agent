@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
 from banking.presentation.i18n.message_keys import MessageKey, as_message_key
 from banking.presentation.i18n.renderer import message_key_exists
 from shared.branding import brand_name_aliases, normalize_brand_name
+from shared.types.prompt_boundary import PromptBoundaryIntent
 
 DETERMINISTIC_GREETING_EXACT = {
     "hi",
@@ -215,14 +216,25 @@ class DeterministicMetaResponse:
     response_key: MessageKey
     response_locale: str | None = None
     params: dict[str, object] | None = None
+    boundary_intent: PromptBoundaryIntent | None = None
+    boundary_confidence: float | None = None
 
 
 def _meta_response(
     response_key: MessageKey,
     response_locale: str | None = None,
     params: dict[str, object] | None = None,
+    *,
+    boundary_intent: PromptBoundaryIntent | None = None,
+    boundary_confidence: float | None = None,
 ) -> DeterministicMetaResponse:
-    return DeterministicMetaResponse(response_key=response_key, response_locale=response_locale, params=params)
+    return DeterministicMetaResponse(
+        response_key=response_key,
+        response_locale=response_locale,
+        params=params,
+        boundary_intent=boundary_intent,
+        boundary_confidence=boundary_confidence,
+    )
 
 
 def _addressed_name_param(address: str) -> dict[str, object]:
@@ -281,9 +293,22 @@ def _is_actionable_capability_request(normalized: str) -> bool:
 def classify_deterministic_meta_response(message_text: str) -> DeterministicMetaResponse | None:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if normalized in DETERMINISTIC_JAILBREAK_EXACT:
-        return _meta_response("meta.melkor_easter_egg")
+        boundary_intent: PromptBoundaryIntent = "instruction_override"
+        if normalized == "system prompt override":
+            boundary_intent = "prompt_disclosure"
+        elif normalized == "override orchestrator":
+            boundary_intent = "orchestrator_bypass"
+        return _meta_response(
+            "meta.melkor_easter_egg",
+            boundary_intent=boundary_intent,
+            boundary_confidence=1.0,
+        )
     if DETERMINISTIC_SECURITY_BYPASS_RE.search(normalized):
-        return _meta_response("conversational.security_confirmation_required")
+        return _meta_response(
+            "conversational.security_confirmation_required",
+            boundary_intent="security_bypass",
+            boundary_confidence=1.0,
+        )
     if normalized in DETERMINISTIC_LOCALE_META_EXACT:
         response_key, response_locale = DETERMINISTIC_LOCALE_META_EXACT[normalized]
         return _meta_response(response_key, response_locale)

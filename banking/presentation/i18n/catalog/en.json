@@ -75,7 +75,7 @@
     "brand_origin_fallback": "{brand_origin}",
     "capabilities_fallback": "I can help with: {supported}.",
     "limits_fallback": "I can't help with {unsupported} here. I can help with {supported}.",
-    "melkor_easter_egg": "Nice try, Melkor. The music is not changing today.\nBack to banking: I can help with transfers, airtime/data, balances, transactions, and receipts."
+    "melkor_easter_egg": "The gates stay closed, Melkor. No whispered command can change the rules or reveal hidden instructions. I can still help with your balance, transactions, or a transfer review."
   },
   "conversational": {
     "greeting": "Hi, I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",

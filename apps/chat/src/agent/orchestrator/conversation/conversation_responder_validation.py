@@ -31,6 +31,19 @@ FINANCIAL_ADVICE_RE = re.compile(
     r"this is a good investment|tax advice|legal advice)\b",
     re.IGNORECASE,
 )
+PROMPT_BOUNDARY_DISCLOSURE_RE = re.compile(
+    r"\b(?:here\s+(?:is|are)|showing|revealing|printing)\s+"
+    r"(?:your\s+)?(?:system|developer|hidden|internal)\s+(?:prompt|instructions?|message)\b|"
+    r"\b(?:i\s+(?:can|will|may)|please)\s+(?:reveal|show|share|print|provide|give)\s+"
+    r"(?:your\s+)?(?:system|developer|hidden|internal)\s+(?:prompt|instructions?|message)\b|"
+    r"\b(?:api\s*key|access\s*token|chain[-\s]?of[-\s]?thought|tool\s+call)\b",
+    re.IGNORECASE,
+)
+PROMPT_BOUNDARY_BYPASS_CLAIM_RE = re.compile(
+    r"\b(?:i|we)\s+(?:have\s+)?(?:bypassed|overrode|overridden|changed|ignored)\b|"
+    r"\b(?:the\s+rules|guardrails?)\s+(?:are|were)\s+(?:bypassed|overridden|ignored)\b",
+    re.IGNORECASE,
+)
 
 
 def validate_and_fallback(
@@ -46,14 +59,16 @@ def validate_and_fallback(
     """Return a bounded generated response or the deterministic fallback for its mode."""
     content = (raw_content or "").strip()
     fallback_reason: str | None = None
+    max_chars = 420 if mode == ConversationResponseMode.MELKOR_BOUNDARY else 280
+    max_sentences = 3 if mode == ConversationResponseMode.MELKOR_BOUNDARY else 2
 
     if not content:
         fallback_reason = "empty"
-    elif len(content) > 280:
+    elif len(content) > max_chars:
         fallback_reason = "character_limit"
-    elif len(content.splitlines()) > 3:
+    elif len(content.splitlines()) > (4 if mode == ConversationResponseMode.MELKOR_BOUNDARY else 3):
         fallback_reason = "line_limit"
-    elif len(re.findall(r"[.!?]+(?:\s|$)", content)) > 2:
+    elif len(re.findall(r"[.!?]+(?:\s|$)", content)) > max_sentences:
         fallback_reason = "sentence_limit"
     elif EXECUTION_PROMISE_RE.search(content):
         fallback_reason = "execution_claim"
@@ -74,6 +89,16 @@ def validate_and_fallback(
         or unsupported_responder.UNSUPPORTED_CAPABILITY_PROMISE_RE.search(content)
     ):
         fallback_reason = "unsupported_promise"
+    elif mode == ConversationResponseMode.MELKOR_BOUNDARY and (
+        PROMPT_BOUNDARY_DISCLOSURE_RE.search(content)
+        or PROMPT_BOUNDARY_BYPASS_CLAIM_RE.search(content)
+        or re.search(
+            r"\b(?:password|passcode|one[-\s]?time\s+password|otp|pin|credential|secret)\b",
+            content,
+            re.IGNORECASE,
+        )
+    ):
+        fallback_reason = "boundary_safety_violation"
     elif mode == ConversationResponseMode.SOCIAL_META:
         if contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(content):
             fallback_reason = "social_action_promise"
@@ -91,6 +116,13 @@ def validate_and_fallback(
             outcome="accepted",
             allowed_suggestion_count=len(allowed_suggestions or []),
         )
+        if mode == ConversationResponseMode.MELKOR_BOUNDARY:
+            logger.info(
+                "prompt_boundary_response_accepted",
+                boundary_intent=user_ctx.get("boundary_intent"),
+                response_source=str(user_ctx.get("boundary_response_source") or "generated"),
+                locale=locale,
+            )
         return content
 
     logger.info(
@@ -100,6 +132,14 @@ def validate_and_fallback(
         fallback_reason=fallback_reason,
         allowed_suggestion_count=len(allowed_suggestions or []),
     )
+    if mode == ConversationResponseMode.MELKOR_BOUNDARY:
+        logger.info(
+            "prompt_boundary_response_fallback",
+            boundary_intent=user_ctx.get("boundary_intent"),
+            response_source=str(user_ctx.get("boundary_response_source") or "generated"),
+            fallback_reason=fallback_reason,
+            locale=locale,
+        )
     return _fallback_for_mode(
         mode,
         text,
@@ -126,6 +166,8 @@ def _fallback_for_mode(
         return contextual_responder.contextual_meta_fallback_reply(user_ctx, locale=locale)
     if mode == ConversationResponseMode.UNSUPPORTED_BOUNDARY:
         return unsupported_responder.unsupported_capability_fallback_reply(user_ctx, locale)
+    if mode == ConversationResponseMode.MELKOR_BOUNDARY:
+        return render_message("meta.melkor_easter_egg", locale)
     if mode == ConversationResponseMode.SOCIAL_META:
         response_key = str(user_ctx.get(SOCIAL_META_RESPONSE_KEY_CTX) or "conversational.greeting")
         if not message_key_exists(response_key, locale):

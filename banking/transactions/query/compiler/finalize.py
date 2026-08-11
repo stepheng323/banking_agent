@@ -13,13 +13,13 @@ from banking.transactions.query.compiler import filtering as filter_compiler
 from banking.transactions.query.compiler import lexical_recovery
 from banking.transactions.query.compiler import operations as operation_compiler
 from banking.transactions.query.compiler.resolver import Decision, Prompt, resolve
+from banking.transactions.query.models.conversation import PendingFieldClarification
 from banking.transactions.query.models.domain import QueryIntent
 from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
     FactQueryKind,
     ParserQueryExtraction,
-    PendingClarificationState,
     QueryAggregation,
     QueryComparison,
     QueryExtractionResult,
@@ -58,7 +58,7 @@ def build_pending_clarification(
     language: str,
     message: str | None,
     resolver_message: str | None,
-) -> PendingClarificationState:
+) -> PendingFieldClarification:
     ambiguity_codes = {ambiguity.code for ambiguity in extraction.ambiguities}
     clarification_type: (
         Literal["time", "selection", "recipient", "account", "direction", "category", "status", "amount", "scope"]
@@ -71,11 +71,10 @@ def build_pending_clarification(
         clarification_type, target_field = "time", "time_range"
     elif AmbiguityCode.AMOUNT_VAGUE in ambiguity_codes:
         clarification_type, target_field = "amount", "amount_range"
-    return PendingClarificationState(
+    return PendingFieldClarification(
         original_query=message or extraction.raw_query or "",
-        current_intent=extraction.intent,
-        original_extraction=extraction.model_copy(deep=True),
-        ambiguities=list(extraction.ambiguities),
+        original_extraction=extraction.model_dump(mode="json"),
+        ambiguities=[ambiguity.model_dump(mode="json") for ambiguity in extraction.ambiguities],
         resolver_message=resolver_message,
         language=language,
         clarification_type=clarification_type,
@@ -281,7 +280,7 @@ def finalize_extraction(
     outcome = ResolverOutcome.OK
     message = None
     notices = []
-    pending_clarification: PendingClarificationState | None = None
+    pending_input: PendingFieldClarification | None = None
 
     if decision.decision == Decision.ASK_CLARIFY:
         outcome = ResolverOutcome.NEEDS_INPUT
@@ -290,7 +289,7 @@ def finalize_extraction(
             if decision.prompts
             else render_message("query.clarify.default", language)
         )
-        pending_clarification = parser._build_pending_clarification(
+        pending_input = parser._build_pending_clarification(
             extraction=decision.extraction,
             language=language,
             message=extraction.raw_query,
@@ -311,7 +310,7 @@ def finalize_extraction(
 
     if parser._requires_time_comparison_period(decision.extraction):
         clarify_message = render_message("query.time_comparison.prompt_specify_period", language)
-        pending_clarification = parser._build_pending_clarification(
+        pending_input = parser._build_pending_clarification(
             extraction=decision.extraction,
             language=language,
             message=decision.extraction.raw_query,
@@ -322,7 +321,7 @@ def finalize_extraction(
             extraction=decision.extraction,
             resolver_message=clarify_message,
             notices=notices,
-            pending_clarification=pending_clarification.model_dump(),
+            pending_input=pending_input,
             patch={},
         )
 
@@ -334,7 +333,7 @@ def finalize_extraction(
         query_request=query_request.model_dump(mode="json"),
         resolver_message=message,
         notices=notices,
-        pending_clarification=pending_clarification.model_dump() if pending_clarification else None,
+        pending_input=pending_input,
         patch={},
     )
 

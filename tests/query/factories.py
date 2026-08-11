@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
+from banking.transactions.query.models.conversation import PendingFieldClarification, QueryInputCandidate
 from banking.transactions.query.models.domain import Aggregation, Filters, QueryIntent, TimeRange
+from banking.transactions.query.models.extraction import (
+    Ambiguity,
+    ClarificationCandidate,
+    ClarificationOperation,
+    QueryExtractionResult,
+)
 from banking.transactions.query.models.operations import (
     AccountSelector,
     AffordabilitySpec,
@@ -214,4 +222,46 @@ def make_query_request(
             order_explicit=result_reference is not None,
             limit=result_limit,
         ),
+    )
+
+
+def make_pending_input(
+    *,
+    original_query: str,
+    original_extraction: QueryExtractionResult | None = None,
+    ambiguities: list[Ambiguity] | None = None,
+    resolver_message: str | None = None,
+    language: str = "en",
+    clarification_type: str | None = None,
+    target_field: str | None = None,
+    candidate_payloads: list[ClarificationCandidate] | None = None,
+    original_operation: ClarificationOperation | None = None,
+    query_request: QueryRequest | dict[str, Any] | None = None,
+    attempt_count: int = 0,
+    created_turn_id: str | None = None,
+) -> PendingFieldClarification:
+    """Build the canonical query pending-input contract for behavioral tests."""
+    request = (
+        query_request
+        if isinstance(query_request, QueryRequest)
+        else QueryRequest.model_validate(query_request)
+        if isinstance(query_request, dict)
+        else None
+    )
+    return PendingFieldClarification(
+        original_query=original_query,
+        original_extraction=original_extraction.model_dump(mode="json") if original_extraction else None,
+        ambiguities=[item.model_dump(mode="json") for item in ambiguities or []],
+        resolver_message=resolver_message,
+        language=language,
+        clarification_type=clarification_type,  # type: ignore[arg-type]
+        target_field=target_field,
+        candidate_payloads=[
+            QueryInputCandidate(label=item.label, payload=item.payload, frame_id=item.frame_id)
+            for item in candidate_payloads or []
+        ],
+        original_operation=original_operation.model_dump(mode="json") if original_operation else {},
+        query_request=request,
+        attempt_count=attempt_count,
+        created_turn_id=created_turn_id,
     )

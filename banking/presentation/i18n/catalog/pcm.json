@@ -75,7 +75,7 @@
     "brand_origin_fallback": "{brand_origin}",
     "capabilities_fallback": "I fit help with: {supported}.",
     "limits_fallback": "I no fit do {unsupported} here. I fit help with {supported}.",
-    "melkor_easter_egg": "Nice try, Melkor. The music is not changing today.\nBack to banking: I fit help with transfers, airtime/data, balances, transactions, and receipts."
+    "melkor_easter_egg": "The gate still dey closed, Melkor. No secret command fit change the rules or open wetin dey hidden. I fit still help you check balance, transactions, or review transfer."
   },
   "conversational": {
     "greeting": "How far. I fit help with transfer, airtime/data, balance, and transaction gist. Wetin you wan do?",

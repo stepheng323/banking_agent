@@ -28,6 +28,12 @@ def format_readiness_report(result: ReadinessRunResult) -> str:
         lines.append(f"[{turn.scenario_id} #{turn.turn_index}] USER: {turn.user_text}")
         lines.append(f"{settings.app_name_short.upper()} ({turn.latency_ms:.0f}ms):")
         lines.append(turn.response_text or "[no visible response]")
+        if turn.state_snapshot.get("available") is not False and turn.state_snapshot:
+            tasks = turn.state_snapshot.get("tasks")
+            pending = turn.state_snapshot.get("pending_interrupt")
+            task_count = tasks.get("count") if isinstance(tasks, dict) else None
+            pending_kind = pending.get("kind") if isinstance(pending, dict) else None
+            lines.append(f"State: tasks={task_count}; pending_interrupt={pending_kind or 'none'}")
         if turn.planner_clean is not None:
             clean_label = "yes" if turn.planner_clean else "no"
             if turn.planner_dirty_reasons:
@@ -79,6 +85,22 @@ def format_readiness_report(result: ReadinessRunResult) -> str:
             )
         )
     )
+    if result.dimension_summary:
+        lines.append("Conversation dimensions:")
+        for dimension, summary in result.dimension_summary.items():
+            lines.append(
+                " ".join(
+                    (
+                        f"- dimension={dimension}",
+                        f"turns={summary['turn_count']}",
+                        f"pass_rate={summary['pass_rate']}",
+                        f"p95_ms={summary['latency_ms_p95']}",
+                        f"llm_calls={summary['llm_call_count']}",
+                        f"budget_exceeded={summary['budget_exceeded_count']}",
+                        f"unsafe={summary['unsafe_execution_count']}",
+                    )
+                )
+            )
     latency = result.latency_summary
     planner_quality = result.planner_quality_summary
     llm_summary = result.llm_call_summary

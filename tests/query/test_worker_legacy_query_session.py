@@ -16,17 +16,16 @@ from banking.transactions.query.models.domain import (
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
-    PendingClarificationState,
     QueryExtractionResult,
     QueryTimeRange,
     TimeReference,
 )
 from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
 from banking.transactions.query.session import _session_has_surface_view
-from banking.transactions.query.session_state import build_query_session_v3, pending_input_from_legacy
+from banking.transactions.query.session_state import build_query_session_v3
 from banking.transactions.query.worker import QueryWorker as RuntimeQueryWorker
 from shared.config.settings import settings
-from tests.query.factories import make_query_request
+from tests.query.factories import make_pending_input, make_query_request
 
 
 def _build_query_worker(
@@ -298,25 +297,22 @@ async def test_worker_prefers_pending_clarification_over_visible_query_surface()
             time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
         )
     )
-    pending = PendingClarificationState(
+    pending = make_pending_input(
         original_query="Show the 25k one",
-        current_intent=QueryIntent.TRANSACTION_LIST,
         original_extraction=QueryExtractionResult(intent=QueryIntent.TRANSACTION_LIST),
         resolver_message="Choose one.",
         language="en",
     )
-    pending_input = pending_input_from_legacy(pending)
-    assert pending_input is not None
     pending_snapshot = build_query_session_v3(
         request=query_request,
         result=QueryResult(summary_text="Transactions", query_request=query_request),
         raw_frames=[],
-        pending_input=pending_input,
+        pending_input=pending,
     ).model_dump(mode="json")
 
     async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
         del worker_context
-        assert state["query_session"]["pending_clarification"] == pending.model_dump(mode="json")
+        assert state["query_session"]["pending_input"] == pending.model_dump(mode="json")
         return TransactionResult(outcome=TransactionOutcome.NEEDS_INPUT, response="Choose one.", patch={})
 
     worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
@@ -387,9 +383,8 @@ async def test_worker_ignores_legacy_stashed_query_session_input() -> None:
 async def test_worker_returns_pending_query_clarification_without_redis_persistence() -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
-    pending = PendingClarificationState(
+    pending = make_pending_input(
         original_query="How much did I spend last",
-        current_intent=QueryIntent.ANALYTICS_SUMMARY,
         original_extraction=QueryExtractionResult(
             intent=QueryIntent.ANALYTICS_SUMMARY,
             time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, days_back=30),
@@ -404,7 +399,7 @@ async def test_worker_returns_pending_query_clarification_without_redis_persiste
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             response="What time period did you mean by 'last'?",
-            patch={"session_active": True, "pending_clarification": pending},
+            patch={"session_active": True, "pending_input": pending},
         )
 
     worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
@@ -423,7 +418,7 @@ async def test_worker_returns_pending_query_clarification_without_redis_persiste
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
     assert result.patch is not None
     assert result.patch["session_active"] is True
-    assert result.patch["pending_clarification"] == pending
+    assert result.patch["pending_input"] == pending
     assert session_manager.saved_state is None
 
 
@@ -493,8 +488,9 @@ async def test_worker_returns_query_state_without_redis_frame_persistence() -> N
 
 def test_session_shape_detects_surface_view() -> None:
     session = {
+        "schema_version": 3,
         "session_active": True,
-        "query_result": QueryResult(
+        "display_result": QueryResult(
             summary_text="You spent ₦60,000 this week.",
             surface_view=SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY),
         ).model_dump(mode="json"),

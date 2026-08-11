@@ -147,7 +147,7 @@ class _ReplayPlannerStub:
         del phone_number, text, context
         return self.interpretation
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,

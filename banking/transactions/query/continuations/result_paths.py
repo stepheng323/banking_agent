@@ -24,6 +24,7 @@ from banking.transactions.query.continuations.time_rescope import (
 )
 from banking.transactions.query.continuations.transforms import rebuild_query_request
 from banking.transactions.query.contracts import SelectionPayload
+from banking.transactions.query.conversation_focus import focused_item_index
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
@@ -413,7 +414,7 @@ async def resolve_result_continuation_updates(
                     "response": clarification_message,
                     "flow_state": "parsing",
                     "session_active": True,
-                    "pending_clarification": None,
+                    "pending_input": None,
                     "show_expanded": bool(session.get("show_expanded", False)),
                     "current_page": session.get("current_page", 0),
                 }
@@ -626,7 +627,7 @@ async def resolve_result_continuation_updates(
                             drill_idx = idx
                             break
                 if drill_idx is None:
-                    drill_idx = session.get("selected_item_index")
+                    drill_idx = focused_item_index(session.get("active_focus"), items)
             elif len(getattr(surface_view, "items", []) or []) == 1:
                 drill_idx = 0
 
@@ -736,7 +737,7 @@ async def resolve_result_continuation_updates(
                 "response": decision.response_text,
                 "flow_state": "parsing",
                 "session_active": True,
-                "pending_clarification": session.get("pending_clarification"),
+                "pending_input": session.get("pending_input"),
                 "show_expanded": bool(session.get("show_expanded", False)),
                 "current_page": session.get("current_page", 0),
             }
@@ -957,7 +958,7 @@ def _pagination_boundary_updates(*, locale: str, session: dict[str, Any], messag
 def _result_has_more(*, restored_query_result: QueryResult | None, session: dict[str, Any]) -> bool | None:
     if restored_query_result is not None:
         return restored_query_result.has_more
-    raw_result = session.get("query_result")
+    raw_result = session.get("display_result")
     if isinstance(raw_result, dict) and isinstance(raw_result.get("has_more"), bool):
         return raw_result["has_more"]
     return None
@@ -972,7 +973,7 @@ def _unresolved_selection_updates(*, locale: str, session: dict[str, Any], visib
         "response": render_message(message_key, locale, {"count": visible_count}),
         "session_active": True,
         "flow_state": "parsing",
-        "pending_clarification": None,
+        "pending_input": None,
         "resolver_message": None,
         "selected_item_index": None,
         "selected_item_id": None,

@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from scripts.readiness_adversarial_scenarios import adversarial_conversation_scenarios
+from scripts.readiness_jarvis_scenarios import bounded_jarvis_conversation_scenarios
 from scripts.readiness_models import (
     LLMCallBudget,
     ReadinessExpectation,
@@ -833,6 +835,10 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
     scenarios = readiness_scenarios()
     if name == "robustness":
         return expand_scenarios(robustness_base_scenarios())
+    if name == "adversarial-conversations":
+        return adversarial_conversation_scenarios()
+    if name == "jarvis-conversations":
+        return bounded_jarvis_conversation_scenarios()
     if name == "all":
         return tuple(
             scenarios[key]

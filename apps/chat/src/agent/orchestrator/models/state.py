@@ -10,7 +10,7 @@ and return structured results. Never let workers maintain competing state.
 from time import time
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, Field
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
 from apps.chat.src.agent.orchestrator.context.referents.models import ShortTermReferentMemory
@@ -22,9 +22,6 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 )
 from apps.chat.src.agent.orchestrator.models.turn_directive import TurnDirective
 from shared.types.planner import PlannerOutput
-from shared.utils.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class CapabilityBoundary(BaseModel):
@@ -48,42 +45,6 @@ class OrchestratorState(BaseModel):
 
     schema_version: Literal["v2"] = "v2"
 
-    @model_validator(mode="before")
-    @classmethod
-    def upgrade_legacy_checkpoint(cls, value: Any) -> Any:
-        """Accept v1 checkpoints without reviving their competing route metadata."""
-        if not isinstance(value, dict):
-            return value
-        legacy_route_keys = (
-            "routing_owner",
-            "routing_decision",
-            "routing_target_domain",
-            "routing_mode",
-            "route_source",
-            "routing_heuristic_type",
-            "routing_heuristic_name",
-        )
-        version = value.get("schema_version")
-        if version != "v1" and not (version is None and any(key in value for key in legacy_route_keys)):
-            return value
-        upgraded = dict(value)
-        upgraded["schema_version"] = "v2"
-        upgraded["turn_directive"] = None
-        for key in legacy_route_keys:
-            upgraded.pop(key, None)
-        return upgraded
-
-    @field_validator("turn_directive", mode="before", check_fields=False)
-    @classmethod
-    def drop_invalid_legacy_directive(cls, value: Any) -> Any:
-        if value is None or isinstance(value, TurnDirective):
-            return value
-        try:
-            return TurnDirective.model_validate(value)
-        except ValidationError:
-            logger.warning("invalid_turn_directive_dropped")
-            return None
-
     user_id: str
     phone_number: str
     channel: str = "whatsapp"
@@ -98,20 +59,6 @@ class OrchestratorState(BaseModel):
 
     normalized_instruction: str | None = None
     planner_output: PlannerOutput | None = None
-
-    @field_validator("planner_output", mode="before")
-    @classmethod
-    def drop_legacy_invalid_planner_output(cls, value: Any) -> Any:
-        if value is None or isinstance(value, PlannerOutput):
-            return value
-        if isinstance(value, dict) and "primary_intent" not in value:
-            logger.warning(
-                "legacy_planner_output_dropped",
-                reason="missing_primary_intent",
-                keys=sorted(str(key) for key in value)[:12],
-            )
-            return None
-        return value
 
     tasks: dict[str, TaskSpec] = Field(default_factory=dict)
     waves: list[list[str]] = Field(default_factory=list)

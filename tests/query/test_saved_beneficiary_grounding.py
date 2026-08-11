@@ -7,15 +7,15 @@ from banking.transactions.query.continuations.beneficiary_grounding import (
     recipient_clarification_candidates,
 )
 from banking.transactions.query.continuations.clarification_state import resolve_selection_clarification
+from banking.transactions.query.models.conversation import PendingFieldClarification
 from banking.transactions.query.models.domain import Filters, QueryIntent, QueryRequest
-from banking.transactions.query.models.extraction import ClarificationOperation, PendingClarificationState
+from banking.transactions.query.models.extraction import ClarificationOperation
 from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.session_state import (
     build_query_session_v3,
-    pending_input_from_legacy,
-    project_query_session_v3,
+    restore_query_session_v3,
 )
-from tests.query.factories import make_query_request
+from tests.query.factories import make_pending_input, make_query_request
 
 
 class _DummyStructured:
@@ -89,13 +89,12 @@ def test_exact_saved_alias_uses_canonical_counterparty_name() -> None:
 
 def test_selected_saved_recipient_resumes_query_with_exact_filter() -> None:
     candidate = recipient_clarification_candidates(_contract("Tolu"), _BENEFICIARIES)[2]
-    pending = PendingClarificationState(
+    pending = make_pending_input(
         original_query="When last did I send money to Tolu?",
-        current_intent=QueryIntent.TRANSACTION_LIST,
         clarification_type="selection",
         candidate_payloads=[candidate],
         original_operation=ClarificationOperation(grounded_operation="recipient_filter"),
-        query_request=_contract("Tolu").model_dump(mode="json"),
+        query_request=_contract("Tolu"),
     )
 
     updates = resolve_selection_clarification(pending, "1", locale="en", session={})
@@ -108,28 +107,27 @@ def test_selected_saved_recipient_resumes_query_with_exact_filter() -> None:
     assert updates["query_result"] is None
 
 
-def test_selection_type_survives_v3_checkpoint_projection() -> None:
+def test_selection_type_survives_v3_checkpoint_round_trip() -> None:
     request = _contract("Tolu")
     candidate = recipient_clarification_candidates(request, _BENEFICIARIES)[0]
-    pending = PendingClarificationState(
+    pending = make_pending_input(
         original_query="When last did I send money to Tolu?",
-        current_intent=QueryIntent.TRANSACTION_LIST,
         clarification_type="selection",
         candidate_payloads=[candidate],
         original_operation=ClarificationOperation(grounded_operation="recipient_filter"),
-        query_request=request.model_dump(mode="json"),
+        query_request=request,
     )
 
     session = build_query_session_v3(
         request=None,
         result=None,
         raw_frames=[],
-        pending_input=pending_input_from_legacy(pending),
+        pending_input=pending,
     )
-    projected = project_query_session_v3(session.model_dump(mode="json"))
-
-    assert projected is not None
-    restored = PendingClarificationState.model_validate(projected["pending_clarification"])
+    restored_session = restore_query_session_v3(session.model_dump(mode="json"))
+    assert restored_session is not None
+    restored = restored_session.pending_input
+    assert isinstance(restored, PendingFieldClarification)
     assert restored.clarification_type == "selection"
     updates = resolve_selection_clarification(restored, "1", locale="en", session={})
     assert updates is not None
@@ -140,19 +138,18 @@ def test_selection_type_survives_v3_checkpoint_projection() -> None:
 async def test_v3_numeric_selection_is_resolved_before_reasoner() -> None:
     request = _contract("Tolu")
     candidate = recipient_clarification_candidates(request, _BENEFICIARIES)[0]
-    pending = PendingClarificationState(
+    pending = make_pending_input(
         original_query="When last did I send money to Tolu?",
-        current_intent=QueryIntent.TRANSACTION_LIST,
         clarification_type="selection",
         candidate_payloads=[candidate],
         original_operation=ClarificationOperation(grounded_operation="recipient_filter"),
-        query_request=request.model_dump(mode="json"),
+        query_request=request,
     )
     session = build_query_session_v3(
         request=None,
         result=None,
         raw_frames=[],
-        pending_input=pending_input_from_legacy(pending),
+        pending_input=pending,
     )
 
     step = ExtractionStep(_DummyLLM())
@@ -161,7 +158,7 @@ async def test_v3_numeric_selection_is_resolved_before_reasoner() -> None:
             "message": "1",
             "language": "en",
             "today": date(2026, 7, 19),
-            "query_session": project_query_session_v3(session.model_dump(mode="json")),
+            "query_session": session.model_dump(mode="json"),
         }
     )
 

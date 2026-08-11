@@ -4,16 +4,18 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS, MAX_TRANSACTION_BATCH_TASKS
 from shared.types.planner import PlannedTask, PlannerOutput, TransferTaskParameters, make_planned_task
+from tests.orchestrator.routing_fixtures import planner_test_result
 
 
 class _PlannerStub:
     def __init__(self, output: PlannerOutput) -> None:
         self.output = output
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -21,9 +23,9 @@ class _PlannerStub:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context, prompt_signals
-        return self.output
+        return planner_test_result(self.output)
 
 
 def _transfer_task(index: int) -> PlannedTask:

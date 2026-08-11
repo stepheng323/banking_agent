@@ -9,11 +9,11 @@ from banking.transactions.query.compiler import finalize as finalize_compiler
 from banking.transactions.query.compiler import lexical_recovery, query_compiler
 from banking.transactions.query.compiler.resolver import Prompt
 from banking.transactions.query.compiler.v2 import compile_query_request
+from banking.transactions.query.models.conversation import PendingFieldClarification
 from banking.transactions.query.models.domain import QueryIntent, TimeRange
 from banking.transactions.query.models.extraction import (
     FactQueryKind,
     ParserQueryExtraction,
-    PendingClarificationState,
     QueryExtractionResult,
     QueryParseResult,
     QueryRequestShape,
@@ -66,7 +66,7 @@ class QueryParser:
         language: str,
         message: str | None,
         resolver_message: str | None,
-    ) -> PendingClarificationState:
+    ) -> PendingFieldClarification:
         return finalize_compiler.build_pending_clarification(
             self,
             extraction=extraction,

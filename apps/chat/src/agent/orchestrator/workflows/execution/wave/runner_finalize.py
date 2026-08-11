@@ -45,7 +45,6 @@ class ResponseCompositionPlan(StrEnum):
     DETERMINISTIC_STACK = "deterministic_stack"
     PRESERVE_SEPARATE = "preserve_separate"
     LLM_BRIDGE = "llm_bridge"
-    LEGACY_BRIDGE = "legacy_bridge"
 
 
 class OutboxBridgeDecision(BaseModel):
@@ -69,9 +68,14 @@ def _composition_plan(entries: list[dict[str, Any]]) -> ResponseCompositionPlan:
 
     hints = [_composition_hint(entry) for entry in entries]
     if not all(hints):
-        # Preserve the historical quality for unannotated output until worker
-        # result builders publish their composition hints.
-        return ResponseCompositionPlan.LEGACY_BRIDGE if len(entries) <= 3 else ResponseCompositionPlan.PRESERVE_SEPARATE
+        # Unannotated fragments are conservative and deterministic.  The
+        # historical compatibility bridge could invoke an unexpected LLM for
+        # ordinary output and is no longer part of the composition contract.
+        return (
+            ResponseCompositionPlan.DETERMINISTIC_STACK
+            if len(entries) <= 3
+            else ResponseCompositionPlan.PRESERVE_SEPARATE
+        )
 
     modes = {hint.get("merge_mode", "") for hint in hints}
     priorities = {hint.get("priority", "") for hint in hints}
@@ -213,7 +217,7 @@ async def _compose_say_group(entries: list[dict[str, Any]], runtime: ExecutionWa
         combined["text"] = texts[0]
         return [combined]
     combined = dict(entries[0])
-    if plan in {ResponseCompositionPlan.LLM_BRIDGE, ResponseCompositionPlan.LEGACY_BRIDGE}:
+    if plan == ResponseCompositionPlan.LLM_BRIDGE:
         combined["text"] = await _bridge_texts(texts, entries, runtime, plan=plan)
     else:
         combined["text"] = _deterministic_stack(texts)

@@ -241,6 +241,13 @@ async def _build_risk_advisory_patch(
     *,
     existing_warning: str | None,
 ) -> dict[str, Any]:
+    # Unit and domain-isolated workers do not own a database session.  The
+    # runtime factory opts into this advisory path explicitly; avoiding an
+    # implicit UnitOfWork here keeps those tests (and dry-run workers) free of
+    # hidden database connections.
+    if getattr(worker_context, "risk_advisory_enabled", None) is False:
+        return {}
+
     user_id = getattr(worker_context, "user_id", None)
     if not user_id or not payload.idempotency_key:
         return {}

@@ -5,7 +5,6 @@ from typing import Any, Protocol
 from urllib.parse import urlencode
 
 from banking.identity.channel_linking.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
-from shared.cache.redis_client import RedisClient
 from shared.clients.abstractions.messaging import MessageResult
 from shared.utils.logging import get_logger, log_fingerprint
 
@@ -66,6 +65,7 @@ async def send_mini_app_message(
     header: str = "",
     body_text: str = "",
     cta_text: str = "Open",
+    redis_client: Any | None = None,
 ) -> MessageResult:
     endpoint, bootstrap_endpoint = route_for_flow_token(flow_token)
     bootstrap_extra: dict[str, Any] = {}
@@ -103,19 +103,21 @@ async def send_mini_app_message(
         result = await api_call("sendMessage", payload)
         msg_data = result.get("result", {})
         sent_id = str(msg_data.get("message_id", ""))
-        await cache_pin_message_id(flow_token=flow_token, message_id=sent_id)
+        await cache_pin_message_id(flow_token=flow_token, message_id=sent_id, redis_client=redis_client)
         return MessageResult(success=True, message_id=sent_id, raw_response=result)
     except Exception as e:
         logger.error("telegram_mini_app_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
         return MessageResult(success=False, error="Telegram Mini App send failed")
 
 
-async def cache_pin_message_id(*, flow_token: str, message_id: str) -> None:
+async def cache_pin_message_id(*, flow_token: str, message_id: str, redis_client: Any | None = None) -> None:
     if not message_id or not flow_token:
         return
 
     try:
-        redis_client = RedisClient.get_client()
+        if redis_client is None:
+            logger.debug("redis_client_not_in_context_skip_telegram_pin_message_cache")
+            return
         await redis_client.setex(f"tg:pin_msg:{flow_token}", 1800, message_id)
     except Exception as e:
         logger.warning(

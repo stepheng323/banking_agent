@@ -1,8 +1,11 @@
-from typing import Any, cast
+import re
+from typing import Any, Literal, cast
 
 from apps.chat.src.agent.orchestrator.models.turn_directive import RouteResolution
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
     _is_account_balance_request,
+    _is_account_domain_request,
+    _is_beneficiary_domain_request,
     _is_generic_account_balance_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
@@ -18,6 +21,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
     _direct_domain_capability_block_message,
 )
 from shared.types.balance import BalanceQueryContract
+from shared.types.conversation_sets import AccountLifecycleContract, BeneficiaryQueryContract
 from shared.types.read import ReadRequest, ResponseShape
 from shared.utils.bank_aliases import extract_known_bank_names
 from shared.utils.logging import get_logger
@@ -92,15 +96,137 @@ async def _stage_balance_direct(ctx: GateContext) -> RouteResolution | None:
 
 
 async def _stage_account_domain(ctx: GateContext) -> RouteResolution | None:
-    """Defer free-form account reads to the canonical semantic read contract."""
-    del ctx
-    return None
+    """Dispatch an unambiguous linked-account read without a router call.
+
+    This stage intentionally handles only the read grammar already exposed by
+    ``_is_account_domain_request``.  Account mutations and underspecified
+    wording continue through semantic routing.  The worker receives the same
+    canonical contracts that a semantic route would have produced.
+    """
+    if not _is_account_domain_request(ctx.message_text):
+        return None
+
+    normalized = re.sub(r"\s+", " ", ctx.message_text.strip().lower()).rstrip("?.!,")
+    if re.search(r"\bhow\s+many\b|\bcount\b", normalized):
+        response_shape: Literal["fact_count", "fact_bool", "surface_list"] = "fact_count"
+        operation: Literal["count", "existence", "list"] = "count"
+    elif re.search(r"\bdo\s+i\s+have\b|\bany\s+linked?\b|\bare\s+there\b", normalized):
+        response_shape = "fact_bool"
+        operation = "existence"
+    elif re.search(r"\b(?:show|list|view|get|display)\b|\bwhat\s+.*accounts?\b", normalized):
+        response_shape = "surface_list"
+        operation = "list"
+    else:
+        # Link/unlink/default-account mutations and unknown account wording
+        # must retain the semantic router's richer contract construction.
+        return None
+
+    request = ReadRequest(subject="linked_account", response_shape=response_shape)
+    contract = AccountLifecycleContract(operation=operation, response_shape=response_shape)
+    task_id, spec = _build_direct_domain_task(
+        state_view=ctx.state_view,
+        domain="account",
+        mode="new",
+        read_request=request,
+        account_lifecycle_contract=contract,
+    )
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, "account"):
+        return policy_block(
+            ctx,
+            response=block_message,
+            owner="guardrail",
+            decision="capability_blocked",
+            path_shape="deterministic_account_policy_blocked",
+            target_domain="account",
+            mode="new",
+            source="account_domain_guard",
+        )
+    logger.info(
+        "gate_deterministic_account_domain",
+        task_id=task_id,
+        response_shape=response_shape,
+        operation=operation,
+    )
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision="deterministic_account_read",
+        path_shape="deterministic_account_read",
+        extra_updates={
+            "pending_interrupt": None,
+            **(ctx.summary_updates or {}),
+            **_build_query_session_exit_updates(ctx.state),
+        },
+        target_domain="account",
+        mode="new",
+        source="account_domain_guard",
+        heuristic_type="typed_domain_signal",
+        heuristic_name="explicit_account_read",
+    )
 
 
 async def _stage_beneficiary_domain(ctx: GateContext) -> RouteResolution | None:
-    """Defer free-form beneficiary reads to the canonical semantic read contract."""
-    del ctx
-    return None
+    """Dispatch explicit beneficiary list/count/existence reads deterministically."""
+    if not _is_beneficiary_domain_request(ctx.message_text):
+        return None
+
+    normalized = re.sub(r"\s+", " ", ctx.message_text.strip().lower()).rstrip("?.!,")
+    if re.search(r"\bhow\s+many\b|\bcount\b", normalized):
+        response_shape: Literal["fact_count", "fact_bool", "surface_list"] = "fact_count"
+        operation: Literal["count", "existence", "list"] = "count"
+    elif re.search(r"\bdo\s+i\s+have\b|\bany\b|\bare\s+there\b", normalized):
+        response_shape = "fact_bool"
+        operation = "existence"
+    else:
+        response_shape = "surface_list"
+        operation = "list"
+
+    request = ReadRequest(subject="beneficiary", response_shape=response_shape)
+    contract = BeneficiaryQueryContract(operation=operation, response_shape=response_shape)
+    task_id, spec = _build_direct_domain_task(
+        state_view=ctx.state_view,
+        domain="beneficiary",
+        mode="new",
+        read_request=request,
+        beneficiary_contract=contract,
+    )
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, "beneficiary"):
+        return policy_block(
+            ctx,
+            response=block_message,
+            owner="guardrail",
+            decision="capability_blocked",
+            path_shape="deterministic_beneficiary_policy_blocked",
+            target_domain="beneficiary",
+            mode="new",
+            source="beneficiary_domain_guard",
+        )
+    logger.info(
+        "gate_deterministic_beneficiary_domain",
+        task_id=task_id,
+        response_shape=response_shape,
+        operation=operation,
+    )
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision="deterministic_beneficiary_read",
+        path_shape="deterministic_beneficiary_read",
+        extra_updates={
+            "pending_interrupt": None,
+            **(ctx.summary_updates or {}),
+            **_build_query_session_exit_updates(ctx.state),
+        },
+        target_domain="beneficiary",
+        mode="new",
+        source="beneficiary_domain_guard",
+        heuristic_type="typed_domain_signal",
+        heuristic_name="explicit_beneficiary_read",
+    )
 
 
 async def _stage_airtime_domain(ctx: GateContext) -> RouteResolution | None:

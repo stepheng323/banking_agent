@@ -11,12 +11,14 @@ def serialize_accounts(accounts: list[Any]) -> list[dict[str, Any]]:
     for idx, account in enumerate(accounts, 1):
         if isinstance(account, dict):
             account_id = account.get("account_id") or account.get("id")
+            database_id = account.get("database_id") or account.get("linked_account_id")
             updated_at = account.get("updated_at")
             isoformat = getattr(updated_at, "isoformat", None)
             data = {
                 "index": idx,
                 "account_id": str(account_id or ""),
                 "id": str(account_id or ""),
+                "database_id": str(database_id or "") if database_id else None,
                 "bank_name": account.get("bank_name") or account.get("bank") or account.get("name"),
                 "account_name": account.get("account_name") or account.get("name_on_account"),
                 "account_number": account.get("account_number") or account.get("number"),
@@ -35,10 +37,13 @@ def serialize_accounts(accounts: list[Any]) -> list[dict[str, Any]]:
 
         updated_at = getattr(account, "updated_at", None)
         isoformat = getattr(updated_at, "isoformat", None)
+        provider_account_id = str(getattr(account, "account_id", "") or "")
+        database_id = str(getattr(account, "id", "") or "")
         data = {
             "index": idx,
-            "account_id": str(getattr(account, "account_id", "") or getattr(account, "id", "") or ""),
-            "id": str(getattr(account, "account_id", "") or getattr(account, "id", "") or ""),
+            "account_id": provider_account_id,
+            "id": provider_account_id or database_id,
+            "database_id": database_id or None,
             "bank_name": getattr(account, "bank_name", None),
             "account_name": getattr(account, "account_name", None),
             "account_number": getattr(account, "account_number", None),

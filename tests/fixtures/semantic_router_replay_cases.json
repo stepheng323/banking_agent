@@ -52,6 +52,22 @@
     "prompt_line": "\"check my balance\" -> domain_account"
   },
   {
+    "id": "account_linked_list_pidgin",
+    "prompt_line": "\"Wetin be my linked accounts\" -> domain_account"
+  },
+  {
+    "id": "account_linked_list_hausa",
+    "prompt_line": "\"Nuna min asusun da aka haɗa\" -> domain_account"
+  },
+  {
+    "id": "beneficiary_list_yoruba",
+    "prompt_line": "\"Fihan mi awon beneficiary mi\" -> domain_beneficiary"
+  },
+  {
+    "id": "beneficiary_list_igbo",
+    "prompt_line": "\"Gosi m ndị beneficiary m\" -> domain_beneficiary"
+  },
+  {
     "id": "transfer_single_direct",
     "prompt_line": "\"Send 5k to Mum\" -> domain_transfer"
   },

@@ -154,7 +154,7 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
                 TurnOutcomeKind.POLICY_BLOCK,
             }
         ),
-        may_call_llm=False,
+        may_call_llm=True,
         description="Split supported banking clauses from unsupported capability clauses.",
         eligibility=all_of(no_live_pending_interrupt, no_gate_blocking_state, phrase_heavy_fastpath_allowed),
     ),

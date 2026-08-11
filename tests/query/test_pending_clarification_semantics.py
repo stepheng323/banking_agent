@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import pytest
 
 from banking.runtime.results import TransactionOutcome
+from banking.transactions.query.models.conversation import PendingFieldClarification
 from banking.transactions.query.models.domain import (
     QueryIntent,
     QueryRequest,
@@ -11,7 +12,6 @@ from banking.transactions.query.models.domain import (
 from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
-    PendingClarificationState,
     QueryAggregation,
     QueryExtractionResult,
     QueryParseResult,
@@ -25,7 +25,8 @@ from banking.transactions.query.models.extraction import (
 )
 from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
-from tests.query.factories import make_query_request
+from banking.transactions.query.session_state import build_query_session_v3
+from tests.query.factories import make_pending_input, make_query_request
 
 
 def _query_ir(**kwargs: object) -> QueryRequest:
@@ -54,20 +55,29 @@ def _contract(query: QueryRequest) -> QueryRequest:
     return query.model_copy(deep=True)
 
 
-def _pending_state() -> PendingClarificationState:
-    return PendingClarificationState(
+def _pending_state() -> PendingFieldClarification:
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, days_back=30),
+        ambiguities=[Ambiguity(code=AmbiguityCode.TIME_VAGUE, context="last")],
+        raw_query="How much did I spend last",
+    )
+    return make_pending_input(
         original_query="How much did I spend last",
-        current_intent=QueryIntent.ANALYTICS_SUMMARY,
-        original_extraction=QueryExtractionResult(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, days_back=30),
-            ambiguities=[Ambiguity(code=AmbiguityCode.TIME_VAGUE, context="last")],
-            raw_query="How much did I spend last",
-        ),
+        original_extraction=extraction,
         ambiguities=[Ambiguity(code=AmbiguityCode.TIME_VAGUE, context="last")],
         resolver_message="What time period did you mean by 'last'?",
         language="en",
     )
+
+
+def _session(pending: PendingFieldClarification) -> dict[str, object]:
+    return build_query_session_v3(
+        request=None,
+        result=None,
+        raw_frames=[],
+        pending_input=pending,
+    ).model_dump(mode="json")
 
 
 @pytest.mark.asyncio
@@ -80,9 +90,9 @@ async def test_parse_new_query_needs_input_persists_pending_clarification_state(
         assert question == "How much did I spend last"
         return QueryParseResult(
             outcome=ResolverOutcome.NEEDS_INPUT,
-            extraction=pending.original_extraction,
+            extraction=QueryExtractionResult.model_validate(pending.original_extraction),
             resolver_message=pending.resolver_message,
-            pending_clarification=pending.model_dump(),
+            pending_input=pending.model_dump(mode="json"),
             patch={},
         )
 
@@ -91,7 +101,7 @@ async def test_parse_new_query_needs_input_persists_pending_clarification_state(
     result = await step.run({"message": "How much did I spend last", "language": "en", "today": date(2026, 3, 13)})
 
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
-    assert isinstance(result.patch["pending_clarification"], PendingClarificationState)
+    assert isinstance(result.patch["pending_input"], PendingFieldClarification)
     assert result.patch["session_active"] is True
 
 
@@ -139,16 +149,13 @@ async def test_pending_clarification_time_reply_patches_and_executes() -> None:
             "message": "last 3 days",
             "language": "en",
             "today": date(2026, 3, 13),
-            "query_session": {
-                "session_active": True,
-                "pending_clarification": pending,
-            },
+            "query_session": _session(pending),
         }
     )
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["flow_state"] == "executing"
-    assert result.patch["pending_clarification"] is None
+    assert result.patch["pending_input"] is None
 
 
 @pytest.mark.asyncio
@@ -167,10 +174,7 @@ async def test_pending_clarification_abort_ends_query_session() -> None:
             "message": "Abort",
             "language": "en",
             "today": date(2026, 3, 13),
-            "query_session": {
-                "session_active": True,
-                "pending_clarification": pending,
-            },
+            "query_session": _session(pending),
         }
     )
 
@@ -322,10 +326,7 @@ async def test_pending_clarification_new_query_compiles_without_parser_parse() -
             "message": "How much did I spend this week",
             "language": "en",
             "today": date(2026, 3, 13),
-            "query_session": {
-                "session_active": True,
-                "pending_clarification": pending,
-            },
+            "query_session": _session(pending),
         }
     )
 
@@ -369,16 +370,13 @@ async def test_pending_clarification_recent_list_interrupts_and_clears_old_scope
             "message": "show my recent transactions",
             "language": "en",
             "today": date(2026, 3, 28),
-            "query_session": {
-                "session_active": True,
-                "pending_clarification": pending,
-            },
+            "query_session": _session(pending),
         }
     )
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["flow_state"] == "executing"
-    assert result.patch["pending_clarification"] is None
+    assert result.patch["pending_input"] is None
 
 
 @pytest.mark.asyncio
@@ -417,13 +415,10 @@ async def test_pending_clarification_day_scoped_list_interrupts_and_executes_new
             "message": "show today's transaction",
             "language": "en",
             "today": date(2026, 3, 28),
-            "query_session": {
-                "session_active": True,
-                "pending_clarification": pending,
-            },
+            "query_session": _session(pending),
         }
     )
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["flow_state"] == "executing"
-    assert result.patch["pending_clarification"] is None
+    assert result.patch["pending_input"] is None

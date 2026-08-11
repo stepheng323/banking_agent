@@ -18,10 +18,7 @@ from banking.transactions.query.models.domain import (
     QueryResultItem,
     TimeRange,
 )
-from banking.transactions.query.models.extraction import (
-    PendingClarificationState,
-    QueryExtractionResult,
-)
+from banking.transactions.query.models.extraction import QueryExtractionResult
 from banking.transactions.query.models.operations import (
     AllAccounts,
     AnalyzeOperation,
@@ -37,7 +34,7 @@ from banking.transactions.query.services.reasoning.models import (
     SemanticReasonerContext,
 )
 from banking.transactions.query.services.reasoning.reasoner import QuerySemanticReasoner
-from tests.query.factories import make_query_request
+from tests.query.factories import make_pending_input, make_query_request
 
 
 def _query_ir(**kwargs: object) -> QueryRequest:
@@ -121,9 +118,8 @@ def _pending_clarification_context(message: str) -> SemanticReasonerContext:
         message=message,
         today=date(2026, 3, 20),
         language="en",
-        pending_clarification=PendingClarificationState(
+        pending_input=make_pending_input(
             original_query="How much did I spend last",
-            current_intent=QueryIntent.ANALYTICS_SUMMARY,
             original_extraction=QueryExtractionResult(raw_query="How much did I spend last"),
             resolver_message="What time period did you mean by last?",
             language="en",

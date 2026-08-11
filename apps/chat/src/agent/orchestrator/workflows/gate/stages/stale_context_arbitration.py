@@ -229,9 +229,11 @@ def _looks_like_fresh_context_frame_domain_turn(message_text: str) -> bool:
         or _classify_obvious_transfer_request(message_text)
         or _is_obvious_airtime_request(message_text)
         or _is_obvious_data_request(message_text)
+        # Account and beneficiary reads have their own deterministic domain
+        # stages later in the gate.  Let those stages see a fresh request even
+        # when an unrelated frame is retained; routing them here would spend
+        # a semantic-router call and make the stale frame the authority.
         or _is_account_balance_request(message_text)
-        or _is_account_domain_request(message_text)
-        or _is_beneficiary_domain_request(message_text)
         or _could_be_schedule_read_request(message_text)
     )
 

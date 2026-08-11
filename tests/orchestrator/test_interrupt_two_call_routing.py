@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from banking.presentation.i18n.bridge import render_cancelled_prompt
 from banking.transfers.models.entities import TransferEntities
 from banking.transfers.models.extraction import TransferExtractionResult
@@ -17,6 +18,7 @@ from shared.types.planner import (
     TransferTaskParameters,
     make_planned_task,
 )
+from tests.orchestrator.routing_fixtures import planner_test_result
 
 
 class _CountingPlanner:
@@ -52,7 +54,7 @@ class _CountingPlanner:
         del phone_number, text, context, path_label
         return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -60,10 +62,10 @@ class _CountingPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
         self.plan_calls += 1
-        return self._output
+        return planner_test_result(self._output)
 
 
 class _TransferExtractorStub:

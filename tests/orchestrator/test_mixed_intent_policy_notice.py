@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.ingest import ingest_message
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from apps.chat.src.agent.orchestrator.workflows.planner.node_constants import SAFE_CAPABILITY_FALLBACK
 from banking.presentation.i18n.renderer import render_message
@@ -22,6 +23,7 @@ from shared.types.planner import (
     TransferTaskParameters,
     make_planned_task,
 )
+from tests.orchestrator.routing_fixtures import planner_test_result
 
 
 class _MockPlanner:
@@ -33,7 +35,7 @@ class _MockPlanner:
         self._output = output
         self.planner_llm = planner_llm
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -41,9 +43,9 @@ class _MockPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
-        return self._output
+        return planner_test_result(self._output)
 
 
 class _MockTransferWorker:

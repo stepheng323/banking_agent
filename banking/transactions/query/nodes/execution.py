@@ -117,14 +117,16 @@ class ExecutionStep(QueryStep):
         user_id = worker_context.user_id if worker_context else None
         query_session_raw = state.get("query_session")
         query_session: dict[str, Any] = query_session_raw if isinstance(query_session_raw, dict) else {}
+        raw_session_cache = query_session.get("cache")
+        canonical_cache = raw_session_cache if isinstance(raw_session_cache, dict) else {}
 
         session_cache = {
-            "cached_transactions": query_session.get("cached_transactions"),
-            "cache_fetched_at": query_session.get("cache_fetched_at"),
-            "cache_fingerprint": query_session.get("cache_fingerprint"),
-            "cache_scope_fingerprint": query_session.get("cache_scope_fingerprint"),
-            "cache_window_start": query_session.get("cache_window_start"),
-            "cache_window_end": query_session.get("cache_window_end"),
+            "cached_transactions": canonical_cache.get("cached_transactions"),
+            "cache_fetched_at": canonical_cache.get("cache_fetched_at"),
+            "cache_fingerprint": canonical_cache.get("cache_fingerprint"),
+            "cache_scope_fingerprint": canonical_cache.get("cache_scope_fingerprint"),
+            "cache_window_start": canonical_cache.get("cache_window_start"),
+            "cache_window_end": canonical_cache.get("cache_window_end"),
         }
 
         if state.get("query_session") and (

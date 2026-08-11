@@ -17,11 +17,11 @@ from banking.transactions.query.models.domain import (
     Filters,
     QueryFrame,
     QueryRequest,
+    QueryResult,
     QueryResultItem,
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
-    PendingClarificationState,
     QueryAggregation,
     QueryExtractionResult,
     QueryFilters,
@@ -41,8 +41,9 @@ from banking.transactions.query.services.reasoning.models import (
     TransactionListDecision,
 )
 from banking.transactions.query.services.reasoning.reasoner import QuerySemanticReasoner
+from banking.transactions.query.session_state import build_query_session_v3
 from shared.types.query_preferences import QueryPreferenceUpdate
-from tests.query.factories import make_query_request
+from tests.query.factories import make_pending_input, make_query_request
 
 
 def _query_ir(**kwargs: object) -> QueryRequest:
@@ -53,6 +54,26 @@ def _query_ir(**kwargs: object) -> QueryRequest:
     }
     defaults.update(kwargs)
     return make_query_request(**defaults)
+
+
+def _query_session(
+    request: QueryRequest,
+    *,
+    summary_text: str,
+    items: list[QueryResultItem] | None = None,
+    surface_view: SurfaceView | None = None,
+) -> dict[str, object]:
+    result = QueryResult(
+        summary_text=summary_text,
+        items=items or [],
+        surface_view=surface_view,
+        query_request=request,
+    )
+    return build_query_session_v3(
+        request=request,
+        result=result,
+        raw_frames=[],
+    ).model_dump(mode="python")
 
 
 class _FailingStructured:
@@ -155,6 +176,40 @@ def test_focused_reasoner_adapter_preserves_complete_replacement_extraction() ->
     assert public.extraction.filters.transaction_type == "debit"
     assert public.extraction.time_range.period == "last_month"
     assert public.extraction.request_shape == QueryRequestShape.EXISTENCE
+
+
+def test_focused_reasoner_adapter_normalizes_legacy_summary_shape() -> None:
+    decision = FocusedItemDecision.model_validate(
+        {
+            "decision": "continuation",
+            "continuation_type": "grouped_total_followup",
+            "extraction": {
+                "intent": "transaction_search",
+                "request_shape": "summary",
+                "aggregation": {"type": "sum", "group_by": "account"},
+            },
+        }
+    )
+
+    public = decision.to_public_decision()
+
+    assert public.extraction is not None
+    assert public.extraction.request_shape == QueryRequestShape.GROUPED_SUMMARY
+
+
+def test_focused_reasoner_adapter_promotes_typed_direction_filter() -> None:
+    decision = FocusedItemDecision.model_validate(
+        {
+            "decision": "continuation",
+            "continuation_type": "filter_delta",
+            "extraction": {
+                "filters": {"transaction_type": "credit"},
+                "request_shape": "summary",
+            },
+        }
+    )
+
+    assert decision.transaction_direction_delta == "credit"
 
 
 def test_narrow_reasoner_adapter_preserves_explicit_preference_update() -> None:
@@ -1711,9 +1766,8 @@ async def test_reasoner_uses_llm_for_pending_clarification_time_reply(
             message="last 3 days",
             today=date(2026, 3, 13),
             language="en",
-            pending_clarification=PendingClarificationState(
+            pending_input=make_pending_input(
                 original_query="How much did I spend last",
-                current_intent=QueryIntent.ANALYTICS_SUMMARY,
                 original_extraction=QueryExtractionResult(raw_query="How much did I spend last"),
                 resolver_message="What time period did you mean by 'last'?",
                 language="en",
@@ -1876,15 +1930,11 @@ async def test_extraction_step_preserves_session_for_conversational_reaction() -
             "message": "That's a lot",
             "language": "en",
             "today": date(2026, 3, 14),
-            "query_session": {
-                "session_active": True,
-                "query_request": session_contract,
-                "query_result": {
-                    "summary_text": "You spent money in that period.",
-                    "items": [],
-                    "surface_view": _grouped_summary_surface_view(type="spending_total").model_dump(mode="json"),
-                },
-            },
+            "query_session": _query_session(
+                session_contract,
+                summary_text="You spent money in that period.",
+                surface_view=_grouped_summary_surface_view(type="spending_total"),
+            ),
         }
     )
 
@@ -1919,15 +1969,11 @@ async def test_active_query_explicit_preference_becomes_typed_operation_handoff(
             "message": "Always give me detailed transaction answers",
             "language": "en",
             "today": date(2026, 3, 14),
-            "query_session": {
-                "session_active": True,
-                "query_request": session_contract,
-                "query_result": {
-                    "summary_text": "You spent money in that period.",
-                    "items": [],
-                    "surface_view": _grouped_summary_surface_view(type="spending_total").model_dump(mode="json"),
-                },
-            },
+            "query_session": _query_session(
+                session_contract,
+                summary_text="You spent money in that period.",
+                surface_view=_grouped_summary_surface_view(type="spending_total"),
+            ),
         }
     )
 
@@ -2047,11 +2093,7 @@ async def test_extraction_step_does_not_reparse_support_problem_as_query_continu
             "language": "en",
             "today": today,
         },
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-        },
+        _query_session(session_contract, summary_text="Transactions"),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
@@ -2094,15 +2136,12 @@ async def test_extraction_step_active_result_aggregate_can_reuse_reasoner_extrac
             "message": "how much did i spend",
             "language": "en",
             "today": date(2026, 3, 13),
-            "query_session": {
-                "session_active": True,
-                "query_request": session_contract,
-                "query_result": {
-                    "summary_text": "Transactions",
-                    "items": [QueryResultItem(description="Txn", amount=1000, date=date(2026, 3, 13)).model_dump()],
-                    "surface_view": _transaction_list_surface_view().model_dump(mode="json"),
-                },
-            },
+            "query_session": _query_session(
+                session_contract,
+                summary_text="Transactions",
+                items=[QueryResultItem(description="Txn", amount=1000, date=date(2026, 3, 13))],
+                surface_view=_transaction_list_surface_view(),
+            ),
         }
     )
 
@@ -2143,15 +2182,11 @@ async def test_extraction_step_active_result_new_query_compiles_without_parser_p
             "message": "How much did I spend this week",
             "language": "en",
             "today": date(2026, 3, 13),
-            "query_session": {
-                "session_active": True,
-                "query_request": session_contract,
-                "query_result": {
-                    "summary_text": "You spent money in that period.",
-                    "items": [],
-                    "surface_view": _grouped_summary_surface_view(type="spending_total").model_dump(mode="json"),
-                },
-            },
+            "query_session": _query_session(
+                session_contract,
+                summary_text="You spent money in that period.",
+                surface_view=_grouped_summary_surface_view(type="spending_total"),
+            ),
         }
     )
 
@@ -2185,15 +2220,11 @@ async def test_extraction_step_active_result_incomplete_new_query_does_not_repar
             "message": "Which account did I spend from most this month?",
             "language": "en",
             "today": date(2026, 3, 13),
-            "query_session": {
-                "session_active": True,
-                "query_request": session_contract,
-                "query_result": {
-                    "summary_text": "Transactions",
-                    "items": [],
-                    "surface_view": _transaction_list_surface_view().model_dump(mode="json"),
-                },
-            },
+            "query_session": _query_session(
+                session_contract,
+                summary_text="Transactions",
+                surface_view=_transaction_list_surface_view(),
+            ),
         }
     )
 
@@ -2229,15 +2260,11 @@ async def test_extraction_step_grouped_total_followup_compiles_spend_vs_earn_to_
             "message": "Did I spend more than I earned this month?",
             "language": "en",
             "today": date(2026, 7, 24),
-            "query_session": {
-                "session_active": True,
-                "query_request": session_contract,
-                "query_result": {
-                    "summary_text": "Breakdown by transaction type.",
-                    "items": [],
-                    "surface_view": _grouped_summary_surface_view(group_by="transaction_type").model_dump(mode="json"),
-                },
-            },
+            "query_session": _query_session(
+                session_contract,
+                summary_text="Breakdown by transaction type.",
+                surface_view=_grouped_summary_surface_view(group_by="transaction_type"),
+            ),
         }
     )
 
@@ -2273,11 +2300,7 @@ async def test_active_summary_spend_vs_earn_preempts_single_item_reasoning() -> 
 
     updates = await step._handle_continuation(
         {"message": "Did I spend more than I earned this month?", "today": date(2026, 7, 24), "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"summary_text": "Income this month.", "items": []},
-        },
+        _query_session(session_contract, summary_text="Income this month."),
     )
 
     query_request = updates["query_request"]
@@ -2311,11 +2334,7 @@ async def test_grouped_account_rank_preserves_grounded_summary_scope() -> None:
 
     updates = await step._handle_continuation(
         {"message": "Which account did I spend from most?", "today": date(2026, 7, 24), "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"summary_text": "Spending by account.", "items": []},
-        },
+        _query_session(session_contract, summary_text="Spending by account."),
     )
 
     query_request = updates["query_request"]
@@ -2353,11 +2372,7 @@ async def test_grouped_account_followup_does_not_let_advisory_clarification_over
 
     updates = await step._handle_continuation(
         {"message": "Which account did I spend from most?", "today": date(2026, 7, 24), "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"summary_text": "Spending by account.", "items": []},
-        },
+        _query_session(session_contract, summary_text="Spending by account."),
     )
 
     query_request = updates["query_request"]
@@ -2390,11 +2405,7 @@ async def test_grouped_followup_without_typed_target_replays_safe_grouped_scope(
     step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
     updates = await step._handle_continuation(
         {"message": "Which account was highest?", "today": date(2026, 7, 24), "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"summary_text": "Spending by account.", "items": []},
-        },
+        _query_session(session_contract, summary_text="Spending by account."),
     )
 
     query_request = updates["query_request"]
@@ -2437,15 +2448,11 @@ async def test_grouped_total_followup_compiles_typed_regroup_extraction() -> Non
             "message": "Break that down by account and include the overall total",
             "language": "en",
             "today": date(2026, 7, 24),
-            "query_session": {
-                "session_active": True,
-                "query_request": session_contract,
-                "query_result": {
-                    "summary_text": "Income by category.",
-                    "items": [],
-                    "surface_view": _grouped_summary_surface_view(group_by="category").model_dump(mode="json"),
-                },
-            },
+            "query_session": _query_session(
+                session_contract,
+                summary_text="Income by category.",
+                surface_view=_grouped_summary_surface_view(group_by="category"),
+            ),
         }
     )
 
@@ -2473,11 +2480,7 @@ async def test_active_query_affordability_uses_deterministic_read_contract() -> 
             "message": "Can I send 35k?",
             "language": "en",
             "today": date(2026, 7, 24),
-            "query_session": {
-                "session_active": True,
-                "query_request": session_contract,
-                "query_result": {"summary_text": "Transactions", "items": []},
-            },
+            "query_session": _query_session(session_contract, summary_text="Transactions"),
         }
     )
 
@@ -2514,15 +2517,11 @@ async def test_extraction_step_grouped_total_followup_beneficiary_summary_still_
             "message": "so what the total?",
             "language": "en",
             "today": date(2026, 3, 30),
-            "query_session": {
-                "session_active": True,
-                "query_request": session_contract,
-                "query_result": {
-                    "summary_text": "Top recipients.",
-                    "items": [],
-                    "surface_view": _grouped_summary_surface_view(view="summary").model_dump(mode="json"),
-                },
-            },
+            "query_session": _query_session(
+                session_contract,
+                summary_text="Top recipients.",
+                surface_view=_grouped_summary_surface_view(view="summary"),
+            ),
         }
     )
 
@@ -2560,15 +2559,11 @@ async def test_extraction_step_grouped_total_followup_non_compare_clarifies_with
             "message": "what about the one before?",
             "language": "en",
             "today": date(2026, 7, 24),
-            "query_session": {
-                "session_active": True,
-                "query_request": session_contract,
-                "query_result": {
-                    "summary_text": "Spending by category.",
-                    "items": [],
-                    "surface_view": _grouped_summary_surface_view(group_by="category").model_dump(mode="json"),
-                },
-            },
+            "query_session": _query_session(
+                session_contract,
+                summary_text="Spending by category.",
+                surface_view=_grouped_summary_surface_view(group_by="category"),
+            ),
         }
     )
 

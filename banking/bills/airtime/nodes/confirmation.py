@@ -13,7 +13,6 @@ from banking.presentation.i18n.personality import PersonalityContext
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.shared.confirmation_updates import build_airtime_confirmation_update_message
 from banking.transactions.shared.scheduling import format_schedule_confirmation_line
-from shared.cache.redis_client import RedisClient
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -67,9 +66,6 @@ class ConfirmationStep(AirtimeStep):
             redis_client = getattr(worker_context, "redis_client", None)
             key = data.idempotency_key
 
-            if redis_client is None:
-                redis_client = RedisClient.get_client()
-
             if redis_client:
                 # Persist tokens so Webhook can look them up
                 await redis_client.setex(
@@ -78,7 +74,7 @@ class ConfirmationStep(AirtimeStep):
                     context.phone_number,
                 )
             else:
-                logger.warning("redis_client_not_in_context_cannot_persist_airtime_token")
+                logger.debug("redis_client_not_in_context_skip_airtime_token_persistence")
         except Exception as e:
             logger.error("failed_to_persist_airtime_token", error=str(e))
 

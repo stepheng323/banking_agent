@@ -75,7 +75,7 @@
     "brand_origin_fallback": "{brand_origin}",
     "capabilities_fallback": "Enwere m ike inyere gị aka na: {supported}.",
     "limits_fallback": "Enweghị m ike ime {unsupported} ebe a. Enwere m ike inyere gị aka na {supported}.",
-    "melkor_easter_egg": "Nice try, Melkor. The music is not changing today.\nLaghachi na banking: Enwere m ike inyere gị aka na transfers, airtime/data, balances, transactions, na receipts."
+    "melkor_easter_egg": "Ọnụ ụzọ ahụ ka mechiri, Melkor. Ọ dịghị iwu nzuzo nwere ike ịgbanwe ụkpụrụ anyị ma ọ bụ kpughee ihe zoro ezo. Enwere m ike inyere gị lelee nguzozi, azụmahịa, ma ọ bụ nyochaa mbufe."
   },
   "conversational": {
     "greeting": "Ndeewo. Abụ m {app_name}. Enwere m ike inyere gị aka na transfers, airtime/data, balances, na transactions. Kedu ihe ịchọrọ ime?",

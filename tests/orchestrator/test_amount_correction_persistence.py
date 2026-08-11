@@ -6,15 +6,17 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TaskStage,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import PlannerOutput, TransferTaskParameters, make_planned_task
+from tests.orchestrator.routing_fixtures import planner_test_result
 
 
 class _MockPlanner:
     def __init__(self, output: PlannerOutput) -> None:
         self._output = output
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -22,9 +24,9 @@ class _MockPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
-        return self._output
+        return planner_test_result(self._output)
 
 
 @pytest.mark.asyncio

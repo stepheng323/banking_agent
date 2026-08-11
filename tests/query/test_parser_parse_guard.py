@@ -446,7 +446,7 @@ async def test_vague_time_from_minimal_parser_output_derives_ambiguity_locally()
     assert result.extraction is not None
     assert result.extraction.ambiguities
     assert result.extraction.ambiguities[0].code == AmbiguityCode.TIME_VAGUE
-    assert result.pending_clarification is not None
+    assert result.pending_input is not None
 
 
 @pytest.mark.asyncio
@@ -464,7 +464,7 @@ async def test_recent_transaction_list_defaults_to_bounded_30_day_window() -> No
     )
 
     assert result.outcome == ResolverOutcome.OK
-    assert result.pending_clarification is None
+    assert result.pending_input is None
     assert result.query_request is not None
     request = QueryRequest.model_validate(result.query_request)
     assert isinstance(request.operation, RetrieveOperation)

@@ -41,10 +41,11 @@ from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import FocusedReferent
+from banking.transactions.query.models.conversation import PendingFieldClarification, PendingInterpretationProposal
 from banking.transactions.query.models.domain import QueryAnswerStrategy, QueryResult
 from banking.transactions.query.models.operations import QueryRequest, RetrieveOperation
 from banking.transactions.query.presentation.formatter import QueryFormatter
-from banking.transactions.query.session_state import build_query_session_v3, pending_input_from_legacy
+from banking.transactions.query.session_state import build_query_session_v3
 from shared.messaging.body_blocks import MessageDocument
 from shared.types.read import AdvertisedResponseShape, ReadRequest, ReadResult, normalize_read_request
 
@@ -67,9 +68,18 @@ def _compact_query_session_patch(patch: dict[str, Any] | None) -> dict[str, Any]
         request = raw_request if isinstance(raw_request, QueryRequest) else QueryRequest.model_validate(raw_request)
     except Exception:
         request = None
-    pending_input = patch.get("pending_query_input")
-    if pending_input is None:
-        pending_input = pending_input_from_legacy(patch.get("pending_clarification"))
+    raw_pending_input = patch.get("pending_input")
+    pending_input: PendingFieldClarification | PendingInterpretationProposal | None = None
+    if isinstance(raw_pending_input, (PendingFieldClarification, PendingInterpretationProposal)):
+        pending_input = raw_pending_input
+    elif isinstance(raw_pending_input, dict):
+        try:
+            if raw_pending_input.get("kind") == "field_clarification":
+                pending_input = PendingFieldClarification.model_validate(raw_pending_input)
+            elif raw_pending_input.get("kind") == "interpretation_proposal":
+                pending_input = PendingInterpretationProposal.model_validate(raw_pending_input)
+        except Exception:
+            pending_input = None
     if request is None and pending_input is None:
         return None
     session = build_query_session_v3(

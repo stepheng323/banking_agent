@@ -53,34 +53,13 @@ async def _plan_tasks_with_optional_quality(
     progress_tracker: Any | None = None,
     progress_metadata: dict[str, Any] | None = None,
 ) -> PlannerPlanResult:
-    planner_with_quality = getattr(task_planner, "plan_tasks_with_quality", None)
-    if callable(planner_with_quality):
-        await _mark_planner_progress(progress_tracker, progress_metadata)
-        return await planner_with_quality(
-            phone_number,
-            text,
-            context=planner_context,
-            prompt_signals=prompt_signals,
-            path_label="planner_path",
-        )
-
-    legacy_plan_tasks = getattr(task_planner, "plan_tasks", None)
-    if not callable(legacy_plan_tasks):
-        msg = "Task planner does not expose plan_tasks_with_quality or legacy plan_tasks"
-        raise AttributeError(msg)
-
     await _mark_planner_progress(progress_tracker, progress_metadata)
-    planner_output = await legacy_plan_tasks(
+    return await task_planner.plan_tasks_with_quality(
         phone_number,
         text,
         context=planner_context,
         prompt_signals=prompt_signals,
         path_label="planner_path",
-    )
-    return PlannerPlanResult(
-        raw_output=planner_output,
-        planner_output=planner_output,
-        quality_report=PlannerQualityReport(),
     )
 
 

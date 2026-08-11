@@ -300,7 +300,6 @@ class Settings:
             "DOMAIN_GUARDRAILS_PATH",
             "banking/policy/guardrails/defaults/domain_guardrails.json",
         )
-        self.enable_channel_option_ux_v2: bool = os.getenv("ENABLE_CHANNEL_OPTION_UX_V2", "false").lower() == "true"
         self.enable_support_diagnostic_agent: bool = (
             os.getenv("ENABLE_SUPPORT_DIAGNOSTIC_AGENT", "false").lower() == "true"
         )

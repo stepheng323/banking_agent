@@ -3,9 +3,11 @@ from typing import Any
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import ContextFrameReplayModifier, PlannerOutput
 from shared.types.quoted_replay import QuotedReplayInterpretation
+from tests.orchestrator.routing_fixtures import planner_test_result
 
 
 class _QuotedPlannerStub:
@@ -37,7 +39,7 @@ class _QuotedPlannerStub:
         self.last_quoted_context = context
         return self.interpretation
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -45,14 +47,15 @@ class _QuotedPlannerStub:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
         self.plan_called = True
-        return PlannerOutput(
+        output = PlannerOutput(
             primary_intent="conversational",
             response="hello",
             tasks=[],
         )
+        return planner_test_result(output)
 
 
 class _ActionableRepoStub:

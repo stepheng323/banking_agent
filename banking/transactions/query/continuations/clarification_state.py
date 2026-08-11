@@ -9,12 +9,15 @@ from typing import Any
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.contracts import SelectionPayload
-from banking.transactions.query.models.conversation import SingleQueryExecution
+from banking.transactions.query.models.conversation import (
+    PendingFieldClarification,
+    QueryInputCandidate,
+    SingleQueryExecution,
+)
 from banking.transactions.query.models.domain import QueryIntent
 from banking.transactions.query.models.extraction import (
     ClarificationCandidate,
     ClarificationOperation,
-    PendingClarificationState,
     QueryExtractionResult,
 )
 from banking.transactions.query.models.operations import NamedCounterparty, QueryRequest
@@ -51,17 +54,19 @@ def build_selection_clarification_updates(
     lines = "\n".join(f"{index}. {candidate.label}" for index, candidate in enumerate(bounded, 1))
     response = render_message("query.clarify.multiple_matches", locale, {"options": lines})
     intent = QueryIntent.TRANSACTION_LIST
-    pending = PendingClarificationState(
+    pending = PendingFieldClarification(
         original_query="",
-        current_intent=intent,
-        original_extraction=QueryExtractionResult(intent=intent),
+        original_extraction=QueryExtractionResult(intent=intent).model_dump(mode="json"),
         resolver_message=response,
         language=locale,
         clarification_type="selection",
         target_field=operation.fact_field,
-        candidate_payloads=bounded,
-        original_operation=operation,
-        query_request=query_request.model_dump(mode="json") if query_request is not None else None,
+        candidate_payloads=[
+            QueryInputCandidate(label=candidate.label, payload=candidate.payload, frame_id=candidate.frame_id)
+            for candidate in bounded
+        ],
+        original_operation=operation.model_dump(mode="json"),
+        query_request=query_request,
         created_turn_id=turn_id,
     )
     logger.info(
@@ -75,7 +80,7 @@ def build_selection_clarification_updates(
         "response": response,
         "session_active": True,
         "flow_state": "parsing",
-        "pending_clarification": pending.model_dump(mode="json"),
+        "pending_input": pending.model_dump(mode="json"),
         "show_expanded": bool(session.get("show_expanded", False)),
         "current_page": int(session.get("current_page", 0) or 0),
     }
@@ -86,7 +91,7 @@ def build_selection_clarification_updates(
 
 
 def resolve_selection_clarification(
-    pending: PendingClarificationState,
+    pending: PendingFieldClarification,
     message: str,
     *,
     locale: str,
@@ -103,12 +108,16 @@ def resolve_selection_clarification(
             "response": render_message("query.clarify.cancelled", locale),
             "session_active": False,
             "flow_state": "complete",
-            "pending_clarification": None,
+            "pending_input": None,
         }
 
     candidate = _match_candidate(pending.candidate_payloads, normalized)
     if candidate is not None:
-        operation = pending.original_operation or ClarificationOperation(continuation_type="drill_down")
+        operation = (
+            ClarificationOperation.model_validate(pending.original_operation)
+            if pending.original_operation
+            else ClarificationOperation(continuation_type="drill_down")
+        )
         logger.info(
             "query_clarification_resolved",
             clarification_type="selection",
@@ -123,7 +132,7 @@ def resolve_selection_clarification(
                     "response": render_message("query.clarify.unsure_rephrase", locale),
                     "session_active": True,
                     "flow_state": "parsing",
-                    "pending_clarification": None,
+                    "pending_input": None,
                 }
             return {
                 "query_request": request,
@@ -136,7 +145,7 @@ def resolve_selection_clarification(
                 "query_result": None,
                 "flow_state": "executing",
                 "session_active": True,
-                "pending_clarification": None,
+                "pending_input": None,
                 "current_page": 0,
                 "show_expanded": False,
                 "continuation_type": "recipient_filter",
@@ -145,7 +154,7 @@ def resolve_selection_clarification(
         return {
             "flow_state": "executing",
             "session_active": True,
-            "pending_clarification": None,
+            "pending_input": None,
             "continuation_type": operation.continuation_type or "drill_down",
             "selected_payload": candidate.payload,
             "selected_item_id": candidate.payload.entity_id,
@@ -163,7 +172,7 @@ def resolve_selection_clarification(
             "response": render_message("query.clarify.exhausted", locale),
             "session_active": True,
             "flow_state": "parsing",
-            "pending_clarification": None,
+            "pending_input": None,
         }
     reprompt = pending.model_copy(update={"attempt_count": next_attempt})
     logger.info("query_clarification_reprompted", clarification_type="selection", attempt_count=next_attempt)
@@ -172,13 +181,13 @@ def resolve_selection_clarification(
         "response": render_message("query.clarify.reply_number_or_rephrase", locale),
         "session_active": True,
         "flow_state": "parsing",
-        "pending_clarification": reprompt.model_dump(mode="json"),
+        "pending_input": reprompt.model_dump(mode="json"),
         "show_expanded": bool(session.get("show_expanded", False)),
         "current_page": int(session.get("current_page", 0) or 0),
     }
 
 
-def _match_candidate(candidates: list[ClarificationCandidate], normalized: str) -> ClarificationCandidate | None:
+def _match_candidate(candidates: list[QueryInputCandidate], normalized: str) -> QueryInputCandidate | None:
     if normalized.isdigit():
         index = int(normalized) - 1
         return candidates[index] if 0 <= index < len(candidates) else None
@@ -203,15 +212,12 @@ def _match_candidate(candidates: list[ClarificationCandidate], normalized: str) 
 
 
 def _recipient_filter_request(
-    pending: PendingClarificationState,
+    pending: PendingFieldClarification,
     payload: SelectionPayload,
 ) -> QueryRequest | None:
-    if not isinstance(pending.query_request, dict):
+    if pending.query_request is None:
         return None
-    try:
-        request = QueryRequest.model_validate(pending.query_request)
-    except Exception:
-        return None
+    request = pending.query_request
     raw_counterparties = payload.filters_patch.get("counterparty") if isinstance(payload.filters_patch, dict) else None
     counterparties = [str(value).strip() for value in raw_counterparties or [] if str(value).strip()]
     if not counterparties:

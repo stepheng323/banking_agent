@@ -23,8 +23,8 @@ from banking.transactions.query.continuations.time_rescope import (
     is_direct_time_rescope_message,
     maybe_recover_time_rescope_continuation,
 )
-from banking.transactions.query.conversation_focus import resolve_focus
-from banking.transactions.query.models.conversation import QueryFocus, QueryTurnPlan
+from banking.transactions.query.conversation_focus import resolve_focus, restore_focus
+from banking.transactions.query.models.conversation import QueryTurnPlan
 from banking.transactions.query.models.domain import (
     QueryIntent,
     QueryRequest,
@@ -59,17 +59,6 @@ _REPEAT_EXISTING_QUERY_MESSAGES = {
     "run it again",
     "try again",
 }
-
-
-def _restore_focus(raw: object) -> QueryFocus | None:
-    if isinstance(raw, QueryFocus):
-        return raw
-    if isinstance(raw, dict):
-        try:
-            return QueryFocus.model_validate(raw)
-        except Exception:
-            return None
-    return None
 
 
 def _plan_step_request(raw_contract: object, step_id: str | None) -> QueryRequest | None:
@@ -124,7 +113,7 @@ def _repeat_existing_query_updates(
         "flow_state": "executing",
         "current_page": 0,
         "session_active": True,
-        "pending_clarification": None,
+        "pending_input": None,
         "show_expanded": False,
         "continuation_type": "repeat_query",
         "continuation_delta_type": None,
@@ -176,7 +165,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
     query_frames = step._load_query_frames(session)
     # A visible evidence section is not a user decision.  Ground follow-ups
     # from the retained semantic focus when it points at a valid frame.
-    focus = resolve_focus(frames=query_frames, active_focus=_restore_focus(state.get("active_focus")))
+    focus = resolve_focus(frames=query_frames, active_focus=restore_focus(session.get("active_focus")))
     if focus is not None and focus.frame_id:
         focused_frame = next((frame for frame in query_frames if frame.frame_id == focus.frame_id), None)
         if focused_frame is not None:
@@ -190,7 +179,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
 
     items: list[QueryResultItem] = []
     restored_query_result: QueryResult | None = None
-    possible_result = session.get("query_result")
+    possible_result = session.get("display_result")
 
     if isinstance(possible_result, QueryResult):
         restored_query_result = possible_result
@@ -216,7 +205,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         "query_continuation_entry",
         has_query_request=session_query_request is not None,
         has_surface=bool(surface_view is not None),
-        has_query_result=bool(session.get("query_result")),
+        has_query_result=bool(session.get("display_result")),
         current_page=session.get("current_page", 0),
         show_expanded=bool(session.get("show_expanded", False)),
         surface_type=surface_view.mode.value if surface_view is not None else None,

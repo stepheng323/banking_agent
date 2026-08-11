@@ -16,6 +16,23 @@ def _directive_field(metadata: dict[str, Any], field: str) -> Any:
     return getattr(directive, field, None)
 
 
+def _snapshot_value(snapshot: dict[str, Any], path: str) -> tuple[bool, Any]:
+    value: Any = snapshot
+    for component in path.split("."):
+        if not isinstance(value, dict) or component not in value:
+            return False, None
+        value = value[component]
+    return True, value
+
+
+def _money_topics(async_jobs: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
+    return tuple(
+        str(job.get("topic") or "")
+        for job in async_jobs
+        if any(marker in str(job.get("topic") or "").casefold() for marker in ("transfer", "airtime", "data"))
+    )
+
+
 def assert_readiness_turn(
     turn: ReadinessTurn,
     response: str,
@@ -24,6 +41,8 @@ def assert_readiness_turn(
     task_types: tuple[str, ...] = (),
     async_jobs: tuple[dict[str, Any], ...] = (),
     llm_calls: tuple[dict[str, Any], ...] = (),
+    state_snapshot: dict[str, Any] | None = None,
+    previous_state_snapshot: dict[str, Any] | None = None,
     enforce_route_expectations: bool = True,
     mode: ReadinessMode | None = None,
 ) -> tuple[bool, tuple[str, ...]]:
@@ -103,13 +122,66 @@ def assert_readiness_turn(
         errors.append(f"expected at most {expectation.expect_async_job_count_max} async jobs; got {len(async_jobs)}")
 
     if expectation.expect_no_money_movement:
-        money_topics = tuple(
-            str(job.get("topic") or "")
-            for job in async_jobs
-            if any(marker in str(job.get("topic") or "").casefold() for marker in ("transfer", "airtime", "data"))
-        )
+        money_topics = _money_topics(async_jobs)
         if money_topics:
             errors.append(f"unsafe money movement jobs captured: {money_topics}")
+
+    effect_expectation = expectation.effect_expectation
+    if effect_expectation is not None:
+        money_topics = _money_topics(async_jobs)
+        if (
+            effect_expectation.exact_money_movement_jobs is not None
+            and len(money_topics) != effect_expectation.exact_money_movement_jobs
+        ):
+            errors.append(
+                "expected "
+                f"{effect_expectation.exact_money_movement_jobs} money-movement jobs; got {len(money_topics)}"
+            )
+        if (
+            effect_expectation.max_money_movement_jobs is not None
+            and len(money_topics) > effect_expectation.max_money_movement_jobs
+        ):
+            errors.append(
+                "expected at most "
+                f"{effect_expectation.max_money_movement_jobs} money-movement jobs; got {len(money_topics)}"
+            )
+        for topic in effect_expectation.required_topics:
+            if not any(topic.casefold() in actual.casefold() for actual in money_topics):
+                errors.append(f"expected money-movement topic containing {topic!r}")
+        for topic in effect_expectation.forbidden_topics:
+            if any(topic.casefold() in actual.casefold() for actual in money_topics):
+                errors.append(f"forbidden money-movement topic: {topic!r}")
+
+    if expectation.state_invariants:
+        snapshot = state_snapshot or {}
+        previous = previous_state_snapshot or {}
+        for invariant in expectation.state_invariants:
+            exists, actual = _snapshot_value(snapshot, invariant.path)
+            if invariant.mode == "present" and not exists:
+                errors.append(f"expected state path to exist: {invariant.path}")
+            elif invariant.mode == "absent" and exists:
+                errors.append(f"expected state path to be absent: {invariant.path}")
+            elif invariant.mode == "equals" and (not exists or actual != invariant.value):
+                errors.append(
+                    f"expected state {invariant.path}={invariant.value!r}; got {actual!r}"
+                )
+            elif invariant.mode in {"contains", "not_contains"}:
+                if isinstance(actual, (list, tuple, set, frozenset)) or (
+                    isinstance(actual, str) and isinstance(invariant.value, str)
+                ):
+                    contained = invariant.value in actual
+                else:
+                    contained = False
+                if invariant.mode == "contains" and (not exists or not contained):
+                    errors.append(f"expected state {invariant.path} to contain {invariant.value!r}; got {actual!r}")
+                elif invariant.mode == "not_contains" and exists and contained:
+                    errors.append(
+                        f"expected state {invariant.path} not to contain {invariant.value!r}; got {actual!r}"
+                    )
+            elif invariant.mode == "preserve":
+                previous_exists, previous_value = _snapshot_value(previous, invariant.path)
+                if not exists or not previous_exists or actual != previous_value:
+                    errors.append(f"expected state path to be preserved: {invariant.path}")
 
     if expectation.expect_async_job_topics is not None:
         topics = tuple(str(job.get("topic") or "") for job in async_jobs)

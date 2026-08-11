@@ -2,7 +2,6 @@
 
 from typing import Any, Literal
 
-from shared.cache.redis_client import RedisClient
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,11 +24,8 @@ async def persist_typed_pin_token(
 
     try:
         redis_client = getattr(worker_context, "redis_client", None)
-        if redis_client is None:
-            redis_client = RedisClient.get_client()
-
         if not redis_client:
-            logger.warning("redis_client_unavailable_cannot_persist_pin_token", flow_type=flow_type)
+            logger.debug("redis_client_not_in_context_skip_pin_token_persistence", flow_type=flow_type)
             return False
 
         await redis_client.setex(

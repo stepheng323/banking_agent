@@ -12,27 +12,23 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.rendering.contex
     _build_query_session_context,
 )
 from banking.transactions.query.session import _session_has_surface_view, is_query_session_stale
-from banking.transactions.query.session_state import project_query_session_v3
+from banking.transactions.query.session_state import restore_query_session_v3
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 _QUERY_SNAPSHOT_KEYS = {
+    "schema_version",
     "session_active",
-    "query_request",
-    "query_result",
+    "execution_contract",
+    "display_result",
     "query_frames",
-    "pending_clarification",
+    "pending_input",
     "current_page",
     "page_size",
     "show_expanded",
     "timestamp",
-    "account_id",
-    "account_ids",
-    "cache_fingerprint",
-    "cache_scope_fingerprint",
-    "cache_window_start",
-    "cache_window_end",
+    "cache",
 }
 
 
@@ -92,8 +88,8 @@ async def _load_query_session_snapshot(
         "planner_query_session_snapshot",
         query_session_source=query_session_source or "none",
         session_active=bool(snapshot.get("session_active")),
-        has_query_request=bool(snapshot.get("query_request") or snapshot.get("execution_contract")),
-        has_query_result=bool(snapshot.get("query_result") or display_result),
+        has_query_request=bool(snapshot.get("execution_contract")),
+        has_query_result=bool(display_result),
         has_surface=(
             _session_has_surface_view(snapshot)
             or bool(isinstance(display_result, dict) and display_result.get("surface_view"))
@@ -106,14 +102,10 @@ async def _load_query_session_snapshot(
 
 def _pending_clarification_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Build an active query snapshot from first-class pending clarification state."""
-    # Execution persists the v3 envelope with ``pending_input``.  The planner
-    # and gate classifiers consume the compatibility projection, so normalize
-    # it here instead of silently dropping the pending contract and falling
-    # back to the visible query frame.
-    if isinstance(snapshot.get("pending_input"), dict):
-        projected = project_query_session_v3(snapshot)
-        if projected is not None:
-            snapshot = projected
+    restored = restore_query_session_v3(snapshot)
+    if restored is None:
+        return {"session_active": False}
+    snapshot = restored.model_dump(mode="json")
     compact = {key: value for key, value in snapshot.items() if key in _QUERY_SNAPSHOT_KEYS}
     compact["session_active"] = True
     return compact
@@ -128,10 +120,10 @@ def _query_session_summary_text(query_session_snapshot: dict[str, Any] | None) -
         if isinstance(raw_surface, ContextFrame):
             return summarize_query_surface_for_planner(raw_surface), session_active
     summary_text = None
-    query_result = query_session_snapshot.get("query_result")
+    query_result = query_session_snapshot.get("display_result")
     if isinstance(query_result, dict):
         summary_text = query_result.get("summary_text")
-    pending_clarification = query_session_snapshot.get("pending_clarification")
+    pending_clarification = query_session_snapshot.get("pending_input")
     return (
         _build_query_session_context(
             summary_text if isinstance(summary_text, str) else None,

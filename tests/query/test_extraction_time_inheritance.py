@@ -15,6 +15,7 @@ from banking.transactions.query.contracts import (
     SurfaceView,
     SurfaceViewMode,
 )
+from banking.transactions.query.models.conversation import QueryFocus
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
@@ -39,6 +40,7 @@ from banking.transactions.query.models.operations import GroupedSummarySpec, Ret
 from banking.transactions.query.nodes.extraction import ExtractionStep
 from banking.transactions.query.presentation.surface_builder import build_surface_view
 from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
+from banking.transactions.query.session_state import build_query_session_v3
 from tests.query.factories import make_query_request
 
 
@@ -86,6 +88,63 @@ def _ok_result(extraction: QueryExtractionResult, query: QueryRequest) -> QueryP
         extraction=extraction,
         query_request=contract.model_dump(mode="json"),
     )
+
+
+def _canonical_query_session_fixture(raw: dict[str, Any]) -> dict[str, object]:
+    """Materialize continuation fixtures through the sole V3 session contract."""
+    values = dict(raw)
+    request = QueryRequest.model_validate(values.pop("query_request"))
+    raw_result = values.pop("query_result", None)
+    if isinstance(raw_result, QueryResult):
+        result = raw_result.model_copy(update={"query_request": raw_result.query_request or request})
+    else:
+        result_payload = dict(raw_result) if isinstance(raw_result, dict) else {}
+        result_payload.setdefault("summary_text", "Query result")
+        result_payload.setdefault("query_request", request.model_dump(mode="json"))
+        result = QueryResult.model_validate(result_payload)
+    selected_index = values.pop("selected_item_index", None)
+    selected_item_id = values.pop("selected_item_id", None)
+    active_focus = None
+    selected = None
+    if isinstance(selected_index, int) and result.items and 0 <= selected_index < len(result.items):
+        selected = result.items[selected_index]
+    elif isinstance(selected_item_id, str) and result.items:
+        selected = next((item for item in result.items if item.id == selected_item_id), None)
+    if selected is not None:
+        active_focus = QueryFocus(
+            subject="transactions",
+            source="user_selection",
+            selected_payload=SelectionPayload(
+                selection_kind="transaction",
+                entity_type="transaction",
+                entity_id=selected.id,
+                label=selected.description,
+            ),
+        )
+    cache = {
+        key: values.pop(key)
+        for key in (
+            "cached_transactions",
+            "cache_fetched_at",
+            "cache_fingerprint",
+            "cache_scope_fingerprint",
+            "cache_window_start",
+            "cache_window_end",
+        )
+        if key in values
+    }
+    session = build_query_session_v3(
+        request=request,
+        result=result,
+        raw_frames=values.pop("query_frames", []),
+        current_page=int(values.pop("current_page", 0) or 0),
+        page_size=int(values.pop("page_size", 5) or 5),
+        show_expanded=bool(values.pop("show_expanded", False)),
+        active_focus=active_focus,
+        cache=cache,
+    )
+    assert not values or values == {"session_active": True}
+    return session.model_dump(mode="python")
 
 
 def test_router_insight_hint_prevents_generic_cash_flow_parser_downgrade() -> None:
@@ -235,10 +294,11 @@ async def test_parse_new_query_does_not_inherit_time_range_for_unspecified_time(
             "message": "show my transfers",
             "today": today,
             "language": "en",
-            "query_session": {
-                "session_active": True,
-                "query_request": session_contract.model_dump(),
-            },
+            "query_session": build_query_session_v3(
+                request=session_contract,
+                result=None,
+                raw_frames=[],
+            ).model_dump(mode="python"),
         }
     )
 
@@ -290,11 +350,13 @@ async def test_recipient_ranking_followup_reparses_as_new_beneficiary_summary_qu
 
     updates = await step._handle_continuation(
         {"message": "who did I send money to the most this week", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -371,11 +433,13 @@ async def test_direct_answer_show_more_details_stays_anchored_to_selected_transa
 
     updates = await step._handle_continuation(
         {"message": "show more details", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+            }
+        ),
     )
 
     assert updates["drill_down_action"] == "view_details"
@@ -440,16 +504,20 @@ async def test_fresh_recent_transactions_followup_replaces_scope_instead_of_inhe
 
     updates = await step._handle_continuation(
         {"message": "show my recent transactions", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": QueryResult(
-                summary_text="That transaction was on March 28, 2026.",
-                items=[],
-                query_request=session_contract,
-                surface_view=SurfaceView(mode=SurfaceViewMode.DIRECT_ANSWER, context={"type": "single_transaction"}),
-            ).model_dump(mode="json"),
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": QueryResult(
+                    summary_text="That transaction was on March 28, 2026.",
+                    items=[],
+                    query_request=session_contract,
+                    surface_view=SurfaceView(
+                        mode=SurfaceViewMode.DIRECT_ANSWER, context={"type": "single_transaction"}
+                    ),
+                ).model_dump(mode="json"),
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -515,16 +583,20 @@ async def test_fresh_recent_transactions_with_explicit_period_replaces_scope() -
 
     updates = await step._handle_continuation(
         {"message": "show my recent transactions in the last 2 weeks", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": QueryResult(
-                summary_text="That transaction was on March 28, 2026.",
-                items=[],
-                query_request=session_contract,
-                surface_view=SurfaceView(mode=SurfaceViewMode.DIRECT_ANSWER, context={"type": "single_transaction"}),
-            ).model_dump(mode="json"),
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": QueryResult(
+                    summary_text="That transaction was on March 28, 2026.",
+                    items=[],
+                    query_request=session_contract,
+                    surface_view=SurfaceView(
+                        mode=SurfaceViewMode.DIRECT_ANSWER, context={"type": "single_transaction"}
+                    ),
+                ).model_dump(mode="json"),
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -560,13 +632,15 @@ async def test_replace_scope_resets_pagination_and_preserves_filters() -> None:
 
     updates = await step._handle_continuation(
         {"message": "for last week only", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 2,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 2,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -603,12 +677,14 @@ async def test_continue_pagination_only_advances_page_without_scope_mutation() -
 
     updates = await step._handle_continuation(
         {"message": "more", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": [], "has_more": True},
+                "current_page": 1,
+            }
+        ),
     )
 
     assert updates["current_page"] == 2
@@ -639,12 +715,14 @@ async def test_previous_pagination_only_moves_back_without_scope_mutation() -> N
 
     updates = await step._handle_continuation(
         {"message": "back", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 2,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 2,
+            }
+        ),
     )
 
     assert updates["current_page"] == 1
@@ -677,12 +755,14 @@ async def test_invalid_time_delta_and_continue_pagination_combo_requests_clarifi
 
     updates = await step._handle_continuation(
         {"message": "for last week only", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+            }
+        ),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
@@ -715,11 +795,13 @@ async def test_recipient_drilldown_follow_up_applies_counterparty_filter() -> No
 
     updates = await step._handle_continuation(
         {"message": "Gaines", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+            }
+        ),
     )
 
     assert updates["flow_state"] == "executing"
@@ -755,11 +837,13 @@ async def test_recipient_fact_drilldown_follow_up_converts_summary_to_transactio
 
     updates = await step._handle_continuation(
         {"message": "When was Kunle's transaction?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -822,11 +906,13 @@ async def test_focused_beneficiary_fact_followup_uses_selection_scope() -> None:
 
     updates = await step._handle_continuation(
         {"message": "When", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -890,11 +976,13 @@ async def test_focused_beneficiary_this_referential_fact_followup_uses_selection
 
     updates = await step._handle_continuation(
         {"message": "When was this", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -951,11 +1039,13 @@ async def test_focused_beneficiary_requested_field_followup_normalizes_to_answer
 
     updates = await step._handle_continuation(
         {"message": "When was this", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1011,13 +1101,15 @@ async def test_focused_beneficiary_drilldown_without_fact_field_scopes_to_transa
 
     updates = await step._handle_continuation(
         {"message": "When was this", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-            "current_page": 0,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1099,13 +1191,15 @@ async def test_stale_focused_beneficiary_payload_is_repaired_to_scoped_transacti
 
     updates = await step._handle_continuation(
         {"message": "When was this", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-            "current_page": 0,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1170,13 +1264,15 @@ async def test_focused_beneficiary_fact_followup_repairs_missing_surface_items_f
 
     updates = await step._handle_continuation(
         {"message": "When was this", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-            "current_page": 0,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1256,13 +1352,15 @@ async def test_generic_direct_answer_beneficiary_payload_is_repaired_from_contra
 
     updates = await step._handle_continuation(
         {"message": "When was this", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-            "current_page": 0,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1325,11 +1423,13 @@ async def test_focused_category_fact_followup_uses_selection_scope() -> None:
 
     updates = await step._handle_continuation(
         {"message": "Reference?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1395,11 +1495,13 @@ async def test_focused_account_fact_followup_uses_selection_scope() -> None:
 
     updates = await step._handle_continuation(
         {"message": "When?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1443,15 +1545,17 @@ async def test_direct_answer_recipient_delta_follow_up_reuses_scope_and_swaps_co
 
     updates = await step._handle_continuation(
         {"message": "What about tolu?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "You paid Mum on April 03, 2026.",
-                "items": [],
-                "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
-            },
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "You paid Mum on April 03, 2026.",
+                    "items": [],
+                    "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
+                },
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1496,23 +1600,25 @@ async def test_mislabelled_recipient_drilldown_cannot_replay_focused_transaction
 
     updates = await step._handle_continuation(
         {"message": "What about mum?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "The last time you paid Tolu Adebayo was July 21, 2026.",
-                "items": [
-                    {
-                        "id": "tolu-1",
-                        "description": "Transfer to Tolu Adebayo",
-                        "amount": 2000,
-                        "date": "2026-07-21",
-                        "metadata": {"recipient_name": "Tolu Adebayo", "bank_name": "Access Bank"},
-                    }
-                ],
-                "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
-            },
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "The last time you paid Tolu Adebayo was July 21, 2026.",
+                    "items": [
+                        {
+                            "id": "tolu-1",
+                            "description": "Transfer to Tolu Adebayo",
+                            "amount": 2000,
+                            "date": "2026-07-21",
+                            "metadata": {"recipient_name": "Tolu Adebayo", "bank_name": "Access Bank"},
+                        }
+                    ],
+                    "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
+                },
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1550,11 +1656,13 @@ async def test_show_me_follow_up_converts_summary_to_transactions_when_explicitl
 
     updates = await step._handle_continuation(
         {"message": "show me", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+            }
+        ),
     )
 
     assert updates["query_request"].intent == QueryIntent.TRANSACTION_LIST
@@ -1595,13 +1703,15 @@ async def test_recheck_follow_up_reruns_existing_analytics_summary_without_repar
 
     updates = await step._handle_continuation(
         {"message": "Check againo", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"summary_text": "You spent ₦20,000 today, across 2 transactions.", "items": []},
-            "current_page": 2,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"summary_text": "You spent ₦20,000 today, across 2 transactions.", "items": []},
+                "current_page": 2,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1644,13 +1754,15 @@ async def test_recheck_follow_up_preserves_count_query_shape() -> None:
 
     updates = await step._handle_continuation(
         {"message": "Check again", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"summary_text": "You didn't make any transactions today.", "items": []},
-            "current_page": 0,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"summary_text": "You didn't make any transactions today.", "items": []},
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1714,13 +1826,15 @@ async def test_recheck_follow_up_reruns_any_active_query_request_without_reparse
 
     updates = await step._handle_continuation(
         {"message": "Check again", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"summary_text": "Previous answer", "items": []},
-            "current_page": 2,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"summary_text": "Previous answer", "items": []},
+                "current_page": 2,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1764,22 +1878,24 @@ async def test_show_evidence_follow_up_converts_aggregate_summary_to_scoped_tran
 
     updates = await step._handle_continuation(
         {"message": "show me", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "You spent ₦50,000 this month so far.",
-                "items": [
-                    QueryResultItem(
-                        id="txn_001",
-                        description="Transfer to Mum",
-                        amount=50000,
-                        date=date(2026, 3, 26),
-                        metadata={"type": "debit", "bank_name": "Zenith Bank"},
-                    ).model_dump(mode="json")
-                ],
-            },
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "You spent ₦50,000 this month so far.",
+                    "items": [
+                        QueryResultItem(
+                            id="txn_001",
+                            description="Transfer to Mum",
+                            amount=50000,
+                            date=date(2026, 3, 26),
+                            metadata={"type": "debit", "bank_name": "Zenith Bank"},
+                        ).model_dump(mode="json")
+                    ],
+                },
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1818,14 +1934,16 @@ async def test_show_evidence_follow_up_converts_cashflow_summary_to_scoped_trans
 
     updates = await step._handle_continuation(
         {"message": "show the transactions behind that", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "₦2,506,250 came in and ₦1,196,052 went out.",
-                "items": [],
-            },
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "₦2,506,250 came in and ₦1,196,052 went out.",
+                    "items": [],
+                },
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -1860,26 +1978,28 @@ async def test_coverage_follow_up_over_transaction_list_returns_completeness_ans
 
     updates = await step._handle_continuation(
         {"message": "is this all?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "I found 37 transactions in the last 30 days.",
-                "has_more": True,
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
                 "query_request": session_contract.model_dump(),
-                "items": [
-                    QueryResultItem(
-                        id="txn_001",
-                        description="Transfer to Mum",
-                        amount=50000,
-                        date=date(2026, 3, 26),
-                        metadata={"type": "debit", "bank_name": "GTBank"},
-                    ).model_dump(mode="json")
-                ],
-            },
-            "current_page": 1,
-            "page_size": 5,
-        },
+                "query_result": {
+                    "summary_text": "I found 37 transactions in the last 30 days.",
+                    "has_more": True,
+                    "query_request": session_contract.model_dump(),
+                    "items": [
+                        QueryResultItem(
+                            id="txn_001",
+                            description="Transfer to Mum",
+                            amount=50000,
+                            date=date(2026, 3, 26),
+                            metadata={"type": "debit", "bank_name": "GTBank"},
+                        ).model_dump(mode="json")
+                    ],
+                },
+                "current_page": 1,
+                "page_size": 5,
+            }
+        ),
     )
 
     assert updates["flow_state"] == "complete"
@@ -1955,14 +2075,16 @@ async def test_focused_detail_followups_answer_fact_then_original_list_completen
             },
         ),
     )
-    session = {
-        "session_active": True,
-        "query_request": session_contract.model_dump(),
-        "query_result": detail_result.model_dump(mode="json"),
-        "selected_item_id": selected_item.id,
-        "current_page": 0,
-        "page_size": 5,
-    }
+    session = _canonical_query_session_fixture(
+        {
+            "session_active": True,
+            "query_request": session_contract.model_dump(),
+            "query_result": detail_result.model_dump(mode="json"),
+            "selected_item_id": selected_item.id,
+            "current_page": 0,
+            "page_size": 5,
+        }
+    )
     semantic_decisions = iter(
         (
             QuerySemanticDecision(
@@ -2036,22 +2158,24 @@ async def test_explain_aggregate_scope_follow_up_uses_scoped_reply_without_drill
 
     updates = await step._handle_continuation(
         {"message": "How all this take be 50k", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "You spent ₦50,000 from Mar 01 to Mar 29, across 1 transaction.",
-                "items": [
-                    QueryResultItem(
-                        id="txn_001",
-                        description="Transfer to Mum",
-                        amount=50000,
-                        date=date(2026, 3, 26),
-                        metadata={"type": "debit", "bank_name": "Zenith Bank"},
-                    ).model_dump(mode="json")
-                ],
-            },
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "You spent ₦50,000 from Mar 01 to Mar 29, across 1 transaction.",
+                    "items": [
+                        QueryResultItem(
+                            id="txn_001",
+                            description="Transfer to Mum",
+                            amount=50000,
+                            date=date(2026, 3, 26),
+                            metadata={"type": "debit", "bank_name": "Zenith Bank"},
+                        ).model_dump(mode="json")
+                    ],
+                },
+            }
+        ),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.OK
@@ -2088,65 +2212,67 @@ async def test_account_breakdown_drilldown_converts_to_transaction_list_with_acc
 
     updates = await step._handle_continuation(
         {"message": "show all for first bank", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "Spending by account",
-                "items": [
-                    QueryResultItem(
-                        id="0",
-                        description="Zenith Bank",
-                        amount=-1099852,
-                        date=today,
-                        metadata={"key": "Zenith Bank", "count": 23},
-                    ).model_dump(mode="json"),
-                    QueryResultItem(
-                        id="1",
-                        description="First Bank",
-                        amount=-96200,
-                        date=today,
-                        metadata={"key": "First Bank", "count": 5},
-                    ).model_dump(mode="json"),
-                ],
-                "surface_view": {
-                    "mode": "grouped_summary",
-                    "context": {"group_by": "account"},
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "Spending by account",
                     "items": [
-                        {
-                            "id": "0",
-                            "label": "Zenith Bank",
-                            "amount": -1099852,
-                            "count": 23,
-                            "payload": {
-                                "selection_kind": "group_bucket",
-                                "entity_type": "group_bucket",
-                                "entity_id": "0",
-                                "label": "Zenith Bank",
-                                "group_by": "account",
-                                "group_key": "Zenith Bank",
-                                "filters_patch": {"account_filter": "Zenith Bank"},
-                            },
-                        },
-                        {
-                            "id": "1",
-                            "label": "First Bank",
-                            "amount": -96200,
-                            "count": 5,
-                            "payload": {
-                                "selection_kind": "group_bucket",
-                                "entity_type": "group_bucket",
-                                "entity_id": "1",
-                                "label": "First Bank",
-                                "group_by": "account",
-                                "group_key": "First Bank",
-                                "filters_patch": {"account_filter": "First Bank"},
-                            },
-                        },
+                        QueryResultItem(
+                            id="0",
+                            description="Zenith Bank",
+                            amount=-1099852,
+                            date=today,
+                            metadata={"key": "Zenith Bank", "count": 23},
+                        ).model_dump(mode="json"),
+                        QueryResultItem(
+                            id="1",
+                            description="First Bank",
+                            amount=-96200,
+                            date=today,
+                            metadata={"key": "First Bank", "count": 5},
+                        ).model_dump(mode="json"),
                     ],
+                    "surface_view": {
+                        "mode": "grouped_summary",
+                        "context": {"group_by": "account"},
+                        "items": [
+                            {
+                                "id": "0",
+                                "label": "Zenith Bank",
+                                "amount": -1099852,
+                                "count": 23,
+                                "payload": {
+                                    "selection_kind": "group_bucket",
+                                    "entity_type": "group_bucket",
+                                    "entity_id": "0",
+                                    "label": "Zenith Bank",
+                                    "group_by": "account",
+                                    "group_key": "Zenith Bank",
+                                    "filters_patch": {"account_filter": "Zenith Bank"},
+                                },
+                            },
+                            {
+                                "id": "1",
+                                "label": "First Bank",
+                                "amount": -96200,
+                                "count": 5,
+                                "payload": {
+                                    "selection_kind": "group_bucket",
+                                    "entity_type": "group_bucket",
+                                    "entity_id": "1",
+                                    "label": "First Bank",
+                                    "group_by": "account",
+                                    "group_key": "First Bank",
+                                    "filters_patch": {"account_filter": "First Bank"},
+                                },
+                            },
+                        ],
+                    },
                 },
-            },
-        },
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -2186,65 +2312,67 @@ async def test_account_breakdown_drilldown_prefers_explicit_label_over_ordinal_i
 
     updates = await step._handle_continuation(
         {"message": "show the first bank transactions", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "Spending by account",
-                "items": [
-                    QueryResultItem(
-                        id="0",
-                        description="Zenith Bank",
-                        amount=-1099852,
-                        date=today,
-                        metadata={"key": "Zenith Bank", "count": 23},
-                    ).model_dump(mode="json"),
-                    QueryResultItem(
-                        id="1",
-                        description="First Bank",
-                        amount=-96200,
-                        date=today,
-                        metadata={"key": "First Bank", "count": 5},
-                    ).model_dump(mode="json"),
-                ],
-                "surface_view": {
-                    "mode": "grouped_summary",
-                    "context": {"group_by": "account"},
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "Spending by account",
                     "items": [
-                        {
-                            "id": "0",
-                            "label": "Zenith Bank",
-                            "amount": -1099852,
-                            "count": 23,
-                            "payload": {
-                                "selection_kind": "group_bucket",
-                                "entity_type": "group_bucket",
-                                "entity_id": "0",
-                                "label": "Zenith Bank",
-                                "group_by": "account",
-                                "group_key": "Zenith Bank",
-                                "filters_patch": {"account_filter": "Zenith Bank"},
-                            },
-                        },
-                        {
-                            "id": "1",
-                            "label": "First Bank",
-                            "amount": -96200,
-                            "count": 5,
-                            "payload": {
-                                "selection_kind": "group_bucket",
-                                "entity_type": "group_bucket",
-                                "entity_id": "1",
-                                "label": "First Bank",
-                                "group_by": "account",
-                                "group_key": "First Bank",
-                                "filters_patch": {"account_filter": "First Bank"},
-                            },
-                        },
+                        QueryResultItem(
+                            id="0",
+                            description="Zenith Bank",
+                            amount=-1099852,
+                            date=today,
+                            metadata={"key": "Zenith Bank", "count": 23},
+                        ).model_dump(mode="json"),
+                        QueryResultItem(
+                            id="1",
+                            description="First Bank",
+                            amount=-96200,
+                            date=today,
+                            metadata={"key": "First Bank", "count": 5},
+                        ).model_dump(mode="json"),
                     ],
+                    "surface_view": {
+                        "mode": "grouped_summary",
+                        "context": {"group_by": "account"},
+                        "items": [
+                            {
+                                "id": "0",
+                                "label": "Zenith Bank",
+                                "amount": -1099852,
+                                "count": 23,
+                                "payload": {
+                                    "selection_kind": "group_bucket",
+                                    "entity_type": "group_bucket",
+                                    "entity_id": "0",
+                                    "label": "Zenith Bank",
+                                    "group_by": "account",
+                                    "group_key": "Zenith Bank",
+                                    "filters_patch": {"account_filter": "Zenith Bank"},
+                                },
+                            },
+                            {
+                                "id": "1",
+                                "label": "First Bank",
+                                "amount": -96200,
+                                "count": 5,
+                                "payload": {
+                                    "selection_kind": "group_bucket",
+                                    "entity_type": "group_bucket",
+                                    "entity_id": "1",
+                                    "label": "First Bank",
+                                    "group_by": "account",
+                                    "group_key": "First Bank",
+                                    "filters_patch": {"account_filter": "First Bank"},
+                                },
+                            },
+                        ],
+                    },
                 },
-            },
-        },
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -2276,12 +2404,14 @@ async def test_show_me_follow_up_increments_pagination_on_summary_intent() -> No
 
     updates = await step._handle_continuation(
         {"message": "more", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": [], "has_more": True},
-            "current_page": 0,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": [], "has_more": True},
+                "current_page": 0,
+            }
+        ),
     )
 
     assert updates["current_page"] == 1
@@ -2308,12 +2438,14 @@ async def test_show_more_on_final_page_keeps_page_and_explains_boundary() -> Non
     step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
     updates = await step._handle_continuation(
         {"message": "more", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": [], "has_more": False},
-            "current_page": 2,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": [], "has_more": False},
+                "current_page": 2,
+            }
+        ),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.OK
@@ -2341,12 +2473,14 @@ async def test_previous_on_first_page_keeps_page_and_explains_boundary() -> None
     step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
     updates = await step._handle_continuation(
         {"message": "previous", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": [], "has_more": True},
-            "current_page": 0,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": [], "has_more": True},
+                "current_page": 0,
+            }
+        ),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.OK
@@ -2379,13 +2513,15 @@ async def test_show_them_after_count_summary_recovers_from_fresh_query_label() -
 
     updates = await step._handle_continuation(
         {"message": "Show them", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 3,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 3,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -2449,12 +2585,14 @@ async def test_show_them_after_top_beneficiary_lists_only_that_beneficiary_trans
 
     updates = await step._handle_continuation(
         {"message": "Show them", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-            "current_page": 0,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+                "current_page": 0,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -2509,12 +2647,14 @@ async def test_weekly_summary_show_them_then_only_this_weeks_replaces_scope_and_
 
     first_updates = await step._handle_continuation(
         {"message": "Show them", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 0,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 0,
+            }
+        ),
     )
 
     assert first_updates["query_request"].intent == QueryIntent.TRANSACTION_LIST
@@ -2524,13 +2664,15 @@ async def test_weekly_summary_show_them_then_only_this_weeks_replaces_scope_and_
 
     second_updates = await step._handle_continuation(
         {"message": "Only this week's", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": first_updates["query_request"].model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": first_updates["query_request"].model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = second_updates["query_request"]
@@ -2571,13 +2713,15 @@ async def test_summary_contrastive_last_week_replaces_scope_and_preserves_recipi
 
     updates = await step._handle_continuation(
         {"message": "What about last week", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 2,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 2,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -2619,16 +2763,18 @@ async def test_semantic_unclear_time_signal_recovers_scoped_gtbank_no_result_fol
 
     updates = await step._handle_continuation(
         {"message": "What of last week", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "No GTBank transactions found for this week.",
-                "items": [],
-            },
-            "current_page": 0,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "No GTBank transactions found for this week.",
+                    "items": [],
+                },
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -2676,13 +2822,15 @@ async def test_semantic_multilingual_time_signal_preserves_active_scope(message:
 
     updates = await step._handle_continuation(
         {"message": message, "today": today, "language": language},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -2719,12 +2867,14 @@ async def test_unclear_non_time_followup_does_not_recover_to_time_delta() -> Non
 
     updates = await step._handle_continuation(
         {"message": "what of it", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 0,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 0,
+            }
+        ),
     )
 
     assert "query_request" not in updates
@@ -2766,12 +2916,14 @@ async def test_summary_contrastive_last_week_logs_semantic_reasoner_resolution(m
 
     await step._handle_continuation(
         {"message": "What about last week", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 0,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 0,
+            }
+        ),
     )
 
     assert (
@@ -2818,13 +2970,15 @@ async def test_low_confidence_unclear_last_week_recovers_via_time_rescope_recove
 
     updates = await step._handle_continuation(
         {"message": "What about last week", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 2,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 2,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -2883,13 +3037,15 @@ async def test_assertive_yesterday_correction_rescopes_active_count_from_reasone
 
     updates = await step._handle_continuation(
         {"message": "I said yesterday", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"summary_text": "You made 4 transaction(s) today.", "items": []},
-            "current_page": 0,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"summary_text": "You made 4 transaction(s) today.", "items": []},
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -2926,13 +3082,15 @@ async def test_grounded_ask_clarify_last_week_recovers_via_time_rescope_recovery
 
     updates = await step._handle_continuation(
         {"message": "What about last week", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -2971,13 +3129,15 @@ async def test_aggregate_followup_without_extraction_preserves_active_query_scop
 
     updates = await step._handle_continuation(
         {"message": "How much total", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 2,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 2,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3027,13 +3187,15 @@ async def test_explicit_aggregate_scope_drops_inherited_beneficiary_filter() -> 
 
     updates = await step._handle_continuation(
         {"message": "How have I spent this month so far", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3101,13 +3263,15 @@ async def test_aggregate_continuation_without_reasoner_extraction_uses_determini
 
     updates = await step._handle_continuation(
         {"message": "How much have I spent this month so far", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3176,13 +3340,15 @@ async def test_aggregate_continuation_with_polluted_reasoner_extraction_prefers_
 
     updates = await step._handle_continuation(
         {"message": "How much have I spent this month so far", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3249,13 +3415,15 @@ async def test_beneficiary_summary_aggregate_followup_prefers_clean_total_parse(
 
     updates = await step._handle_continuation(
         {"message": "How much did I send in total this month", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3293,13 +3461,15 @@ async def test_grouped_total_followup_rebuilds_scoped_sum_from_beneficiary_summa
 
     updates = await step._handle_continuation(
         {"message": "so what the total?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3343,12 +3513,14 @@ async def test_income_followup_after_credit_list_preserves_active_credit_scope()
 
     updates = await step._handle_continuation(
         {"message": "What my income this month", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3391,12 +3563,14 @@ async def test_income_repair_followup_after_credit_list_preserves_active_credit_
 
     updates = await step._handle_continuation(
         {"message": "I mean my income this month", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3438,12 +3612,14 @@ async def test_income_vs_spending_followup_compiles_transaction_type_breakdown()
 
     updates = await step._handle_continuation(
         {"message": "Compare the income vs spending", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3499,12 +3675,14 @@ async def test_typed_income_direction_followup_preserves_monthly_summary_scope(
 
     updates = await step._handle_continuation(
         {"message": message, "today": today, "language": language},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3546,11 +3724,13 @@ async def test_typed_both_directions_followup_builds_direction_breakdown() -> No
     step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
     updates = await step._handle_continuation(
         {"message": "Compare both directions", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3612,12 +3792,14 @@ async def test_account_breakdown_followup_after_credit_total_preserves_credit_sc
 
     updates = await step._handle_continuation(
         {"message": "Break down by account", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 0,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 0,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3684,12 +3866,14 @@ async def test_account_breakdown_followup_uses_deterministic_contract_when_reaso
 
     updates = await step._handle_continuation(
         {"message": "Break down by account", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 0,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 0,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3754,19 +3938,21 @@ async def test_compare_to_income_after_spending_total_compiles_cashflow_summary(
 
     updates = await step._handle_continuation(
         {"message": "Compare to how much came in", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "You spent ₦1,460,052 this month, across 52 transactions.",
-                "items": [],
-                "surface_view": {
-                    "mode": "direct_answer",
-                    "context": {"type": "summary_scope", "focus_type": "summary_scope"},
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "You spent ₦1,460,052 this month, across 52 transactions.",
+                    "items": [],
+                    "surface_view": {
+                        "mode": "direct_answer",
+                        "context": {"type": "summary_scope", "focus_type": "summary_scope"},
+                    },
                 },
-            },
-            "current_page": 0,
-        },
+                "current_page": 0,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3811,12 +3997,14 @@ async def test_low_confidence_unclear_income_followup_clarifies_without_parser_r
 
     updates = await step._handle_continuation(
         {"message": "What's my income this month", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+            }
+        ),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
@@ -3874,12 +4062,14 @@ async def test_unclear_income_repair_followup_uses_reasoner_compiler_without_par
 
     updates = await step._handle_continuation(
         {"message": "I mean my income this month", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -3935,12 +4125,14 @@ async def test_unclear_highest_single_transfer_repair_clarifies_without_explicit
 
     updates = await step._handle_continuation(
         {"message": "I mean my highest single transfer", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 0,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 0,
+            }
+        ),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
@@ -3990,13 +4182,15 @@ async def test_unclear_credit_pivot_followup_clarifies_without_grounded_reasoner
 
     updates = await step._handle_continuation(
         {"message": "What about credit", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+                "show_expanded": True,
+            }
+        ),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
@@ -4028,11 +4222,13 @@ async def test_dismissive_end_session_uses_localized_de_escalation_reply() -> No
 
     updates = await step._handle_continuation(
         {"message": "get out", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+            }
+        ),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.OK
@@ -4085,11 +4281,13 @@ async def test_plain_recipient_summary_followup_reparses_as_new_beneficiary_summ
 
     updates = await step._handle_continuation(
         {"message": "Who did I send money to this month", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -4130,11 +4328,13 @@ async def test_show_me_logs_semantic_reasoner_continuation_resolution(monkeypatc
 
     await step._handle_continuation(
         {"message": "show me", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+            }
+        ),
     )
 
     assert (
@@ -4177,13 +4377,15 @@ async def test_summary_contrastive_yesterday_without_reasoner_time_payload_repar
 
     updates = await step._handle_continuation(
         {"message": "What about yesterday", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -4225,13 +4427,15 @@ async def test_direct_time_rescope_followup_uses_reasoner_and_preserves_count_sh
 
     updates = await step._handle_continuation(
         {"message": "What about yesterday?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 0,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -4273,13 +4477,15 @@ async def test_direct_time_rescope_followup_overrides_wrong_reasoner_time_range(
 
     updates = await step._handle_continuation(
         {"message": "What about yesterday", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 0,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -4317,13 +4523,15 @@ async def test_direct_time_rescope_followup_recovers_from_non_time_continuation_
 
     updates = await step._handle_continuation(
         {"message": "What about yesterday", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 0,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -4360,13 +4568,15 @@ async def test_direct_time_rescope_correction_recovers_from_fresh_query_label() 
 
     updates = await step._handle_continuation(
         {"message": "I meant yesterday", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 0,
-            "show_expanded": False,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -4404,13 +4614,15 @@ async def test_summary_contrastive_last_three_days_without_reasoner_time_payload
 
     updates = await step._handle_continuation(
         {"message": "What about last 3 days", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 2,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 2,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -4450,13 +4662,15 @@ async def test_summary_only_today_replaces_scope_and_preserves_filters() -> None
 
     updates = await step._handle_continuation(
         {"message": "only today", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 3,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 3,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -4498,28 +4712,30 @@ async def test_single_item_contrastive_yesterday_preserves_latest_shape() -> Non
 
     updates = await step._handle_continuation(
         {"message": "What about yesterday?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "You last received a credit on March 17, 2026.",
-                "items": [
-                    QueryResultItem(
-                        id="txn_last",
-                        description="Salary from Acme Corp",
-                        amount=950000.0,
-                        date=date(2026, 3, 17),
-                        metadata={"type": "credit", "bank_name": "First Bank"},
-                    ).model_dump(mode="json")
-                ],
-                "surface_view": {
-                    "mode": "direct_answer",
-                    "context": {"type": "single_transaction"},
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "You last received a credit on March 17, 2026.",
+                    "items": [
+                        QueryResultItem(
+                            id="txn_last",
+                            description="Salary from Acme Corp",
+                            amount=950000.0,
+                            date=date(2026, 3, 17),
+                            metadata={"type": "credit", "bank_name": "First Bank"},
+                        ).model_dump(mode="json")
+                    ],
+                    "surface_view": {
+                        "mode": "direct_answer",
+                        "context": {"type": "single_transaction"},
+                    },
                 },
-            },
-            "current_page": 0,
-            "show_expanded": False,
-        },
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -4563,28 +4779,30 @@ async def test_single_item_grounded_ask_clarify_recovers_to_yesterday_time_resco
 
     updates = await step._handle_continuation(
         {"message": "No transaction yesterday?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "You last received a credit on March 17, 2026.",
-                "items": [
-                    QueryResultItem(
-                        id="txn_last",
-                        description="Salary from Acme Corp",
-                        amount=950000.0,
-                        date=date(2026, 3, 17),
-                        metadata={"type": "credit", "bank_name": "First Bank"},
-                    ).model_dump(mode="json")
-                ],
-                "surface_view": {
-                    "mode": "direct_answer",
-                    "context": {"type": "single_transaction"},
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "You last received a credit on March 17, 2026.",
+                    "items": [
+                        QueryResultItem(
+                            id="txn_last",
+                            description="Salary from Acme Corp",
+                            amount=950000.0,
+                            date=date(2026, 3, 17),
+                            metadata={"type": "credit", "bank_name": "First Bank"},
+                        ).model_dump(mode="json")
+                    ],
+                    "surface_view": {
+                        "mode": "direct_answer",
+                        "context": {"type": "single_transaction"},
+                    },
                 },
-            },
-            "current_page": 0,
-            "show_expanded": False,
-        },
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     assert updates["flow_state"] == "executing"
@@ -4636,52 +4854,54 @@ async def test_single_item_next_fact_followup_answers_from_semantic_decision() -
 
     updates = await step._handle_continuation(
         {"message": "Then who next?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "The last person you sent money to was Mum.",
-                "items": [
-                    QueryResultItem(
-                        id="txn_last",
-                        description="Transfer to Mum",
-                        amount=50000.0,
-                        date=date(2026, 4, 10),
-                        metadata={"type": "debit", "recipient_name": "Mum", "bank_name": "Zenith Bank"},
-                    ).model_dump(mode="json")
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "The last person you sent money to was Mum.",
+                    "items": [
+                        QueryResultItem(
+                            id="txn_last",
+                            description="Transfer to Mum",
+                            amount=50000.0,
+                            date=date(2026, 4, 10),
+                            metadata={"type": "debit", "recipient_name": "Mum", "bank_name": "Zenith Bank"},
+                        ).model_dump(mode="json")
+                    ],
+                    "surface_view": {
+                        "mode": "direct_answer",
+                        "context": {"type": "single_transaction"},
+                    },
+                },
+                "cached_transactions": [
+                    {
+                        "id": "txn_last",
+                        "narration": "Transfer to Mum",
+                        "amount": 50000.0,
+                        "date": "2026-04-10",
+                        "type": "debit",
+                        "transaction_type": "debit",
+                        "recipient_name": "Mum",
+                        "recipient_bank_name": "Zenith Bank",
+                        "counterparty": "Mum",
+                    },
+                    {
+                        "id": "txn_prev",
+                        "narration": "Transfer to Tolu",
+                        "amount": 25000.0,
+                        "date": "2026-04-08",
+                        "type": "debit",
+                        "transaction_type": "debit",
+                        "recipient_name": "Tolu",
+                        "recipient_bank_name": "First Bank",
+                        "counterparty": "Tolu",
+                    },
                 ],
-                "surface_view": {
-                    "mode": "direct_answer",
-                    "context": {"type": "single_transaction"},
-                },
-            },
-            "cached_transactions": [
-                {
-                    "id": "txn_last",
-                    "narration": "Transfer to Mum",
-                    "amount": 50000.0,
-                    "date": "2026-04-10",
-                    "type": "debit",
-                    "transaction_type": "debit",
-                    "recipient_name": "Mum",
-                    "recipient_bank_name": "Zenith Bank",
-                    "counterparty": "Mum",
-                },
-                {
-                    "id": "txn_prev",
-                    "narration": "Transfer to Tolu",
-                    "amount": 25000.0,
-                    "date": "2026-04-08",
-                    "type": "debit",
-                    "transaction_type": "debit",
-                    "recipient_name": "Tolu",
-                    "recipient_bank_name": "First Bank",
-                    "counterparty": "Tolu",
-                },
-            ],
-            "current_page": 0,
-            "show_expanded": False,
-        },
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.OK
@@ -4720,36 +4940,38 @@ async def test_single_item_current_fact_followup_answers_selected_item_from_sema
 
     updates = await step._handle_continuation(
         {"message": "How much?", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "selected_item_index": 1,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "Looks like that went to Dad.",
-                "items": [
-                    QueryResultItem(
-                        id="txn_last",
-                        description="Transfer to Mum",
-                        amount=50000.0,
-                        date=date(2026, 4, 10),
-                        metadata={"type": "debit", "recipient_name": "Mum", "bank_name": "Zenith Bank"},
-                    ).model_dump(mode="json"),
-                    QueryResultItem(
-                        id="txn_prev",
-                        description="Transfer to Dad",
-                        amount=25000.0,
-                        date=date(2026, 4, 8),
-                        metadata={"type": "debit", "recipient_name": "Dad", "bank_name": "First Bank"},
-                    ).model_dump(mode="json"),
-                ],
-                "surface_view": {
-                    "mode": "direct_answer",
-                    "context": {"type": "single_transaction"},
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "selected_item_index": 1,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "Looks like that went to Dad.",
+                    "items": [
+                        QueryResultItem(
+                            id="txn_last",
+                            description="Transfer to Mum",
+                            amount=50000.0,
+                            date=date(2026, 4, 10),
+                            metadata={"type": "debit", "recipient_name": "Mum", "bank_name": "Zenith Bank"},
+                        ).model_dump(mode="json"),
+                        QueryResultItem(
+                            id="txn_prev",
+                            description="Transfer to Dad",
+                            amount=25000.0,
+                            date=date(2026, 4, 8),
+                            metadata={"type": "debit", "recipient_name": "Dad", "bank_name": "First Bank"},
+                        ).model_dump(mode="json"),
+                    ],
+                    "surface_view": {
+                        "mode": "direct_answer",
+                        "context": {"type": "single_transaction"},
+                    },
                 },
-            },
-            "current_page": 0,
-            "show_expanded": False,
-        },
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.OK
@@ -4787,60 +5009,62 @@ async def test_direct_fact_counterparty_answer_when_was_that_followup_uses_focus
 
     updates = await step._handle_continuation(
         {"message": "When was that", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {
-                "summary_text": "That was with Acme Corp.",
-                "items": [
-                    QueryResultItem(
-                        id="txn_acme",
-                        description="Acme Corp",
-                        amount=950000.0,
-                        date=today,
-                        metadata={
-                            "date": "2026-06-28",
-                            "type": "credit",
-                            "transaction_type": "credit",
-                            "counterparty": "Acme Corp",
-                            "recipient_name": "Acme Corp",
-                            "bank_name": "Zenith Bank",
-                        },
-                    ).model_dump(mode="json")
-                ],
-                "surface_view": {
-                    "mode": "direct_answer",
-                    "lead_text": "That was with Acme Corp.",
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {
+                    "summary_text": "That was with Acme Corp.",
                     "items": [
-                        SurfaceItemView(
+                        QueryResultItem(
                             id="txn_acme",
-                            label="Acme Corp",
+                            description="Acme Corp",
                             amount=950000.0,
-                            payload=SelectionPayload(
-                                selection_kind="transaction",
-                                entity_type="transaction",
-                                entity_id="txn_acme",
-                                label="Acme Corp",
-                                fact_capabilities=["date", "amount", "bank", "reference"],
-                            ),
+                            date=today,
                             metadata={
                                 "date": "2026-06-28",
                                 "type": "credit",
+                                "transaction_type": "credit",
                                 "counterparty": "Acme Corp",
+                                "recipient_name": "Acme Corp",
                                 "bank_name": "Zenith Bank",
                             },
                         ).model_dump(mode="json")
                     ],
-                    "context": {
-                        "type": "single_transaction",
-                        "focus_type": "transaction",
-                        "selected_item_id": "txn_acme",
+                    "surface_view": {
+                        "mode": "direct_answer",
+                        "lead_text": "That was with Acme Corp.",
+                        "items": [
+                            SurfaceItemView(
+                                id="txn_acme",
+                                label="Acme Corp",
+                                amount=950000.0,
+                                payload=SelectionPayload(
+                                    selection_kind="transaction",
+                                    entity_type="transaction",
+                                    entity_id="txn_acme",
+                                    label="Acme Corp",
+                                    fact_capabilities=["date", "amount", "bank", "reference"],
+                                ),
+                                metadata={
+                                    "date": "2026-06-28",
+                                    "type": "credit",
+                                    "counterparty": "Acme Corp",
+                                    "bank_name": "Zenith Bank",
+                                },
+                            ).model_dump(mode="json")
+                        ],
+                        "context": {
+                            "type": "single_transaction",
+                            "focus_type": "transaction",
+                            "selected_item_id": "txn_acme",
+                        },
                     },
                 },
-            },
-            "current_page": 0,
-            "show_expanded": False,
-        },
+                "current_page": 0,
+                "show_expanded": False,
+            }
+        ),
     )
 
     assert updates["flow_state"] == "executing"
@@ -4878,13 +5102,15 @@ async def test_summary_last_month_only_replaces_scope_and_preserves_debit_filter
 
     updates = await step._handle_continuation(
         {"message": "for last month only", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 4,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 4,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -4924,13 +5150,15 @@ async def test_summary_contrastive_last_week_correction_wrapper_replaces_scope_v
 
     updates = await step._handle_continuation(
         {"message": "no, i meant last week", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 1,
-            "show_expanded": True,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 1,
+                "show_expanded": True,
+            }
+        ),
     )
 
     query_request = updates["query_request"]
@@ -4967,12 +5195,14 @@ async def test_low_confidence_unclear_followup_requests_clarification() -> None:
 
     updates = await step._handle_continuation(
         {"message": "for last week only", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": {"items": []},
-            "current_page": 3,
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": {"items": []},
+                "current_page": 3,
+            }
+        ),
     )
 
     assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
@@ -5060,11 +5290,13 @@ async def test_account_breakdown_followup_uses_selection_payload_without_surface
 
     updates = await step._handle_continuation(
         {"message": "show all for first bank", "today": today, "language": "en"},
-        {
-            "session_active": True,
-            "query_request": session_contract.model_dump(),
-            "query_result": query_result.model_dump(mode="json"),
-        },
+        _canonical_query_session_fixture(
+            {
+                "session_active": True,
+                "query_request": session_contract.model_dump(),
+                "query_result": query_result.model_dump(mode="json"),
+            }
+        ),
     )
 
     query_request = updates["query_request"]

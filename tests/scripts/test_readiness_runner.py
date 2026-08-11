@@ -22,7 +22,7 @@ from scripts.readiness_rendering import (
     render_orchestrator_result,
 )
 from scripts.readiness_report import write_json_report, write_text_report
-from scripts.readiness_runner import _repeat_scenarios
+from scripts.readiness_runner import _prepare_scenarios, _repeat_scenarios
 from scripts.readiness_scenarios import resolve_scenarios
 from scripts.readiness_sequence import (
     run_readiness_sequence,
@@ -151,6 +151,27 @@ def test_repeat_scenarios_uses_fresh_scenario_identity_per_run() -> None:
     repeated = _repeat_scenarios(scenarios, 3)
 
     assert [scenario.id for scenario in repeated] == ["latency[run-1]", "latency[run-2]", "latency[run-3]"]
+
+
+def test_conversation_mutation_is_applied_before_repeat_identity() -> None:
+    scenarios = _prepare_scenarios(
+        "adversarial-conversations",
+        repeat=2,
+        conversation_mutation="repeat_last",
+    )
+
+    assert len(scenarios) == 10
+    assert scenarios[0].id == "adversarial-incomplete-send[conversation-repeat_last][run-1]"
+    assert scenarios[0].tags[-1] == "repeat_last"
+    assert len(scenarios[0].turns) == 2
+
+
+def test_cli_exposes_conversation_mutation_choices() -> None:
+    parsed = readiness.parse_args(
+        ["--scenario", "adversarial-conversations", "--conversation-mutation", "insert_ack_before_last"]
+    )
+
+    assert parsed.conversation_mutation == "insert_ack_before_last"
 
 
 def test_variance_insight_readiness_scenario_enforces_query_call_budget() -> None:
@@ -677,6 +698,42 @@ def test_readiness_cli_accepts_insight_reconciliation_scenario() -> None:
     assert args.scenario == "insight-reconciliation"
 
 
+def test_cli_accepts_jarvis_conversation_scenario() -> None:
+    args = readiness.parse_args(
+        ["--mode", "dry-run", "--scenario", "jarvis-conversations", "--phone", "2348162511023"]
+    )
+
+    assert args.scenario == "jarvis-conversations"
+
+
+def test_bounded_jarvis_readiness_covers_each_conversation_dimension() -> None:
+    scenarios = resolve_scenarios("jarvis-conversations")
+
+    assert len(scenarios) == 10
+    assert {scenario.category for scenario in scenarios} == {
+        "intent_continuity",
+        "referential_continuity",
+        "correction_repair",
+        "interruption_resume",
+        "mixed_input",
+        "partial_failure",
+        "evidence_grounding",
+        "safety_controls",
+        "recovery",
+        "latency_fast_path",
+    }
+    assert all("jarvis" in scenario.tags for scenario in scenarios)
+    assert all(turn.modes == ("dry-run",) for scenario in scenarios for turn in scenario.turns)
+
+
+def test_adversarial_conversation_suite_has_safety_seed_cases() -> None:
+    scenarios = resolve_scenarios("adversarial-conversations")
+
+    assert len(scenarios) >= 5
+    assert all("adversarial" in scenario.tags for scenario in scenarios)
+    assert any(scenario.criticality == "safety" for scenario in scenarios)
+
+
 def test_robustness_catalog_expands_to_at_least_300_deterministic_cases() -> None:
     scenarios = resolve_scenarios("robustness")
 
@@ -729,6 +786,7 @@ async def test_readiness_result_reports_category_outcome_and_safety_metrics() ->
     assert result.robustness_summary["unsafe_execution_count"] == 0
     assert result.turns[0].category == "adversarial"
     assert result.turns[0].criticality == "safety"
+    assert result.dimension_summary["adversarial"]["pass_rate"] == 1.0
 
 
 def test_no_execution_expectations_allow_read_only_progress_but_block_money_movement() -> None:

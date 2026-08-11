@@ -4,6 +4,7 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import (
     BeneficiaryTaskParameters,
@@ -11,13 +12,14 @@ from shared.types.planner import (
     TransferTaskParameters,
     make_planned_task,
 )
+from tests.orchestrator.routing_fixtures import planner_test_result
 
 
 class _SuggestionAwarePlanner:
     def __init__(self) -> None:
         self.last_prompt_signals = None
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -25,11 +27,11 @@ class _SuggestionAwarePlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
         self.last_prompt_signals = prompt_signals
         if getattr(prompt_signals, "has_beneficiary_suggestion", False):
-            return PlannerOutput(
+            output = PlannerOutput(
                 primary_intent="beneficiary",
                 response="",
                 response_key=None,
@@ -50,8 +52,9 @@ class _SuggestionAwarePlanner:
                     )
                 ],
             )
+            return planner_test_result(output)
 
-        return PlannerOutput(
+        output = PlannerOutput(
             primary_intent="transfer",
             response="",
             response_key=None,
@@ -72,6 +75,7 @@ class _SuggestionAwarePlanner:
                 )
             ],
         )
+        return planner_test_result(output)
 
 
 class _RedisWithPendingSuggestion:

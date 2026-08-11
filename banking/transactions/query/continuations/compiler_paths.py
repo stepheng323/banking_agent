@@ -20,7 +20,6 @@ from banking.transactions.query.models.domain import QueryIntent
 from banking.transactions.query.models.extraction import (
     ClarificationOperation,
     InsightSpec,
-    PendingClarificationState,
     QueryExtractionResult,
     QueryRequestShape,
     ResolverOutcome,
@@ -201,7 +200,7 @@ async def parse_reasoner_extraction_to_updates(
             "response": render_message("query.clarify.unsure_rephrase", language),
             "flow_state": "parsing",
             "session_active": True,
-            "pending_clarification": None,
+            "pending_input": None,
             "show_expanded": False,
             "current_page": 0,
         }
@@ -275,7 +274,7 @@ async def parse_reasoner_extraction_to_updates(
             "response": render_message("query.clarify.unsure_rephrase", language),
             "flow_state": "parsing",
             "session_active": True,
-            "pending_clarification": None,
+            "pending_input": None,
             "show_expanded": False,
             "current_page": 0,
             "_query_reasoner_to_parser_suppressed": True,
@@ -347,7 +346,7 @@ async def parse_reasoner_extraction_to_updates(
         "response": render_message("query.clarify.unsure_rephrase", language),
         "flow_state": "parsing",
         "session_active": True,
-        "pending_clarification": None,
+        "pending_input": None,
         "show_expanded": False,
         "current_page": 0,
     }
@@ -373,11 +372,7 @@ def parse_result_to_updates(
             "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
             "response": result.resolver_message or clarify_fallback,
             "session_active": True,
-            "pending_clarification": (
-                PendingClarificationState.model_validate(result.pending_clarification)
-                if result.pending_clarification
-                else None
-            ),
+            "pending_input": result.pending_input,
             "flow_state": "parsing",
         }
         if result.resolver_message:
@@ -449,7 +444,7 @@ def parse_result_to_updates(
         "flow_state": "executing",
         "current_page": 0,
         "session_active": True,
-        "pending_clarification": None,
+        "pending_input": None,
         "show_expanded": prefer_detailed,
     }
     if preferred_account_ids is not None:

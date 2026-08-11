@@ -6,32 +6,30 @@ import pytest
 
 from shared.money import (
     kobo_to_naira,
-    money_to_provider_value,
     naira_to_kobo,
-    require_money,
+    naira_to_provider_value,
     require_naira,
-    to_minor_units,
     to_naira,
 )
 
 
 def test_money_addition_avoids_binary_float_rounding() -> None:
-    total = require_money("0.10") + require_money("0.20")
+    total = require_naira("0.10") + require_naira("0.20")
 
     assert total == Decimal("0.30")
 
 
 def test_float_input_converts_through_string_representation() -> None:
-    assert require_money(0.1) == Decimal("0.10")
+    assert require_naira(0.1) == Decimal("0.10")
 
 
 def test_minor_units_are_exact() -> None:
-    assert to_minor_units(Decimal("2000.05")) == 200005
+    assert naira_to_kobo(Decimal("2000.05")) == 200005
 
 
 def test_provider_value_uses_int_for_whole_amount_and_string_for_fractional_amount() -> None:
-    assert money_to_provider_value(Decimal("2000.00")) == 2000
-    assert money_to_provider_value(Decimal("2000.50")) == "2000.50"
+    assert naira_to_provider_value(Decimal("2000.00")) == 2000
+    assert naira_to_provider_value(Decimal("2000.50")) == "2000.50"
 
 
 def test_explicit_naira_and_kobo_helpers() -> None:

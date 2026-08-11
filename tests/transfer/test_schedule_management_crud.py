@@ -662,10 +662,6 @@ async def test_schedule_management_material_edit_persists_schedule_pin_token(
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
     monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
 
-    from shared.cache.redis_client import RedisClient
-
-    monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls, redis_url=None: redis))
-
     scheduling = _scheduling()
     payload = TransferPayload(
         idempotency_key="schedule-test-token",
@@ -681,7 +677,7 @@ async def test_schedule_management_material_edit_persists_schedule_pin_token(
         user_message="change scheduled transfer to 7k at 9:30am",
         gates=TransferGates(),
         phone_number="2348162511023",
-        worker_context=SimpleNamespace(redis_client=None),
+        worker_context=SimpleNamespace(redis_client=redis),
     )
 
     assert auth.outcome == TransactionOutcome.NEEDS_AUTH

@@ -7,8 +7,11 @@ import pytest
 from banking.transactions.query.models.domain import (
     Aggregation,
     QueryIntent,
+    QueryResult,
+    QueryResultItem,
     TimeRange,
 )
+from banking.transactions.query.session_state import build_query_session_v3
 from banking.transactions.query.worker import QueryWorker
 from tests.query.factories import make_query_request
 
@@ -73,22 +76,24 @@ async def test_analytics_drill_down_executes():
         "message": "What the reference number",
         "language": "en",
         "today": date.today(),
-        "query_session": {
-            "session_active": True,
-            "query_request": contract.model_dump(mode="json"),
-            "query_result": {
-                "surface_view": surface.model_dump(mode="json"),
-                "items": [
-                    {
-                        "id": "group_1",
-                        "description": "Acme Corp",
-                        "amount": 950000,
-                        "date": "2026-06-28",
-                        "metadata": {"key": "Acme Corp"},
-                    }
+        "query_session": build_query_session_v3(
+            request=contract,
+            result=QueryResult(
+                summary_text="Acme Corp",
+                query_request=contract,
+                surface_view=surface,
+                items=[
+                    QueryResultItem(
+                        id="group_1",
+                        description="Acme Corp",
+                        amount=950000,
+                        date=date(2026, 6, 28),
+                        metadata={"key": "Acme Corp"},
+                    )
                 ],
-            },
-        },
+            ),
+            raw_frames=[],
+        ).model_dump(mode="python"),
     }
 
     ctx = WorkerContext(redis=MagicMock(), tracer=MagicMock(), queue=MagicMock(), user_id="test_user")

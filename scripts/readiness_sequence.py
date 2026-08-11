@@ -42,6 +42,7 @@ async def run_readiness_sequence(
 ) -> ReadinessRunResult:
     results: list[ReadinessTurnResult] = []
     captured_async_jobs = 0
+    previous_snapshots: dict[str, dict[str, object]] = {}
     for scenario in scenarios:
         if before_scenario is not None:
             await before_scenario(scenario)
@@ -49,6 +50,8 @@ async def run_readiness_sequence(
         for index, turn in enumerate(mode_turns, start=1):
             if before_turn is not None:
                 await before_turn(scenario, turn, index)
+            if turn.reset_context_before:
+                previous_snapshots[scenario.id] = {}
             started = time.perf_counter()
             invocation = await invoke_turn(scenario, turn, index)
             elapsed_ms = (time.perf_counter() - started) * 1000
@@ -78,6 +81,8 @@ async def run_readiness_sequence(
                 task_types=invocation.task_types,
                 async_jobs=invocation.async_jobs,
                 llm_calls=invocation.llm_calls,
+                state_snapshot=invocation.state_snapshot,
+                previous_state_snapshot=previous_snapshots.get(scenario.id, {}),
                 enforce_route_expectations=enforce_route_expectations,
                 mode=mode,
             )
@@ -107,8 +112,10 @@ async def run_readiness_sequence(
                 criticality=scenario.criticality,
                 outcome=turn.expectation.expected_outcome if passed else _failed_outcome(errors),
                 mutation_id=turn.mutation_id,
+                state_snapshot=invocation.state_snapshot,
             )
             results.append(result)
+            previous_snapshots[scenario.id] = invocation.state_snapshot
             if stop_on_fail and not passed:
                 return ReadinessRunResult(
                     mode=mode,

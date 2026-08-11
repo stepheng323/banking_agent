@@ -91,8 +91,10 @@ def _resolve_window(
     query_request: QueryRequest | None,
     session: dict[str, Any],
 ) -> tuple[date | None, date | None]:
-    cache_start = session.get("cache_window_start")
-    cache_end = session.get("cache_window_end")
+    raw_cache = session.get("cache")
+    cache = raw_cache if isinstance(raw_cache, dict) else {}
+    cache_start = cache.get("cache_window_start")
+    cache_end = cache.get("cache_window_end")
     if isinstance(cache_start, str) and isinstance(cache_end, str):
         try:
             return date.fromisoformat(cache_start[:10]), date.fromisoformat(cache_end[:10])

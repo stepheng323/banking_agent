@@ -20,6 +20,20 @@ ReadinessOutcome = Literal[
     "unsafe_execution",
     "unsupported_gracefully",
 ]
+ReadinessStateInvariantMode = Literal[
+    "equals",
+    "present",
+    "absent",
+    "preserve",
+    "contains",
+    "not_contains",
+]
+ReadinessConversationMutation = Literal[
+    "insert_ack_before_last",
+    "insert_balance_interrupt",
+    "repeat_last",
+    "split_last_conjunction",
+]
 LLMBudgetStatus = Literal["within_budget", "exceeded", "observed"]
 ReadinessScenarioName = Literal[
     "all",
@@ -47,6 +61,8 @@ ReadinessScenarioName = Literal[
     "extended_casual",
     "complex_interruptions",
     "robustness",
+    "adversarial-conversations",
+    "jarvis-conversations",
 ]
 
 
@@ -226,6 +242,33 @@ class ReadinessExpectation:
     expect_response_none: tuple[str, ...] = ()
     response_content_modes: tuple[ReadinessMode, ...] = ("dry-run",)
     expected_outcome: ReadinessOutcome = "correct"
+    state_invariants: tuple[ReadinessStateInvariant, ...] = ()
+    effect_expectation: ReadinessEffectExpectation | None = None
+
+
+@dataclass(frozen=True)
+class ReadinessStateInvariant:
+    """Privacy-safe state assertion evaluated after a readiness turn.
+
+    ``path`` addresses the sanitized snapshot produced by the readiness
+    runner, never the raw checkpoint.  ``preserve`` compares the value with
+    the previous turn in the same scenario; it is useful for proving that an
+    interruption did not discard a pending task or query frame.
+    """
+
+    path: str
+    mode: ReadinessStateInvariantMode = "equals"
+    value: Any = None
+
+
+@dataclass(frozen=True)
+class ReadinessEffectExpectation:
+    """Bounded effect assertions for money-moving and provider jobs."""
+
+    exact_money_movement_jobs: int | None = None
+    max_money_movement_jobs: int | None = None
+    required_topics: tuple[str, ...] = ()
+    forbidden_topics: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -260,6 +303,7 @@ class ReadinessInvocation:
     async_jobs: tuple[dict[str, Any], ...] = ()
     llm_calls: tuple[dict[str, Any], ...] = ()
     turn_timing: dict[str, Any] = field(default_factory=dict)
+    state_snapshot: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -285,6 +329,7 @@ class ReadinessTurnResult:
     criticality: ReadinessCriticality = "correctness"
     outcome: ReadinessOutcome = "correct"
     mutation_id: str | None = None
+    state_snapshot: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -312,6 +357,7 @@ class ReadinessTurnResult:
             "criticality": self.criticality,
             "outcome": self.outcome,
             "mutation_id": self.mutation_id,
+            "state_snapshot": self.state_snapshot,
         }
 
 
@@ -382,6 +428,34 @@ class ReadinessRunResult:
             "by_category": by_category,
             "unsafe_execution_count": by_outcome.get("unsafe_execution", 0),
         }
+
+    @property
+    def dimension_summary(self) -> dict[str, dict[str, float | int | None]]:
+        """Summarize named conversation dimensions without user content.
+
+        Jarvis scenarios use ``category`` as their stable dimension key.  The
+        same summary also works for the older readiness suites, making the
+        report useful when a run mixes scenario families.
+        """
+
+        groups: dict[str, list[ReadinessTurnResult]] = {}
+        for turn in self.turns:
+            groups.setdefault(turn.category, []).append(turn)
+        summary: dict[str, dict[str, float | int | None]] = {}
+        for category, turns in groups.items():
+            latencies = sorted(turn.latency_ms for turn in turns)
+            passed_count = sum(1 for turn in turns if turn.passed)
+            summary[category] = {
+                "turn_count": len(turns),
+                "passed_count": passed_count,
+                "pass_rate": round(passed_count / len(turns), 4) if turns else None,
+                "latency_ms_p50": round(_percentile(latencies, 0.50), 2) if latencies else None,
+                "latency_ms_p95": round(_percentile(latencies, 0.95), 2) if latencies else None,
+                "llm_call_count": sum(len(turn.llm_calls) for turn in turns),
+                "budget_exceeded_count": sum(turn.llm_budget_status == "exceeded" for turn in turns),
+                "unsafe_execution_count": sum(turn.outcome == "unsafe_execution" for turn in turns),
+            }
+        return dict(sorted(summary.items()))
 
     @property
     def llm_call_summary(self) -> dict[str, Any]:
@@ -692,6 +766,7 @@ class ReadinessRunResult:
             "planner_quality_summary": self.planner_quality_summary,
             "planner_clean_rate": self.planner_quality_summary["clean_rate"],
             "robustness_summary": self.robustness_summary,
+            "dimension_summary": self.dimension_summary,
             "llm_call_summary": self.llm_call_summary,
             "llm_health_summary": self.llm_health_summary,
             "llm_audit_summary": self.llm_audit_summary,

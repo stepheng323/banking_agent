@@ -7,7 +7,7 @@ from typing import cast
 
 from banking.transactions.query.contracts import SelectionPayload
 from banking.transactions.query.models.conversation import FocusSubject, QueryFocus
-from banking.transactions.query.models.domain import QueryFrame
+from banking.transactions.query.models.domain import QueryFrame, QueryResultItem
 from banking.transactions.query.models.operations import (
     AnalyzeOperation,
     CompareOperation,
@@ -101,6 +101,27 @@ def resolve_focus(
     return None
 
 
+def restore_focus(raw: object) -> QueryFocus | None:
+    """Validate checkpoint focus without inferring replacement authority."""
+    if isinstance(raw, QueryFocus):
+        return raw
+    if isinstance(raw, dict):
+        try:
+            return QueryFocus.model_validate(raw)
+        except Exception:
+            return None
+    return None
+
+
+def focused_item_index(raw_focus: object, items: list[QueryResultItem]) -> int | None:
+    """Resolve the focused visible entity against authoritative result items."""
+    focus = restore_focus(raw_focus)
+    payload = focus.selected_payload if focus is not None else None
+    if payload is None or not payload.entity_id:
+        return None
+    return next((index for index, item in enumerate(items) if item.id == payload.entity_id), None)
+
+
 _DISPLAY_ONLY_CONTINUATIONS = {
     "coverage",
     "explain_aggregate_scope",
@@ -150,4 +171,4 @@ def advance_focus(
     return updated
 
 
-__all__ = ["advance_focus", "focus_for_request", "resolve_focus"]
+__all__ = ["advance_focus", "focus_for_request", "focused_item_index", "resolve_focus", "restore_focus"]

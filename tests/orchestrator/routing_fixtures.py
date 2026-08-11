@@ -6,6 +6,21 @@ from apps.chat.src.agent.orchestrator.models.turn_directive import (
     TurnOutcomeKind,
     build_turn_directive,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import (
+    PlannerPlanResult,
+    PlannerQualityReport,
+)
+from shared.types.planner import PlannerOutput
+
+
+def planner_test_result(output: PlannerOutput) -> PlannerPlanResult:
+    """Build the canonical planner boundary result for orchestrator test doubles."""
+
+    return PlannerPlanResult(
+        raw_output=output,
+        planner_output=output,
+        quality_report=PlannerQualityReport(),
+    )
 
 
 def execution_test_directive() -> TurnDirective:
@@ -32,4 +47,4 @@ def finalize_test_directive() -> TurnDirective:
     )
 
 
-__all__ = ["execution_test_directive", "finalize_test_directive"]
+__all__ = ["execution_test_directive", "finalize_test_directive", "planner_test_result"]

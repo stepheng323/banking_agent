@@ -31,6 +31,10 @@ def test_semantic_router_replay_case_set_covers_query_first_and_guardrails() -> 
     assert "query_followup_total_pidgin" in case_ids
     assert "query_followup_total_yoruba" in case_ids
     assert "account_balance_guardrail" in case_ids
+    assert "account_linked_list_pidgin" in case_ids
+    assert "account_linked_list_hausa" in case_ids
+    assert "beneficiary_list_yoruba" in case_ids
+    assert "beneficiary_list_igbo" in case_ids
     assert "transfer_single_direct" in case_ids
     assert "mixed_transfer_batch" in case_ids
     assert "mixed_cross_domain" in case_ids

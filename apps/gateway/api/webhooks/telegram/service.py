@@ -1,5 +1,6 @@
 """Telegram webhook service — business logic for handling incoming Telegram updates."""
 
+import asyncio
 import json
 import secrets
 from datetime import UTC, datetime
@@ -26,6 +27,7 @@ from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
+_IDENTITY_CACHE_TIMEOUT_SECONDS = 0.25
 _TELEGRAM_CHANNEL = "telegram"
 _WHATSAPP_CHANNEL = "whatsapp"
 _CHANNEL_LINK_APPROVE_PREFIX = "ch_link_ok:"
@@ -87,10 +89,12 @@ class TelegramWebhookService:
         user_repository: UserRepository,
         telegram_client: TelegramClient | None = None,
         pre_onboarding_gate: PreOnboardingGate | None = None,
+        redis_client: Any | None = None,
     ) -> None:
         self.publisher = publisher
         self.user_repository = user_repository
-        self.telegram_client = telegram_client or TelegramClient()
+        self.redis_client = redis_client
+        self.telegram_client = telegram_client or TelegramClient(redis_client=redis_client)
         self.pre_onboarding_gate: PreOnboardingGate = pre_onboarding_gate or PreOnboardingGate(
             classifier=PreOnboardingClassifier(llm=ChatOpenAI(model=settings.semantic_router_model, temperature=0.0))
         )
@@ -499,12 +503,38 @@ class TelegramWebhookService:
             logger.warning("channel_link_requested_channel_notify_failed", channel=channel, error=str(e))
 
     async def _resolve_linked_user(self, chat_id: str) -> Any | None:
-        user = await load_channel_identity_user(_TELEGRAM_CHANNEL, chat_id)
+        user = None
+        if self.redis_client is not None:
+            try:
+                # Cache access is an injected dependency. Directly constructed
+                # services (including unit tests) must not create a global
+                # Redis client just to resolve an identity.
+                user = await asyncio.wait_for(
+                    load_channel_identity_user(
+                        _TELEGRAM_CHANNEL,
+                        chat_id,
+                        redis_client=self.redis_client,
+                    ),
+                    timeout=_IDENTITY_CACHE_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                logger.debug("telegram_identity_cache_probe_timed_out")
         if user is not None:
             return user
         user = await self.user_repository.get_by_channel_identity(_TELEGRAM_CHANNEL, chat_id)
-        if user is not None:
-            await store_channel_identity_user(_TELEGRAM_CHANNEL, chat_id, user)
+        if user is not None and self.redis_client is not None:
+            try:
+                await asyncio.wait_for(
+                    store_channel_identity_user(
+                        _TELEGRAM_CHANNEL,
+                        chat_id,
+                        user,
+                        redis_client=self.redis_client,
+                    ),
+                    timeout=_IDENTITY_CACHE_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                logger.debug("telegram_identity_cache_store_timed_out")
         return user
 
     async def _handle_web_app_data(self, msg: ParsedTelegramMessage) -> bool:

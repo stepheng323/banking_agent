@@ -132,13 +132,4 @@ def resolve_interrupt_updates(
     return InterruptResolution(state=state, route=route)
 
 
-def commit_interrupt_outcome(
-    state: OrchestratorState,
-    updates: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Compatibility helper for focused leaf tests; runtime uses the typed result."""
-
-    return resolve_interrupt_updates(state, updates).materialize()
-
-
-__all__ = ["InterruptResolution", "commit_interrupt_outcome", "resolve_interrupt_updates"]
+__all__ = ["InterruptResolution", "resolve_interrupt_updates"]

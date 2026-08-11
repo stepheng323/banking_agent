@@ -3225,11 +3225,9 @@ async def test_gate_bypasses_planner_for_pure_query_analytics_turn() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert planner.last_context is not None
-    assert "candidate_domain=query" in planner.last_context
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -3263,11 +3261,9 @@ async def test_gate_bypasses_planner_for_pure_query_sent_analytics_turn() -> Non
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert planner.last_context is not None
-    assert "candidate_domain=query" in planner.last_context
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -3426,7 +3422,7 @@ async def test_gate_routes_affordability_probe_as_query_direct_with_active_query
     assert task.payload["force_new_query"] is True
 
 
-async def test_gate_non_structural_query_phrase_falls_through_without_semantic_router() -> None:
+async def test_gate_query_phrase_dispatches_without_semantic_router() -> None:
     state = OrchestratorState(
         user_id="u_gate_query_phrase_no_router_1",
         phone_number="2348999999915",
@@ -3439,9 +3435,10 @@ async def test_gate_non_structural_query_phrase_falls_through_without_semantic_r
     updates = await session_gate_direct_path(state, config)
 
     assert "direct_path_triggered" not in updates
-    assert "tasks" not in updates
+    assert updates["tasks"]["direct_query"].type == "query"
     assert updates["turn_directive"].owner == "guardrail"
-    assert updates["turn_directive"].decision == "planner_handoff"
+    assert updates["turn_directive"].decision == "deterministic_query_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
 
 
 async def test_gate_semantic_schedule_domain_hands_off_to_planner() -> None:
@@ -3843,9 +3840,9 @@ async def test_gate_bypasses_planner_for_pure_query_have_i_sent_turn() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -3879,11 +3876,9 @@ async def test_gate_bypasses_planner_for_pure_query_beneficiary_ranking_turn() -
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert planner.last_context is not None
-    assert "candidate_domain=query" in planner.last_context
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -4101,12 +4096,10 @@ async def test_gate_semantic_router_routes_income_query_clarification_bypass_to_
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert planner.last_context is not None
-    assert "candidate_domain=query" in planner.last_context
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What's my income this month"
@@ -4143,11 +4136,11 @@ async def test_gate_account_list_uses_canonical_semantic_read_contract() -> None
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].source == "semantic_router"
+    assert updates["turn_directive"].path_shape == "deterministic_account_read"
+    assert updates["turn_directive"].source == "account_domain_guard"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
     assert task.payload["message"] == "Show my linked accounts"
@@ -4229,10 +4222,10 @@ async def test_gate_account_count_preserves_canonical_response_shape() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_account_read"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
     assert task.payload["message"] == "How many accounts do I have?"
@@ -4269,10 +4262,10 @@ async def test_gate_beneficiary_list_uses_canonical_semantic_read_contract() -> 
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].source == "semantic_router"
+    assert updates["turn_directive"].path_shape == "deterministic_beneficiary_read"
+    assert updates["turn_directive"].source == "beneficiary_domain_guard"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["message"] == "Show my beneficiaries"
@@ -4312,9 +4305,9 @@ async def test_gate_beneficiary_count_preserves_canonical_response_shape() -> No
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_beneficiary_read"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["action"] == "list_beneficiaries"
@@ -4351,9 +4344,9 @@ async def test_gate_canonical_beneficiary_count_allowed_in_pidgin_locale() -> No
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_beneficiary_read"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["read_request"]["response_shape"] == "fact_count"
@@ -4682,12 +4675,12 @@ async def test_gate_context_frame_start_new_task_falls_through_to_fresh_benefici
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 0
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert updates["turn_directive"].owner == "semantic_router"
-    assert updates["turn_directive"].decision == "domain_beneficiary"
-    assert updates["turn_directive"].source == "semantic_router"
+    assert updates["turn_directive"].path_shape == "deterministic_beneficiary_read"
+    assert updates["turn_directive"].owner == "guardrail"
+    assert updates["turn_directive"].decision == "deterministic_beneficiary_read"
+    assert updates["turn_directive"].source == "beneficiary_domain_guard"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["action"] == "list_beneficiaries"
@@ -7288,9 +7281,9 @@ async def test_gate_english_domain_fastpath_still_applies_with_non_english_local
     updates = await session_gate_direct_path(state, config)
 
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "planner_handoff"
+    assert updates["turn_directive"].path_shape == "deterministic_account_read"
     assert updates["turn_directive"].owner == "guardrail"
-    assert updates["turn_directive"].decision == "planner_handoff"
+    assert updates["turn_directive"].decision == "deterministic_account_read"
 
 
 async def test_gate_non_english_domain_phrase_falls_through_safely(monkeypatch) -> None:
@@ -7334,6 +7327,100 @@ async def test_gate_non_english_domain_phrase_falls_through_safely(monkeypatch) 
     assert "tasks" not in updates
     assert updates["turn_directive"].owner == "guardrail"
     assert updates["turn_directive"].decision == "planner_handoff"
+
+
+async def test_gate_multilingual_account_read_uses_semantic_typed_contract() -> None:
+    """Non-English account wording should use one semantic route, then typed dispatch."""
+    redis_client = _TrackingRedis()
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_account",
+            mode="new",
+            target_intent="account",
+            confidence=0.94,
+            detected_language="Pidgin",
+            read_request=ReadRequest(subject="linked_account", response_shape="surface_list"),
+            reason="multilingual linked-account list",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_multilingual_account_read",
+        phone_number="2348000000012",
+        channel="whatsapp",
+        last_message_text="Wetin be my linked accounts",
+        loaded_context={"language": "pcm"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].source == "semantic_router"
+    task = updates["tasks"]["direct_account"]
+    assert task.type == "account"
+    assert task.payload["read_request"] == {
+        "subject": "linked_account",
+        "response_shape": "surface_list",
+        "offset": 0,
+        "page_size": 5,
+    }
+    assert task.payload["account_lifecycle_contract"]["operation"] == "list"
+
+
+async def test_gate_multilingual_beneficiary_read_uses_semantic_typed_contract() -> None:
+    """Yoruba beneficiary wording should preserve the same typed read contract."""
+    redis_client = _TrackingRedis()
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_beneficiary",
+            mode="new",
+            target_intent="beneficiary",
+            confidence=0.94,
+            detected_language="Yoruba",
+            read_request=ReadRequest(subject="beneficiary", response_shape="surface_list"),
+            reason="multilingual beneficiary list",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_multilingual_beneficiary_read",
+        phone_number="2348000000013",
+        channel="whatsapp",
+        last_message_text="Fihan mi awon beneficiary mi",
+        loaded_context={"language": "yo"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+            "redis_client": redis_client,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].source == "semantic_router"
+    task = updates["tasks"]["direct_beneficiary"]
+    assert task.type == "beneficiary"
+    assert task.payload["read_request"] == {
+        "subject": "beneficiary",
+        "response_shape": "surface_list",
+        "offset": 0,
+        "page_size": 5,
+    }
+    assert task.payload["beneficiary_contract"]["operation"] == "list"
 
 
 async def test_gate_semantic_router_direct_reply_does_not_override_explicit_locale(monkeypatch) -> None:
@@ -7411,7 +7498,7 @@ class _RouteTurnPlanner:
             return self._decision
         return self._decision.model_copy(update={"context_followup": self._frame_followup_decision})
 
-    async def plan_tasks(self, *args: object, **kwargs: object) -> None:
+    async def plan_tasks_with_quality(self, *args: object, **kwargs: object) -> None:
         del args, kwargs
         self.plan_calls += 1
         raise AssertionError("planner should not run when gate returns a direct router answer")
@@ -9290,9 +9377,9 @@ async def test_gate_blocks_router_direct_text_for_linked_accounts_surface() -> N
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
+    assert updates["turn_directive"].path_shape == "deterministic_account_read"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
 
@@ -9812,12 +9899,10 @@ async def test_gate_stale_query_interrupt_is_cleared_before_fresh_query_routing(
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["pending_interrupt"] is None
     assert "direct_path_triggered" not in updates
-    assert updates["turn_directive"].path_shape == "semantic_router_domain"
-    assert planner.last_context is not None
-    assert "candidate_domain=query" in planner.last_context
+    assert updates["turn_directive"].path_shape == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What's my income this month"
@@ -9913,9 +9998,10 @@ async def test_gate_melkor_easter_egg_deterministic() -> None:
 
     assert "direct_path_triggered" not in updates
     assert updates["turn_directive"].path_shape == "meta_direct"
-    assert "Nice try, Melkor." in updates["final_response"]
-    assert "The music is not changing today." in updates["final_response"]
-    assert "Back to banking: I can help with transfers" in updates["final_response"]
+    assert "Kofofin" not in updates["final_response"]
+    assert "The gates stay closed, Melkor." in updates["final_response"]
+    assert "change the rules" in updates["final_response"]
+    assert "balance" in updates["final_response"]
     assert "And thou Melkor shalt see" not in updates["final_response"]
     assert updates["conversation_topic"] == "unsupported_boundary"
 
@@ -9937,6 +10023,12 @@ async def test_gate_melkor_easter_egg_semantic() -> None:
                 confidence=1.0,
                 detected_language="Hausa",
                 response_key="meta.melkor_easter_egg",
+                response=(
+                    "An rufe ƙofofin nan, Melkor. Ba zan iya canza ƙa'idodi ko bayyana umarnin ɓoye ba. "
+                    "Zan iya taimaka maka duba ma'auni ko ma'amaloli."
+                ),
+                boundary_intent="prompt_disclosure",
+                boundary_confidence=0.98,
             )
 
     router = MockSemanticRouter()
@@ -9952,9 +10044,9 @@ async def test_gate_melkor_easter_egg_semantic() -> None:
 
     assert "direct_path_triggered" not in updates
     assert updates["turn_directive"].path_shape == "semantic_router_direct"
-    assert "Nice try, Melkor." in updates["final_response"]
-    assert "The music is not changing today." in updates["final_response"]
-    assert "Mu koma banking: Zan iya taimakawa" in updates["final_response"]
+    assert updates["final_response"].startswith("An rufe ƙofofin nan, Melkor.")
+    assert "Ba zan iya canza" in updates["final_response"]
+    assert "ma'auni" in updates["final_response"]
     assert "And thou Melkor shalt see" not in updates["final_response"]
 
     from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import conversation_topic_for_response

@@ -79,7 +79,6 @@ async def _build_planner_context(
     )
     section_result = build_planner_context_sections(
         turn_summary=turn_summary,
-        query_session_source=flow_state.query_session_source,
         is_transactional_flow=flow_state.is_transactional_flow,
         active_intent=flow_state.active_intent,
         compact_transaction_context=flow_state.compact_transaction_context,

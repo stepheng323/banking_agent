@@ -11,16 +11,12 @@ ResponseShape: TypeAlias = Literal[
     "fact_count",
     "fact_value",
     "fact_status",
-    "fact_recap",
     "surface_list",
     "surface_detail",
     "surface_paginated",
     "surface_actionable",
 ]
 
-# Shapes an LLM may select. fact_recap is reserved for a future recap surface:
-# no subject allowlist admits it and no dispatcher consumes it, so advertising
-# it to a model only produces guaranteed validation failures.
 AdvertisedResponseShape: TypeAlias = Literal[
     "fact_bool",
     "fact_count",

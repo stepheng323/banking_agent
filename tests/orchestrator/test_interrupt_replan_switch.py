@@ -14,6 +14,7 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from banking.presentation.i18n.bridge import render_cancelled_prompt
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import (
@@ -37,6 +38,7 @@ from shared.types.planner import (
     make_planned_task,
 )
 from shared.types.read import ReadRequest
+from tests.orchestrator.routing_fixtures import planner_test_result
 
 
 class _MockPlanner:
@@ -51,7 +53,7 @@ class _MockPlanner:
         self._semantic_route = semantic_route
         self.route_calls = 0
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -59,9 +61,9 @@ class _MockPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
-        return self._output
+        return planner_test_result(self._output)
 
     async def route_pending_input(
         self,
@@ -173,7 +175,7 @@ class _RouteOnlyPlanner:
             reason="mock default",
         )
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -181,9 +183,9 @@ class _RouteOnlyPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
-        raise AssertionError("plan_tasks should not be called for direct switch targets")
+        raise AssertionError("plan_tasks_with_quality should not be called for direct switch targets")
 
 
 class _FailIfRouterCalledPlanner:
@@ -210,7 +212,7 @@ class _FailIfRouterCalledPlanner:
         del phone_number, text, context, path_label
         return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
 
-    async def plan_tasks(
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -218,9 +220,9 @@ class _FailIfRouterCalledPlanner:
         context: str = "None",
         prompt_signals: object | None = None,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
+    ) -> PlannerPlanResult:
         del phone_number, text, context
-        raise AssertionError("plan_tasks should not be called for callback auto-approve")
+        raise AssertionError("plan_tasks_with_quality should not be called for callback auto-approve")
 
     async def route_semantic_turn(
         self,

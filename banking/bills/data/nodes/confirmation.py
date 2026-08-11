@@ -8,7 +8,6 @@ from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.shared.confirmation_updates import build_data_confirmation_update_message
 from banking.transactions.shared.scheduling import format_schedule_confirmation_line
-from shared.cache.redis_client import RedisClient
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -97,12 +96,9 @@ async def _persist_data_confirmation_token(
 
     try:
         redis_client = getattr(worker_context, "redis_client", None)
-        if redis_client is None:
-            redis_client = RedisClient.get_client()
-
         if redis_client:
             await redis_client.setex(f"data:token:{key}:phone", 3600, context.phone_number)
         else:
-            logger.warning("redis_client_not_in_context_cannot_persist_data_token")
+            logger.debug("redis_client_not_in_context_skip_data_token_persistence")
     except Exception as exc:
         logger.error("failed_to_persist_data_token", error=str(exc))

@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from banking.transactions.query.contracts import SurfaceView
-from banking.transactions.query.models.conversation import QueryFocus, QueryScopeDelta
+from banking.transactions.query.models.conversation import PendingFieldClarification, QueryFocus, QueryScopeDelta
 from banking.transactions.query.models.domain import (
     Filters,
     QueryFactField,
@@ -22,7 +22,6 @@ from banking.transactions.query.models.domain import (
 from banking.transactions.query.models.extraction import (
     ClarificationPatch,
     FactQueryKind,
-    PendingClarificationState,
     QueryAggregation,
     QueryComparison,
     QueryExtractionResult,
@@ -279,6 +278,21 @@ class ActiveReasonerExtraction(BaseModel):
     answer_fact_field: QueryFactField | None = None
     use_default_account_scope: bool = False
 
+    @field_validator("request_shape", mode="before")
+    @classmethod
+    def _normalize_legacy_summary_shape(cls, value: Any) -> Any:
+        """Accept the parser-era ``summary`` label at the LLM boundary.
+
+        The canonical query contract has always called this surface
+        ``grouped_summary``.  Older prompt bundles and provider responses can
+        still emit ``summary`` during an active follow-up; normalizing it here
+        keeps the reasoner on its single-call path instead of turning a valid
+        refinement into a fresh-query fallback.
+        """
+        if value == "summary":
+            return QueryRequestShape.GROUPED_SUMMARY
+        return value
+
     @classmethod
     def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
         schema = super().model_json_schema(*args, **kwargs)
@@ -372,6 +386,7 @@ class FocusedItemDecision(_NarrowActiveDecision):
     target_amount: float | None = None
     answer_mode: AnswerModeType | None = None
     delta_type: DeltaType | None = None
+    transaction_direction_delta: TransactionDirectionDeltaType | None = None
     time_range: TimeRange | None = None
     filters: Filters | None = None
     # A recipient change is a scoped fact follow-up (for example,
@@ -379,6 +394,23 @@ class FocusedItemDecision(_NarrowActiveDecision):
     # provider contract does not silently discard the semantic delta before
     # the deterministic continuation compiler sees it.
     recipient_name: str | None = None
+
+    @model_validator(mode="after")
+    def _derive_direction_delta_from_typed_extraction(self) -> FocusedItemDecision:
+        """Adapt a narrow extraction into the explicit continuation patch.
+
+        Some provider responses express an income/spending switch through the
+        extraction's typed transaction filter while omitting the optional
+        convenience field.  Promote that already-typed value here so the
+        continuation compiler applies only the direction change and preserves
+        the active period/account scope.  This is contract adaptation, not
+        interpretation of user wording.
+        """
+        if self.transaction_direction_delta is None and self.continuation_type in {"filter_delta", "aggregate"}:
+            transaction_type = getattr(self.extraction.filters, "transaction_type", None) if self.extraction else None
+            if transaction_type in {"credit", "debit"}:
+                self.transaction_direction_delta = transaction_type
+        return self
 
 
 class TransactionListDecision(_NarrowActiveDecision):
@@ -527,7 +559,7 @@ class SemanticReasonerContext:
     today: date
     language: str
     query_request: QueryRequest | None = None
-    pending_clarification: PendingClarificationState | None = None
+    pending_input: PendingFieldClarification | None = None
     items: list[QueryResultItem] | None = None
     surface_view: SurfaceView | None = None
     query_frames: list[QueryFrame] | None = None
@@ -538,7 +570,7 @@ class SemanticReasonerContext:
 
     @property
     def session_mode(self) -> SemanticContextModeType:
-        if self.pending_clarification is not None:
+        if self.pending_input is not None:
             return "pending_clarification"
         if self.query_request is not None:
             return "active_result"

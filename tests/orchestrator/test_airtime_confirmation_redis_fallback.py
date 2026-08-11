@@ -15,12 +15,16 @@ class _StubRedis:
 
 
 @pytest.mark.asyncio
-async def test_airtime_confirmation_falls_back_to_global_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_airtime_confirmation_without_redis_skips_token_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     redis = _StubRedis()
 
     from shared.cache.redis_client import RedisClient
 
-    monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls, redis_url=None: redis))
+    monkeypatch.setattr(
+        RedisClient,
+        "get_client",
+        classmethod(lambda cls, redis_url=None: (_ for _ in ()).throw(AssertionError("global Redis is not allowed"))),
+    )
 
     step = ConfirmationStep()
     payload = AirtimePayload(
@@ -57,6 +61,4 @@ async def test_airtime_confirmation_falls_back_to_global_redis(monkeypatch: pyte
     assert result.outcome.value == "needs_confirmation"
     assert result.confirmation_summary is not None
     assert result.confirmation_summary.splitlines()[0] == "*₦1,000 airtime for your number (08162511023)*"
-    assert redis.calls == [
-        ("airtime:token:airtime-test-token:phone", 3600, "2348162511023"),
-    ]
+    assert redis.calls == []

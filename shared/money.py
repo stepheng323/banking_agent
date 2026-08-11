@@ -112,33 +112,3 @@ def require_kobo_to_naira(value: object) -> MoneyAmount:
     if amount is None:
         raise ValueError("Invalid kobo amount")
     return amount
-
-
-def to_money(value: object) -> MoneyAmount | None:
-    """Backward-compatible alias for to_naira."""
-    return to_naira(value)
-
-
-def require_money(value: object) -> MoneyAmount:
-    """Backward-compatible alias for require_naira."""
-    return require_naira(value)
-
-
-def quantize_money(value: Decimal) -> MoneyAmount:
-    """Backward-compatible alias for quantize_naira."""
-    return quantize_naira(value)
-
-
-def money_to_json(value: object) -> str | None:
-    """Backward-compatible alias for naira_to_json."""
-    return naira_to_json(value)
-
-
-def money_to_provider_value(value: object) -> int | str | None:
-    """Backward-compatible alias for naira_to_provider_value."""
-    return naira_to_provider_value(value)
-
-
-def to_minor_units(value: object) -> int:
-    """Backward-compatible alias for naira_to_kobo."""
-    return naira_to_kobo(value)

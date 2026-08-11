@@ -13,28 +13,6 @@ TRANSACTION_DEFAULT_ACTIONS = {
     "data": "buy_data",
 }
 
-SCHEDULE_ACTIONS = {
-    "schedule_transfer",
-    "recurring_transfer",
-    "schedule_airtime",
-    "recurring_airtime",
-    "schedule_data",
-    "recurring_data",
-    "list_scheduled_transactions",
-    "find_scheduled_transaction",
-    "cancel_scheduled_transaction",
-    "edit_scheduled_transaction",
-    "pause_scheduled_transaction",
-    "resume_scheduled_transaction",
-    "list_scheduled_runs",
-    "find_scheduled_run",
-}
-
-POLICY_ACTION_ALIASES = {
-    ("support", "handle_request"): "collect_details",
-    ("support", "report_issue"): "collect_details",
-}
-
 PLANNER_POLICY_DEFAULT_ACTIONS = {
     **TRANSACTION_DEFAULT_ACTIONS,
     "schedule": "schedule_transfer",
@@ -106,8 +84,6 @@ def _filter_capability_blocked_tasks(
 
 __all__ = [
     "PLANNER_POLICY_DEFAULT_ACTIONS",
-    "POLICY_ACTION_ALIASES",
-    "SCHEDULE_ACTIONS",
     "TRANSACTION_DEFAULT_ACTIONS",
     "_filter_capability_blocked_tasks",
     "_task_capability_target",

@@ -8,6 +8,7 @@ from banking.transactions.query.continuations.repair_resolution import resolve_p
 from banking.transactions.query.conversation_focus import advance_focus, focus_for_request, resolve_focus
 from banking.transactions.query.grounding.frames import build_query_frame
 from banking.transactions.query.models.conversation import (
+    PendingFieldClarification,
     PendingInterpretationProposal,
     QueryInterpretationProposal,
     QueryPlanBinding,
@@ -19,7 +20,6 @@ from banking.transactions.query.models.conversation import (
 from banking.transactions.query.models.domain import QueryIntent, QueryResult
 from banking.transactions.query.models.extraction import (
     ParserQueryExtraction,
-    PendingClarificationState,
     QueryAggregation,
     QueryExtractionResult,
     QueryPlanDraft,
@@ -33,8 +33,8 @@ from banking.transactions.query.models.operations import GroupedSummarySpec, Tra
 from banking.transactions.query.services.parsing.parser import QueryParser
 from banking.transactions.query.session_state import (
     build_query_session_v3,
-    pending_input_from_legacy,
-    project_query_session_v3,
+    restore_query_session_v3,
+    session_query_request,
 )
 from banking.transactions.query.turn_plan import execute_query_turn_plan
 from tests.query.factories import query_scope, retrieve_request, summarize_request
@@ -260,8 +260,8 @@ def test_materially_different_repair_creates_two_grounded_proposals() -> None:
     )
 
     assert updates["flow_state"] == "parsing"
-    assert updates["pending_query_input"]["kind"] == "interpretation_proposal"
-    assert len(updates["pending_query_input"]["proposals"]) == 2
+    assert updates["pending_input"]["kind"] == "interpretation_proposal"
+    assert len(updates["pending_input"]["proposals"]) == 2
 
 
 def test_proposal_selection_executes_only_the_chosen_contract() -> None:
@@ -286,15 +286,12 @@ def test_proposal_selection_executes_only_the_chosen_contract() -> None:
 
 
 def test_v3_checkpoint_persists_field_input_without_flat_clarification_authority() -> None:
-    legacy = PendingClarificationState(
+    pending = PendingFieldClarification(
         original_query="",
-        current_intent=QueryIntent.TRANSACTION_LIST,
-        original_extraction=QueryExtractionResult(intent=QueryIntent.TRANSACTION_LIST),
+        original_extraction=QueryExtractionResult(intent=QueryIntent.TRANSACTION_LIST).model_dump(mode="json"),
         clarification_type="time",
         target_field="time",
     )
-    pending = pending_input_from_legacy(legacy)
-    assert pending is not None
 
     session = build_query_session_v3(
         request=_request(),
@@ -307,12 +304,12 @@ def test_v3_checkpoint_persists_field_input_without_flat_clarification_authority
     assert persisted["schema_version"] == 3
     assert persisted["pending_input"]["kind"] == "field_clarification"
     assert "pending_clarification" not in persisted
-    projected = project_query_session_v3(persisted)
-    assert projected is not None
-    assert projected["pending_clarification"]["kind"] == "pending_clarification"
+    restored = restore_query_session_v3(persisted)
+    assert restored is not None
+    assert restored.pending_input == pending
 
 
-def test_v3_plan_projection_exposes_primary_request_without_losing_plan() -> None:
+def test_v3_plan_exposes_primary_request_without_losing_plan() -> None:
     primary = _request()
     supporting = retrieve_request(query_scope(date(2026, 6, 1), date(2026, 6, 29)))
     plan = QueryTurnPlan(
@@ -328,11 +325,10 @@ def test_v3_plan_projection_exposes_primary_request_without_losing_plan() -> Non
         execution_contract=plan,
     ).model_dump(mode="json")
 
-    projected = project_query_session_v3(persisted)
-
-    assert projected is not None
-    assert projected["query_request"] == primary.model_dump(mode="json")
-    assert projected["execution_contract"]["kind"] == "plan"
+    restored = restore_query_session_v3(persisted)
+    assert restored is not None
+    assert session_query_request(restored) == primary
+    assert restored.execution_contract == plan
 
 
 def test_composite_repair_updates_only_the_targeted_plan_step() -> None:

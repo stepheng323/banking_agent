@@ -129,6 +129,12 @@ async def _stage_deterministic_meta(ctx: GateContext) -> RouteResolution | None:
                 SOCIAL_META_RESPONSE_KEY_CTX: response_key,
                 SOCIAL_META_RENDER_PARAMS_CTX: render_params or {},
             }
+        elif response_key == "meta.melkor_easter_egg":
+            extra_user_ctx = {
+                "boundary_intent": deterministic_meta.boundary_intent or "instruction_override",
+                "boundary_confidence": deterministic_meta.boundary_confidence or 1.0,
+                "boundary_response_source": "generated",
+            }
         # High-confidence pure social turns already have a localized catalog
         # response.  Do not spend a conversation-model call rewriting a
         # greeting/check-in/thanks: apart from adding latency, a free-form
@@ -155,7 +161,14 @@ async def _stage_deterministic_meta(ctx: GateContext) -> RouteResolution | None:
         final_response = render_message(response_key, locale, render_params)
 
     exit_updates = {}
-    if await ctx.has_active_query_session():
+    # A prompt-boundary turn is a read-only safety response.  It must not
+    # consume an otherwise useful query frame; the user can return to that
+    # result after the boundary message.  Other direct replies retain the
+    # existing query-session exit behaviour.
+    if response_key not in {
+        "meta.melkor_easter_egg",
+        "conversational.security_confirmation_required",
+    } and await ctx.has_active_query_session():
         exit_updates = _build_query_session_exit_updates(ctx.state)
         logger.info("gate_query_session_exited_on_direct_reply")
 
